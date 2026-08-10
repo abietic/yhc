@@ -1156,12 +1156,12 @@ dependencies:
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/crypto
-    version: v0.51.0
-    source_url: https://pkg.go.dev/golang.org/x/crypto@v0.51.0
+    version: v0.52.0
+    source_url: https://pkg.go.dev/golang.org/x/crypto@v0.52.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/crypto@v0.51.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/crypto@v0.52.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed

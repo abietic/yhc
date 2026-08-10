@@ -3598,18 +3598,18 @@
       }
     },
     {
-      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
       "type": "library",
       "name": "golang.org/x/crypto",
-      "version": "v0.51.0",
+      "version": "v0.52.0",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "2013d7c0f7cac58edc590677f1908844f239d182de7af0cb94b9f20b9c111932"
+          "content": "44cb3b7cfdab5dd7a9d027ed4252bc51ffa489b2e6eea90272b69d656633f7cf"
         }
       ],
-      "purl": "pkg:golang/golang.org/x/crypto@v0.51.0?goarch=amd64\u0026goos=linux\u0026type=module",
+      "purl": "pkg:golang/golang.org/x/crypto@v0.52.0?goarch=amd64\u0026goos=linux\u0026type=module",
       "evidence": {
         "licenses": [
           {
@@ -4036,7 +4036,7 @@
         "pkg:golang/github.com/spf13/pflag@v1.0.9?type=module",
         "pkg:golang/github.com/volcengine/volcengine-go-sdk@v1.2.34?type=module",
         "pkg:golang/github.com/yuin/goldmark@v1.7.17?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/image@v0.43.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/golang.org/x/term@v0.43.0?type=module",
@@ -4165,7 +4165,7 @@
         "pkg:golang/go.opentelemetry.io/otel@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/metric@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/trace@v1.43.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/oauth2@v0.36.0?type=module",
         "pkg:golang/golang.org/x/sync@v0.21.0?type=module",
@@ -4187,7 +4187,7 @@
         "pkg:golang/github.com/google/s2a-go@v0.1.8?type=module",
         "pkg:golang/github.com/googleapis/enterprise-certificate-proxy@v0.3.4?type=module",
         "pkg:golang/go.opencensus.io@v0.24.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/oauth2@v0.36.0?type=module",
         "pkg:golang/golang.org/x/sync@v0.21.0?type=module",
@@ -4229,7 +4229,7 @@
       "dependsOn": [
         "pkg:golang/github.com/Azure/azure-sdk-for-go/sdk/azcore@v1.17.0?type=module",
         "pkg:golang/github.com/google/uuid@v1.6.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/golang.org/x/text@v0.39.0?type=module",
@@ -4290,7 +4290,7 @@
         "pkg:golang/go.opentelemetry.io/otel/metric@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/trace@v1.43.0?type=module",
         "pkg:golang/go.yaml.in/yaml/v4@v4.0.0-rc.2?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/oauth2@v0.36.0?type=module",
         "pkg:golang/golang.org/x/sync@v0.21.0?type=module",
@@ -4713,7 +4713,7 @@
         "pkg:golang/go.opentelemetry.io/otel/trace@v1.43.0?type=module",
         "pkg:golang/go.yaml.in/yaml/v4@v4.0.0-rc.2?type=module",
         "pkg:golang/golang.org/x/arch@v0.12.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/exp@v0.0.0-20250218142911-aa4b98e5adaa?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/oauth2@v0.36.0?type=module",
@@ -4802,7 +4802,7 @@
         "pkg:golang/github.com/yargevad/filepathx@v1.0.0?type=module",
         "pkg:golang/go.opencensus.io@v0.24.0?type=module",
         "pkg:golang/golang.org/x/arch@v0.12.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/exp@v0.0.0-20250218142911-aa4b98e5adaa?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
@@ -4927,7 +4927,7 @@
         "pkg:golang/github.com/wk8/go-ordered-map/v2@v2.1.8?type=module",
         "pkg:golang/github.com/yargevad/filepathx@v1.0.0?type=module",
         "pkg:golang/golang.org/x/arch@v0.12.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/exp@v0.0.0-20250218142911-aa4b98e5adaa?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/gopkg.in/yaml.v3@v3.0.1?type=module"
@@ -5007,7 +5007,7 @@
         "pkg:golang/go.opentelemetry.io/otel@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/metric@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/trace@v1.43.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/oauth2@v0.36.0?type=module",
         "pkg:golang/golang.org/x/sync@v0.21.0?type=module",
@@ -5026,7 +5026,7 @@
     {
       "ref": "pkg:golang/github.com/googleapis/enterprise-certificate-proxy@v0.3.4?type=module",
       "dependsOn": [
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module"
       ]
     },
@@ -5159,7 +5159,7 @@
         "pkg:golang/github.com/pkg/errors@v0.9.1?type=module",
         "pkg:golang/github.com/sirupsen/logrus@v1.9.3?type=module",
         "pkg:golang/github.com/yargevad/filepathx@v1.0.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/exp@v0.0.0-20250218142911-aa4b98e5adaa?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/golang.org/x/term@v0.43.0?type=module",
@@ -5176,7 +5176,7 @@
         "pkg:golang/github.com/tidwall/match@v1.1.1?type=module",
         "pkg:golang/github.com/tidwall/pretty@v1.2.1?type=module",
         "pkg:golang/github.com/tidwall/sjson@v1.2.5?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/golang.org/x/text@v0.39.0?type=module"
@@ -5394,7 +5394,7 @@
       "ref": "pkg:golang/golang.org/x/arch@v0.12.0?type=module"
     },
     {
-      "ref": "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+      "ref": "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
       "dependsOn": [
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
@@ -5418,7 +5418,7 @@
     {
       "ref": "pkg:golang/golang.org/x/net@v0.55.0?type=module",
       "dependsOn": [
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/golang.org/x/term@v0.43.0?type=module",
         "pkg:golang/golang.org/x/text@v0.39.0?type=module"
@@ -5472,7 +5472,7 @@
         "pkg:golang/go.opentelemetry.io/otel@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/metric@v1.43.0?type=module",
         "pkg:golang/go.opentelemetry.io/otel/trace@v1.43.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/oauth2@v0.36.0?type=module",
         "pkg:golang/golang.org/x/sync@v0.21.0?type=module",
@@ -5496,7 +5496,7 @@
         "pkg:golang/github.com/googleapis/enterprise-certificate-proxy@v0.3.4?type=module",
         "pkg:golang/github.com/gorilla/websocket@v1.5.3?type=module",
         "pkg:golang/go.opencensus.io@v0.24.0?type=module",
-        "pkg:golang/golang.org/x/crypto@v0.51.0?type=module",
+        "pkg:golang/golang.org/x/crypto@v0.52.0?type=module",
         "pkg:golang/golang.org/x/net@v0.55.0?type=module",
         "pkg:golang/golang.org/x/sys@v0.46.0?type=module",
         "pkg:golang/golang.org/x/text@v0.39.0?type=module",
