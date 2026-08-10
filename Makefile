@@ -52,7 +52,8 @@ PUBLICATION_REPORT_DIR := $(abspath $(BUILD_DIR)/publication)
 GOVULNCHECK := $(PUBLICATION_TOOLS_DIR)/govulncheck
 GITLEAKS := $(PUBLICATION_TOOLS_DIR)/gitleaks
 CYCLONEDX_GOMOD := $(PUBLICATION_TOOLS_DIR)/cyclonedx-gomod
-PUBLICATION_SBOM_GENERATED := $(PUBLICATION_REPORT_DIR)/sbom.cdx.json
+PUBLICATION_SBOM_RAW := $(BUILD_DIR)/publication/sbom.raw.cdx.json
+PUBLICATION_SBOM_GENERATED := $(BUILD_DIR)/publication/sbom.cdx.json
 PUBLICATION_LICENSE_REPORT := $(BUILD_DIR)/publication/dependency-licenses.json
 
 SOURCES := $(shell find cmd engine internal server tools -type f -name '*.go')
@@ -373,7 +374,8 @@ sbom: prepare-cyclonedx-gomod
 		task_source_commit="$$(git rev-parse HEAD)"; \
 		$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
 		cd "$$task_tree_parent/tree"; \
-		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(PUBLICATION_SBOM_GENERATED) .
+		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(abspath $(PUBLICATION_SBOM_RAW)) .
+	$(GO) run ./scripts/publication normalize-sbom --config $(PUBLICATION_CONFIG) --input $(PUBLICATION_SBOM_RAW) --output $(PUBLICATION_SBOM_GENERATED)
 	@cmp -s $(PUBLICATION_SBOM_GENERATED) sbom.cdx.json || { echo "sbom.cdx.json is missing or stale" >&2; exit 1; }
 
 license-check: sbom

@@ -127,7 +127,9 @@ func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
 		`@set -e;`,
 		`publication materialize --config $(PUBLICATION_CONFIG)`,
 		`cd "$$task_tree_parent/tree"`,
-		`-output $(PUBLICATION_SBOM_GENERATED) .`,
+		`-output $(abspath $(PUBLICATION_SBOM_RAW)) .`,
+		`normalize-sbom --config $(PUBLICATION_CONFIG)`,
+		`--output $(PUBLICATION_SBOM_GENERATED)`,
 	} {
 		if !strings.Contains(sbomTarget, contract) {
 			t.Fatalf("SBOM generation does not retain VCS-free contract %q", contract)
