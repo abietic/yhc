@@ -52,7 +52,7 @@ stale tuples fail closed.
 | Signed clean public root | `8e34cc4794f0e1e9ae404c5bcf453d5e71a159c0` |
 | Source-mapping manifest | `fb60b8385845b158f64932116a7b46850e96d7fd4c0ffb764688988374b7cdf3` |
 | Dependency-license policy | `a3e7920a65178782d3009c60088e5e4226705811faf09a34ed3aa21f3fa618ca` |
-| CycloneDX SBOM | `eb3717db014b9d45a563ea5c071f08d54999876f8ffc7e4a8d9be2c4febd3127` |
+| CycloneDX SBOM | `a8ad37c431845ac3526bcfeeb9be139c0a9b1a774295e800c241ec6348079262` |
 | Root Apache-2.0 text | `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30` |
 | Vendored ACP SDK Apache-2.0 text | `3cf3fec4549ad049b3defd633001ce9e89923cdaee3d45d5ff4686750706e3cd` |
 | Go / govulncheck | Go 1.26.5 / govulncheck 1.6.0 |
