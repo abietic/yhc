@@ -101,7 +101,11 @@ func materialize(ctx context.Context, config Config, sourceCommit, outputPath st
 	if err != nil {
 		return err
 	}
-	inv := snapshot.inventory
+	payload, err := materializationPayloadSnapshot(snapshot)
+	if err != nil {
+		return err
+	}
+	inv := payload.inventory
 	if !filepath.IsAbs(outputPath) || filepath.Clean(outputPath) != outputPath {
 		return errors.New("publication output must be an absolute clean path")
 	}
@@ -175,18 +179,18 @@ func materialize(ctx context.Context, config Config, sourceCommit, outputPath st
 	if err != nil || !os.SameFile(stageInfo, stageOpened) {
 		return errors.New("publication staging directory changed while opening")
 	}
-	if err := copyInventory(ctx, stage, inv.Files, snapshot.entries); err != nil {
+	if err := copyInventory(ctx, stage, inv.Files, payload.entries); err != nil {
 		return err
 	}
 	if err := revalidateRootEntry(parent, stageName, stageInfo, stage); err != nil {
 		return errors.New("publication staging directory changed during copy")
 	}
 	stagePath := filepath.Join(parentPath, stageName)
-	summary, err := checkInventoryTreeWithEntries(ctx, stagePath, config, inv, false, snapshot.entries)
+	summary, err := checkInventoryTreeWithEntries(ctx, stagePath, config, inv, false, payload.entries)
 	if err != nil {
 		return fmt.Errorf("validate staged publication tree: %w", err)
 	}
-	sourceDigest, err := sourceTreeDigest(inv.Files, snapshot.entries)
+	sourceDigest, err := sourceTreeDigest(inv.Files, payload.entries)
 	if err != nil {
 		return err
 	}
@@ -350,6 +354,39 @@ func captureApprovedSourceSnapshot(ctx context.Context, config Config, sourceCom
 		return sourceSnapshot{}, err
 	}
 	return snapshot, nil
+}
+
+// materializationPayloadSnapshot preserves full source classification and race
+// validation while excluding the prior release attestation from the payload it
+// describes. The manifest is regenerated only after the payload passes all
+// tree checks, so copying it would create a recursive, stale attestation.
+func materializationPayloadSnapshot(snapshot sourceSnapshot) (sourceSnapshot, error) {
+	if len(snapshot.inventory.Files) != len(snapshot.entries) {
+		return sourceSnapshot{}, errors.New("publication source inventory and index differ")
+	}
+	payload := sourceSnapshot{
+		commit:    snapshot.commit,
+		inventory: snapshot.inventory,
+		entries:   make([]trackedEntry, 0, len(snapshot.entries)),
+	}
+	payload.inventory.Files = make([]FileDecision, 0, len(snapshot.inventory.Files))
+	manifestSeen := false
+	for index, file := range snapshot.inventory.Files {
+		entry := snapshot.entries[index]
+		if file.Path != entry.path {
+			return sourceSnapshot{}, errors.New("publication source inventory and index differ")
+		}
+		if file.Path == publicationManifest {
+			if manifestSeen {
+				return sourceSnapshot{}, errors.New("publication source contains duplicate manifests")
+			}
+			manifestSeen = true
+			continue
+		}
+		payload.inventory.Files = append(payload.inventory.Files, file)
+		payload.entries = append(payload.entries, entry)
+	}
+	return payload, nil
 }
 
 func validateSourceSnapshot(ctx context.Context, config Config, snapshot sourceSnapshot) error {
@@ -628,7 +665,11 @@ func checkTree(ctx context.Context, config Config, rootPath string) (summary Tre
 		return TreeSummary{}, err
 	}
 	if sourceMode {
-		summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, snapshot.inventory, true, snapshot.entries)
+		payload, err := materializationPayloadSnapshot(snapshot)
+		if err != nil {
+			return TreeSummary{}, err
+		}
+		summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
 		if err != nil {
 			return TreeSummary{}, err
 		}
@@ -638,7 +679,7 @@ func checkTree(ctx context.Context, config Config, rootPath string) (summary Tre
 		if err := verifyOptionalManifest(rootPath, summary); err != nil {
 			return TreeSummary{}, err
 		}
-		finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, snapshot.inventory, true, snapshot.entries)
+		finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
 		if err != nil || finalSummary != summary {
 			return TreeSummary{}, errors.New("publication tree changed during checks")
 		}
@@ -798,14 +839,18 @@ func writeReleaseManifest(ctx context.Context, config Config, rootPath, outputPa
 	if !sourceMode {
 		return ReleaseManifest{}, errors.New("publication manifest requires clean source inventory")
 	}
-	summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, snapshot.inventory, true, snapshot.entries)
+	payload, err := materializationPayloadSnapshot(snapshot)
+	if err != nil {
+		return ReleaseManifest{}, err
+	}
+	summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
 	if err != nil {
 		return ReleaseManifest{}, err
 	}
 	if err := checkExpressionClean(ctx, config, rootPath); err != nil {
 		return ReleaseManifest{}, err
 	}
-	finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, snapshot.inventory, true, snapshot.entries)
+	finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
 	if err != nil || finalSummary != summary {
 		return ReleaseManifest{}, errors.New("publication tree changed during manifest checks")
 	}

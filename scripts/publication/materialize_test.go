@@ -504,6 +504,72 @@ func TestReleaseManifestIsDeterministicAndContainsNoFindingValues(t *testing.T) 
 	}
 }
 
+func TestMaterializeExcludesTrackedPriorReleaseManifest(t *testing.T) {
+	repo, config, _ := materializerFixture(t)
+	prior := ReleaseManifest{
+		SchemaVersion:    1,
+		SourceTreeSHA256: strings.Repeat("a", 64),
+		TreeSHA256:       strings.Repeat("a", 64),
+		FileCount:        3,
+		Checks:           map[string]string{"policy": "pass", "tree": "pass", "expression": "pass", "sbom": "pass"},
+		SBOMSHA256:       strings.Repeat("b", 64),
+	}
+	encoded, err := json.MarshalIndent(prior, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePublicationFile(t, repo, publicationManifest, string(append(encoded, '\n')))
+	runGit(t, repo, "add", publicationManifest)
+	runGit(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "prior release manifest")
+	head := repositoryHead(t, repo)
+	config.Source.BaselineCommit = head
+	config.Rules = append(config.Rules, PathRule{ID: "publication-manifest", Include: []string{publicationManifest}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}})
+
+	var inventory Inventory
+	inRepo(t, repo, func() {
+		inventory, err = approvedInventory(context.Background(), config)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestClassified := false
+	for _, file := range inventory.Files {
+		if file.Path == publicationManifest {
+			manifestClassified = file.RuleID == "publication-manifest" && file.Decision == "include"
+		}
+	}
+	if !manifestClassified {
+		t.Fatal("tracked prior manifest was not explicitly classified")
+	}
+
+	out := filepath.Join(t.TempDir(), "release")
+	inRepo(t, repo, func() {
+		err = materialize(context.Background(), config, head, out)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(out, publicationManifest)); !os.IsNotExist(err) {
+		t.Fatal("materialized payload retained the prior release manifest")
+	}
+
+	var manifest ReleaseManifest
+	inRepo(t, repo, func() {
+		manifest, err = writeReleaseManifest(context.Background(), config, out, filepath.Join(out, publicationManifest))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.FileCount != len(inventory.Files)-1 {
+		t.Fatalf("manifest describes %d files, want %d payload files", manifest.FileCount, len(inventory.Files)-1)
+	}
+	inRepo(t, t.TempDir(), func() {
+		if _, checkErr := checkTree(context.Background(), config, out); checkErr != nil {
+			t.Fatalf("materialized tree with refreshed manifest failed verification: %v", checkErr)
+		}
+	})
+}
+
 func TestReleaseManifestRejectsInvalidExistingManifest(t *testing.T) {
 	repo, config, head := materializerFixture(t)
 	out := filepath.Join(t.TempDir(), "release")

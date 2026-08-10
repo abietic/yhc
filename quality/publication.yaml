@@ -3701,6 +3701,11 @@ rules:
     class: project-owned-original
     decision: include
     evidence: [docs/superpowers/plans/2026-08-09-yhc-publication-readiness.md]
+  - id: publication-manifest
+    include: [PUBLICATION_MANIFEST.json]
+    class: project-owned-original
+    decision: include
+    evidence: [docs/publication/root-clearance.md]
   - id: root-apache-license
     include: [LICENSE]
     class: license-compatible-third-party
