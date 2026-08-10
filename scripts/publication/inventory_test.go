@@ -420,7 +420,7 @@ func TestInventoryOutputAncestorReplacementRaceDoesNotEscape(t *testing.T) {
 }
 
 func publicationConfig(rules string) string {
-	policy := "version: 1\nsource:\n  repository: github.com/abietic/yhc\n  baseline_commit: 6500a09be6ec641c31348a4322a085eeaa029241\nmappings:\n  manifest: docs/migration/manifest.yaml\ndependencies:\n  license_policy: quality/dependency-licenses.yaml\n  sbom: sbom.cdx.json\n" + rules
+	policy := "version: 1\nsource:\n  repository: github.com/abietic/yhc\n  baseline_commit: 8e34cc4794f0e1e9ae404c5bcf453d5e71a159c0\nmappings:\n  manifest: docs/migration/manifest.yaml\ndependencies:\n  license_policy: quality/dependency-licenses.yaml\n  sbom: sbom.cdx.json\n" + rules
 	if !strings.Contains(rules, "docs/**") {
 		policy += "\n  - id: migration-mapping\n    include: [docs/migration/manifest.yaml]\n    class: project-owned-original\n    decision: include\n    evidence: [review]\n"
 	}

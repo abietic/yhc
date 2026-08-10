@@ -520,7 +520,7 @@ func TestMaterializeExcludesTrackedPriorReleaseManifest(t *testing.T) {
 	}
 	writePublicationFile(t, repo, publicationManifest, string(append(encoded, '\n')))
 	runGit(t, repo, "add", publicationManifest)
-	runGit(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "prior release manifest")
+	runGit(t, repo, "-c", "user.name=Test", "-c", "user.email=test@invalid", "commit", "-qm", "prior release manifest")
 	head := repositoryHead(t, repo)
 	config.Source.BaselineCommit = head
 	config.Rules = append(config.Rules, PathRule{ID: "publication-manifest", Include: []string{publicationManifest}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}})

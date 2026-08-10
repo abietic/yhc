@@ -1,7 +1,7 @@
 version: 1
 source:
   repository: github.com/abietic/yhc
-  baseline_commit: 6500a09be6ec641c31348a4322a085eeaa029241
+  baseline_commit: 8e34cc4794f0e1e9ae404c5bcf453d5e71a159c0
 mappings:
   manifest: docs/migration/manifest.yaml
 privacy:

@@ -195,7 +195,7 @@ func TestCIClassifiesUnreachablePushBaseAsFullTree(t *testing.T) {
 		t.Fatalf("write root fixture: %v", err)
 	}
 	runGit(t, repository, "add", "main.go")
-	runGit(t, repository, "-c", "commit.gpgsign=false", "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-m", "root")
+	runGit(t, repository, "-c", "commit.gpgsign=false", "-c", "user.name=test", "-c", "user.email=test@invalid", "commit", "-m", "root")
 
 	scriptPath := filepath.Join(t.TempDir(), "classify.sh")
 	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
