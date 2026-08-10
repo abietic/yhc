@@ -1,9 +1,8 @@
 # YHC Core Identity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `$iteration-workflow` to execute and close this plan task-by-task. Preserve
-> the frozen identity and compatibility contract. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed YHC identity
+> migration. Future identity changes follow the current repository workflow;
+> no live worker instruction remains.
 
 **Goal:** Make YHC the only public product, Go-module, command, build-artifact,
 and current-copy identity while preserving deterministic aliases for supported
@@ -19,9 +18,10 @@ separate plans.
 **Tech Stack:** Go 1.26.5, Cobra, Bubble Tea, Makefile cross-builds, Git path
 moves, repository publication scanner, and focused CLI/build/TUI tests.
 
-**Status:** active-plan
+**Status:** historical
 **Created:** 2026-08-09
-**Plan state:** Identity implementation complete; downstream publication clearance pending
+**Completed:** 2026-08-11
+**Plan state:** Completed; identity implementation and public clearance accepted
 
 > **Ownership:** public identity and environment compatibility from the
 > [YHC public-release design](../specs/2026-08-09-yhc-public-release-design.md).
@@ -436,15 +436,12 @@ git diff --check
 - [x] Verify the remaining old module/command/product matches in the Core
   Identity scope belong to explicit `history`, `source-mapping`,
   `legacy-state`, `legacy-environment`, or `legacy-protocol` rules.
-- [ ] After Publication Readiness Task 3 resolves every path decision, run
+- [x] After Publication Readiness Task 3 resolves every path decision, run
   `make publication-check-policy` and record the intentional module hard break
   plus the absence of a command shim in
   `docs/publication/root-clearance.md`.
 
-The last item is a downstream publication-readiness obligation: Task 3 creates
-`root-clearance.md` and clears `quality/publication.yaml`. It does not block the
-state and protocol leaves from consuming the completed identity implementation.
-
-State-root and protocol checks may still be red at this point only where the
-program graph marks their leaf plans pending. No unrelated runtime test may be
-accepted as pending.
+Publication Readiness Task 3 later created `root-clearance.md`, cleared
+`quality/publication.yaml`, and passed `make publication-check-policy`. The
+public release retained the intentional Go-module hard break and did not add an
+`eino-agent` command shim.

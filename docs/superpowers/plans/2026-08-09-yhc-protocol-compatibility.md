@@ -1,9 +1,8 @@
 # YHC Protocol Compatibility Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `$iteration-workflow` and `$runtime-depth-change` to execute and close this
-> protocol-sensitive plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed ACP and MCP
+> compatibility migration. Future protocol changes follow the current
+> repository workflow; no live worker instruction remains.
 
 **Goal:** Advertise YHC over ACP and MCP, negotiate exactly one canonical or
 legacy ACP Goal namespace per connection, and keep all Goal/MCP runtime
@@ -21,11 +20,10 @@ tool names, authorization, and lifecycle untouched.
 Go SDK initialize handshakes over production stdio paths, concurrency tests,
 and existing Goal durability/revision/delivery-failure oracles.
 
-**Status:** active-plan
+**Status:** historical
 **Created:** 2026-08-09
-**Plan state:** Protocol implementation and acceptance are complete; public
-release clearance still depends on the publication-policy classification noted
-in the closeout.
+**Completed:** 2026-08-11
+**Plan state:** Completed; protocol acceptance and public-release clearance passed
 
 > **Ownership:** ACP Goal and MCP declaration rows of the
 > [YHC protocol design](../specs/2026-08-09-yhc-public-release-design.md#acp-selects-one-goal-namespace-per-connection).
@@ -300,16 +298,15 @@ make docs-check
 git diff --check
 ```
 
-- [ ] Clear the downstream public-release policy gate:
+- [x] Clear the downstream public-release policy gate:
 
 ```bash
 make publication-check-policy
 ```
 
-The protocol diff does not introduce this failure. The gate still rejects the
-tracked `.agents/skill-runtime/skill_log.py` row because its publication
-decision is `unresolved`; Publication Readiness owns that classification and
-must clear it before a public root is created.
+The protocol diff did not introduce the original failure. Publication
+Readiness later cleared the tracked `.agents/skill-runtime/skill_log.py`
+classification, and the gate passed before the public root was created.
 
 - [x] Inspect wire evidence from canonical-only, legacy-only, matching dual,
   conflicting dual, malformed single, and absent offers. Record capability key,
@@ -352,5 +349,5 @@ Acceptance evidence:
   passed;
 - `make fmt`, `make lint`, `make test` (8104 tests, 3 skipped), `make build`,
   `make docs-check`, and `git diff --check` passed;
-- `make publication-check-policy` remains red only for the explicit downstream
-  publication classification above.
+- `make publication-check-policy` passed after the downstream publication
+  classification was resolved.

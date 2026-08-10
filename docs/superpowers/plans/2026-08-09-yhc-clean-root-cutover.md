@@ -1,9 +1,8 @@
 # YHC Clean Root And Remote Cutover Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `$iteration-workflow` to execute and close this plan task-by-task. Keep each
-> irreversible remote phase behind its documented approval stop. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed clean-root
+> cutover and its approval boundaries. Future changes use the normal protected
+> workflow. Checkboxes remain as closeout evidence.
 
 **Goal:** Convert the fully cleared YHC candidate into one signed fresh root,
 retain the old repository as a private archive, bootstrap and govern a separate
@@ -23,9 +22,10 @@ rulesets, Actions and security settings, unauthenticated GitHub verification,
 repository publication tooling, Gitleaks, `govulncheck`, CycloneDX, Makefile
 gates, and a separate local clone.
 
-**Status:** active-plan
+**Status:** historical
 **Created:** 2026-08-09
-**Plan state:** Approved design; execution pending
+**Completed:** 2026-08-11
+**Plan state:** Completed; clean root, private archive, public promotion, and canonical clone verified
 
 > **Ownership:** clean-root assembly, remote bootstrap, visibility promotion,
 > and post-public acceptance from the
@@ -88,7 +88,7 @@ gates, and a separate local clone.
 - Candidate-generated: `sbom.cdx.json`
 - Private evidence: `build/publication/root-assembly.json`
 
-- [ ] **Step 1: Re-run the exact private candidate gates**
+- [x] **Step 1: Re-run the exact private candidate gates**
 
 ```bash
 git status --short
@@ -105,7 +105,7 @@ git diff --check
 Expected: status is empty, `change-evidence` is `evidence_ready`, and every
 gate exits 0.
 
-- [ ] **Step 2: Materialize into a new empty directory**
+- [x] **Step 2: Materialize into a new empty directory**
 
 ```bash
 public_parent=$(mktemp -d "<temporary-directory>/public-root.XXXXXX")
@@ -120,7 +120,7 @@ go run ./scripts/publication check-tree --config quality/publication.yaml --root
 Expected: the output is outside the private checkout, contains no `.git`, and
 passes the candidate tree policy.
 
-- [ ] **Step 3: Generate the redacted manifest and verify payload digest**
+- [x] **Step 3: Generate the redacted manifest and verify payload digest**
 
 ```bash
 go run ./scripts/publication manifest --config quality/publication.yaml --root "$public_root" --output "$public_root/PUBLICATION_MANIFEST.json"
@@ -132,13 +132,13 @@ The manifest's payload digest excludes the manifest itself to avoid a
 self-reference. The private evidence file records `source_commit`; the public
 manifest records only public payload digests and check statuses.
 
-- [ ] **Step 4: Resolve and approve public commit identity**
+- [x] **Step 4: Resolve and approve public commit identity**
 
 Use the separately approved public author identity and signing capability. Read
 back the approved public identity without displaying private author data. If
 the identity or signature verification is not approved, stop.
 
-- [ ] **Step 5: Create one signed root**
+- [x] **Step 5: Create one signed root**
 
 ```bash
 git -C "$public_root" init -b master
@@ -162,7 +162,7 @@ Expected: one verified root commit with no parent and no tag.
 - Tracked desired state: `.github/repository-settings.json`
 - Tracked ruleset: `.github/rulesets/master.json`
 
-- [ ] **Step 1: Verify current remote facts**
+- [x] **Step 1: Verify current remote facts**
 
 ```bash
 gh repo view "<private-source-repository>" --json nameWithOwner,visibility,defaultBranchRef,url,description,mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed,deleteBranchOnMerge
@@ -175,7 +175,7 @@ Expected before rename: `<private-source-repository>` exists and is private;
 `<public-repository>` and `<private-archive>` do not exist. An existing
 target name is a hard stop, never an overwrite/delete instruction.
 
-- [ ] **Step 2: Export audit-only inventories**
+- [x] **Step 2: Export audit-only inventories**
 
 Use authenticated read-only GitHub API calls to record repository settings,
 rulesets/protection visibility, tags/releases, open/closed PR and issue counts,
@@ -183,7 +183,7 @@ Actions workflow/run/artifact counts, and security-feature status under
 `build/publication`. Do not export bodies, comments, logs, artifacts, or
 credentials.
 
-- [ ] **Step 3: Present the pre-remote readback**
+- [x] **Step 3: Present the pre-remote readback**
 
 Read back:
 
@@ -195,14 +195,14 @@ Read back:
   blocker; and
 - the fact that rename changes existing clone URLs but exposes nothing.
 
-- [ ] **Step 4: Stop until the user approves archive rename and private
+- [x] **Step 4: Stop until the user approves archive rename and private
 bootstrap**
 
 Do not issue any repository PATCH/CREATE/PUSH before this approval.
 
 ## Task 3: Rename The Archive And Bootstrap Private YHC
 
-- [ ] **Step 1: Rename the old repository and verify privacy**
+- [x] **Step 1: Rename the old repository and verify privacy**
 
 ```bash
 gh api --method PATCH "repos/<private-source-repository>" -f "name=<private-archive-name>"
@@ -211,7 +211,7 @@ gh repo view "<private-archive>" --json nameWithOwner,visibility,defaultBranchRe
 
 Expected: exact owner/name, `PRIVATE`, default `master`.
 
-- [ ] **Step 2: Repoint only the old clone to the archive**
+- [x] **Step 2: Repoint only the old clone to the archive**
 
 Run from `<local-checkout>`:
 
@@ -224,7 +224,7 @@ git fetch origin --prune
 Expected: every existing worktree still shares the archive remote. Do not
 switch, reset, merge, or delete active private branches.
 
-- [ ] **Step 3: Create the new private repository**
+- [x] **Step 3: Create the new private repository**
 
 ```bash
 gh repo create "<public-repository>" --private --description "YHC — Yet Hooked on Coding" --disable-wiki
@@ -235,7 +235,7 @@ Expected: `<public-repository>` exists and is `PRIVATE`. If creation fails after
 archive rename, leave the archive name in place and diagnose; do not
 automatically rename it back.
 
-- [ ] **Step 4: Push the sole bootstrap root**
+- [x] **Step 4: Push the sole bootstrap root**
 
 ```bash
 git -C "$public_root" remote add origin "<public-repository-remote>"
@@ -248,7 +248,7 @@ This direct push occurs before the ruleset and is the one bootstrap exception.
 
 ## Task 4: Configure Private Staging Governance
 
-- [ ] **Step 1: Apply repository metadata and merge policy**
+- [x] **Step 1: Apply repository metadata and merge policy**
 
 ```bash
 gh api --method PATCH "repos/<public-repository>" --input "$public_root/.github/repository-settings.json"
@@ -256,7 +256,7 @@ gh api --method PUT "repos/<public-repository>/actions/permissions" -F enabled=t
 gh api --method PUT "repos/<public-repository>/actions/permissions/workflow" -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
 ```
 
-- [ ] **Step 2: Enable dependency and private-reporting features**
+- [x] **Step 2: Enable dependency and private-reporting features**
 
 ```bash
 gh api --method PUT "repos/<public-repository>/vulnerability-alerts"
@@ -267,7 +267,7 @@ gh api --method PUT "repos/<public-repository>/private-vulnerability-reporting"
 If a feature is unavailable while private, record `not_available_private` and
 make it a required immediate post-public action; do not report it as enabled.
 
-- [ ] **Step 3: Create and verify the master ruleset**
+- [x] **Step 3: Create and verify the master ruleset**
 
 ```bash
 gh api --method POST "repos/<public-repository>/rulesets" --input "$public_root/.github/rulesets/master.json"
@@ -275,10 +275,10 @@ gh api "repos/<public-repository>/rulesets"
 ```
 
 The active ruleset targets `master`, blocks force push and deletion, requires
-PRs, conversation resolution, and `CI / Required gates`, with zero human
+PRs, conversation resolution, and `Required gates`, with zero human
 approvals until a second maintainer. It has no reusable direct-push bypass.
 
-- [ ] **Step 4: Read back desired state**
+- [x] **Step 4: Read back desired state**
 
 Compare live repository, Actions, workflow-permission, security, and ruleset
 JSON with the tracked desired-state files. Any mismatch blocks re-clone
@@ -286,7 +286,7 @@ acceptance.
 
 ## Task 5: Re-Clone And Verify What GitHub Stores
 
-- [ ] **Step 1: Clone the private remote into a second new directory**
+- [x] **Step 1: Clone the private remote into a second new directory**
 
 ```bash
 remote_clone=$(mktemp -d "<temporary-directory>/remote-verification.XXXXXX")
@@ -323,7 +323,7 @@ and no replace refs. The public root may reuse object IDs for identical file
 blobs, but it must share no reachable commit, tag, ref-target, or parent history
 with the private archive.
 
-- [ ] **Step 2: Compare payload and root identity**
+- [x] **Step 2: Compare payload and root identity**
 
 ```bash
 test "$(git -C "$remote_clone" rev-parse HEAD)" = "$remote_root"
@@ -334,9 +334,14 @@ Compare the repository-owned payload digest and `PUBLICATION_MANIFEST.json`
 against the signed local root. Keep the Git commit SHA separate from the
 content-tree digest. The Step 1 commit/ref-target intersections, empty public
 tag set, and parentless public root are the executable proof; do not require
-zero blob-ID intersection.
+zero blob-ID intersection. When `publication-check-tree` runs at the root of
+the current clean source checkout, it excludes only that root's `.git`
+metadata from the payload digest and accepts ordinary clone directory modes
+that grant the owner `rwx` while granting no group/other write bit. Detached
+publication trees retain the stricter `0700` directory contract, and
+`verify-publication-tree` still requires `.git` to be absent.
 
-- [ ] **Step 3: Run all gates from the remote clone**
+- [x] **Step 3: Run all gates from the remote clone**
 
 ```bash
 make -C "$remote_clone" fmt-check
@@ -355,11 +360,11 @@ the filesystem and the fresh one-commit Git database. Expected: all pass.
 
 ## Task 6: Refresh Facts And Stop For Publication Approval
 
-- [ ] Re-query both repository visibilities, remote root SHA, default branch,
+- [x] Re-query both repository visibilities, remote root SHA, default branch,
   merge settings, Actions permissions, security settings, and master ruleset.
-- [ ] Re-run secret/privacy/license/vulnerability/provenance checks and compare
+- [x] Re-run secret/privacy/license/vulnerability/provenance checks and compare
   the remote payload digest.
-- [ ] Present the publication readback:
+- [x] Present the publication readback:
 
   - `<private-archive>` is private;
   - `<public-repository>` is private;
@@ -370,12 +375,12 @@ the filesystem and the fresh one-commit Git database. Expected: all pass.
   - the exact root SHA to expose; and
   - publication cannot be retracted after visibility changes.
 
-- [ ] Stop until the user explicitly approves changing only
+- [x] Stop until the user explicitly approves changing only
   `<public-repository>` to public.
 
 ## Task 7: Promote Visibility And Accept Public CI
 
-- [ ] **Step 1: Change only YHC visibility**
+- [x] **Step 1: Change only YHC visibility**
 
 ```bash
 gh api --method PATCH "repos/<public-repository>" -f visibility=public
@@ -385,19 +390,19 @@ gh repo view "<private-archive>" --json nameWithOwner,visibility,defaultBranchRe
 
 Expected: YHC `PUBLIC`, archive `PRIVATE`.
 
-- [ ] **Step 2: Verify logged-out visibility**
+- [x] **Step 2: Verify logged-out visibility**
 
 Use an unauthenticated GitHub API request and logged-out browser view. YHC must
 return public repository metadata; the archive must not expose repository
 metadata. Do not infer logged-out behavior from an authenticated `gh` response.
 
-- [ ] **Step 3: Finish public-only security enablement**
+- [x] **Step 3: Finish public-only security enablement**
 
 Retry any security feature recorded `not_available_private`, verify secret
 scanning/Dependabot alerts/private reporting/CodeQL availability, and read back
 the exact status.
 
-- [ ] **Step 4: Dispatch and watch CI on the exact root**
+- [x] **Step 4: Dispatch and watch CI on the exact root**
 
 ```bash
 gh workflow run CI --repo "<public-repository>" --ref master
@@ -412,10 +417,10 @@ gh run watch "$public_run" --repo "<public-repository>" --exit-status
 gh run view "$public_run" --repo "<public-repository>"
 ```
 
-Expected: `CI / Required gates` succeeds on `remote_root`. Inspect CodeQL
+Expected: `Required gates` succeeds on `remote_root`. Inspect CodeQL
 separately and do not call it required-gate success.
 
-- [ ] **Step 5: Handle failure by class**
+- [x] **Step 5: Handle failure by class**
 
 If a secret/private-content finding appears, begin incident handling and stop.
 If only CI/runtime acceptance fails, keep YHC non-canonical and repair via a
@@ -423,7 +428,7 @@ short-lived public PR; do not use another direct-master push.
 
 ## Task 8: Establish The Separate Canonical Clone And Close Out
 
-- [ ] **Step 1: Clone YHC separately**
+- [x] **Step 1: Clone YHC separately**
 
 ```bash
 git clone "<public-repository-remote>" "<publication-tree>"
@@ -434,14 +439,14 @@ git -C "<local-checkout>" remote -v
 Expected: the new clone points to public YHC; the old multi-worktree clone
 points only to the private archive.
 
-- [ ] **Step 2: Verify normal post-bootstrap workflow**
+- [x] **Step 2: Verify normal post-bootstrap workflow**
 
 Create a short-lived documentation branch in the new clone, update plan
-closeout state, open a PR, require `CI / Required gates`, squash merge, and
+closeout state, open a PR, require `Required gates`, squash merge, and
 delete the branch. This proves the configured rules rather than only reading
 their JSON.
 
-- [ ] **Step 3: Record terminal evidence**
+- [x] **Step 3: Record terminal evidence**
 
 Record public root SHA, public workflow run ID, CodeQL state, archive/public
 visibility readbacks, repository-rules readback, and separate-clone remotes in

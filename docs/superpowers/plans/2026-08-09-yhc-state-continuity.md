@@ -1,9 +1,8 @@
 # YHC State Continuity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `$iteration-workflow` and `$runtime-depth-change` to execute and close this
-> state-sensitive plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed state
+> continuity migration and acceptance evidence. Future changes follow the
+> current repository workflow; no live worker instruction remains.
 
 **Goal:** Preserve recoverable session, transcript, WorkBoard, scheduler, and
 owned-worktree continuity while moving all new default writes to YHC roots and
@@ -23,9 +22,10 @@ session catalog locks, `os.OpenRoot`, durable journals, atomic rename/fsync,
 Cobra/TUI resume flows, cron parsing, Git worktree identity, race/failpoint/E2E
 tests, and Makefile gates.
 
-**Status:** active-plan
+**Status:** historical
 **Created:** 2026-08-09
-**Plan state:** Tasks 1-6 complete; downstream publication clearance pending
+**Completed:** 2026-08-11
+**Plan state:** Completed; Tasks 1-6 and downstream publication clearance passed
 
 > **Ownership:** session bundle, cron, and worktree rows of the
 > [YHC state compatibility matrix](../specs/2026-08-09-yhc-public-release-design.md#state-owners-migrate-their-own-artifacts).
@@ -556,8 +556,7 @@ read twice through its pinned private store, which rejects non-`0600`, linked,
 or replaced files. Focused tests, race tests, `make fmt`, `make lint`,
 `make test`, `make build`, `make docs-check`, `make test-contract`,
 `make test-e2e`, `git diff --check`, and an independent remediation re-review
-passed on the final Task 6 diff. `make publication-check-policy` was also run
-and remains red only because `.agents/skill-runtime/skill_log.py` retains its
-pre-existing `unresolved` publication decision. That classification belongs to
-the downstream publication-readiness plan and remains a public-release blocker;
-it is not represented as a passing Task 6 gate.
+passed on the final Task 6 diff. Publication Readiness later resolved the
+`.agents/skill-runtime/skill_log.py` classification, after which
+`make publication-check-policy` passed without changing the state-continuity
+runtime contract.

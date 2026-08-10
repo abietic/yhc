@@ -1,9 +1,8 @@
 # YHC Public Release Program Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `$iteration-workflow` to execute and close this plan task-by-task. Preserve
-> every approval boundary and evidence requirement. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed YHC public
+> release program. Future changes use the normal protected-branch workflow.
+> Checkboxes remain as closeout evidence; no live worker instruction remains.
 
 **Goal:** Release YHC — Yet Hooked on Coding from a cleared fresh Git root at
 `<public-repository>`, retain the complete old history in the private
@@ -21,14 +20,32 @@ visibility promotion, and canonical cutover are separate stop points.
 GitHub CLI/API, Makefile iteration gates, `govulncheck`, secret and license
 scanners, CycloneDX SBOM, and repository-owned publication tooling.
 
-**Status:** active-plan
+**Status:** historical
 **Created:** 2026-08-09
-**Plan state:** Approved design; execution pending
+**Completed:** 2026-08-11
+**Plan state:** Completed; public YHC is canonical and the source archive remains private
 
 > **Ownership:** execution order, integration boundaries, and terminal
 > acceptance for the approved
 > [YHC Public Release And Identity Migration Design](../specs/2026-08-09-yhc-public-release-design.md).
 > Each leaf plan owns its named implementation surface.
+
+## Terminal Evidence
+
+| Boundary | Verified result |
+|---|---|
+| Public repository | [`abietic/yhc`](https://github.com/abietic/yhc) is public, defaults to `master`, uses Apache-2.0, permits squash merge only, and deletes merged branches. |
+| Private archive | The retained source archive is private; an unauthenticated repository lookup returns `404`. |
+| Fresh public history | Root `8e34cc4794f0e1e9ae404c5bcf453d5e71a159c0` has a valid signature, no parent, no tags, and no reachable commit or ref-target intersection with the archive. |
+| Bootstrap repair | Root CI run `31385673631` exposed an unreachable-base classification defect. PR [#9](https://github.com/abietic/yhc/pull/9) repaired it through the protected workflow; `d050df7b9a84e95284caf7a812ef3254aee2e36f` passed CI run `31404135021` and CodeQL run `31404135235`. |
+| Dependency security | PR [#10](https://github.com/abietic/yhc/pull/10) upgraded `golang.org/x/crypto` to `v0.52.0`; GitHub marks all 13 resulting Dependabot alerts `fixed`, with none dismissed. |
+| Branch governance | `master` requires pull requests, resolved conversations, strict `Required gates`, and linear history; deletion and force-push are blocked and no bypass actor is configured. |
+| Security controls | Secret scanning, push protection, Dependabot alerts/security updates, automated security fixes, private vulnerability reporting, and CodeQL are enabled. Non-provider secret patterns are unavailable for this user-owned public repository and are not reported as enabled. |
+| Clone separation | The canonical development clone resolves to `abietic/yhc`; the pre-publication multi-worktree clone resolves only to the private archive. |
+
+The live ruleset and its tracked template both use the actual GitHub check-run
+name, `Required gates`. The closeout pull request is the final proof that the
+post-bootstrap protected workflow remains usable.
 
 ## Global Constraints
 
@@ -72,7 +89,7 @@ scanners, CycloneDX SBOM, and repository-owned publication tooling.
   rolled back by later making the repository private.
 - The initial public root push is the sole direct-`master` bootstrap exception.
   Every later change uses a short-lived branch, pull request, squash merge, and
-  `CI / Required gates`.
+  `Required gates`.
 - Preserve unrelated dirty or untracked files. The known main-checkout
   `PROJECT_GUIDE.md`, `artifacts/`, and `scripts/e2e/` entries are user-owned
   and outside this program.
@@ -154,7 +171,7 @@ git diff --check
   default branch, staging start/final commits, and clean-status result without
   secrets.
 
-- [ ] **Step 1: Create a dedicated clean release worktree**
+- [x] **Step 1: Create a dedicated clean release worktree**
 
 ```bash
 git merge-base --is-ancestor "<approved-source-baseline>" HEAD
@@ -169,7 +186,7 @@ its branch is based on the plan-bearing commit. The caller checkout's branch,
 tracked changes, and untracked files are unchanged. Every remaining command in
 this program and its leaf plans runs with workdir `release_stage`.
 
-- [ ] **Step 2: Record the baseline and staging start**
+- [x] **Step 2: Record the baseline and staging start**
 
 Run Publication Readiness Task 1, set `source.baseline_commit` to the approved
 source baseline, and record the output of
@@ -177,7 +194,7 @@ source baseline, and record the output of
 checker rejects a dirty tree, a source commit that is not current HEAD, or a
 source commit that is not a descendant of the frozen baseline.
 
-- [ ] **Step 3: Commit the frozen input**
+- [x] **Step 3: Commit the frozen input**
 
 ```bash
 git add quality/publication.yaml scripts/publication
@@ -191,10 +208,10 @@ Execute Tasks 1-2 of
 tracked path is unresolved or any ignored/untracked path enters the candidate
 tree.
 
-- [ ] Initial inventory is complete for every tracked path.
-- [ ] `.reference/`, `.git`, local state, credentials, build/evaluation output,
+- [x] Initial inventory is complete for every tracked path.
+- [x] `.reference/`, `.git`, local state, credentials, build/evaluation output,
   and user-owned untracked files are negative fixtures.
-- [ ] Materialization from a dirty or mismatched source commit fails closed.
+- [x] Materialization from a dirty or mismatched source commit fails closed.
 
 ## Task 3: Implement Identity And Compatibility
 
@@ -205,11 +222,11 @@ Execute, in dependency order:
 3. [State continuity](2026-08-09-yhc-state-continuity.md); and
 4. [Protocol compatibility](2026-08-09-yhc-protocol-compatibility.md).
 
-- [ ] Every leaf focused test is green before its commit.
-- [ ] Characterization tests prove the approved runtime invariants did not
+- [x] Every leaf focused test is green before its commit.
+- [x] Characterization tests prove the approved runtime invariants did not
   change.
-- [ ] No legacy state sample is deleted, chmodded, rewritten, or merged.
-- [ ] Historical and compatibility references to the old identity remain only
+- [x] No legacy state sample is deleted, chmodded, rewritten, or merged.
+- [x] Historical and compatibility references to the old identity remain only
   where the publication identity checker explicitly permits them.
 
 ## Task 4: Close Publication Readiness
@@ -217,14 +234,14 @@ Execute, in dependency order:
 Execute Tasks 3-8 of
 [Publication readiness](2026-08-09-yhc-publication-readiness.md).
 
-- [ ] The path and source-mapping inventories contain no `unresolved` decision.
-- [ ] Every reference-informed implementation is cleared or replaced behind
+- [x] The path and source-mapping inventories contain no `unresolved` decision.
+- [x] Every reference-informed implementation is cleared or replaced behind
   pre-existing behavior tests.
-- [ ] `govulncheck ./...` reports no reachable known vulnerability.
-- [ ] Dependency licenses and required notices are complete.
-- [ ] Secret and privacy scanners pass on the source tree, materialized tree,
+- [x] `govulncheck ./...` reports no reachable known vulnerability.
+- [x] Dependency licenses and required notices are complete.
+- [x] Secret and privacy scanners pass on the source tree, materialized tree,
   fresh object database, workflow files, and release artifacts.
-- [ ] Apache-2.0, NOTICE, security, contribution, conduct, dependency update,
+- [x] Apache-2.0, NOTICE, security, contribution, conduct, dependency update,
   SBOM, and public CI governance files are present.
 
 ## Task 5: Run The Private Candidate Acceptance
@@ -234,7 +251,7 @@ Execute Tasks 3-8 of
 - Generated outside Git: `build/publication/acceptance.json`
 - Generated public artifact: `sbom.cdx.json`
 
-- [ ] **Step 1: Run repository gates**
+- [x] **Step 1: Run repository gates**
 
 ```bash
 make fmt
@@ -247,7 +264,7 @@ git diff --check
 
 Expected: all commands exit 0.
 
-- [ ] **Step 2: Run deep compatibility and publication gates**
+- [x] **Step 2: Run deep compatibility and publication gates**
 
 ```bash
 make test-race
@@ -259,7 +276,7 @@ make verify-publication
 Expected: all commands exit 0; skipped physical-terminal or platform evidence
 is reported separately and is not mislabeled as passed.
 
-- [ ] **Step 3: Commit the final private candidate**
+- [x] **Step 3: Commit the final private candidate**
 
 ```bash
 git add --pathspec-from-file=build/publication/candidate-stage-paths.txt --pathspec-file-nul
@@ -271,7 +288,7 @@ git commit -m "chore: prepare cleared YHC public root"
 inventory and current planned diff. It excludes unrelated and ignored paths.
 Inspect `git status --short` and the staged diff before committing.
 
-- [ ] **Step 4: Persist merge evidence**
+- [x] **Step 4: Persist merge evidence**
 
 ```bash
 env GOCACHE="<task-cache>" make verify-merge
@@ -285,15 +302,17 @@ commit.
 
 Follow [Clean-root cutover](2026-08-09-yhc-clean-root-cutover.md) exactly.
 
-- [ ] Pre-remote readback confirms the exact source commit, candidate tree hash,
+- [x] Pre-remote readback confirms the exact source commit, candidate tree hash,
   archive target, public target, author identity, and all gate results.
-- [ ] After explicit approval, rename the old remote, keep it private, and
+- [x] After explicit approval, rename the old remote, keep it private, and
   bootstrap the new private staging repository.
-- [ ] Re-clone and re-run all publication gates on GitHub's exact root object.
-- [ ] Immediately before visibility promotion, refresh remote and scanner facts
+- [x] Re-clone and re-run all publication gates on GitHub's exact root object.
+- [x] Immediately before visibility promotion, refresh remote and scanner facts
   and obtain the publication approval.
-- [ ] After approval, expose only `<public-repository>`, run the public workflow, and
-  keep YHC non-canonical until `CI / Required gates` succeeds on the root.
+- [x] After approval, expose only `<public-repository>` and run the public
+  workflow. The root run exposed the unreachable-base defect, so YHC remained
+  non-canonical until PR #9 repaired it and `Required gates` passed on the
+  exact successor commit.
 
 ## Task 7: Close The Program
 
@@ -304,14 +323,14 @@ Follow [Clean-root cutover](2026-08-09-yhc-clean-root-cutover.md) exactly.
 - Modify: `README.md` only if final public URLs or badges differ from the
   already-reviewed candidate
 
-- [ ] Record the public root SHA, private archive visibility verification,
+- [x] Record the public root SHA, private archive visibility verification,
   public workflow run ID, and separate-clone path without recording tokens,
   private email, removed paths, or scanner findings.
-- [ ] Change every leaf plan state from `Approved design; execution pending` to
+- [x] Change every leaf plan state from `Approved design; execution pending` to
   its evidence-backed terminal state.
-- [ ] Run `make docs-check` and `git diff --check`.
-- [ ] Open the first normal YHC pull request for closeout documentation; do not
-  use the bootstrap exception again.
+- [x] Run `make docs-check` and `git diff --check`.
+- [x] Open the normal YHC closeout pull request; do not use the bootstrap
+  exception again.
 
 The program is complete only when the public required check is green and the
 separate YHC clone is the canonical development home. A public visibility field

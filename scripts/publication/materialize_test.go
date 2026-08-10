@@ -803,6 +803,55 @@ func TestCheckTreeRejectsSpecialFilesAndNoncanonicalModes(t *testing.T) {
 	}
 }
 
+func TestCheckTreeAcceptsStandardCloneModesButRejectsWritableDirectories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix directory mode assertions are not available")
+	}
+	repo, config, _ := materializerFixture(t)
+	clone := filepath.Join(t.TempDir(), "clone")
+	runGit(t, filepath.Dir(clone), "clone", "-q", repo, clone)
+	for _, directory := range []string{
+		clone,
+		filepath.Join(clone, ".git"),
+		filepath.Join(clone, "docs"),
+		filepath.Join(clone, "docs", "migration"),
+	} {
+		if err := os.Chmod(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inRepo(t, clone, func() {
+		if _, err := checkTree(context.Background(), config, clone); err != nil {
+			t.Fatalf("rejected standard clone directory modes: %v", err)
+		}
+	})
+
+	for _, directory := range []string{clone, filepath.Join(clone, "docs"), filepath.Join(clone, ".git")} {
+		if err := os.Chmod(directory, 0o775); err != nil {
+			t.Fatal(err)
+		}
+		inRepo(t, clone, func() {
+			if _, err := checkTree(context.Background(), config, clone); err == nil {
+				t.Fatalf("accepted group-writable checkout directory %q", directory)
+			}
+		})
+		if err := os.Chmod(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, directory := range []string{clone, filepath.Join(clone, ".git"), filepath.Join(clone, "docs"), filepath.Join(clone, "docs", "migration")} {
+		if err := os.Chmod(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inRepo(t, repo, func() {
+		if _, err := checkTree(context.Background(), config, clone); err == nil || !strings.Contains(err.Error(), "forbidden publication root") {
+			t.Fatalf("accepted Git metadata outside the current source root: %v", err)
+		}
+	})
+}
+
 func TestCheckTreePinsRootDirectoriesAndFilesAgainstReplacement(t *testing.T) {
 	tests := []struct {
 		name  string

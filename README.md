@@ -76,9 +76,8 @@ accepted slice.
 CI runs Makefile formatting, test, cross-platform build, and incremental v2
 lint gates; local development retains the full v1 `make lint` baseline. The
 versioned pre-push hook is a local guard, not access control: server-side branch
-protection must still require PRs, the
-`CI / Required gates` check, linear history, and resolved conversations when
-the repository's GitHub plan supports those controls.
+protection requires PRs, the `Required gates` check, linear history, and
+resolved conversations.
 
 ## Documentation
 
