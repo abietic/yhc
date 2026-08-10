@@ -366,7 +366,8 @@ secret-check: prepare-gitleaks
 
 sbom: prepare-cyclonedx-gomod
 	@install -d -m 0700 $(PUBLICATION_REPORT_DIR)
-	@task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
+	@set -e; \
+		task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
 		cleanup() { case "$$task_tree_parent" in /tmp/yhc-sbom-tree.*) rm -rf -- "$$task_tree_parent" ;; esac; }; \
 		trap cleanup EXIT; \
 		task_source_commit="$$(git rev-parse HEAD)"; \

@@ -124,6 +124,7 @@ func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
 	}
 	sbomTarget := makefile[sbomStart:licenseStart]
 	for _, contract := range []string{
+		`@set -e;`,
 		`publication materialize --config $(PUBLICATION_CONFIG)`,
 		`cd "$$task_tree_parent/tree"`,
 		`-output $(PUBLICATION_SBOM_GENERATED) .`,
@@ -131,6 +132,15 @@ func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
 		if !strings.Contains(sbomTarget, contract) {
 			t.Fatalf("SBOM generation does not retain VCS-free contract %q", contract)
 		}
+	}
+	publicationStart := strings.Index(ci, "  publication-safety:\n")
+	requiredStart := strings.Index(ci, "  required:\n")
+	if publicationStart < 0 || requiredStart <= publicationStart {
+		t.Fatal("CI lacks a bounded publication-safety job")
+	}
+	publicationJob := ci[publicationStart:requiredStart]
+	if !strings.Contains(publicationJob, "fetch-depth: 0") {
+		t.Fatal("publication safety must fetch the signed public baseline history")
 	}
 	required := ci[strings.Index(ci, "  required:\n"):]
 	if !strings.Contains(required, "- publication-safety") || !strings.Contains(required, "PUBLICATION_SAFETY_RESULT") {
