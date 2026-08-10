@@ -208,8 +208,8 @@ func TestRepositoryDesiredStateMatchesApprovedRules(t *testing.T) {
 	}
 	if !strings.Contains(string(mustJSON(t, ruleset)), `"required_approving_review_count":0`) ||
 		!strings.Contains(string(mustJSON(t, ruleset)), `"required_review_thread_resolution":true`) ||
-		!strings.Contains(string(mustJSON(t, ruleset)), `"CI / Required gates"`) {
-		t.Fatal("master ruleset must require resolved conversations, zero approvals, and CI / Required gates")
+		!strings.Contains(string(mustJSON(t, ruleset)), `"Required gates"`) {
+		t.Fatal("master ruleset must require resolved conversations, zero approvals, and Required gates")
 	}
 }
 

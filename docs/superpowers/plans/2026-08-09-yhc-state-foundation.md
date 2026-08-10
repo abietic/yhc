@@ -1,9 +1,8 @@
 # YHC State Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `$iteration-workflow` and `$runtime-depth-change` to execute and close this
-> state-sensitive plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed state
+> foundation and its safety evidence. Future state changes follow the current
+> repository workflow; no live worker instruction remains.
 
 **Goal:** Make `<project>/.yhc` and `~/.yhc` the canonical default write roots,
 provide a root-pinned exact-artifact importer, and migrate only validated
@@ -22,9 +21,10 @@ enumerating credentials.
 schemas, Cobra, secure file modes, atomic rename/fsync, race and failpoint tests,
 and existing permission/memory/TUI oracles.
 
-**Status:** active-plan
+**Status:** historical
 **Created:** 2026-08-09
-**Plan state:** Tasks 1-5 complete; Task 6 verification in progress
+**Completed:** 2026-08-11
+**Plan state:** Completed; Tasks 1-6 and downstream publication policy passed
 
 > **Ownership:** canonical roots, generic import safety, and plain state owners
 > from the [YHC public-release design](../specs/2026-08-09-yhc-public-release-design.md).
@@ -212,7 +212,7 @@ without following a missing final component. The initial command lists only
 registered owner names and invokes injected inspect/apply functions; it does not
 walk files or initialize the model runtime.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ```bash
 go test ./internal/statepath ./cmd/yhc/cmd -run 'Test(ProjectAndUserRoots|CanonicalAndLegacyOverrides|EmptyCanonicalOverride|InvalidCanonicalOverride|MigrateState)' -count=1
@@ -507,7 +507,7 @@ go test ./internal/statepath ./internal/statemigration ./tools ./engine/memdir .
 go test -race ./internal/statemigration ./engine/permission -run 'Test(ImporterConcurrent|ReviewAuditMigration)' -count=1
 ```
 
-- [ ] Run repository gates:
+- [x] Run repository gates:
 
 ```bash
 make fmt
@@ -531,11 +531,10 @@ git diff --check
   one-owner admission, destination refusal, and legacy byte/mode/mtime
   immutability.
 
-> **Publication dependency:** the ordinary repository gates above are green,
-> but `make publication-check-policy` intentionally remains fail-closed while
-> Publication Readiness Task 3 still has unresolved per-path provenance
-> decisions. Do not close the repository-gates checkbox or weaken the policy;
-> rerun it after that task resolves every path.
+> **Historical publication result:** Publication Readiness Task 3 resolved the
+> remaining per-path provenance decisions without weakening the policy.
+> `make publication-check-policy` and the repository gates then passed, so the
+> deferred repository-gates checkbox is closed.
 
 This plan is not complete if the session picker can write a legacy transcript,
 if cron was imported, or if a worktree moved; those are state-continuity

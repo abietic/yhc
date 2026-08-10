@@ -482,7 +482,7 @@ artifacts.
 Desired state enables squash-only, delete-on-merge, read-only workflow tokens,
 no token-based PR approvals, SHA pinning, PR/conversation resolution, no human
 approval until a second maintainer, no force push/deletion, and
-`CI / Required gates`.
+`Required gates`.
 
 - [x] **Step 3: Run green and commit**
 

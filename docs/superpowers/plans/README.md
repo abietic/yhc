@@ -1,20 +1,20 @@
 # Implementation Plan Index
 
 **Status:** active-plan
-**Last verified:** 2026-08-10
+**Last verified:** 2026-08-11
 
 > **Ownership:** discoverability and lifecycle routing for task-level
 > implementation plans
 
 | Plan | Owning accepted contract | State |
 |---|---|---|
-| [`2026-08-09-yhc-public-release-program.md`](2026-08-09-yhc-public-release-program.md) | [YHC Public Release And Identity Migration design](../specs/2026-08-09-yhc-public-release-design.md) | Active; local staging in progress |
+| [`2026-08-09-yhc-public-release-program.md`](2026-08-09-yhc-public-release-program.md) | [YHC Public Release And Identity Migration design](../specs/2026-08-09-yhc-public-release-design.md) | Historical; completed 2026-08-11 |
 | [`2026-08-09-yhc-publication-readiness.md`](2026-08-09-yhc-publication-readiness.md) | [YHC publication boundary, security gates, and governance](../specs/2026-08-09-yhc-public-release-design.md#public-content-boundary) | Executed and retained as closeout evidence |
-| [`2026-08-09-yhc-core-identity.md`](2026-08-09-yhc-core-identity.md) | [YHC identity and environment compatibility contract](../specs/2026-08-09-yhc-public-release-design.md#identity-contract) | Active; implementation complete, awaiting program acceptance |
-| [`2026-08-09-yhc-state-foundation.md`](2026-08-09-yhc-state-foundation.md) | [YHC state-owner compatibility rules](../specs/2026-08-09-yhc-public-release-design.md#state-owners-migrate-their-own-artifacts) | Active; verification closeout in progress |
-| [`2026-08-09-yhc-state-continuity.md`](2026-08-09-yhc-state-continuity.md) | [YHC session, cron, and worktree continuity rules](../specs/2026-08-09-yhc-public-release-design.md#state-owners-migrate-their-own-artifacts) | Active; implementation complete, awaiting program acceptance |
-| [`2026-08-09-yhc-protocol-compatibility.md`](2026-08-09-yhc-protocol-compatibility.md) | [YHC ACP and MCP compatibility contract](../specs/2026-08-09-yhc-public-release-design.md#acp-selects-one-goal-namespace-per-connection) | Active; implementation complete, awaiting program acceptance |
-| [`2026-08-09-yhc-clean-root-cutover.md`](2026-08-09-yhc-clean-root-cutover.md) | [YHC repository topology, promotion, and public acceptance](../specs/2026-08-09-yhc-public-release-design.md#repository-topology-and-cutover) | Active; candidate refresh and cutover pending |
+| [`2026-08-09-yhc-core-identity.md`](2026-08-09-yhc-core-identity.md) | [YHC identity and environment compatibility contract](../specs/2026-08-09-yhc-public-release-design.md#identity-contract) | Historical; completed 2026-08-11 |
+| [`2026-08-09-yhc-state-foundation.md`](2026-08-09-yhc-state-foundation.md) | [YHC state-owner compatibility rules](../specs/2026-08-09-yhc-public-release-design.md#state-owners-migrate-their-own-artifacts) | Historical; completed 2026-08-11 |
+| [`2026-08-09-yhc-state-continuity.md`](2026-08-09-yhc-state-continuity.md) | [YHC session, cron, and worktree continuity rules](../specs/2026-08-09-yhc-public-release-design.md#state-owners-migrate-their-own-artifacts) | Historical; completed 2026-08-11 |
+| [`2026-08-09-yhc-protocol-compatibility.md`](2026-08-09-yhc-protocol-compatibility.md) | [YHC ACP and MCP compatibility contract](../specs/2026-08-09-yhc-public-release-design.md#acp-selects-one-goal-namespace-per-connection) | Historical; completed 2026-08-11 |
+| [`2026-08-09-yhc-clean-root-cutover.md`](2026-08-09-yhc-clean-root-cutover.md) | [YHC repository topology, promotion, and public acceptance](../specs/2026-08-09-yhc-public-release-design.md#repository-topology-and-cutover) | Historical; completed 2026-08-11 |
 | [`2026-08-09-iteration-quality-s5a-context-workspace.md`](2026-08-09-iteration-quality-s5a-context-workspace.md) | [S5 completion design](../specs/2026-08-09-iteration-quality-s5-completion-design.md) | Active; F0 executed, followed by A1-A3 |
 | [`2026-08-09-iteration-quality-s5b-regression-oracles.md`](2026-08-09-iteration-quality-s5b-regression-oracles.md) | [S5 completion design](../specs/2026-08-09-iteration-quality-s5-completion-design.md) | Ready after executed F0; B1 is the first regression slice |
 | [`2026-08-09-iteration-quality-s5c-measurement-readiness.md`](2026-08-09-iteration-quality-s5c-measurement-readiness.md) | [S5 completion design](../specs/2026-08-09-iteration-quality-s5-completion-design.md) | Ready after executed F0; C1 is the first measurement slice |

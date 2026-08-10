@@ -1,14 +1,15 @@
 # YHC Public Release And Identity Migration Design
 
-**Status:** active-plan
+**Status:** historical
 **Review:** approved 2026-08-09
 **Accepted direction:** 2026-08-09
+**Completed:** 2026-08-11
 **Source snapshot:** approved private-source baseline (recorded in private
 publication evidence)
 **Adoption:** `project-native`, with `preserve` for observable runtime behavior
 and source-mapping evidence
 
-> **Ownership:** approved publication boundary, repository topology, identity
+> **Ownership:** historical approved publication boundary, repository topology, identity
 > contract, compatibility rules, and promotion gates for releasing the current
 > private Eino-Agent project as the public YHC project; current runtime behavior
 > remains owned by [`docs/architecture/`](../../architecture/README.md), and
@@ -423,7 +424,7 @@ After visibility changes, verify through the GitHub API and a logged-out view:
 - `master` is the default branch;
 - only squash merging is enabled and merged branches are deleted;
 - force pushes and branch deletion are blocked;
-- pull requests and the `CI / Required gates` status are required;
+- pull requests and the `Required gates` status are required;
 - conversation resolution is required, while human approval is not required
   until a second active maintainer exists;
 - Actions has read-only default token permissions, untrusted fork workflows

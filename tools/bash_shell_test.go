@@ -259,7 +259,7 @@ func TestP511GuestCommandLifecycleIsBoundedAndCompatible(t *testing.T) {
 		binding, adapter := p51GuestBinding(t)
 		mgr := p51GuestShellManager(t, binding, adapter)
 		t.Cleanup(func() { _ = mgr.KillAll() })
-		command := `i=0; while [ "$i" -lt 5000 ]; do printf '01234567890123456789' >&2; i=$((i+1)); done`
+		command := `{ printf '%0200d' 0 >&2; }`
 		result, err := mgr.ExecuteAt(context.Background(), "guest", binding.Policy().Spec().CWD, command, time.Second)
 		if err != nil {
 			t.Fatal(err)

@@ -186,7 +186,7 @@ func materialize(ctx context.Context, config Config, sourceCommit, outputPath st
 		return errors.New("publication staging directory changed during copy")
 	}
 	stagePath := filepath.Join(parentPath, stageName)
-	summary, err := checkInventoryTreeWithEntries(ctx, stagePath, config, inv, false, payload.entries)
+	summary, err := checkInventoryTreeWithEntries(ctx, stagePath, config, inv, treeScanOptions{}, payload.entries)
 	if err != nil {
 		return fmt.Errorf("validate staged publication tree: %w", err)
 	}
@@ -665,11 +665,16 @@ func checkTree(ctx context.Context, config Config, rootPath string) (summary Tre
 		return TreeSummary{}, err
 	}
 	if sourceMode {
+		sourceCheckout, err := currentWorkingDirectoryIs(rootPath)
+		if err != nil {
+			return TreeSummary{}, err
+		}
 		payload, err := materializationPayloadSnapshot(snapshot)
 		if err != nil {
 			return TreeSummary{}, err
 		}
-		summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
+		options := treeScanOptions{allowManifest: true, sourceCheckout: sourceCheckout}
+		summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, options, payload.entries)
 		if err != nil {
 			return TreeSummary{}, err
 		}
@@ -679,7 +684,7 @@ func checkTree(ctx context.Context, config Config, rootPath string) (summary Tre
 		if err := verifyOptionalManifest(rootPath, summary); err != nil {
 			return TreeSummary{}, err
 		}
-		finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
+		finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, options, payload.entries)
 		if err != nil || finalSummary != summary {
 			return TreeSummary{}, errors.New("publication tree changed during checks")
 		}
@@ -718,6 +723,22 @@ func checkTree(ctx context.Context, config Config, rootPath string) (summary Tre
 		return TreeSummary{}, errors.New("publication manifest changed during checks")
 	}
 	return TreeSummary{SourceTreeSHA256: manifest.SourceTreeSHA256, TreeSHA256: digest, FileCount: len(records), SBOMSHA256: sbom}, nil
+}
+
+func currentWorkingDirectoryIs(path string) (bool, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false, err
+	}
+	cwdInfo, err := os.Lstat(cwd)
+	if err != nil {
+		return false, err
+	}
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		return false, err
+	}
+	return cwdInfo.IsDir() && pathInfo.IsDir() && os.SameFile(cwdInfo, pathInfo), nil
 }
 
 func sameReleaseManifest(left, right ReleaseManifest) bool {
@@ -778,11 +799,11 @@ func verifyOptionalManifest(rootPath string, summary TreeSummary) error {
 	return nil
 }
 
-func checkInventoryTreeWithEntries(ctx context.Context, root string, config Config, inv Inventory, allowManifest bool, entries []trackedEntry) (TreeSummary, error) {
+func checkInventoryTreeWithEntries(ctx context.Context, root string, config Config, inv Inventory, options treeScanOptions, entries []trackedEntry) (TreeSummary, error) {
 	if err := ctx.Err(); err != nil {
 		return TreeSummary{}, err
 	}
-	records, sbom, err := scanTree(root, config, allowManifest)
+	records, sbom, err := scanTreeWithOptions(root, config, options)
 	if err != nil {
 		return TreeSummary{}, err
 	}
@@ -843,14 +864,15 @@ func writeReleaseManifest(ctx context.Context, config Config, rootPath, outputPa
 	if err != nil {
 		return ReleaseManifest{}, err
 	}
-	summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
+	options := treeScanOptions{allowManifest: true}
+	summary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, options, payload.entries)
 	if err != nil {
 		return ReleaseManifest{}, err
 	}
 	if err := checkExpressionClean(ctx, config, rootPath); err != nil {
 		return ReleaseManifest{}, err
 	}
-	finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, true, payload.entries)
+	finalSummary, err := checkInventoryTreeWithEntries(ctx, rootPath, config, payload.inventory, options, payload.entries)
 	if err != nil || finalSummary != summary {
 		return ReleaseManifest{}, errors.New("publication tree changed during manifest checks")
 	}
@@ -872,14 +894,31 @@ func writeReleaseManifest(ctx context.Context, config Config, rootPath, outputPa
 	return m, nil
 }
 
+type treeScanOptions struct {
+	allowManifest  bool
+	sourceCheckout bool
+}
+
+func validPublicationDirectoryMode(mode os.FileMode, sourceCheckout bool) bool {
+	permissions := mode.Perm()
+	if !sourceCheckout {
+		return permissions == 0o700
+	}
+	return permissions&0o700 == 0o700 && permissions&0o022 == 0
+}
+
 func scanTree(rootPath string, config Config, allowManifest bool) ([]treeFile, string, error) {
+	return scanTreeWithOptions(rootPath, config, treeScanOptions{allowManifest: allowManifest})
+}
+
+func scanTreeWithOptions(rootPath string, config Config, options treeScanOptions) ([]treeFile, string, error) {
 	pinned, err := openPinnedDirectory(rootPath, "publication tree")
 	if err != nil {
 		return nil, "", err
 	}
 	defer pinned.Close()
 	root := pinned.root
-	if pinned.info.Mode().Perm() != 0o700 {
+	if !validPublicationDirectoryMode(pinned.info.Mode(), options.sourceCheckout) {
 		return nil, "", errors.New("publication tree root has noncanonical mode")
 	}
 	var files []treeFile
@@ -906,6 +945,13 @@ func scanTree(rootPath string, config Config, allowManifest bool) ([]treeFile, s
 			if prefix != "" {
 				full = prefix + "/" + name
 			}
+			if name == ".git" && prefix == "" && options.sourceCheckout {
+				info, err := dir.Lstat(name)
+				if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !validPublicationDirectoryMode(info.Mode(), true) {
+					return errors.New("publication checkout has unsafe Git metadata root")
+				}
+				continue
+			}
 			if name == ".git" || name == ".reference" || name == ".eino-agent" || name == ".yhc" || name == ".claude" {
 				return errors.New("forbidden publication root")
 			}
@@ -920,7 +966,7 @@ func scanTree(rootPath string, config Config, allowManifest bool) ([]treeFile, s
 				return errors.New("publication tree contains symlink")
 			}
 			if info.IsDir() {
-				if info.Mode().Perm() != 0o700 {
+				if !validPublicationDirectoryMode(info.Mode(), options.sourceCheckout) {
 					return errors.New("publication directory has noncanonical mode")
 				}
 				child, err := dir.OpenRoot(name)
@@ -950,7 +996,7 @@ func scanTree(rootPath string, config Config, allowManifest bool) ([]treeFile, s
 			if full == config.Mappings.Manifest && info.Size() > maximumMappingBytes {
 				return errors.New("publication mapping manifest is too large")
 			}
-			if full == publicationManifest && allowManifest {
+			if full == publicationManifest && options.allowManifest {
 				if info.Mode().Perm() != 0o644 {
 					return errors.New("publication manifest has noncanonical mode")
 				}
