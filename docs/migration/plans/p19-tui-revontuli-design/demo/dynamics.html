@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="polar-night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynamics — Revontuli</title>
+<link rel="stylesheet" href="assets/demo.css">
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="nav">
+    <span class="brand">✦ Revontuli</span>
+    <a href="index.html">Overview</a>
+    <a href="components.html">Components</a>
+    <a href="dynamics.html" class="on">Dynamics</a>
+    <a href="mascot.html">Mascot — Eno</a>
+    <a href="themes.html">Themes &amp; tokens</a>
+  </nav>
+
+  <h1>Dynamics</h1>
+  <p class="lede">How the interface moves: frame production, surface stacking, streaming updates,
+  animation cadence, and the performance budget that keeps it smooth. Every mechanism below either
+  <strong>already exists</strong> in <code>internal/tui/</code> (cited) or is marked as a
+  <strong>FOLLOW-ON CANDIDATE</strong> with its source reference. Candidates are not accepted P19 slices.</p>
+
+  <!-- ============ FRAME MODEL ============ -->
+  <h2>Frame production <span class="tag">how a frame is made</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> update pipeline</div>
+    <div class="screen"><span class="m">engine events</span> <span class="s">──▶</span> <span class="sk">eventChan</span> <span class="s">──▶</span> <span class="sk">30fps batch</span> <span class="s">(33ms / ≤64 events)</span> <span class="s">──▶</span> <span class="sk">Update</span> <span class="s">──▶</span> <span class="sk">View</span> <span class="s">──▶</span> <span class="sk">renderer line-diff</span>
+        <span class="s">existing: app.go:2089 · performance_bench_test.go:71 enforces the ceiling</span></div>
+  </div>
+  <ul>
+    <li><strong>Event-driven, batch-coalesced.</strong> Streamed tokens accumulate for one 33ms window (or 64 events) before a single Update→View pass — a hard 30fps ceiling that already exists (<code>streamBatchWindow</code>, <code>app.go:33</code>). No additional throttle is added anywhere on the View path.</li>
+    <li><strong>Several bounded clocks.</strong> A self-rescheduling 120ms App tick advances spinner, streaming, thinking, and chat animation while runtime work is active (<code>spinner.go:36</code>, <code>app.go:1143-1175</code>); it drops to 500ms polling under reduced motion. The Bubbles cursor uses its own blink command, and mascot click animation uses a 60ms tick. New idle decoration therefore needs its own visibility-gated owner.</li>
+    <li><strong>Full-string View, diffed downstream.</strong> The app renders bands to strings; bubbletea v1's own renderer does line diffing to the terminal. Affordability comes from the cache stack, not from cell-level compositing (see Performance).</li>
+  </ul>
+
+  <!-- ============ STACKING ============ -->
+  <h2>Surface stacking <span class="tag">z-order &amp; focus</span></h2>
+  <div class="layers">
+    <div class="layer"><span class="z">L3</span> Hardware cursor <span class="own">owned by: bubbles cursor / textarea</span></div>
+    <div class="layer"><span class="z">L2</span> Dialog stack — LIFO, only <code>Front()</code> receives keys, 200ms input grace on push <span class="own">dialog_stack.go:44-108</span></div>
+    <div class="layer"><span class="z">L1</span> Toasts — max 3, FIFO; <b>FOLLOW-ON:</b> own layer + expiry wake-up <span class="own">needs separate contract</span></div>
+    <div class="layer"><span class="z">L0</span> Base bands — chat · activity · composer · status line <span class="own">layout.go renderLayoutBands</span></div>
+  </div>
+  <ul>
+    <li><strong>Dialogs</strong> composite back-to-front over the base via line replacement (existing); centered for pickers, bottom-docked for permission. Escape always pops the top layer first.</li>
+    <li><strong>Toasts today are squatters</strong>: they render inside the status line and expire lazily — <code>Prune()</code> only runs when something else triggers a redraw (<code>notifications.go:81-94</code>), so a toast can outlive its 5s TTL. <strong>FOLLOW-ON:</strong> use a Bubble Tea-owned expiry message with an injectable clock and define a dedicated L1 overlay below dialogs; direct callback mutation and a polling-only timer are not yet accepted.</li>
+    <li><strong>Completions/hints</strong> are part of the composer band (L0), clamped on-screen — no change.</li>
+    <li>Borrowed-and-already-had: crush's dialog grace period (200ms quiet / 1500ms max) matches our existing push grace (<code>dialog_stack.go:53-56</code>) — nothing to do.</li>
+  </ul>
+
+  <!-- ============ STREAMING ============ -->
+  <h2>Streaming updates <span class="tag">live demo</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> token stream, coalesced at 30fps <button class="btn" id="replay" style="float:right;padding:2px 10px">↻ replay</button></div>
+    <div class="screen" id="stream-demo" style="min-height:96px"><span class="t">✦</span> <span id="stream-out"></span><span id="stream-cursor" class="cblock"> </span>
+<span id="stream-meta" class="s"></span></div>
+  </div>
+  <ul>
+    <li>Assistant deltas append to the current message; a <strong>per-message streaming-markdown prefix cache</strong> re-renders only the trailing mutable block, with whole-document glamour throttled to ~15fps (<code>markdown.go:585-704</code>) — the demo above mimics the 33ms batch cadence, not raw per-token paints.</li>
+    <li>While scrolled up (follow off), streaming items reuse stale cache — scroll stays O(1) mid-stream (<code>chat.go:1065-1069</code>); a "N new ↓" pill signals unread output.</li>
+    <li><strong>BORROWED (codex):</strong> adaptive drain with hysteresis — drain smoothly at 1 line/frame, catch up wholesale when the queue exceeds depth/age thresholds (<code>streaming/chunking.rs:85-116</code>). Marked <em>defer</em>: our 30fps batch already caps load; adopt only if typing smoothness complaints appear.</li>
+  </ul>
+
+  <!-- ============ ANIMATION CATALOG ============ -->
+  <h2>Animation catalog <span class="tag">every moving thing</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> live specimens</div>
+    <div class="screen"><span class="breathe t">✦</span> <span class="shimmer">Ruminating…</span> <span class="s">← spinner: breathing glyph (960ms) + aurora shimmer sweep (2.4s)</span>
+❯ type here<span class="cblock"> </span> <span class="s">← block cursor, 530ms blink</span>
+<span class="cblock steady"> </span> <span class="s">← steady cursor option (accessibility)</span>
+<span class="eno" style="font-size:12px"><span class="eno-row">  <span class="mo">▟▙</span>       <span class="mo">▟▙</span>  </span><span class="eno-row">  <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>  </span><span class="eno-row"> <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span> </span><span class="eno-row"> <span class="mo">▐</span><span class="mb">██</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">██</span><span class="mo">▌</span> </span><span class="eno-row"><span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span></span><span class="eno-row">   <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>   </span></span> <span class="s">← Eno idle blink, see <a href="mascot.html" style="color:var(--aurora-sky)">Mascot</a></span></div>
+  </div>
+  <table class="tokens">
+    <tr><th>Animation</th><th>Cadence</th><th>Driver</th><th>Status</th></tr>
+    <tr><td>spinner shimmer sweep (teal→sky→violet)</td><td>2.4s loop</td><td>120ms tick · phase on the spinner line only</td><td>extend <code>RenderShimmerText</code> (spinner.go:209) to 3 stops</td></tr>
+    <tr><td>spinner glyph breathe <code>✦</code></td><td>960ms</td><td>120ms tick</td><td>replaces 12-frame ping-pong</td></tr>
+    <tr><td>cursor blink</td><td>530ms</td><td>bubbles <code>cursor.BlinkCmd</code></td><td>existing</td></tr>
+    <tr><td>scroll ease-out</td><td>50ms frames</td><td><code>scrollAnimTick</code> (spinner.go:44)</td><td>existing</td></tr>
+    <tr><td>mascot click (celebrate)</td><td>60ms frames</td><td><code>MascotTick</code> (mascot.go:190)</td><td>existing</td></tr>
+    <tr><td>mascot idle blink / glance</td><td>180ms blink, 3–5s jitter</td><td><b>NEW</b> gated tick, pattern of <code>ensureSpinnerTick</code></td><td>welcome-state only</td></tr>
+    <tr><td>toast expiry</td><td>5s TTL, 1s prune</td><td><b>NEW</b> 1s tick</td><td>fixes lazy <code>Prune()</code></td></tr>
+    <tr><td>permission countdown</td><td>1s</td><td>existing tick (permission_prompt.go:768)</td><td>existing</td></tr>
+    <tr><td>stall ramp (waiting tint)</td><td>2s ramp after 30s quiet</td><td>existing (<code>StallIntensity</code>, spinner.go:165)</td><td>recolor to <code>stalled</code> token</td></tr>
+  </table>
+  <ul>
+    <li><strong>No layout-shifting motion.</strong> Animations never change row counts mid-turn (spinner appear/disappear is the one sanctioned exception, already handled by band layout) — this is what keeps scroll anchoring stable.</li>
+    <li><strong>Gradient discipline.</strong> Per-frame gradient text is confined to the spinner line, which re-renders every tick anyway. Gradient text inside chat history is explicitly <strong>rejected</strong>: it would require registering messages as <code>HistoryAnimatableItem</code> and paying re-render cost per frame.</li>
+    <li><strong>BORROWED (crush):</strong> pause animations for off-screen items, resume on re-entry (<code>model/chat.go:440-503</code>) — adopt when the WORK panel animates sub-agents. Pre-rendered, content-hash-cached animation frames (<code>anim/anim.go</code>) — adopt if shimmer cost shows up in profiles.</li>
+  </ul>
+
+  <!-- ============ PERFORMANCE ============ -->
+  <h2>Performance budget <span class="tag">what keeps 30fps affordable</span></h2>
+  <div class="tl">
+    <div class="row"><span class="lbl">stream batch window</span><span class="bar" style="width:66px"></span><span class="ms">33ms · existing ceiling</span></div>
+    <div class="row"><span class="lbl">spinner / shimmer tick</span><span class="bar" style="width:24px"></span><span class="ms">120ms (500ms reduced)</span></div>
+    <div class="row"><span class="lbl">markdown full-render throttle</span><span class="bar" style="width:13px"></span><span class="ms">66ms per message</span></div>
+    <div class="row"><span class="lbl">scroll animation frame</span><span class="bar" style="width:10px"></span><span class="ms">50ms</span></div>
+    <div class="row"><span class="lbl">mascot frame</span><span class="bar" style="width:12px"></span><span class="ms">60ms</span></div>
+    <div class="row"><span class="lbl">toast prune tick (NEW)</span><span class="bar" style="width:200px;opacity:.3"></span><span class="ms">1s</span></div>
+  </div>
+  <ul>
+    <li><strong>Cache stack (existing):</strong> per-item render cache keyed by identity+version+width with frozen finished items (<code>chat.go:1054-1115</code>) · whole-viewport string cache (<code>viewDirty</code>/<code>viewCache</code>) · streaming-markdown prefix cache · pooled glamour renderers per width. O(viewport) render only — the history is never fully repainted.</li>
+    <li><strong>Budget rule:</strong> a frame's incremental work must stay well under the 33ms window; anything per-frame (shimmer, spinner) touches exactly one line. New animations must name their tick and their cache key, or they don't ship.</li>
+    <li><strong>FOLLOW-ON (from crush):</strong> resize pre-warming — reflow only visible items during resize, then warm the width cache in batches after a 120ms settle (<code>model/chat.go:313-339</code>). Admit only after a local benchmark reproduces a budget failure and pins scroll-anchor/height correctness.</li>
+    <li><strong>FOLLOW-ON (from crush):</strong> a <code>CRUSH_UI_DEBUG</code>-style render-frequency overlay behind a debug flag. Treat it as verification tooling, not a visual-identity deliverable.</li>
+    <li><strong>DEFERRED:</strong> pi's synchronized output (<code>\x1b[?2026h/l</code>) for tear-free frames depends on renderer support in bubbletea v1 — evaluate with the bubbles/bubbletea v2 question, not in this redesign. codex's 120fps FrameRequester actor is unnecessary while our ceiling is 30fps by policy.</li>
+  </ul>
+
+  <!-- ============ REDUCED MOTION ============ -->
+  <h2>Reduced-motion matrix</h2>
+  <table class="tokens">
+    <tr><th>Element</th><th>Full motion</th><th>Reduced motion (<code>EINO_AGENT_REDUCED_MOTION</code>)</th></tr>
+    <tr><td>spinner</td><td>breathing <code>✦</code> + shimmer sweep</td><td>static <code>✦</code> + verb, 500ms tick</td></tr>
+    <tr><td>cursor</td><td>530ms blink</td><td>steady block (existing behavior)</td></tr>
+    <tr><td>mascot</td><td>blink / glance / celebrate</td><td>static default pose (existing gate)</td></tr>
+    <tr><td>scroll</td><td>50ms ease-out</td><td>instant jump</td></tr>
+    <tr><td>toasts</td><td>appear + 5s TTL</td><td>unchanged (no motion to remove)</td></tr>
+  </table>
+
+</div>
+
+<script>
+(function () {
+  var text = "The stall timer survived frame ticks, so a slow-but-alive render tripped the stalled flag. Resetting it per tick fixes the flake — the suite now passes twenty runs clean.";
+  var out = document.getElementById('stream-out');
+  var meta = document.getElementById('stream-meta');
+  var cur = document.getElementById('stream-cursor');
+  var btn = document.getElementById('replay');
+  if (!out) return;
+  var timer = null, batches = 0, t0 = 0;
+  function run() {
+    clearInterval(timer);
+    out.textContent = ''; meta.textContent = ''; cur.style.display = '';
+    var i = 0; batches = 0; t0 = Date.now();
+    timer = setInterval(function () {
+      // coalesced batch: several tokens per 33ms window, like streamBatchWindow
+      i = Math.min(text.length, i + 3 + Math.floor(Math.random() * 6));
+      batches++;
+      out.textContent = text.slice(0, i);
+      if (i >= text.length) {
+        clearInterval(timer);
+        cur.style.display = 'none';
+        meta.textContent = '\n' + batches + ' batches · ' + (Date.now() - t0) + 'ms wall · ~' + Math.round(batches * 1000 / (Date.now() - t0)) + ' fps ceiling-respecting paints (not ' + text.length + ' per-token paints)';
+      }
+    }, 33);
+  }
+  btn.addEventListener('click', run);
+  run();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,842 @@
+{
+  "schema_version": 1,
+  "fixture": "queue_safe_boundary",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "main queue"
+          }
+        ],
+        "tools": [
+          {
+            "name": "Sleep"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "9b722654855b2b28",
+        "messages": [
+          {
+            "role": "user",
+            "content": "main queue"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "tool_calls": [
+          {
+            "id": "<id-1>",
+            "name": "Sleep",
+            "arguments": "{\"duration\":0}"
+          }
+        ],
+        "finish_reason": "tool_calls"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"<id-1>\",\"name\":\"Sleep\",\"arguments\":\"{\\\"duration\\\":0}\"}],\"finish_reason\":\"tool_calls\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-1>\",\"tool_name\":\"Sleep\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"duration\":0},\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"slept\",\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"slept\",\"tool_call_id\":\"<id-1>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 1,
+        "id": "<id-1>",
+        "name": "Sleep",
+        "input": "{\"duration\":0}",
+        "admission": "allowed",
+        "start_order": 1,
+        "finish_order": 1,
+        "batch": 1,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-2>\",\"phase\":\"started\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_started",
+        "queue_consumption": [
+          "<id-2>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 8,
+        "type": "attachment",
+        "payload": "{\"attachment_kind\":\"queued_command\",\"command_mode\":\"prompt\",\"command_priority\":\"now\",\"message\":{\"role\":\"user\",\"content\":\"steer during tool\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 9,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-3>\",\"phase\":\"started\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_started",
+        "queue_consumption": [
+          "<id-3>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 10,
+        "type": "attachment",
+        "payload": "{\"attachment_kind\":\"queued_command\",\"command_mode\":\"prompt\",\"command_priority\":\"next\",\"message\":{\"role\":\"user\",\"content\":\"next input\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 11,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-4>\",\"phase\":\"started\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_started",
+        "queue_consumption": [
+          "<id-4>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 12,
+        "type": "attachment",
+        "payload": "{\"attachment_kind\":\"queued_command\",\"command_mode\":\"task-notification\",\"command_priority\":\"next\",\"message\":{\"role\":\"user\",\"content\":\"<task-notification><status>completed</status></task-notification>\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 13,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-5>\",\"phase\":\"started\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_started",
+        "queue_consumption": [
+          "<id-5>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 14,
+        "type": "attachment",
+        "payload": "{\"attachment_kind\":\"queued_command\",\"command_mode\":\"prompt\",\"command_priority\":\"later\",\"message\":{\"role\":\"user\",\"content\":\"later input\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 15,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 2,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "main queue"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "Sleep",
+                "arguments": "{\"duration\":0}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "slept",
+            "tool_call_id": "<id-1>"
+          },
+          {
+            "role": "user",
+            "content": "steer during tool"
+          },
+          {
+            "role": "user",
+            "content": "next input"
+          },
+          {
+            "role": "user",
+            "content": "<task-notification><status>completed</status></task-notification>"
+          },
+          {
+            "role": "user",
+            "content": "later input"
+          }
+        ],
+        "tools": [
+          {
+            "name": "Sleep"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "3e2c207ec8fd0532",
+        "messages": [
+          {
+            "role": "user",
+            "content": "main queue"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "Sleep",
+                "arguments": "{\"duration\":0}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "slept",
+            "tool_call_id": "<id-1>"
+          },
+          {
+            "role": "user",
+            "content": "steer during tool"
+          },
+          {
+            "role": "user",
+            "content": "next input"
+          },
+          {
+            "role": "user",
+            "content": "<task-notification><status>completed</status></task-notification>"
+          },
+          {
+            "role": "user",
+            "content": "later input"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 2,
+        "content": "main done",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 16,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"main done\",\"finish_reason\":\"stop\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 17,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"main done\",\"message_id\":\"<id-6>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 18,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-2>\",\"phase\":\"completed\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_completed",
+        "queue_consumption": [
+          "<id-2>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 19,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-3>\",\"phase\":\"completed\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_completed",
+        "queue_consumption": [
+          "<id-3>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 20,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-4>\",\"phase\":\"completed\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_completed",
+        "queue_consumption": [
+          "<id-4>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 21,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-5>\",\"phase\":\"completed\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_completed",
+        "queue_consumption": [
+          "<id-5>"
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "3e2c207ec8fd0532",
+        "messages": [
+          {
+            "role": "user",
+            "content": "main queue"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "Sleep",
+                "arguments": "{\"duration\":0}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "slept",
+            "tool_call_id": "<id-1>"
+          },
+          {
+            "role": "user",
+            "content": "steer during tool"
+          },
+          {
+            "role": "user",
+            "content": "next input"
+          },
+          {
+            "role": "user",
+            "content": "<task-notification><status>completed</status></task-notification>"
+          },
+          {
+            "role": "user",
+            "content": "later input"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 4,
+        "final_message_digest": "073254c5ecfdf4fe"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 22,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-7>\",\"phase\":\"started\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_started",
+        "queue_consumption": [
+          "<id-7>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 23,
+        "type": "attachment",
+        "payload": "{\"attachment_kind\":\"queued_command\",\"command_mode\":\"prompt\",\"command_priority\":\"next\",\"message\":{\"role\":\"user\",\"content\":\"child input\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 24,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-8>\",\"phase\":\"started\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_started",
+        "queue_consumption": [
+          "<id-8>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 25,
+        "type": "attachment",
+        "payload": "{\"attachment_kind\":\"queued_command\",\"command_mode\":\"prompt\",\"command_priority\":\"next\",\"command_provenance\":\"send_message\",\"message\":{\"role\":\"user\",\"content\":\"send-message input\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 26,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 3,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "child queue"
+          },
+          {
+            "role": "user",
+            "content": "child input"
+          },
+          {
+            "role": "user",
+            "content": "send-message input"
+          }
+        ],
+        "tools": [
+          {
+            "name": "ChildTool"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "62cbb7bb1e8c1952",
+        "messages": [
+          {
+            "role": "user",
+            "content": "child queue"
+          },
+          {
+            "role": "user",
+            "content": "child input"
+          },
+          {
+            "role": "user",
+            "content": "send-message input"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 3,
+        "tool_calls": [
+          {
+            "id": "<id-9>",
+            "name": "ChildTool",
+            "arguments": "{}"
+          }
+        ],
+        "finish_reason": "tool_calls"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 27,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"<id-9>\",\"name\":\"ChildTool\",\"arguments\":\"{}\"}],\"finish_reason\":\"tool_calls\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 28,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-9>\",\"tool_name\":\"ChildTool\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 29,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{},\"tool_call_id\":\"<id-9>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 30,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"child result\",\"tool_call_id\":\"<id-9>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 31,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"child result\",\"tool_call_id\":\"<id-9>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 2,
+        "id": "<id-9>",
+        "name": "ChildTool",
+        "input": "{}",
+        "admission": "allowed",
+        "start_order": 2,
+        "finish_order": 2,
+        "batch": 2,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 32,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 4,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "child queue"
+          },
+          {
+            "role": "user",
+            "content": "child input"
+          },
+          {
+            "role": "user",
+            "content": "send-message input"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-9>",
+                "name": "ChildTool",
+                "arguments": "{}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "child result",
+            "tool_call_id": "<id-9>"
+          }
+        ],
+        "tools": [
+          {
+            "name": "ChildTool"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "5939c67c9050e441",
+        "messages": [
+          {
+            "role": "user",
+            "content": "child queue"
+          },
+          {
+            "role": "user",
+            "content": "child input"
+          },
+          {
+            "role": "user",
+            "content": "send-message input"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-9>",
+                "name": "ChildTool",
+                "arguments": "{}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "child result",
+            "tool_call_id": "<id-9>"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 4,
+        "content": "child done",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 33,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"child done\",\"finish_reason\":\"stop\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 34,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"child done\",\"message_id\":\"<id-10>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 35,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-7>\",\"phase\":\"completed\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_completed",
+        "queue_consumption": [
+          "<id-7>"
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 36,
+        "type": "command_lifecycle",
+        "payload": "{\"command_uuid\":\"<id-8>\",\"phase\":\"completed\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "queue_completed",
+        "queue_consumption": [
+          "<id-8>"
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "5939c67c9050e441",
+        "messages": [
+          {
+            "role": "user",
+            "content": "child queue"
+          },
+          {
+            "role": "user",
+            "content": "child input"
+          },
+          {
+            "role": "user",
+            "content": "send-message input"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-9>",
+                "name": "ChildTool",
+                "arguments": "{}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "child result",
+            "tool_call_id": "<id-9>"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 4,
+        "final_message_digest": "55eecb3dacb3068d"
+      }
+    }
+  ]
+}

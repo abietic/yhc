@@ -1,0 +1,379 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  # Superseded PR runs are noise, but every master commit should retain its
+  # verification result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      base_sha: ${{ steps.classify.outputs.base_sha }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve comparison base and change class
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == "push" &&
+                  -n "$PUSH_BASE_SHA" &&
+                  "$PUSH_BASE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            base_sha="$PUSH_BASE_SHA"
+          else
+            base_sha="$(git rev-parse HEAD^ 2>/dev/null || git hash-object -t tree /dev/null)"
+          fi
+          git cat-file -e "${base_sha}^{commit}" 2>/dev/null ||
+            git cat-file -e "${base_sha}^{tree}"
+
+          changed_files="$(git diff --name-only "${base_sha}...HEAD")"
+          docs_only=true
+          changed_count=0
+          while IFS= read -r path; do
+            if [[ -z "$path" ]]; then
+              continue
+            fi
+            changed_count=$((changed_count + 1))
+            case "$path" in
+              *.md|docs/*) ;;
+              *)
+                docs_only=false
+                ;;
+            esac
+          done <<< "$changed_files"
+          if (( changed_count == 0 )); then
+            docs_only=false
+          fi
+
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Change classification"
+            echo "- Base: \`$base_sha\`"
+            echo "- Documentation only: \`$docs_only\`"
+            echo "- Changed files: \`$changed_count\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  quality:
+    name: Formatting, lint, and docs
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go for quality gates
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      - name: Restore Go quality cache
+        id: go-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-quality-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-quality-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+
+      - name: Restore quality tools
+        if: needs.changes.outputs.docs_only != 'true'
+        id: tool-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/bin/gofumpt
+            build/tools/golangci-lint-v2
+          key: tools-quality-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+
+      - name: Check whitespace and documentation
+        env:
+          BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+        run: |
+          started=$SECONDS
+          git diff --check "${BASE_SHA}...HEAD"
+          make docs-check-ci
+          echo "- Whitespace and docs: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check Go formatting and new lint findings
+        if: needs.changes.outputs.docs_only != 'true'
+        env:
+          BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+        run: |
+          started=$SECONDS
+          make fmt-check
+          make lint-new LINT_NEW_BASE="$BASE_SHA"
+          echo "- Formatting and lint: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record quality cache status
+        if: always()
+        run: |
+          {
+            echo "### Quality cache"
+            echo "- Go cache exact hit: \`${{ steps.go-cache.outputs.cache-hit }}\`"
+            echo "- Tool cache exact hit: \`${{ steps.tool-cache.outputs.cache-hit }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save Go quality cache on master
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-quality-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+
+      - name: Save quality tools on master
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && needs.changes.outputs.docs_only != 'true' && steps.tool-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/bin/gofumpt
+            build/tools/golangci-lint-v2
+          key: tools-quality-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+
+  test:
+    name: Tests
+    if: needs.changes.outputs.docs_only != 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up minimum supported Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore Go test cache
+        id: go-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+
+      - name: Restore test tools
+        id: tool-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/go/bin/gotestsum
+          key: tools-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+
+      - name: Ensure test runtime dependencies
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes ripgrep
+          fi
+
+      - name: Run tests
+        env:
+          # Keep wall-clock performance budgets isolated from package-level
+          # CPU contention while preserving concurrency inside each package.
+          GOFLAGS: '-p=1'
+        run: |
+          started=$SECONDS
+          make test
+          echo "- Tests: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: test-evidence-${{ github.run_attempt }}
+          path: |
+            build/test-report.xml
+            build/coverage.out
+            build/coverage.html
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Record test cache status
+        if: always()
+        run: |
+          {
+            echo "### Test cache"
+            echo "- Go cache exact hit: \`${{ steps.go-cache.outputs.cache-hit }}\`"
+            echo "- Tool cache exact hit: \`${{ steps.tool-cache.outputs.cache-hit }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save Go test cache on master
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+
+      - name: Save test tools on master
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && steps.tool-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ~/go/bin/gotestsum
+          key: tools-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+
+  build:
+    name: Build (${{ matrix.batch }})
+    if: needs.changes.outputs.docs_only != 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        batch:
+          - linux-and-darwin-amd64
+          - darwin-arm64-and-windows
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up minimum supported Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Restore Go build cache
+        id: go-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-build-${{ matrix.batch }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-build-${{ matrix.batch }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+
+      - name: Build release targets
+        env:
+          BUILD_BATCH: ${{ matrix.batch }}
+        run: |
+          started=$SECONDS
+          case "$BUILD_BATCH" in
+            linux-and-darwin-amd64)
+              make --jobs=2 build/linux-amd64/yhc build/darwin-amd64/yhc
+              ;;
+            darwin-arm64-and-windows)
+              make --jobs=2 build/darwin-arm64/yhc build/windows-amd64/yhc.exe
+              ;;
+            *)
+              echo "unknown build batch: $BUILD_BATCH" >&2
+              exit 1
+              ;;
+          esac
+          echo "- Build $BUILD_BATCH: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record build cache status
+        if: always()
+        run: |
+          echo "- Go cache exact hit: \`${{ steps.go-cache.outputs.cache-hit }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save Go build cache on master
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-build-${{ matrix.batch }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}
+
+  publication-safety:
+    name: Publication safety
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Run publication policy and scanner gates
+        run: make publication-safety
+
+  required:
+    name: Required gates
+    if: always()
+    needs:
+      - changes
+      - quality
+      - test
+      - build
+      - publication-safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required job results
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLICATION_SAFETY_RESULT: ${{ needs.publication-safety.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+        run: |
+          if [[ "$CHANGES_RESULT" != "success" || "$QUALITY_RESULT" != "success" || "$PUBLICATION_SAFETY_RESULT" != "success" ]]; then
+            echo "classification=$CHANGES_RESULT quality=$QUALITY_RESULT publication-safety=$PUBLICATION_SAFETY_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$DOCS_ONLY" == "true" ]]; then
+            if [[ "$TEST_RESULT" != "skipped" || "$BUILD_RESULT" != "skipped" ]]; then
+              echo "docs-only run unexpectedly executed code gates: test=$TEST_RESULT build=$BUILD_RESULT" >&2
+              exit 1
+            fi
+            exit 0
+          fi
+          if [[ "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "success" ]]; then
+            echo "test=$TEST_RESULT build=$BUILD_RESULT" >&2
+            exit 1
+          fi

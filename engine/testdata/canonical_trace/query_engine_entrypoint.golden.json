@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "fixture": "query_engine_entrypoint",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-2>",
+        "type": "stream_request_start",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-2>",
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"entry response one\",\"finish_reason\":\"stop\"}}",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-2>",
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"entry response one\",\"message_id\":\"<id-3>\"}",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-2>",
+        "type": "terminal",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-4>",
+        "type": "stream_request_start",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-4>",
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"entry response two\",\"finish_reason\":\"stop\"}}",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-4>",
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"entry response two\",\"message_id\":\"<id-5>\"}",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 8,
+        "session_id": "<id-1>",
+        "thread_id": "<id-1>",
+        "turn_id": "<id-4>",
+        "type": "terminal",
+        "occurred_at": "<timestamp>"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "runtime_snapshot",
+        "message_digest": "0034b667333a98ea",
+        "transition": "completed"
+      }
+    }
+  ]
+}

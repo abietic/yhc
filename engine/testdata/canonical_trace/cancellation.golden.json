@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "fixture": "cancellation",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "cancel safely"
+          }
+        ],
+        "tools": [
+          {
+            "name": "BlockTool"
+          },
+          {
+            "name": "CancelTool"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "f6ebeaea1e9bdd8c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "cancel safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "tool_calls": [
+          {
+            "id": "<id-1>",
+            "name": "BlockTool",
+            "arguments": "{\"value\":1}"
+          },
+          {
+            "id": "<id-2>",
+            "name": "CancelTool",
+            "arguments": "{\"value\":2}"
+          }
+        ],
+        "finish_reason": "tool_calls"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"<id-1>\",\"name\":\"BlockTool\",\"arguments\":\"{\\\"value\\\":1}\"},{\"id\":\"<id-2>\",\"name\":\"CancelTool\",\"arguments\":\"{\\\"value\\\":2}\"}],\"finish_reason\":\"tool_calls\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-1>\",\"tool_name\":\"BlockTool\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-2>\",\"tool_name\":\"CancelTool\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":1},\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":2},\"tool_call_id\":\"<id-2>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"block completed\",\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 8,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"block completed\",\"tool_call_id\":\"<id-1>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 1,
+        "id": "<id-1>",
+        "name": "BlockTool",
+        "input": "{\"value\":1}",
+        "admission": "allowed",
+        "start_order": 1,
+        "finish_order": 2,
+        "batch": 1,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 9,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"failed\",\"raw_output\":\"Interrupted by user\",\"tool_call_id\":\"<id-2>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 10,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"Interrupted by user\",\"tool_call_id\":\"<id-2>\",\"is_error\":true}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 2,
+        "id": "<id-2>",
+        "name": "CancelTool",
+        "input": "{\"value\":2}",
+        "admission": "interrupted",
+        "start_order": 2,
+        "finish_order": 1,
+        "batch": 1,
+        "result_kinds": [
+          "error"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 11,
+        "type": "user_interruption",
+        "payload": "{\"tool_use\":true}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "f6ebeaea1e9bdd8c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "cancel safely"
+          }
+        ],
+        "transition": "aborted_tools"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "aborted_tools",
+        "turn_count": 0,
+        "max_turns": 3,
+        "final_message_digest": "064fbf802f07637b"
+      }
+    }
+  ]
+}

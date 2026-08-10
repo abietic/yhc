@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "yhc-workflows",
+  "version": "2.0.0",
+  "commands": [
+    {
+      "name": "commit",
+      "description": "Create a git commit with AI-generated message",
+      "usage": "/commit [instructions]",
+      "prompt": "Create a git commit for the project rooted at {{cwd}}. Follow these steps:\n\nUse only the ordinary Bash tool for Git commands so the active permission policy applies.\n\n1. Analyze the current repository state\n2. Run `git status` to see all untracked files\n3. Run `git diff` to see staged and unstaged changes\n4. Add relevant files with `git add`\n5. Draft a concise commit message (1-2 sentences) focusing on the \"why\" not the \"what\"\n6. Create the commit using HEREDOC syntax:\n   git commit -m \"$(cat <<'EOF'\n   Commit message here.\n   EOF\n   )\"\n\nGit Safety Protocol:\n- NEVER update the git config\n- NEVER use --no-verify or --no-gpg-sign\n- ALWAYS create NEW commits, NEVER use --amend\n- Do not commit files that likely contain secrets (.env, credentials.json, etc)\n- Do not create empty commits if there are no changes\n- NEVER use interactive flags like -i\n\n",
+      "promptWithArgs": "Create a git commit for the project rooted at {{cwd}}. Follow these steps:\n\nUse only the ordinary Bash tool for Git commands so the active permission policy applies.\n\n1. Analyze the current repository state\n2. Run `git status` to see all untracked files\n3. Run `git diff` to see staged and unstaged changes\n4. Add relevant files with `git add`\n5. Draft a concise commit message (1-2 sentences) focusing on the \"why\" not the \"what\"\n6. Create the commit using HEREDOC syntax:\n   git commit -m \"$(cat <<'EOF'\n   Commit message here.\n   EOF\n   )\"\n\nGit Safety Protocol:\n- NEVER update the git config\n- NEVER use --no-verify or --no-gpg-sign\n- ALWAYS create NEW commits, NEVER use --amend\n- Do not commit files that likely contain secrets (.env, credentials.json, etc)\n- Do not create empty commits if there are no changes\n- NEVER use interactive flags like -i\n\n\nAdditional instructions from user: {{args}}\n"
+    },
+    {
+      "name": "review",
+      "description": "Review uncommitted changes",
+      "usage": "/review [path]",
+      "prompt": "Review the uncommitted changes in this repository. Focus on correctness, bugs, and potential issues.",
+      "promptWithArgs": "Review the uncommitted changes in: {{args}}. Focus on correctness, bugs, and potential issues."
+    }
+  ]
+}

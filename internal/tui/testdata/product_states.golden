@@ -1,0 +1,789 @@
+== tools ==
+● Read 4 lines (internal/tui/app.go · offset 120 · limit 4)
+  ⎿  120 package tui
+     121
+     122 func (a *App) View() string {
+     123     return view
+● Bash done (make test)
+  ⎿  ok engine
+     ok internal/tui
+● CustomIndex completed (query: "thread ownership")
+  ⎿  3 canonical matches
+● Agent completed (@agent-7 · inspect TUI state)
+  ⎿  completed · 4 tools · 1.8k tokens · 2s
+     Mapped thread and modal ownership
+     Grep: dialog ownership
+     ↗ Open Agent details
+== agent ==
+ ▎ inspect runtime
+
+✦ read main.go
+
+● Read 1 lines (main.go)
+  ⎿  package main
+
+✦ analysis complete
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   default · thread:@alpha scout                                      test-model
+== permission ==
+────────────────────────────────────────────────────────────────────────
+  Bash command
+  Bash
+    make fmt && make lint && make test
+
+  ❯ Yes
+    Yes, and don't ask again for project tests
+    No
+
+  ↑/↓ navigate · enter select · tab feedback · esc cancel
+== composer ==
+  ✧ Ready for the next change.
+╭──────────────────────────────────────────────────────────────────────────────╮
+│  queued queued-1 Run focused tests after the current turn                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ [Pasted Content 819 chars] verify after paste                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                              test-model
+== responsive ==
+-- width=40 height=20 mode=compact --
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the modern TUI.
+
+✦ Thread state, tools, and composer
+  remain readable at every supported
+  width.
+  ├─ ✦ Rendering goldens [in_progress]
+  └─ ✦ Layout scout [running]
+╭──────────────────────────────────────╮
+│ ❯ follow up                          │
+╰──────────────────────────────────────╯
+   default · thread:main      test-model
+-- width=80 height=30 mode=standard --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the modern TUI.
+
+✦ Thread state, tools, and composer remain readable at every supported
+  width.
+  ├─ ✦ Rendering goldens [in_progress]
+  └─ ✦ Layout scout [running]
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ follow up                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                              test-model
+-- width=120 height=30 mode=standard --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the modern TUI.
+
+✦ Thread state, tools, and composer remain readable at every supported width.
+  ├─ ✦ Rendering goldens [in_progress]
+  └─ ✦ Layout scout [running]
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ follow up                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                      test-model
+-- width=180 height=30 mode=wide --
+                                                                                                                                          │ WORK  0/1 done · 1 live
+                                                                                                                                          │ attention 0 · hidden 0
+                                                                                                                                          │ now   Read
+                                                                                                                                          │ RUN   Golden capture
+                                                                                                                                          │ RUN   agent-layout@g1 Layout scout
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+                                                                                                                                          │
+ ▎ Inspect the modern TUI.                                                                                                                │
+                                                                                                                                          │
+✦ Thread state, tools, and composer remain readable at every supported width.                                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮│
+│ ❯ follow up                                                                                                                            ││
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
+   default · thread:main                                                                                                        test-model│ ctrl+b details · /agent switch
+== baseline_leader ==
+-- width=40 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the leader baseline.
+
+✦ Leader chat keeps the transcript
+  and composer reachable.
+╭──────────────────────────────────────╮
+│ ❯ next leader prompt                 │
+╰──────────────────────────────────────╯
+   default · thread:main      test-model
+-- width=80 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the leader baseline.
+
+✦ Leader chat keeps the transcript and composer reachable.
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ next leader prompt                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                              test-model
+-- width=120 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the leader baseline.
+
+✦ Leader chat keeps the transcript and composer reachable.
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ next leader prompt                                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                      test-model
+-- width=180 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▎ Inspect the leader baseline.
+
+✦ Leader chat keeps the transcript and composer reachable.
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ next leader prompt                                                                                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                                                                                  test-model
+== baseline_permission ==
+-- width=40 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────
+  Bash command
+  Bash
+    make test
+
+  ❯ Yes
+    Yes, and don't ask again for project
+    No
+
+  ↑/↓ navigate · enter select · tab feed
+-- width=80 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+  Bash command
+  Bash
+    make test
+
+  ❯ Yes
+    Yes, and don't ask again for project tests
+    No
+
+  ↑/↓ navigate · enter select · tab feedback · esc cancel
+-- width=120 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Bash command
+  Bash
+    make test
+
+  ❯ Yes
+    Yes, and don't ask again for project tests
+    No
+
+  ↑/↓ navigate · enter select · tab feedback · esc cancel
+-- width=180 height=30 --
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Bash command
+  Bash
+    make test
+
+  ❯ Yes
+    Yes, and don't ask again for project tests
+    No
+
+  ↑/↓ navigate · enter select · tab feedback · esc cancel
+== baseline_resume ==
+-- width=40 height=30 --
+
+
+
+
+
+
+
+
+ ───────────────────────────────────────
+  Resume a session  repository · recent
+  Search: █
+  ──────────────────────────────────────
+  > Continue TUI performance work     10
+    Review permission ownership        2
+  ──────────────────────────────────────
+    ID: session-rec…
+    Dir: /repo  Model: test-model
+  ──────────────────────────────────────
+  ↑/↓ navigate  type filter  Tab scope
+  mode  Ctrl+T transcript  Enter
+
+
+
+
+
+
+╭──────────────────────────────────────╮
+│ ❯ Ask anything...                    │
+╰──────────────────────────────────────╯
+   default · thread:main      test-model
+-- width=80 height=30 --
+
+
+
+
+
+
+
+
+     ──────────────────────────────────────────────────────────────────────
+      Resume a session  repository · recent
+      Search: █
+      ──────────────────────────────────────────────────────────────────
+      > Continue TUI performance work                           10m ago
+        Review permission ownership                              2h ago
+      ──────────────────────────────────────────────────────────────────
+        ID: session-rec…
+        Dir: /repo  Model: test-model
+      ──────────────────────────────────────────────────────────────────
+      ↑/↓ navigate  type filter  Tab scope  Ctrl+F mode  Ctrl+T transcript
+      Enter
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                              test-model
+-- width=120 height=30 --
+
+
+
+
+
+
+
+
+
+               ──────────────────────────────────────────────────────────────────────────────────────────
+                Resume a session  repository · recent
+                Search: █
+                ──────────────────────────────────────────────────────────────────────────────────────
+                > Continue TUI performance work                                               10m ago
+                  Review permission ownership                                                  2h ago
+                ──────────────────────────────────────────────────────────────────────────────────────
+                  ID: session-rec…
+                  Dir: /repo  Model: test-model
+                ──────────────────────────────────────────────────────────────────────────────────────
+                ↑/↓ navigate  type filter  Tab scope  Ctrl+F mode  Ctrl+T transcript  Enter
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                      test-model
+-- width=180 height=30 --
+
+
+
+
+
+
+
+
+
+                                             ──────────────────────────────────────────────────────────────────────────────────────────
+                                              Resume a session  repository · recent
+                                              Search: █
+                                              ──────────────────────────────────────────────────────────────────────────────────────
+                                              > Continue TUI performance work                                               10m ago
+                                                Review permission ownership                                                  2h ago
+                                              ──────────────────────────────────────────────────────────────────────────────────────
+                                                ID: session-rec…
+                                                Dir: /repo  Model: test-model
+                                              ──────────────────────────────────────────────────────────────────────────────────────
+                                              ↑/↓ navigate  type filter  Tab scope  Ctrl+F mode  Ctrl+T transcript  Enter
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                                                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                                                                                  test-model
+== baseline_background ==
+-- width=40 height=30 --
+
+
+
+
+
+
+
+
+   ──────────────────────────────────
+      Background Tasks (2)
+
+      ⡇ Inspect runtime own...
+        Last: Grep
+
+      ○ Update architecture...
+
+
+    ──────────────────────────────
+      ↑↓ navigate · Enter view · s
+    cancel Agent · r refresh · Esc
+    close
+
+
+
+
+
+╭──────────────────────────────────────╮
+│ ❯ Ask anything...                    │
+╰──────────────────────────────────────╯
+   default · thread:main      test-model
+-- width=80 height=30 --
+
+
+
+
+
+
+
+
+
+   ──────────────────────────────────────────────────────────────────────────
+      Background Tasks (2)
+
+      ⡇ Inspect runtime ownership
+        Last: Grep
+
+      ○ Update architecture docs
+
+
+    ──────────────────────────────────────────────────────────────────────
+      ↑↓ navigate · Enter view · s cancel Agent · r refresh · Esc close
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                              test-model
+-- width=120 height=30 --
+
+
+
+
+
+
+
+
+
+                    ────────────────────────────────────────────────────────────────────────────────
+                       Background Tasks (2)
+
+                       ⡇ Inspect runtime ownership
+                         Last: Grep
+
+                       ○ Update architecture docs
+
+
+                     ────────────────────────────────────────────────────────────────────────────
+                       ↑↓ navigate · Enter view · s cancel Agent · r refresh · Esc close
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                      test-model
+-- width=180 height=30 --
+
+
+
+
+
+
+
+
+
+                                                  ────────────────────────────────────────────────────────────────────────────────
+                                                     Background Tasks (2)
+
+                                                     ⡇ Inspect runtime ownership
+                                                       Last: Grep
+
+                                                     ○ Update architecture docs
+
+
+                                                   ────────────────────────────────────────────────────────────────────────────
+                                                     ↑↓ navigate · Enter view · s cancel Agent · r refresh · Esc close
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                                                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                                                                                                                                  test-model
+== baseline_team ==
+-- width=40 height=30 --
+
+    ────────────────────────────────
+       Multi-Agent monitor (1)
+
+       ● @alpha scout  foreground
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+     ────────────────────────────
+       Tab peek · Enter switch...
+
+   default · thread:main      test-model
+-- width=80 height=30 --
+
+    ────────────────────────────────────────────────────────────────────────
+       Multi-Agent monitor (1)
+
+       ● @alpha scout  foreground
+         current: Grep · Reading thread state
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+     ────────────────────────────────────────────────────────────────────
+       ↑↓ move · Tab peek · Enter switch · r refresh · Esc close
+
+   default · thread:main                                              test-model
+-- width=120 height=30 --
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Multi-Agent monitor (1)
+
+       ● @alpha scout  foreground
+         current: Grep · Reading thread state
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+     ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       ↑↓ move · Tab peek · Enter switch · r refresh · Esc close
+
+   default · thread:main                                                                                      test-model
+-- width=180 height=30 --
+
+                                  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                     Multi-Agent monitor (1)
+
+                                     ● @alpha scout  foreground
+                                       current: Grep · Reading thread state
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                   ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                     ↑↓ move · Tab peek · Enter switch · r refresh · Esc close
+
+   default · thread:main                                                                                                                                                  test-model

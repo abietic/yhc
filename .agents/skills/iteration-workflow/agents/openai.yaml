@@ -1,0 +1,4 @@
+interface:
+  display_name: "Iteration Workflow"
+  short_description: "规划并交付一个具备当前提交树验证证据的完整仓库迭代"
+  default_prompt: "使用 $iteration-workflow 完成一个有界仓库迭代，并分别报告计划、验证、提交树证据和外部验收。"

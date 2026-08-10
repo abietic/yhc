@@ -1,0 +1,4 @@
+interface:
+  display_name: "Human and Agent Documentation"
+  short_description: "从事实所有权、读者任务到表达图示，写出人类与 Agent 都能可靠使用的文档"
+  default_prompt: "使用 $human-agent-docs 改写这份文档：先核对 current 事实、owner 与验证锚点，再按读者任务组织结构，最后用场景、术语铺垫、精确表格和一图一问降低理解成本。把数字规则视为默认预算而非机械门槛，并保留原始验收证据。"

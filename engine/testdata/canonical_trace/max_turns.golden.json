@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "fixture": "max_turns",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "one turn only"
+          }
+        ],
+        "tools": [
+          {
+            "name": "Read"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "79b115b9cba436d8",
+        "messages": [
+          {
+            "role": "user",
+            "content": "one turn only"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "tool_calls": [
+          {
+            "id": "<id-1>",
+            "name": "Read",
+            "arguments": "{\"file_path\":\"/tmp/a\"}"
+          }
+        ],
+        "finish_reason": "tool_calls"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"<id-1>\",\"name\":\"Read\",\"arguments\":\"{\\\"file_path\\\":\\\"/tmp/a\\\"}\"}],\"finish_reason\":\"tool_calls\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-1>\",\"tool_name\":\"Read\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"file_path\":\"/tmp/a\"},\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"read result\",\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"read result\",\"tool_call_id\":\"<id-1>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 1,
+        "id": "<id-1>",
+        "name": "Read",
+        "input": "{\"file_path\":\"/tmp/a\"}",
+        "admission": "allowed",
+        "start_order": 1,
+        "finish_order": 1,
+        "batch": 1,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "max_turns_reached",
+        "payload": "{\"max_turns\":1,\"turn_count\":2}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "79b115b9cba436d8",
+        "messages": [
+          {
+            "role": "user",
+            "content": "one turn only"
+          }
+        ],
+        "transition": "max_turns"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "max_turns",
+        "turn_count": 2,
+        "max_turns": 1,
+        "final_message_digest": "1a981d99ebde2575"
+      }
+    }
+  ]
+}

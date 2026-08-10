@@ -1,0 +1,1320 @@
+version: 1
+dependencies:
+  - module: charm.land/bubbles/v2
+    version: v2.1.1
+    source_url: https://pkg.go.dev/charm.land/bubbles/v2@v2.1.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/charm.land/bubbles/v2@v2.1.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: charm.land/bubbletea/v2
+    version: v2.0.8
+    source_url: https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.8
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.8?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: charm.land/glamour/v2
+    version: v2.0.1
+    source_url: https://pkg.go.dev/charm.land/glamour/v2@v2.0.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/charm.land/glamour/v2@v2.0.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: charm.land/lipgloss/v2
+    version: v2.0.5
+    source_url: https://pkg.go.dev/charm.land/lipgloss/v2@v2.0.5
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/charm.land/lipgloss/v2@v2.0.5?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: cloud.google.com/go
+    version: v0.116.0
+    source_url: https://pkg.go.dev/cloud.google.com/go@v0.116.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/cloud.google.com/go@v0.116.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: cloud.google.com/go/auth
+    version: v0.9.3
+    source_url: https://pkg.go.dev/cloud.google.com/go/auth@v0.9.3
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/cloud.google.com/go/auth@v0.9.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: cloud.google.com/go/auth/oauth2adapt
+    version: v0.2.4
+    source_url: https://pkg.go.dev/cloud.google.com/go/auth/oauth2adapt@v0.2.4
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/cloud.google.com/go/auth/oauth2adapt@v0.2.4?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: cloud.google.com/go/compute/metadata
+    version: v0.9.0
+    source_url: https://pkg.go.dev/cloud.google.com/go/compute/metadata@v0.9.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/cloud.google.com/go/compute/metadata@v0.9.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/Azure/azure-sdk-for-go/sdk/azcore
+    version: v1.17.0
+    source_url: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azcore@v1.17.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azcore@v1.17.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/Azure/azure-sdk-for-go/sdk/internal
+    version: v1.10.0
+    source_url: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/internal@v1.10.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/internal@v1.10.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/alecthomas/chroma/v2
+    version: v2.20.0
+    source_url: https://pkg.go.dev/github.com/alecthomas/chroma/v2@v2.20.0
+    licenses:
+      - spdx: MIT
+        license_file: COPYING
+        license_url: https://pkg.go.dev/github.com/alecthomas/chroma/v2@v2.20.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/anthropics/anthropic-sdk-go
+    version: v1.56.0
+    source_url: https://pkg.go.dev/github.com/anthropics/anthropic-sdk-go@v1.56.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/anthropics/anthropic-sdk-go@v1.56.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/atotto/clipboard
+    version: v0.1.4
+    source_url: https://pkg.go.dev/github.com/atotto/clipboard@v0.1.4
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/atotto/clipboard@v0.1.4?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2
+    version: v1.33.0
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2@v1.33.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2@v1.33.0?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream
+    version: v1.7.8
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream@v1.7.8
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream@v1.7.8?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/config
+    version: v1.29.1
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/config@v1.29.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/config@v1.29.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/credentials
+    version: v1.17.54
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/credentials@v1.17.54
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/credentials@v1.17.54?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
+    version: v1.16.24
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/ec2/imds@v1.16.24
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/feature/ec2/imds@v1.16.24?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/internal/configsources
+    version: v1.3.28
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/internal/configsources@v1.3.28
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/internal/configsources@v1.3.28?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
+    version: v2.6.28
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.6.28
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/internal/endpoints/v2@v2.6.28?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/internal/ini
+    version: v1.8.1
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/internal/ini@v1.8.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/internal/ini@v1.8.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
+    version: v1.12.1
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@v1.12.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding@v1.12.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
+    version: v1.12.9
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@v1.12.9
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/internal/presigned-url@v1.12.9?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/service/sso
+    version: v1.24.11
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/sso@v1.24.11
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/sso@v1.24.11?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/service/ssooidc
+    version: v1.28.10
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/ssooidc@v1.28.10
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/ssooidc@v1.28.10?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/aws-sdk-go-v2/service/sts
+    version: v1.33.9
+    source_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/sts@v1.33.9
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/sts@v1.33.9?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aws/smithy-go
+    version: v1.24.2
+    source_url: https://pkg.go.dev/github.com/aws/smithy-go@v1.24.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/aws/smithy-go@v1.24.2?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: github.com/aymanbagabas/go-osc52/v2
+    version: v2.0.1
+    source_url: https://pkg.go.dev/github.com/aymanbagabas/go-osc52/v2@v2.0.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/aymanbagabas/go-osc52/v2@v2.0.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aymanbagabas/go-udiff
+    version: v0.4.1
+    source_url: https://pkg.go.dev/github.com/aymanbagabas/go-udiff@v0.4.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/aymanbagabas/go-udiff@v0.4.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/aymerick/douceur
+    version: v0.2.0
+    source_url: https://pkg.go.dev/github.com/aymerick/douceur@v0.2.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/aymerick/douceur@v0.2.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/bahlo/generic-list-go
+    version: v0.2.0
+    source_url: https://pkg.go.dev/github.com/bahlo/generic-list-go@v0.2.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/bahlo/generic-list-go@v0.2.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/buger/jsonparser
+    version: v1.1.2
+    source_url: https://pkg.go.dev/github.com/buger/jsonparser@v1.1.2
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/buger/jsonparser@v1.1.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/bytedance/gopkg
+    version: v0.1.3
+    source_url: https://pkg.go.dev/github.com/bytedance/gopkg@v0.1.3
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/bytedance/gopkg@v0.1.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/bytedance/sonic
+    version: v1.15.0
+    source_url: https://pkg.go.dev/github.com/bytedance/sonic@v1.15.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/bytedance/sonic@v1.15.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/bytedance/sonic/loader
+    version: v0.5.0
+    source_url: https://pkg.go.dev/github.com/bytedance/sonic/loader@v0.5.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/bytedance/sonic/loader@v0.5.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cespare/xxhash/v2
+    version: v2.3.0
+    source_url: https://pkg.go.dev/github.com/cespare/xxhash/v2@v2.3.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/cespare/xxhash/v2@v2.3.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/colorprofile
+    version: v0.4.3
+    source_url: https://pkg.go.dev/github.com/charmbracelet/colorprofile@v0.4.3
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/colorprofile@v0.4.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/ultraviolet
+    version: v0.0.0-20260703014108-f5a850f9c2b7
+    source_url: https://pkg.go.dev/github.com/charmbracelet/ultraviolet@v0.0.0-20260703014108-f5a850f9c2b7
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/ultraviolet@v0.0.0-20260703014108-f5a850f9c2b7?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/ansi
+    version: v0.11.7
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/ansi@v0.11.7
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/ansi@v0.11.7?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/editor
+    version: v0.2.0
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/editor@v0.2.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/editor@v0.2.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/exp/ordered
+    version: v0.1.0
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/exp/ordered@v0.1.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/exp/ordered@v0.1.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/exp/slice
+    version: v0.0.0-20250327172914-2fdc97757edf
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/exp/slice@v0.0.0-20250327172914-2fdc97757edf
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/exp/slice@v0.0.0-20250327172914-2fdc97757edf?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/term
+    version: v0.2.2
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/term@v0.2.2
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/term@v0.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/termios
+    version: v0.1.1
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/termios@v0.1.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/termios@v0.1.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/vt
+    version: v0.0.0-20260622091842-6f92603824fb
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/vt@v0.0.0-20260622091842-6f92603824fb
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/vt@v0.0.0-20260622091842-6f92603824fb?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/charmbracelet/x/windows
+    version: v0.2.2
+    source_url: https://pkg.go.dev/github.com/charmbracelet/x/windows@v0.2.2
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/charmbracelet/x/windows@v0.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/clipperhouse/displaywidth
+    version: v0.11.0
+    source_url: https://pkg.go.dev/github.com/clipperhouse/displaywidth@v0.11.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/clipperhouse/displaywidth@v0.11.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/clipperhouse/uax29/v2
+    version: v2.7.0
+    source_url: https://pkg.go.dev/github.com/clipperhouse/uax29/v2@v2.7.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/clipperhouse/uax29/v2@v2.7.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/base64x
+    version: v0.1.6
+    source_url: https://pkg.go.dev/github.com/cloudwego/base64x@v0.1.6
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/base64x@v0.1.6?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/eino
+    version: v0.9.13
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino@v0.9.13
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino@v0.9.13?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/eino-ext/components/model/agenticark
+    version: v0.2.4
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticark@v0.2.4
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticark@v0.2.4?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/eino-ext/components/model/agenticclaude
+    version: v0.1.3
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticclaude@v0.1.3
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticclaude@v0.1.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/eino-ext/components/model/agenticdeepseek
+    version: v0.1.0
+    source_url: https://github.com/cloudwego/eino-ext/tree/95019b303cc63a4149352c48923ad2becee1885d
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://github.com/cloudwego/eino-ext/blob/95019b303cc63a4149352c48923ad2becee1885d/LICENSE
+    compatibility: allow
+    notice: none
+    detector_override: upstream-module-archive-omits-license
+  - module: github.com/cloudwego/eino-ext/components/model/agenticgemini
+    version: v0.2.2
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticgemini@v0.2.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticgemini@v0.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/eino-ext/components/model/agenticopenai
+    version: v0.2.2
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticopenai@v0.2.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticopenai@v0.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/cloudwego/eino-ext/components/model/agenticqwen
+    version: v0.1.0
+    source_url: https://github.com/cloudwego/eino-ext/tree/95019b303cc63a4149352c48923ad2becee1885d
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://github.com/cloudwego/eino-ext/blob/95019b303cc63a4149352c48923ad2becee1885d/LICENSE
+    compatibility: allow
+    notice: none
+    detector_override: upstream-module-archive-omits-license
+  - module: github.com/cloudwego/eino-ext/libs/acl/openai
+    version: v0.1.18-0.20260527084435-846f52bd97c6
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/libs/acl/openai@v0.1.18-0.20260527084435-846f52bd97c6
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/libs/acl/openai@v0.1.18-0.20260527084435-846f52bd97c6?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/coder/acp-go-sdk
+    version: v0.13.5
+    source_url: https://github.com/coder/acp-go-sdk/tree/0845a3bb9eddda5bfc22a94dd3598c90cb842451
+    licenses:
+      - spdx: Apache-2.0
+        license_file: third_party/acp-go-sdk/LICENSE
+        license_url: https://github.com/coder/acp-go-sdk/blob/0845a3bb9eddda5bfc22a94dd3598c90cb842451/LICENSE
+    compatibility: allow
+    notice: retain
+    replacement:
+      kind: local-vendored
+      path: third_party/acp-go-sdk
+      modified: true
+  - module: github.com/creack/pty
+    version: v1.1.24
+    source_url: https://pkg.go.dev/github.com/creack/pty@v1.1.24
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/creack/pty@v1.1.24?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/dlclark/regexp2
+    version: v1.11.5
+    source_url: https://pkg.go.dev/github.com/dlclark/regexp2@v1.11.5
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/dlclark/regexp2@v1.11.5?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/dustin/go-humanize
+    version: v1.0.1
+    source_url: https://pkg.go.dev/github.com/dustin/go-humanize@v1.0.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/dustin/go-humanize@v1.0.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/eino-contrib/jsonschema
+    version: v1.0.3
+    source_url: https://pkg.go.dev/github.com/eino-contrib/jsonschema@v1.0.3
+    licenses:
+      - spdx: MIT
+        license_file: COPYING
+        license_url: https://pkg.go.dev/github.com/eino-contrib/jsonschema@v1.0.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/evanphx/json-patch
+    version: v0.5.2
+    source_url: https://pkg.go.dev/github.com/evanphx/json-patch@v0.5.2
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/evanphx/json-patch@v0.5.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/felixge/httpsnoop
+    version: v1.0.4
+    source_url: https://pkg.go.dev/github.com/felixge/httpsnoop@v1.0.4
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/felixge/httpsnoop@v1.0.4?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/go-logr/logr
+    version: v1.4.3
+    source_url: https://pkg.go.dev/github.com/go-logr/logr@v1.4.3
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/go-logr/logr@v1.4.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/go-logr/stdr
+    version: v1.2.2
+    source_url: https://pkg.go.dev/github.com/go-logr/stdr@v1.2.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/go-logr/stdr@v1.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/go-viper/mapstructure/v2
+    version: v2.5.0
+    source_url: https://pkg.go.dev/github.com/go-viper/mapstructure/v2@v2.5.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/go-viper/mapstructure/v2@v2.5.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/golang/groupcache
+    version: v0.0.0-20210331224755-41bb18bfe9da
+    source_url: https://pkg.go.dev/github.com/golang/groupcache@v0.0.0-20210331224755-41bb18bfe9da
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/golang/groupcache@v0.0.0-20210331224755-41bb18bfe9da?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/google/go-cmp
+    version: v0.7.0
+    source_url: https://pkg.go.dev/github.com/google/go-cmp@v0.7.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/google/go-cmp@v0.7.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/google/jsonschema-go
+    version: v0.4.3
+    source_url: https://pkg.go.dev/github.com/google/jsonschema-go@v0.4.3
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/google/jsonschema-go@v0.4.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/google/s2a-go
+    version: v0.1.8
+    source_url: https://pkg.go.dev/github.com/google/s2a-go@v0.1.8
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.md
+        license_url: https://pkg.go.dev/github.com/google/s2a-go@v0.1.8?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/google/uuid
+    version: v1.6.0
+    source_url: https://pkg.go.dev/github.com/google/uuid@v1.6.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/google/uuid@v1.6.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/googleapis/enterprise-certificate-proxy
+    version: v0.3.4
+    source_url: https://pkg.go.dev/github.com/googleapis/enterprise-certificate-proxy@v0.3.4
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/googleapis/enterprise-certificate-proxy@v0.3.4?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/goph/emperror
+    version: v0.17.2
+    source_url: https://pkg.go.dev/github.com/goph/emperror@v0.17.2
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/goph/emperror@v0.17.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/gorilla/css
+    version: v1.0.1
+    source_url: https://pkg.go.dev/github.com/gorilla/css@v1.0.1
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/gorilla/css@v1.0.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/gorilla/websocket
+    version: v1.5.3
+    source_url: https://pkg.go.dev/github.com/gorilla/websocket@v1.5.3
+    licenses:
+      - spdx: BSD-2-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/gorilla/websocket@v1.5.3?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: github.com/inconshreveable/mousetrap
+    version: v1.1.0
+    source_url: https://pkg.go.dev/github.com/inconshreveable/mousetrap@v1.1.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/inconshreveable/mousetrap@v1.1.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/invopop/jsonschema
+    version: v0.14.0
+    source_url: https://pkg.go.dev/github.com/invopop/jsonschema@v0.14.0
+    licenses:
+      - spdx: MIT
+        license_file: COPYING
+        license_url: https://pkg.go.dev/github.com/invopop/jsonschema@v0.14.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/jmespath/go-jmespath
+    version: v0.4.0
+    source_url: https://pkg.go.dev/github.com/jmespath/go-jmespath@v0.4.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/jmespath/go-jmespath@v0.4.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/json-iterator/go
+    version: v1.1.12
+    source_url: https://pkg.go.dev/github.com/json-iterator/go@v1.1.12
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/json-iterator/go@v1.1.12?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/klauspost/cpuid/v2
+    version: v2.2.9
+    source_url: https://pkg.go.dev/github.com/klauspost/cpuid/v2@v2.2.9
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/klauspost/cpuid/v2@v2.2.9?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/lucasb-eyer/go-colorful
+    version: v1.4.0
+    source_url: https://pkg.go.dev/github.com/lucasb-eyer/go-colorful@v1.4.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/lucasb-eyer/go-colorful@v1.4.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/mailru/easyjson
+    version: v0.7.7
+    source_url: https://pkg.go.dev/github.com/mailru/easyjson@v0.7.7
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/mailru/easyjson@v0.7.7?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/mattn/go-isatty
+    version: v0.0.20
+    source_url: https://pkg.go.dev/github.com/mattn/go-isatty@v0.0.20
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/mattn/go-isatty@v0.0.20?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/mattn/go-runewidth
+    version: v0.0.24
+    source_url: https://pkg.go.dev/github.com/mattn/go-runewidth@v0.0.24
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/mattn/go-runewidth@v0.0.24?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/meguminnnnnnnnn/go-openai
+    version: v0.1.2
+    source_url: https://pkg.go.dev/github.com/meguminnnnnnnnn/go-openai@v0.1.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/meguminnnnnnnnn/go-openai@v0.1.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/microcosm-cc/bluemonday
+    version: v1.0.27
+    source_url: https://pkg.go.dev/github.com/microcosm-cc/bluemonday@v1.0.27
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE.md
+        license_url: https://pkg.go.dev/github.com/microcosm-cc/bluemonday@v1.0.27?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/modelcontextprotocol/go-sdk
+    version: v1.6.1
+    source_url: https://github.com/modelcontextprotocol/go-sdk/tree/d454bbaf06a342aee5336df3370321d9cdec2478
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://github.com/modelcontextprotocol/go-sdk/blob/d454bbaf06a342aee5336df3370321d9cdec2478/LICENSE
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://github.com/modelcontextprotocol/go-sdk/blob/d454bbaf06a342aee5336df3370321d9cdec2478/LICENSE
+    compatibility: allow
+    notice: retain
+    detector_override: mixed-license-scope-reviewed
+  - module: github.com/modern-go/concurrent
+    version: v0.0.0-20180306012644-bacd9c7ef1dd
+    source_url: https://pkg.go.dev/github.com/modern-go/concurrent@v0.0.0-20180306012644-bacd9c7ef1dd
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/modern-go/concurrent@v0.0.0-20180306012644-bacd9c7ef1dd?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/modern-go/reflect2
+    version: v1.0.2
+    source_url: https://pkg.go.dev/github.com/modern-go/reflect2@v1.0.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/modern-go/reflect2@v1.0.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/muesli/cancelreader
+    version: v0.2.2
+    source_url: https://pkg.go.dev/github.com/muesli/cancelreader@v0.2.2
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/muesli/cancelreader@v0.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/muesli/termenv
+    version: v0.16.0
+    source_url: https://pkg.go.dev/github.com/muesli/termenv@v0.16.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/muesli/termenv@v0.16.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/nikolalohinski/gonja
+    version: v1.5.3
+    source_url: https://pkg.go.dev/github.com/nikolalohinski/gonja@v1.5.3
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/nikolalohinski/gonja@v1.5.3?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: github.com/openai/openai-go/v3
+    version: v3.35.0
+    source_url: https://pkg.go.dev/github.com/openai/openai-go/v3@v3.35.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/openai/openai-go/v3@v3.35.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/pb33f/ordered-map/v2
+    version: v2.3.1
+    source_url: https://pkg.go.dev/github.com/pb33f/ordered-map/v2@v2.3.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/pb33f/ordered-map/v2@v2.3.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/pelletier/go-toml/v2
+    version: v2.2.2
+    source_url: https://pkg.go.dev/github.com/pelletier/go-toml/v2@v2.2.2
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/pelletier/go-toml/v2@v2.2.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/pkg/errors
+    version: v0.9.1
+    source_url: https://pkg.go.dev/github.com/pkg/errors@v0.9.1
+    licenses:
+      - spdx: BSD-2-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/pkg/errors@v0.9.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/rivo/uniseg
+    version: v0.4.7
+    source_url: https://pkg.go.dev/github.com/rivo/uniseg@v0.4.7
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/rivo/uniseg@v0.4.7?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/segmentio/asm
+    version: v1.1.3
+    source_url: https://pkg.go.dev/github.com/segmentio/asm@v1.1.3
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/segmentio/asm@v1.1.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/segmentio/encoding
+    version: v0.5.4
+    source_url: https://pkg.go.dev/github.com/segmentio/encoding@v0.5.4
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/segmentio/encoding@v0.5.4?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/sirupsen/logrus
+    version: v1.9.3
+    source_url: https://pkg.go.dev/github.com/sirupsen/logrus@v1.9.3
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/sirupsen/logrus@v1.9.3?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/slongfield/pyfmt
+    version: v0.0.0-20220222012616-ea85ff4c361f
+    source_url: https://pkg.go.dev/github.com/slongfield/pyfmt@v0.0.0-20220222012616-ea85ff4c361f
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/slongfield/pyfmt@v0.0.0-20220222012616-ea85ff4c361f?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/spf13/cobra
+    version: v1.10.2
+    source_url: https://pkg.go.dev/github.com/spf13/cobra@v1.10.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/spf13/cobra@v1.10.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/spf13/pflag
+    version: v1.0.9
+    source_url: https://pkg.go.dev/github.com/spf13/pflag@v1.0.9
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/spf13/pflag@v1.0.9?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/standard-webhooks/standard-webhooks/libraries
+    version: v0.0.1
+    source_url: https://pkg.go.dev/github.com/standard-webhooks/standard-webhooks/libraries@v0.0.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/standard-webhooks/standard-webhooks/libraries@v0.0.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/tidwall/gjson
+    version: v1.18.0
+    source_url: https://pkg.go.dev/github.com/tidwall/gjson@v1.18.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/tidwall/gjson@v1.18.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/tidwall/match
+    version: v1.1.1
+    source_url: https://pkg.go.dev/github.com/tidwall/match@v1.1.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/tidwall/match@v1.1.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/tidwall/pretty
+    version: v1.2.1
+    source_url: https://pkg.go.dev/github.com/tidwall/pretty@v1.2.1
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/tidwall/pretty@v1.2.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/tidwall/sjson
+    version: v1.2.5
+    source_url: https://pkg.go.dev/github.com/tidwall/sjson@v1.2.5
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/tidwall/sjson@v1.2.5?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/twitchyliquid64/golang-asm
+    version: v0.15.1
+    source_url: https://pkg.go.dev/github.com/twitchyliquid64/golang-asm@v0.15.1
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/twitchyliquid64/golang-asm@v0.15.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/volcengine/volc-sdk-golang
+    version: v1.0.23
+    source_url: https://github.com/volcengine/volc-sdk-golang/tree/4bf191d3bd51e910227bea27a2db6d3a337fae4c
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://github.com/volcengine/volc-sdk-golang/blob/4bf191d3bd51e910227bea27a2db6d3a337fae4c/LICENSE
+    compatibility: allow
+    notice: none
+    detector_override: upstream-module-archive-omits-license
+  - module: github.com/volcengine/volcengine-go-sdk
+    version: v1.2.34
+    source_url: https://pkg.go.dev/github.com/volcengine/volcengine-go-sdk@v1.2.34
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE.txt
+        license_url: https://pkg.go.dev/github.com/volcengine/volcengine-go-sdk@v1.2.34?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: github.com/wk8/go-ordered-map/v2
+    version: v2.1.8
+    source_url: https://pkg.go.dev/github.com/wk8/go-ordered-map/v2@v2.1.8
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/wk8/go-ordered-map/v2@v2.1.8?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/xo/terminfo
+    version: v0.0.0-20220910002029-abceb7e1c41e
+    source_url: https://pkg.go.dev/github.com/xo/terminfo@v0.0.0-20220910002029-abceb7e1c41e
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/xo/terminfo@v0.0.0-20220910002029-abceb7e1c41e?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/yargevad/filepathx
+    version: v1.0.0
+    source_url: https://pkg.go.dev/github.com/yargevad/filepathx@v1.0.0
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/yargevad/filepathx@v1.0.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/yosida95/uritemplate/v3
+    version: v3.0.2
+    source_url: https://pkg.go.dev/github.com/yosida95/uritemplate/v3@v3.0.2
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/yosida95/uritemplate/v3@v3.0.2?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/yuin/goldmark
+    version: v1.7.17
+    source_url: https://pkg.go.dev/github.com/yuin/goldmark@v1.7.17
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/yuin/goldmark@v1.7.17?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: github.com/yuin/goldmark-emoji
+    version: v1.0.6
+    source_url: https://pkg.go.dev/github.com/yuin/goldmark-emoji@v1.0.6
+    licenses:
+      - spdx: MIT
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/github.com/yuin/goldmark-emoji@v1.0.6?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.opencensus.io
+    version: v0.24.0
+    source_url: https://pkg.go.dev/go.opencensus.io@v0.24.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opencensus.io@v0.24.0?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: go.opentelemetry.io/auto/sdk
+    version: v1.2.1
+    source_url: https://pkg.go.dev/go.opentelemetry.io/auto/sdk@v1.2.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opentelemetry.io/auto/sdk@v1.2.1?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
+    version: v0.54.0
+    source_url: https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.54.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.54.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+    version: v0.54.0
+    source_url: https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.54.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.54.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.opentelemetry.io/otel
+    version: v1.43.0
+    source_url: https://pkg.go.dev/go.opentelemetry.io/otel@v1.43.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opentelemetry.io/otel@v1.43.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.opentelemetry.io/otel/metric
+    version: v1.43.0
+    source_url: https://pkg.go.dev/go.opentelemetry.io/otel/metric@v1.43.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opentelemetry.io/otel/metric@v1.43.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.opentelemetry.io/otel/trace
+    version: v1.43.0
+    source_url: https://pkg.go.dev/go.opentelemetry.io/otel/trace@v1.43.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.opentelemetry.io/otel/trace@v1.43.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: go.yaml.in/yaml/v4
+    version: v4.0.0-rc.2
+    source_url: https://pkg.go.dev/go.yaml.in/yaml/v4@v4.0.0-rc.2
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/go.yaml.in/yaml/v4@v4.0.0-rc.2?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: golang.org/x/arch
+    version: v0.12.0
+    source_url: https://pkg.go.dev/golang.org/x/arch@v0.12.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/arch@v0.12.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/crypto
+    version: v0.51.0
+    source_url: https://pkg.go.dev/golang.org/x/crypto@v0.51.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/crypto@v0.51.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/exp
+    version: v0.0.0-20250218142911-aa4b98e5adaa
+    source_url: https://pkg.go.dev/golang.org/x/exp@v0.0.0-20250218142911-aa4b98e5adaa
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/exp@v0.0.0-20250218142911-aa4b98e5adaa?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/image
+    version: v0.43.0
+    source_url: https://pkg.go.dev/golang.org/x/image@v0.43.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/image@v0.43.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/net
+    version: v0.55.0
+    source_url: https://pkg.go.dev/golang.org/x/net@v0.55.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/net@v0.55.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/oauth2
+    version: v0.36.0
+    source_url: https://pkg.go.dev/golang.org/x/oauth2@v0.36.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/oauth2@v0.36.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/sync
+    version: v0.21.0
+    source_url: https://pkg.go.dev/golang.org/x/sync@v0.21.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/sync@v0.21.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/sys
+    version: v0.46.0
+    source_url: https://pkg.go.dev/golang.org/x/sys@v0.46.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/sys@v0.46.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/term
+    version: v0.43.0
+    source_url: https://pkg.go.dev/golang.org/x/term@v0.43.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/term@v0.43.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/text
+    version: v0.39.0
+    source_url: https://pkg.go.dev/golang.org/x/text@v0.39.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/text@v0.39.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: golang.org/x/time
+    version: v0.6.0
+    source_url: https://pkg.go.dev/golang.org/x/time@v0.6.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/golang.org/x/time@v0.6.0?tab=licenses
+    compatibility: allow
+    notice: retain
+    detector_override: detector-spdx-classification-reviewed
+  - module: google.golang.org/api
+    version: v0.197.0
+    source_url: https://pkg.go.dev/google.golang.org/api@v0.197.0
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/google.golang.org/api@v0.197.0?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: google.golang.org/genai
+    version: v1.36.0
+    source_url: https://pkg.go.dev/google.golang.org/genai@v1.36.0
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/google.golang.org/genai@v1.36.0?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: google.golang.org/genproto/googleapis/rpc
+    version: v0.0.0-20260414002931-afd174a4e478
+    source_url: https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260414002931-afd174a4e478
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260414002931-afd174a4e478?tab=licenses
+    compatibility: allow
+    notice: none
+  - module: google.golang.org/grpc
+    version: v1.82.1
+    source_url: https://pkg.go.dev/google.golang.org/grpc@v1.82.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/google.golang.org/grpc@v1.82.1?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: google.golang.org/protobuf
+    version: v1.36.11
+    source_url: https://pkg.go.dev/google.golang.org/protobuf@v1.36.11
+    licenses:
+      - spdx: BSD-3-Clause
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/google.golang.org/protobuf@v1.36.11?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: gopkg.in/yaml.v2
+    version: v2.2.8
+    source_url: https://pkg.go.dev/gopkg.in/yaml.v2@v2.2.8
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/gopkg.in/yaml.v2@v2.2.8?tab=licenses
+    compatibility: allow
+    notice: retain
+  - module: gopkg.in/yaml.v3
+    version: v3.0.1
+    source_url: https://pkg.go.dev/gopkg.in/yaml.v3@v3.0.1
+    licenses:
+      - spdx: Apache-2.0
+        license_file: LICENSE
+        license_url: https://pkg.go.dev/gopkg.in/yaml.v3@v3.0.1?tab=licenses
+    compatibility: allow
+    notice: retain

@@ -1,0 +1,135 @@
+== heading ==
+Streaming title
+══════════════════════════════════════
+== paragraph-tail ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with **bold
+== paragraph-complete ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+== list-first ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+== list-complete ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+== table-header ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+| Name | State |
+== table-shape ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+| Name | State |
+| --- | --- |
+== table-row ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+| Name | State |
+| --- | --- |
+| alpha | ready |
+== fence-open ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+┌───────┬───────┐
+│ Name  │ State │
+├───────┼───────┤
+│ alpha │ ready │
+└───────┴───────┘
+== fence-body ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+┌───────┬───────┐
+│ Name  │ State │
+├───────┼───────┤
+│ alpha │ ready │
+└───────┴───────┘
+
+  fmt.Println("ok")
+== fence-close ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+┌───────┬───────┐
+│ Name  │ State │
+├───────┼───────┤
+│ alpha │ ready │
+└───────┴───────┘
+
+  fmt.Println("ok")
+== final-tail ==
+Streaming title
+══════════════════════════════════════
+
+Paragraph with bold text and link
+https://example.com.
+
+• first item
+• second item
+
+┌───────┬───────┐
+│ Name  │ State │
+├───────┼───────┤
+│ alpha │ ready │
+└───────┴───────┘
+
+  fmt.Println("ok")
+
+Done.

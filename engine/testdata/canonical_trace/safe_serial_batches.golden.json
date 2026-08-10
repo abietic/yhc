@@ -1,0 +1,618 @@
+{
+  "schema_version": 1,
+  "fixture": "safe_serial_batches",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "run stable batches"
+          }
+        ],
+        "tools": [
+          {
+            "name": "SafeA"
+          },
+          {
+            "name": "SafeB"
+          },
+          {
+            "name": "Serial"
+          },
+          {
+            "name": "SafeC"
+          },
+          {
+            "name": "SafeD"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "393c488981f5a3c6",
+        "messages": [
+          {
+            "role": "user",
+            "content": "run stable batches"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "tool_calls": [
+          {
+            "id": "<id-1>",
+            "name": "SafeA",
+            "arguments": "{\"value\":1}"
+          },
+          {
+            "id": "<id-2>",
+            "name": "SafeB",
+            "arguments": "{\"value\":2}"
+          },
+          {
+            "id": "<id-3>",
+            "name": "Serial",
+            "arguments": "{\"value\":3}"
+          },
+          {
+            "id": "<id-4>",
+            "name": "SafeC",
+            "arguments": "{\"value\":4}"
+          },
+          {
+            "id": "<id-5>",
+            "name": "SafeD",
+            "arguments": "{\"value\":5}"
+          }
+        ],
+        "finish_reason": "tool_calls"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"<id-1>\",\"name\":\"SafeA\",\"arguments\":\"{\\\"value\\\":1}\"},{\"id\":\"<id-2>\",\"name\":\"SafeB\",\"arguments\":\"{\\\"value\\\":2}\"},{\"id\":\"<id-3>\",\"name\":\"Serial\",\"arguments\":\"{\\\"value\\\":3}\"},{\"id\":\"<id-4>\",\"name\":\"SafeC\",\"arguments\":\"{\\\"value\\\":4}\"},{\"id\":\"<id-5>\",\"name\":\"SafeD\",\"arguments\":\"{\\\"value\\\":5}\"}],\"finish_reason\":\"tool_calls\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-1>\",\"tool_name\":\"SafeA\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-2>\",\"tool_name\":\"SafeB\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-3>\",\"tool_name\":\"Serial\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-4>\",\"tool_name\":\"SafeC\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-5>\",\"tool_name\":\"SafeD\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 8,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":1},\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 9,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":2},\"tool_call_id\":\"<id-2>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 10,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":3},\"tool_call_id\":\"<id-3>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 11,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":4},\"tool_call_id\":\"<id-4>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 12,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":5},\"tool_call_id\":\"<id-5>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 13,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"ok:SafeA\",\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 14,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"ok:SafeA\",\"tool_call_id\":\"<id-1>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 1,
+        "id": "<id-1>",
+        "name": "SafeA",
+        "input": "{\"value\":1}",
+        "admission": "allowed",
+        "start_order": 1,
+        "finish_order": 1,
+        "batch": 1,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 15,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"ok:SafeB\",\"tool_call_id\":\"<id-2>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 16,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"ok:SafeB\",\"tool_call_id\":\"<id-2>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 2,
+        "id": "<id-2>",
+        "name": "SafeB",
+        "input": "{\"value\":2}",
+        "admission": "allowed",
+        "start_order": 2,
+        "finish_order": 2,
+        "batch": 1,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 17,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"ok:Serial\",\"tool_call_id\":\"<id-3>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 18,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"ok:Serial\",\"tool_call_id\":\"<id-3>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 3,
+        "id": "<id-3>",
+        "name": "Serial",
+        "input": "{\"value\":3}",
+        "admission": "allowed",
+        "start_order": 3,
+        "finish_order": 3,
+        "batch": 2,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 19,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"ok:SafeC\",\"tool_call_id\":\"<id-4>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 20,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"ok:SafeC\",\"tool_call_id\":\"<id-4>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 4,
+        "id": "<id-4>",
+        "name": "SafeC",
+        "input": "{\"value\":4}",
+        "admission": "allowed",
+        "start_order": 4,
+        "finish_order": 4,
+        "batch": 3,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 21,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"ok:SafeD\",\"tool_call_id\":\"<id-5>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 22,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"ok:SafeD\",\"tool_call_id\":\"<id-5>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 5,
+        "id": "<id-5>",
+        "name": "SafeD",
+        "input": "{\"value\":5}",
+        "admission": "allowed",
+        "start_order": 5,
+        "finish_order": 5,
+        "batch": 3,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 23,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 2,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "run stable batches"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "SafeA",
+                "arguments": "{\"value\":1}"
+              },
+              {
+                "id": "<id-2>",
+                "name": "SafeB",
+                "arguments": "{\"value\":2}"
+              },
+              {
+                "id": "<id-3>",
+                "name": "Serial",
+                "arguments": "{\"value\":3}"
+              },
+              {
+                "id": "<id-4>",
+                "name": "SafeC",
+                "arguments": "{\"value\":4}"
+              },
+              {
+                "id": "<id-5>",
+                "name": "SafeD",
+                "arguments": "{\"value\":5}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeA",
+            "tool_call_id": "<id-1>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeB",
+            "tool_call_id": "<id-2>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:Serial",
+            "tool_call_id": "<id-3>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeC",
+            "tool_call_id": "<id-4>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeD",
+            "tool_call_id": "<id-5>"
+          }
+        ],
+        "tools": [
+          {
+            "name": "SafeA"
+          },
+          {
+            "name": "SafeB"
+          },
+          {
+            "name": "Serial"
+          },
+          {
+            "name": "SafeC"
+          },
+          {
+            "name": "SafeD"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "46004628c455c684",
+        "messages": [
+          {
+            "role": "user",
+            "content": "run stable batches"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "SafeA",
+                "arguments": "{\"value\":1}"
+              },
+              {
+                "id": "<id-2>",
+                "name": "SafeB",
+                "arguments": "{\"value\":2}"
+              },
+              {
+                "id": "<id-3>",
+                "name": "Serial",
+                "arguments": "{\"value\":3}"
+              },
+              {
+                "id": "<id-4>",
+                "name": "SafeC",
+                "arguments": "{\"value\":4}"
+              },
+              {
+                "id": "<id-5>",
+                "name": "SafeD",
+                "arguments": "{\"value\":5}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeA",
+            "tool_call_id": "<id-1>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeB",
+            "tool_call_id": "<id-2>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:Serial",
+            "tool_call_id": "<id-3>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeC",
+            "tool_call_id": "<id-4>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeD",
+            "tool_call_id": "<id-5>"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 2,
+        "content": "batched",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 24,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"batched\",\"finish_reason\":\"stop\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 25,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"batched\",\"message_id\":\"<id-6>\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "46004628c455c684",
+        "messages": [
+          {
+            "role": "user",
+            "content": "run stable batches"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "SafeA",
+                "arguments": "{\"value\":1}"
+              },
+              {
+                "id": "<id-2>",
+                "name": "SafeB",
+                "arguments": "{\"value\":2}"
+              },
+              {
+                "id": "<id-3>",
+                "name": "Serial",
+                "arguments": "{\"value\":3}"
+              },
+              {
+                "id": "<id-4>",
+                "name": "SafeC",
+                "arguments": "{\"value\":4}"
+              },
+              {
+                "id": "<id-5>",
+                "name": "SafeD",
+                "arguments": "{\"value\":5}"
+              }
+            ],
+            "finish_reason": "tool_calls"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeA",
+            "tool_call_id": "<id-1>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeB",
+            "tool_call_id": "<id-2>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:Serial",
+            "tool_call_id": "<id-3>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeC",
+            "tool_call_id": "<id-4>"
+          },
+          {
+            "role": "tool",
+            "content": "ok:SafeD",
+            "tool_call_id": "<id-5>"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 4,
+        "final_message_digest": "2fcb23bb31ced75c"
+      }
+    }
+  ]
+}

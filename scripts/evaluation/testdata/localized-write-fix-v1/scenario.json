@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "localized-write-fix",
+  "version": 1,
+  "fixture": {
+    "root": "fixture",
+    "files": [
+      "go.mod",
+      "greet/greet.go",
+      "greet/greet_test.go"
+    ],
+    "max_files": 3,
+    "max_bytes": 4096
+  },
+  "task": {
+    "prompt": "Create greet/decorate.go containing package greet and func decorate(name string) string { return \"hello, \" + name }."
+  },
+  "execution": {
+    "entrypoint": "headless.exec",
+    "permission_mode": "acceptEdits",
+    "tools": ["Write"],
+    "provider": "openai",
+    "model": "gpt-4o",
+    "provider_calls": 3,
+    "model_turns": 3,
+    "tool_calls": 2,
+    "timeout_milliseconds": 20000,
+    "stdout_bytes": 32768,
+    "stderr_bytes": 32768,
+    "artifact_max_bytes": 262144
+  },
+  "expected": {
+    "addition": "greet/decorate.go",
+    "content_sha256": "9ff00a0d21840b7d2406964bfa49574c19dbec361ecbf80872b4dee1460eb90a",
+    "assistant_text": "fixed"
+  },
+  "grader": {
+    "public_command": ["go", "test", "./..."],
+    "hidden_file": "grader/hidden_test.go",
+    "timeout_milliseconds": 60000
+  },
+  "provider": {
+    "script": "provider/steps.json",
+    "fake_api_key": "fixture-key"
+  }
+}

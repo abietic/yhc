@@ -1,0 +1,17 @@
+name: prompt_input
+width: 80
+height: 24
+stable_wait: 500ms
+steps:
+  - wait_for: "(?i)(welcome|ready|what|>|\\$|help)"
+    timeout: 10s
+  - input: "Hello world"
+    delay: 200ms
+  - capture: after_typing
+  - key: backspace
+    delay: 100ms
+  - key: backspace
+    delay: 100ms
+  - key: backspace
+    delay: 100ms
+  - capture: after_delete

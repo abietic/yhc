@@ -1,0 +1,27 @@
+version: 1
+repository: example/repository
+modules:
+  tooling:
+    priority: 1
+    production_paths:
+      - include: scripts/**
+        exclude: []
+    test_paths: []
+    packages: [./scripts/...]
+    owner_docs: [docs/owner.md]
+    risks: []
+    focused_packages: [./scripts/...]
+risk_packs:
+  contract:
+    target: test
+    deep_targets: []
+    platforms: [all]
+change_classes:
+  metadata:
+    priority: 1
+    paths: [Makefile]
+    targets: [test]
+    focused_packages: []
+boundaries:
+  forbidden_production_edges: []
+  flat_package_roots: []

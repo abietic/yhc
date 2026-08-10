@@ -1,0 +1,30 @@
+YHC
+Copyright 2026 The YHC Authors
+
+YHC is licensed under the Apache License, Version 2.0. The Apache License
+applies to YHC project-owned expression only; it does not replace licenses for
+third-party material distributed with this repository.
+
+Third-party notices and license evidence
+----------------------------------------
+
+The dependency inventory and the notice-retention decisions for this source
+candidate are recorded in quality/dependency-licenses.yaml. Retain the license,
+copyright, attribution, and NOTICE material required by that inventory whenever
+the corresponding dependency material is redistributed.
+
+This repository includes a modified copy of github.com/coder/acp-go-sdk
+v0.13.5 in third_party/acp-go-sdk. Its Apache-2.0 license is retained in
+third_party/acp-go-sdk/LICENSE. Local modifications preserve ContentBlock
+_meta and annotations during JSON marshaling and enforce inbound-request
+ordering behind already accepted notifications. Every changed or added file in
+that vendored copy identifies the local delta.
+
+Contributor Covenant
+--------------------
+
+Contributor Covenant 2.1 is used as this repository's Code of Conduct under the
+Creative Commons Attribution 4.0 International license. Its source, license,
+and YHC adaptation notice are included in CODE_OF_CONDUCT.md. This attribution
+is not a claim that the Contributor Covenant is a YHC dependency or that YHC
+owns it.

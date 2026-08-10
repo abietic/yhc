@@ -1,0 +1,8 @@
+name: welcome_screen
+width: 100
+height: 30
+stable_wait: 1s
+steps:
+  - wait_for: "(?i)(welcome|ready|what|>|help|agent|claude|eino|crush)"
+    timeout: 10s
+  - capture: initial

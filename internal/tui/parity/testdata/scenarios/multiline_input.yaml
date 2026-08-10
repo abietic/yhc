@@ -1,0 +1,18 @@
+name: multiline_input
+width: 80
+height: 24
+stable_wait: 500ms
+steps:
+  - wait_for: "(?i)(welcome|ready|what|>|\\$|help)"
+    timeout: 10s
+  - input: "line one"
+    delay: 100ms
+  - key: enter
+    delay: 100ms
+  - input: "line two"
+    delay: 100ms
+  - key: enter
+    delay: 100ms
+  - input: "line three"
+    delay: 100ms
+  - capture: three_lines

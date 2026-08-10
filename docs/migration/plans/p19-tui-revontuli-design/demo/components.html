@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="polar-night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Components — Revontuli</title>
+<link rel="stylesheet" href="assets/demo.css">
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="nav">
+    <span class="brand">✦ Revontuli</span>
+    <a href="index.html">Overview</a>
+    <a href="components.html" class="on">Components</a>
+    <a href="dynamics.html">Dynamics</a>
+    <a href="mascot.html">Mascot — Eno</a>
+    <a href="themes.html">Themes &amp; tokens</a>
+  </nav>
+
+  <h1>Components</h1>
+  <p class="lede">Every screen element, re-skinned. Layout, ordering, and interaction semantics are
+  preserved from the current TUI; only the visual contract changes. Dynamic behavior (stacking,
+  streaming, animation, performance) lives in <a href="dynamics.html" style="color:var(--aurora-sky)">Dynamics</a>;
+  colors reference the tokens in <a href="themes.html" style="color:var(--aurora-sky)">Themes &amp; tokens</a>.</p>
+
+  <!-- ============ FULL TRANSCRIPT ============ -->
+  <h2>Chat transcript <span class="tag">the everyday screen</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> standard layout</div>
+    <div class="screen"><div class="userpanel"><span class="bd">Fix the flaky spinner test and run the suite</span></div>
+
+<span class="t">✦</span> I'll trace the flake first, then patch and verify.
+
+<span class="t">●</span> <span class="badge t">Bash</span> <span class="m">go test ./internal/tui/ -run TestSpinner -count=20</span>
+  <span class="s">⎿</span>  <span class="r">FAIL: TestSpinnerStall (1 flake in 20 runs)</span>
+<span class="g">●</span> <span class="badge g">Read</span> <span class="m">spinner.go</span> <span class="s">(189 lines)</span>
+  <span class="s">⎿</span>  <span class="s">stall timer shared across frames — reset missing on tick</span>
+<span class="g">●</span> <span class="badge g">Edit</span> <span class="m">spinner.go</span>
+<span class="diff-ctx">  @@ -187,3 +187,4 @@</span><span class="diff-del">-  s.frame++</span><span class="diff-add">+  s.frame++</span><span class="diff-add">+  s.stall.Reset(stallAfter)</span>
+
+<span class="t">✦</span> The stall timer survived frame ticks, so a slow-but-alive render tripped the
+  stalled flag. Resetting it per tick fixes the flake. Verifying:
+
+<span class="g">●</span> <span class="badge t">Bash</span> <span class="m">go test ./internal/tui/ -count=20</span>
+  <span class="s">⎿</span>  <span class="g">ok  github.com/yuhaichuan/eino-agent/internal/tui  42.1s</span>
+
+<span class="t">✦</span> <span class="bd">Done.</span> <span class="m">1 file changed, suite green ×20. Diff is ready for review.</span>
+
+<span class="composer">❯ <span class="ph">Ask anything...</span><span class="cblock"> </span></span>
+<div class="statusbar"><span class="t">●</span> main <span class="s">·</span> <span class="s">^p palette · ? keys</span>                        <span class="t">✦</span> kimi-k2 <span class="s">·</span> eino-agent <span class="s">·</span> 41.2k <span class="s">·</span> $0.18 <span class="s">·</span> <span class="t">▰▰▱▱▱</span> 27%</div></div>
+  </div>
+  <p class="figcap">No header band. The current TUI's <code>renderHeader</code> is already dead code in
+  production (<code>app.go:2321</code> — nothing in <code>View()</code> calls it); the header rect only hosts the
+  transient search/message-select context bar. All persistent identity moves to the single status
+  line below, so model/thread/cwd appear exactly once.</p>
+
+  <h3 style="color:var(--fg);font-size:14px">What changed vs. today</h3>
+  <ul>
+    <li><strong>One info line</strong> — the header/status duplication is gone by construction (header removed, see §Status line).</li>
+    <li><strong>User messages</strong> — the brand-colored <code>●</code> prefix becomes a soft panel (<code>userBg</code>) with a teal <code>▎</code> left bar: your words read as input, not agent output.</li>
+    <li><strong>Assistant prefix</strong> — <code>✦</code> teal; system lines use outline <code>✧</code>.</li>
+    <li><strong>Tool badges</strong> — category tint moves from dark-hue backgrounds to colored text on the neutral <code>element</code> surface (Bash teal, file ops green, search sky, agent violet, MCP teal, web sky).</li>
+    <li><strong>Status dots</strong> — running is now teal (was amber, which read as a warning); amber stays warning-only. Green success / red error unchanged.</li>
+  </ul>
+
+  <!-- ============ STATUS LINE ============ -->
+  <h2>Status line <span class="tag">single · configurable follow-on</span></h2>
+  <p>The footer is the <strong>only</strong> persistent info surface. Its content is an ordered list of
+  segments is shown here as a follow-on concept — the model codex uses
+  (<code>tui.status_line</code> item ids + interactive setup with live preview),
+  but it is not an accepted P19 identity slice:</p>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> default layout</div>
+    <div class="screen"><span class="t">●</span> main <span class="s">·</span> <span class="s">^p palette · ? keys</span>                        <span class="t">✦</span> kimi-k2 <span class="s">·</span> eino-agent <span class="s">·</span> 41.2k <span class="s">·</span> $0.18 <span class="s">·</span> <span class="t">▰▰▱▱▱</span> 27%</div>
+  </div>
+  <div class="segs">
+    <span class="seg"><b>mode</b></span><span class="seg"><b>thread</b></span><span class="seg"><b>keys</b></span>
+    <span class="seg">|</span>
+    <span class="seg right"><b>model</b></span><span class="seg right"><b>cwd</b></span><span class="seg right"><b>tokens</b></span><span class="seg right"><b>cost</b></span><span class="seg right"><b>context</b></span>
+  </div>
+  <ul>
+    <li>Config: <code>tui.statusLine = ["mode","thread","keys","|","model","cwd","tokens","cost","context"]</code> — segments before <code>|</code> render left, after render right. Available ids: <code>mode thread keys scroll model model-effort cwd git tokens cost elapsed tools tasks context version</code>; unknown ids warn once (codex behavior).</li>
+    <li><code>context</code> renders the <code>▰▰▱▱▱ 27%</code> meter; data already exists (<code>engine.GetContextUsage</code>), colored warning ≥75% / error ≥90%, hidden when the provider can't report it.</li>
+    <li><code>/statusline</code> opens a setup dialog with live preview and a multi-select picker (parity with codex's <code>status_line_setup</code>).</li>
+    <li>The existing <code>StatusLineFunc</code> hook (<code>app.go:240</code>) is already wired through the Go <code>tui.Config</code> seam; it cannot be persisted as ordinary config data. Shell-command/full-custom configuration stays <strong>deferred</strong> pending a trust model.</li>
+    <li>Today a toast replaces the left status content. A separate expiry/layering candidate is illustrated in <a href="dynamics.html" style="color:var(--aurora-sky)">Dynamics</a>; it is not part of P19.</li>
+  </ul>
+
+  <!-- ============ COMPOSER STATES ============ -->
+  <h2>Composer <span class="tag">all input states + cursor</span></h2>
+  <p>The composer border carries the mode color (teal default, sky plan, amber shell, red yolo).
+  Below: the states every composer must render, previously unspecified.</p>
+
+  <h3 style="color:var(--fg);font-size:14px">Single line, block cursor</h3>
+  <div class="term"><div class="screen"><span class="composer">❯ Fix the fla<span class="cblock">k</span>y spinner test</span></div></div>
+  <p class="figcap">The cursor is a <strong>reverse-video block over the character under it</strong> — this is
+  what the bubbles <code>cursor.Model</code> already renders today (the round-1 mock's thin <code>▏</code> bar was
+  wrong). Blink 530ms; <code>steady</code> option via <code>Cursor.SetMode</code>; blink speed via <code>Cursor.BlinkSpeed</code>.
+  A thin bar cursor is <strong>not offered</strong>: bubbles v1.0.0 textarea always inverts the cell under the
+  cursor, so a bar would require forking the textarea — deferred until the bubbles v2 evaluation.</p>
+
+  <h3 style="color:var(--fg);font-size:14px">Multiline</h3>
+  <div class="term"><div class="screen"><span class="composer">❯ Please update the config loader:
+  1. read EINO_* env vars first
+  2. then project settings<span class="cblock"> </span></span>
+<span class="s">  [3 lines] · alt+enter for newline</span></div></div>
+  <p class="figcap">Continuation lines take the 2-space indent from the existing prompt func
+  (<code>app.go:278-283</code>); the <code>[N lines]</code> indicator already exists
+  (<code>chat_integration.go:236-241</code>). The editor rect grows with content up to the
+  height-proportional cap (<code>layout.go:174-201</code>), then scrolls internally.</p>
+
+  <h3 style="color:var(--fg);font-size:14px">Long line, soft-wrapped</h3>
+  <div class="term"><div class="screen"><span class="composer">❯ run the full migration scan and summarize every
+  file that still imports the legacy adapter packa<span class="cblock">g</span>e</span>
+<span class="s">  soft wrap · no line numbers · wraps at pane width</span></div></div>
+  <p class="figcap">Soft wrap is already on (textarea wraps at <code>SetWidth</code>); the app mirrors the
+  wrapping with <code>countVisualLines</code>/<code>countWrappedLines</code> (<code>layout.go:311-392</code>) to size the
+  editor. Wrapped rows get no prompt indent and no break glyph — the text reads as one logical line.</p>
+
+  <h3 style="color:var(--fg);font-size:14px">Pasted content placeholder</h3>
+  <div class="term"><div class="screen"><span class="composer">❯ Summarize this log: <span class="badge sk">[Pasted Content 2,431 chars]</span><span class="cblock"> </span></span>
+<span class="s">  large pastes collapse inline · full text held as a composer element</span></div></div>
+  <p class="figcap">Existing behavior (<code>composer_elements.go:38-84</code>): large pastes become an atomic
+  placeholder element; small pastes insert verbatim. Thresholds stay as-is — all five references
+  converge on ~10 lines / 1000 chars.</p>
+
+  <h3 style="color:var(--fg);font-size:14px">Mode borders</h3>
+  <div class="split">
+    <div class="term"><div class="term-titlebar">default</div>
+      <div class="screen"><span class="composer">❯ <span class="ph">Ask anything...</span><span class="cblock"> </span></span></div></div>
+    <div class="term"><div class="term-titlebar">plan</div>
+      <div class="screen"><span class="composer plan">❯ <span class="m">Refactor the auth module…</span><span class="cblock"> </span></span></div></div>
+    <div class="term"><div class="term-titlebar">shell</div>
+      <div class="screen"><span class="composer shell">! <span class="m">git status</span><span class="cblock"> </span></span></div></div>
+    <div class="term"><div class="term-titlebar">yolo</div>
+      <div class="screen"><span class="composer yolo">❯ <span class="m">rm the legacy adapter</span><span class="cblock"> </span></span></div></div>
+  </div>
+
+  <!-- ============ SPINNER ============ -->
+  <h2>Spinner <span class="tag">the one motion element</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> spinner states</div>
+    <div class="screen"><span class="breathe t">✦</span> <span class="shimmer">Ruminating…</span> <span class="s">(12s · ↑ 1.2k tok)</span>
+<span class="sk">✦</span> <span class="sk">Waiting for permission…</span> <span class="s">(esc to interrupt)</span>
+<span style="color:#C2455C">✦</span> <span style="color:#C2455C">Stalled — retrying stream</span> <span class="s">(47s)</span></div>
+  </div>
+  <ul>
+    <li>Glyph settles on the brand <code>✦</code> with a <strong>teal→sky→violet shimmer sweep</strong> across the verb; the icon breathes (<code>✦</code> opacity pulse, 960ms). Both are extensions of the existing 120ms tick — no new timers.</li>
+    <li>Waiting-for-permission turns sky (not brand teal), stalled keeps a deep red (<code>#C2455C</code>).</li>
+    <li>Verb list keeps the current whimsy ("Ruminating…", "Forging…"); motion honors reduced-motion (static <code>✦</code> + verb).</li>
+  </ul>
+
+  <!-- ============ PERMISSION DIALOG ============ -->
+  <h2>Permission dialog <span class="tag">violet = human decision</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> bottom-docked overlay</div>
+    <div class="screen"><div class="permdlg"><span class="v bd">Permission required</span>
+<span class="m">Bash wants to run:</span> <span class="bd">rm -rf build/coverage.out</span>
+
+  <span class="v">❯</span> <span class="sel"> Yes, allow once </span>
+    Allow always for this command
+    No, tell Eino what to do instead <span class="s">(esc)</span></div></div>
+  </div>
+  <ul>
+    <li>Violet (<code>#A78BFA</code>) is reserved for <strong>human-decision surfaces</strong>: permission prompts, plan approval, question pickers. It never appears in agent output, so a violet edge always means "your call".</li>
+    <li>Structure unchanged: top-only rule, <code>❯</code> selection, same three options, 200ms input grace period on push.</li>
+  </ul>
+
+  <!-- ============ MESSAGE TYPES ============ -->
+  <h2>Message types <span class="tag">glyph grammar</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> message catalog</div>
+    <div class="screen"><span class="t">✦</span> <span class="m">Assistant text — markdown body, no bubble, full width.</span>
+<span class="t">✧</span> <span class="m">System notice — compact boundary, hooks, auto-mode nudges.</span>
+<span class="s">✦ </span><span class="s it">Thinking… (italic, subtle, collapsible)</span>
+<span class="a">⚠</span> <span class="a">Warning — context at 85%, compact suggested.</span>
+<span class="r">✖</span> <span class="r">Error — stream interrupted.</span> <span class="s">▶ Details</span>
+<span class="sk">↗</span> <span class="sk">Open Agent details</span> <span class="s">— sub-agent affordance stays sky.</span>
+<span class="g">✓</span> <span class="m">Task completed</span>   <span class="r">✗</span> <span class="m">Task failed</span>   <span class="s">○</span> <span class="s">Task pending</span></div>
+  </div>
+  <ul>
+    <li>Filled <code>✦</code> is agent voice; outline <code>✧</code> is the product speaking. One glyph family, two weights — replaces the current <code>✻</code>/<code>✦</code> mix.</li>
+    <li>Warnings/errors keep the existing <code>⚠</code>/<code>✖</code>/<code>ℹ</code> set, recolored to the new <code>warning</code>/<code>error</code> tokens.</li>
+  </ul>
+
+  <!-- ============ TOASTS & HINTS (fixed) ============ -->
+  <h2>Toasts &amp; hints <span class="tag">continuity-fixed</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> transient surfaces</div>
+    <div class="screen"><span class="toast-live"><span class="g">✓</span> <span class="m">Snapshot saved — 3 files</span></span>  <span class="toast-live"><span class="sk">⑂</span> <span class="m">Forked from msg 12</span></span>  <span class="toast-live"><span class="a">!</span> <span class="m">Context low</span></span>
+
+<div class="boxframe"><span class="boxtitle">hints</span><span class="t">/commands</span> <span class="m">·</span> <span class="t">?</span> <span class="m">keybindings</span> <span class="m">·</span> <span class="t">!</span> <span class="m">shell</span> <span class="m">·</span> <span class="t">/mode</span> <span class="m">switch</span></div></div>
+  </div>
+  <p class="figcap"><strong>Round-1 fix:</strong> the hint frame's broken border was a browser artifact —
+  <code>│</code>/<code>─</code> box-drawing glyphs don't fill a CSS line box, so gaps appeared. In a real terminal the
+  lipgloss rounded border is continuous; the mock now draws it with CSS (which is what the terminal
+  actually shows). Toasts sit on the neutral <code>element</code> surface with a status glyph.</p>
+
+  <!-- ============ WIDE SIDEBAR (fixed) ============ -->
+  <h2>Wide sidebar <span class="tag">≥ 150 cols · continuity-fixed</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> WORK panel</div>
+    <div class="screen" style="display:flex;gap:18px;white-space:normal">
+      <div class="m" style="flex:1">chat history scrolls here…<br>…<br>…<br>…</div>
+      <div style="border-left:1px solid var(--border-subtle);padding-left:18px;min-width:300px">
+        <div class="v bd" style="margin-bottom:8px">WORK</div>
+        <div><span class="t">✦</span> <span class="m">auth-refactor</span> <span class="s">(agent · running)</span></div>
+        <div class="tl-rows">
+          <div class="tl-row"><span class="g">✓</span> <span class="m">scan call sites</span></div>
+          <div class="tl-row last"><span class="t">●</span> <span class="m">patch middleware</span></div>
+        </div>
+        <div style="margin-top:8px"><span class="s">○</span> <span class="s">update tests</span></div>
+      </div>
+    </div></div>
+  <p class="figcap"><strong>Round-1 fix:</strong> same root cause — the tree's <code>│</code> runs broke apart under
+  browser line-height. The mock now draws connectors with CSS borders (continuous), matching what a
+  terminal cell renders. Panel title and running agents take violet; the separator drops to
+  <code>border-subtle</code>. Tree semantics (<code>✓ ✗ ○</code>, nesting) unchanged.</p>
+
+  <div class="note">
+    Markdown rendering moves off hardcoded ANSI-256 indices (<code>markdown.go:70-160</code>) onto the
+    palette: H1 teal bold, H2 sky, H3 violet, inline code sky on <code>element</code>, quotes with a
+    teal <code>▎</code> bar. See README §6.9.
+  </div>
+
+</div>
+</body>
+</html>

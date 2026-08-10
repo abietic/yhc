@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "fixture": "prompt_too_long",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "old context old context old context old context old context old context old context old context <...len=24000,digest=3bca2d37d82228f2...>old context old context old context old context old context old context old context old context "
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "4a493f25b02961a6",
+        "messages": [
+          {
+            "role": "user",
+            "content": "old context old context old context old context old context old context old context old context <...len=24000,digest=3bca2d37d82228f2...>old context old context old context old context old context old context old context old context "
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "content": "Prompt is too long",
+        "withheld_reason": "413"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "compact_boundary",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"Prompt is too long\",\"subtype\":\"recovery_boundary\"}}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "compact_boundary",
+        "message_digest": "5d61bc6ea7a352b0",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "Prompt is too long",
+            "subtype": "recovery_boundary"
+          }
+        ],
+        "compact": true
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 2,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "[system] Earlier context was collapsed after a prompt-too-long error.\nCollapsed context:\n- user:<...len=261,digest=03ccf2d59f46b682...>ext old context old context old context old conte...\nContinue from the preserved recent context.",
+            "subtype": "collapse_staged"
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "170311be4acfb51c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "[system] Earlier context was collapsed after a prompt-too-long error.\nCollapsed context:\n- user:<...len=261,digest=03ccf2d59f46b682...>ext old context old context old context old conte...\nContinue from the preserved recent context.",
+            "subtype": "collapse_staged"
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 2,
+        "content": "Prompt still too long after drain",
+        "withheld_reason": "413"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "compact_boundary",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"Prompt still too long after drain\",\"subtype\":\"recovery_boundary\"}}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "compact_boundary",
+        "message_digest": "dce9eaa90a13fc84",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "Prompt still too long after drain",
+            "subtype": "recovery_boundary"
+          }
+        ],
+        "compact": true
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 3,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "[system] ",
+            "subtype": "compact_boundary"
+          },
+          {
+            "role": "user",
+            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=235,digest=ee13e9b3d4f05db8...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
+            "subtype": "compact_summary"
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "4807ebda44a407d2",
+        "messages": [
+          {
+            "role": "user",
+            "content": "[system] ",
+            "subtype": "compact_boundary"
+          },
+          {
+            "role": "user",
+            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=235,digest=ee13e9b3d4f05db8...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
+            "subtype": "compact_summary"
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 3,
+        "content": "resumed after compact",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"resumed after compact\",\"finish_reason\":\"stop\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"resumed after compact\",\"message_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "4807ebda44a407d2",
+        "messages": [
+          {
+            "role": "user",
+            "content": "[system] ",
+            "subtype": "compact_boundary"
+          },
+          {
+            "role": "user",
+            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=235,digest=ee13e9b3d4f05db8...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
+            "subtype": "compact_summary"
+          },
+          {
+            "role": "assistant",
+            "content": "older answer"
+          },
+          {
+            "role": "user",
+            "content": "latest question"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 5,
+        "final_message_digest": "45e3daede0402c04"
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"permission-rejected","prompt":"write","tools":["Write"],"permission_mode":"plan","max_turns":3,"timeout_milliseconds":30000,"expected":{"exit_code":0,"status":"completed","terminal_reason":"completed","absent":["no.txt"],"git_status":[]}}

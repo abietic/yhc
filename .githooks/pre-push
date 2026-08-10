@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly protected_ref="refs/heads/master"
+readonly zero_sha1="0000000000000000000000000000000000000000"
+readonly zero_sha256="0000000000000000000000000000000000000000000000000000000000000000"
+pushed_shas=()
+
+while read -r local_ref local_sha remote_ref remote_sha extra || [[ -n "${local_ref:-}${local_sha:-}${remote_ref:-}${remote_sha:-}${extra:-}" ]]; do
+	if [[ -z "$local_ref" || -z "$local_sha" || -z "$remote_ref" || -z "$remote_sha" || -n "${extra:-}" ]]; then
+		echo "Malformed pre-push ref record; refusing push." >&2
+		exit 1
+	fi
+	if [[ "$remote_ref" == "$protected_ref" && "${EINO_ALLOW_MASTER_PUSH:-}" != "1" ]]; then
+		cat >&2 <<'EOF'
+Direct pushes to master are disabled for this clone.
+
+Push a short-lived branch and merge it through a green pull request instead.
+For an exceptional recovery push, set EINO_ALLOW_MASTER_PUSH=1 explicitly.
+EOF
+		exit 1
+	fi
+	if [[ "$local_sha" == "$zero_sha1" || "$local_sha" == "$zero_sha256" ]]; then
+		continue
+	fi
+	if [[ ! "$local_sha" =~ ^[0-9a-fA-F]{40}$ && ! "$local_sha" =~ ^[0-9a-fA-F]{64}$ ]]; then
+		echo "Malformed local object ID; refusing push." >&2
+		exit 1
+	fi
+	pushed_shas+=("$local_sha")
+done
+
+if [[ "${#pushed_shas[@]}" -eq 0 ]]; then
+	exit 0
+fi
+
+if [[ "${EINO_ALLOW_STALE_EVIDENCE:-}" == "1" ]]; then
+	echo "WARNING: bypassing committed iteration evidence with EINO_ALLOW_STALE_EVIDENCE=1" >&2
+	exit 0
+fi
+
+readonly repository_root="$(git rev-parse --show-toplevel)"
+readonly iteration_base="${EINO_ITERATION_BASE:-origin/master}"
+for local_sha in "${pushed_shas[@]}"; do
+	go -C "$repository_root" run ./scripts/iteration \
+		--base "$iteration_base" \
+		--head "$local_sha" \
+		evidence --require-ready
+done

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="polar-night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mascot — Eno · Revontuli</title>
+<link rel="stylesheet" href="assets/demo.css">
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="nav">
+    <span class="brand">✦ Revontuli</span>
+    <a href="index.html">Overview</a>
+    <a href="components.html">Components</a>
+    <a href="dynamics.html">Dynamics</a>
+    <a href="mascot.html" class="on">Mascot — Eno</a>
+    <a href="themes.html">Themes &amp; tokens</a>
+  </nav>
+
+  <h1>Eno, the aurora fox</h1>
+  <p class="lede">Finnish folklore says the northern lights — <em>revontulet</em>, "fox fires" — are
+  sparks swept into the sky by a fox's tail. Eno is that fox: a 15×6 block-art cub in three
+  foreground tones, replacing the ported Clawd mascot (<code>mascot.go</code>). The proportions follow
+  the fox emoji 🦊: big two-row ears with dark tips, large round wide-set eyes — and the
+  fox-versus-cat cue: <strong>the cheek row flares out to become the widest row of the face
+  (15 cells under a 13-cell head), then the chin tucks back to 9</strong>, with a round nose
+  sitting on the cheek line.</p>
+
+  <!-- ============ LIVE ============ -->
+  <h2>Live <span class="tag">click it</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> eno — idle loop with blink &amp; look-around</div>
+    <div class="screen" style="text-align:center;padding:28px 20px"><span id="eno-live" class="eno float" style="cursor:pointer;font-size:15px;line-height:1.35" title="click to celebrate"></span>
+<span class="s" style="display:block;margin-top:10px">blink every ~4s · glances around · click → celebrate</span></div>
+  </div>
+
+  <!-- ============ ANATOMY ============ -->
+  <h2>Anatomy <span class="tag">15×6 grid</span></h2>
+  <div class="split">
+    <div class="term"><div class="term-titlebar">cells</div>
+      <div class="screen" style="line-height:1.18">  <span class="s">123456789012345</span>
+<span class="s">1</span>   <span class="mo">▟▙</span>       <span class="mo">▟▙</span>
+<span class="s">2</span>   <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>
+<span class="s">3</span>  <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>
+<span class="s">4</span>  <span class="mo">▐</span><span class="mb">██</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">██</span><span class="mo">▌</span>
+<span class="s">5</span> <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>
+<span class="s">6</span>    <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>   </div></div>
+    <div>
+      <table class="tokens">
+        <tr><th>Tone</th><th>Cells</th><th>Token</th><th>Polar Night</th></tr>
+        <tr><td>body</td><td><code>█</code></td><td><code>enoBody</code></td><td><span class="sw" style="background:#4FE3C1"></span> <code>#4FE3C1</code></td></tr>
+        <tr><td>outline</td><td><code>▟▙ ▜▙▟▌ ▗▖ ▐▌ ▝▜▛▘</code></td><td><code>enoOutline</code></td><td><span class="sw" style="background:#2FA88D"></span> <code>#2FA88D</code></td></tr>
+        <tr><td>face</td><td><code>●</code></td><td>—</td><td>terminal default (negative space; mock paints <span class="sw" style="background:#0B0F1A"></span> only because the page owns its demo bg)</td></tr>
+      </table>
+      <div class="note warn" style="margin-top:14px">
+        <strong>Fixes a real bug:</strong> Clawd paints its <code>███</code> fill as orange on
+        <code>#000000</code> background (<code>mascot.go:64-67</code>), so on any non-black terminal it
+        shows black rectangles. Eno uses <strong>foreground colors only</strong> — the face glyphs
+        (<code>●</code> eyes and nose) are dark cells surrounded by bright body cells, which reads correctly on
+        every background.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ POSES ============ -->
+  <h2>Pose sheet <span class="tag">drop-in for MascotPose</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> poses</div>
+    <div class="screen" style="line-height:1.18"><span class="s">default           look-left         look-right        blink             happy             celebrate         sleep</span>
+  <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="mo">▟▙</span>     <span class="mk">✧</span>   <span class="mo">▟▙</span> <span class="mk">✦</span> <span class="mo">▟▙</span>   <span class="mk">✧</span>     <span class="mo">▟▙</span>       <span class="mo">▟▙</span>  <span class="s">z</span>
+  <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>  <span class="s">z</span>
+ <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>     <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>     <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>     <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>     <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>     <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>     <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>
+ <span class="mo">▐</span><span class="mb">██</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">██</span><span class="mo">▌</span>     <span class="mo">▐</span><span class="mb">█</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">███</span><span class="mo">▌</span>     <span class="mo">▐</span><span class="mb">███</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">█</span><span class="mo">▌</span>     <span class="mo">▐</span><span class="mb">██</span><span class="me">▄</span><span class="mb">█████</span><span class="me">▄</span><span class="mb">██</span><span class="mo">▌</span>     <span class="mo">▐</span><span class="mb">██</span><span class="me">◡</span><span class="mb">█████</span><span class="me">◡</span><span class="mb">██</span><span class="mo">▌</span>     <span class="mo">▐</span><span class="mb">██</span><span class="mk">✦</span><span class="mb">█████</span><span class="mk">✦</span><span class="mb">██</span><span class="mo">▌</span>     <span class="mo">▐</span><span class="mb">██</span><span class="me">─</span><span class="mb">█████</span><span class="me">─</span><span class="mb">██</span><span class="mo">▌</span>
+<span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>
+   <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>         <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>         <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>         <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>         <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>         <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>         <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>   </div>
+  </div>
+  <ul>
+    <li><strong>default</strong> — welcome card, idle.</li>
+    <li><strong>look-left / look-right</strong> — ambient glance during the idle loop (maps to today's <code>PoseLookLeft/Right</code>).</li>
+    <li><strong>blink</strong> — eyes <code>●→▄</code> for one 180ms frame every 3–5s (jittered).</li>
+    <li><strong>happy</strong> — eyes <code>◡</code>; shown briefly after a successful tool batch.</li>
+    <li><strong>celebrate</strong> — click easter egg + task-list completion: eyes <code>✦</code>, violet sparkles above the ears (replaces <code>PoseArmsUp</code>).</li>
+    <li><strong>sleep</strong> — long idle (&gt;5min) or <code>/dream</code>-style background work: eyes <code>─</code>, trailing <code>z</code>.</li>
+  </ul>
+
+  <!-- ============ RULES ============ -->
+  <h2>Rendering rules</h2>
+  <ul>
+    <li>Two tones per theme: <code>enoBody</code>, <code>enoOutline</code> — added to the palette struct, so every theme (incl. Daybreak and ANSI fallbacks) retones the fox automatically. The face is <strong>not</strong> a palette hex.</li>
+    <li>Foreground colors only. <strong>Never</strong> set a background behind mascot cells. Face cells (eyes <code>●</code>, nose <code>●</code>) render with terminal-default styling as negative space — the TUI does not own the terminal's global background, so the face must not assume one. (The mock paints <code>enoFace</code> only because this page owns its demo background.)</li>
+    <li>Grid is fixed 15 wide × 6 tall; poses only swap eye cells, ear-adjacent sparkle row, and trailing <code>z</code> — so tests can pin exact strings exactly like <code>mascot_welcome_test.go</code> does today.</li>
+    <li>Animations: 60ms frames for click/celebrate (current <code>MascotTick</code> timing), 180ms blink, jittered 3–5s glance. Idle blink/glance needs a <strong>new gated timer</strong> (pattern: <code>ensureSpinnerTick</code>, app.go:4496) that runs only while the welcome state is visible — today's ticks fire only during click-triggered sequences (app.go:882-887). All motion off under reduced-motion.</li>
+    <li>Small-space fallback: below 57 cols the mascot hides (current behavior); the <code>✦</code> spark is the always-available identity.</li>
+    <li>Light terminals: the negative-space face inherits the terminal's own
+    background by construction — no per-theme face value exists.</li>
+  </ul>
+
+  <div class="note">
+    Naming: the fox answers to <strong>Eno</strong>. In code, the pose map stays
+    <code>map[MascotPose]poseSegments</code>; only segment strings, the render size (9×3 → 15×6), and the
+    color fields (<code>clawdBody/clawdBg</code> → <code>enoBody/enoOutline</code>, face = terminal default) change. See README §8.
+  </div>
+
+</div>
+
+<script>
+(function () {
+  // Frame model: rows of [text, tone] segments. Tones: o=outline b=body e=face k=sparkle s=subtle
+  var ROWS = {
+    ears:   [["  "],["▟▙","o"],["       "],["▟▙","o"],["  "]],
+    earsSp: [["✧","k"],["   "],["▟▙","o"],[" "],["✦","k"],[" "],["▟▙","o"],["   "],["✧","k"]],
+    earb:   [["  "],["▜","o"],["██","b"],["▙","o"],["   "],["▟","o"],["██","b"],["▌","o"],["  "]],
+    head:   [[" "],["▗","o"],["███████████","b"],["▖","o"],[" "]],
+    cheek:  [["▟","o"],["██████","b"],["●","e"],["██████","b"],["▙","o"]],
+    chin:   [["   "],["▝▜","o"],["█████","b"],["▛▘","o"],["   "]],
+    eyes: {
+      def:   [[" "],["▐","o"],["██","b"],["●","e"],["█████","b"],["●","e"],["██","b"],["▌","o"],[" "]],
+      left:  [[" "],["▐","o"],["█","b"],["●","e"],["█████","b"],["●","e"],["███","b"],["▌","o"],[" "]],
+      right: [[" "],["▐","o"],["███","b"],["●","e"],["█████","b"],["●","e"],["█","b"],["▌","o"],[" "]],
+      blink: [[" "],["▐","o"],["██","b"],["▄","e"],["█████","b"],["▄","e"],["██","b"],["▌","o"],[" "]],
+      happy: [[" "],["▐","o"],["██","b"],["◡","e"],["█████","b"],["◡","e"],["██","b"],["▌","o"],[" "]],
+      celeb: [[" "],["▐","o"],["██","b"],["✦","k"],["█████","b"],["✦","k"],["██","b"],["▌","o"],[" "]],
+      sleep: [[" "],["▐","o"],["██","b"],["─","e"],["█████","b"],["─","e"],["██","b"],["▌","o"],[" "]]
+    }
+  };
+  function row(segs) {
+    return segs.map(function (p) {
+      var cls = p[1] ? ' class="m' + p[1] + '"' : '';
+      return '<span' + cls + '>' + p[0] + '</span>';
+    }).join('');
+  }
+  function frame(eyeKey, sparkle, zzz) {
+    var z = zzz ? '<span class="s">z</span>' : ' ';
+    return [
+      row(sparkle ? ROWS.earsSp : ROWS.ears) + z,
+      row(ROWS.earb) + z,
+      row(ROWS.head),
+      row(ROWS.eyes[eyeKey]),
+      row(ROWS.cheek),
+      row(ROWS.chin)
+    ].map(function (r) { return '<span class="eno-row">' + r + '</span>'; }).join('');
+  }
+
+  var el = document.getElementById('eno-live');
+  if (!el) return;
+  var celebrating = 0;
+
+  function idle() {
+    if (celebrating > 0) { celebrating--; el.innerHTML = frame('celeb', true, false); return; }
+    var r = Math.random();
+    if (r < 0.10) { el.innerHTML = frame('blink', false, false); setTimeout(function(){ el.innerHTML = frame('def', false, false); }, 180); }
+    else if (r < 0.22) { el.innerHTML = frame(Math.random() < 0.5 ? 'left' : 'right', false, false); }
+    else { el.innerHTML = frame('def', false, false); }
+  }
+  el.innerHTML = frame('def', false, false);
+  setInterval(idle, 700);
+  el.addEventListener('click', function () { celebrating = 3; });
+})();
+</script>
+</body>
+</html>

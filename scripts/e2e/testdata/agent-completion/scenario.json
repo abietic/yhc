@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"agent-completion","prompt":"delegate","tools":["Agent","Bash","Glob","Grep","Read"],"permission_mode":"bypass","max_turns":8,"timeout_milliseconds":30000,"expected":{"exit_code":0,"status":"completed","terminal_reason":"completed","git_status":[]}}

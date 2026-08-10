@@ -1,0 +1,24 @@
+polar-night/empty content="P" cell=6,1 fg=#1c2740/ff bg=#4fe3c1/ff
+polar-night/start content="Q" cell=6,1 fg=#1c2740/ff bg=#4fe3c1/ff
+polar-night/middle content="Q" cell=8,1 fg=#1c2740/ff bg=#4fe3c1/ff
+polar-night/end content=" " cell=10,1 fg=#1c2740/ff bg=#4fe3c1/ff
+daybreak/empty content="P" cell=6,1 fg=#e2ded3/ff bg=#087a66/ff
+daybreak/start content="Q" cell=6,1 fg=#e2ded3/ff bg=#087a66/ff
+daybreak/middle content="Q" cell=8,1 fg=#e2ded3/ff bg=#087a66/ff
+daybreak/end content=" " cell=10,1 fg=#e2ded3/ff bg=#087a66/ff
+snowy/empty content="P" cell=6,1 fg=#edeae0/ff bg=#0a6e5c/ff
+snowy/start content="Q" cell=6,1 fg=#edeae0/ff bg=#0a6e5c/ff
+snowy/middle content="Q" cell=8,1 fg=#edeae0/ff bg=#0a6e5c/ff
+snowy/end content=" " cell=10,1 fg=#edeae0/ff bg=#0a6e5c/ff
+aubergine/empty content="P" cell=6,1 fg=#2e1e3e/ff bg=#c9a0dc/ff
+aubergine/start content="Q" cell=6,1 fg=#2e1e3e/ff bg=#c9a0dc/ff
+aubergine/middle content="Q" cell=8,1 fg=#2e1e3e/ff bg=#c9a0dc/ff
+aubergine/end content=" " cell=10,1 fg=#2e1e3e/ff bg=#c9a0dc/ff
+ansi-16/empty content="P" cell=6,1 fg=#808080/ff bg=#00ffff/ff
+ansi-16/start content="Q" cell=6,1 fg=#808080/ff bg=#00ffff/ff
+ansi-16/middle content="Q" cell=8,1 fg=#808080/ff bg=#00ffff/ff
+ansi-16/end content=" " cell=10,1 fg=#808080/ff bg=#00ffff/ff
+no-color/empty projection="▏PLACEHOLDER" ansi=false
+no-color/start projection="▏Qalpha" ansi=false
+no-color/middle projection="ab▏Qcd" ansi=false
+no-color/end projection="tail▏" ansi=false

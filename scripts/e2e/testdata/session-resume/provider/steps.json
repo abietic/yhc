@@ -1,0 +1,1 @@
+{"schema_version":1,"steps":[{"kind":"tool_call","call_id":"write","tool":"Write","arguments":{"file_path":"marker.txt","content":"marker\n"}},{"kind":"final","text":"first","expect_prior":[{"call_id":"write","contains":"Wrote 7 bytes to "}]},{"kind":"assert_prior_tool_result","text":"resumed","expect_prior":[{"call_id":"write","contains":"Wrote 7 bytes to "}]}]}

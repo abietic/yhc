@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"cancellation","prompt":"write then wait","tools":["Write"],"permission_mode":"bypass","max_turns":1,"timeout_milliseconds":10000,"expected":{"exit_code":130,"status":"cancelled","absent":["target.txt"],"git_status":[]}}

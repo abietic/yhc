@@ -1,0 +1,8 @@
+name: window_resize
+width: 120
+height: 40
+stable_wait: 500ms
+steps:
+  - wait_for: "(?i)(welcome|ready|what|>|\\$|help)"
+    timeout: 10s
+  - capture: wide_initial

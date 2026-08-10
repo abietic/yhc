@@ -1,0 +1,387 @@
+/* ============================================================
+   Revontuli — eino-agent TUI redesign demo
+   Shared styles for all demo pages.
+   The CSS custom properties below mirror the accepted design
+   reference and current implementation accents (see ../README.md §4).
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Polar Night (default dark theme) --- */
+  --bg0: #0B0F1A;        /* base background — polar night */
+  --bg1: #131B2E;        /* panel surface */
+  --bg2: #1C2740;        /* raised element / badge bg */
+  --border: #2C3A5E;     /* active border */
+  --border-subtle: #1E2942;
+
+  --fg: #DBE2F2;         /* primary text — ice */
+  --muted: #8B95AE;      /* secondary text */
+  --subtle: #566180;     /* gutters, hints, disabled */
+
+  --aurora-teal: #4FE3C1;   /* PRIMARY — brand, agent mark, running */
+  --aurora-sky: #7CD4F7;    /* secondary — plan mode, info, links */
+  --aurora-violet: #A78BFA; /* tertiary — permission, agents */
+
+  --success: #8ADE8A;
+  --warning: #F2C66D;
+  --error: #F27E93;
+
+  --user-bg: #151D31;    /* user message panel */
+  --selection: #24314F;
+
+  --diff-add-bg: #133127;
+  --diff-add-fg: #8ADE8A;
+  --diff-del-bg: #3A1E2B;
+  --diff-del-fg: #F27E93;
+
+  /* mascot tones */
+  --eno-body: #4FE3C1;
+  --eno-outline: #2FA88D;
+  --eno-face: #0B0F1A;
+
+  --page-bg: #06080F;
+  --aurora-grad: linear-gradient(90deg, #4FE3C1, #7CD4F7 50%, #A78BFA);
+}
+
+[data-theme="daybreak"] {
+  color-scheme: light;
+  --bg0: #F5F2EC;
+  --bg1: #EDEAE1;
+  --bg2: #E2DED3;
+  --border: #AAAAAA;
+  --border-subtle: #CCCCCC;
+  --fg: #232A38;
+  --muted: #5F6879;
+  --subtle: #98A0AF;
+  --aurora-teal: #087A66;
+  --aurora-sky: #146B9A;
+  --aurora-violet: #6845D4;
+  --success: #237A2F;
+  --warning: #8A6300;
+  --error: #B93A5E;
+  --user-bg: #E9E4D8;
+  --selection: #D8D2C2;
+  --diff-add-bg: #D9EFDD;
+  --diff-add-fg: #237A2F;
+  --diff-del-bg: #F5DDE1;
+  --diff-del-fg: #B93A5E;
+  --eno-body: #087A66;
+  --eno-outline: #0A6E5C;
+  --eno-face: #F5F2EC;
+  --page-bg: #E4E0D6;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--fg);
+  font-family: -apple-system, "Helvetica Neue", "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+
+/* aurora ambience at the top of every page */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 340px;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 100% at 20% 0%, rgba(79, 227, 193, 0.10), transparent 70%),
+    radial-gradient(60% 100% at 55% 0%, rgba(124, 212, 247, 0.08), transparent 70%),
+    radial-gradient(60% 100% at 85% 0%, rgba(167, 139, 250, 0.10), transparent 70%);
+}
+
+.wrap { max-width: 1060px; margin: 0 auto; padding: 32px 28px 96px; position: relative; }
+
+/* ---------- demo navigation ---------- */
+.nav {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 14px; margin-bottom: 36px;
+  font-size: 13px;
+}
+.nav a {
+  color: var(--muted); text-decoration: none;
+  padding: 4px 12px; border-radius: 6px;
+}
+.nav a:hover { color: var(--fg); background: var(--bg2); }
+.nav a.on { color: var(--aurora-teal); background: var(--bg2); }
+.nav .brand { color: var(--fg); font-weight: 700; margin-right: auto; letter-spacing: 0.02em; }
+
+/* ---------- prose ---------- */
+h1 { font-size: 26px; margin: 0 0 8px; }
+h2 { font-size: 17px; margin: 48px 0 12px; color: var(--fg); }
+h2 .tag {
+  font-size: 11px; font-weight: 600; vertical-align: 2px;
+  color: var(--aurora-violet); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 6px; margin-left: 8px;
+}
+p.lede { color: var(--muted); margin: 0 0 8px; max-width: 72ch; }
+p, li { color: var(--muted); }
+li { margin: 3px 0; }
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--bg2); border-radius: 4px; padding: 1px 5px;
+  color: var(--aurora-sky);
+}
+.note {
+  border-left: 3px solid var(--aurora-teal);
+  background: var(--bg1); border-radius: 0 8px 8px 0;
+  padding: 10px 14px; margin: 16px 0; font-size: 14px; color: var(--muted);
+}
+.warn { border-left-color: var(--warning); }
+
+/* ---------- terminal window chrome ---------- */
+.term {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg0);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  margin: 20px 0;
+}
+.term-titlebar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 9px 14px;
+  font-size: 12px; color: var(--subtle);
+}
+.term-titlebar .dots { display: flex; gap: 6px; }
+.term-titlebar .dots i {
+  width: 11px; height: 11px; border-radius: 50%; display: block;
+  background: var(--bg2);
+}
+.term-titlebar .dots i:nth-child(1) { background: #F27E93; }
+.term-titlebar .dots i:nth-child(2) { background: #F2C66D; }
+.term-titlebar .dots i:nth-child(3) { background: #8ADE8A; }
+.screen {
+  padding: 18px 20px;
+  font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px; line-height: 1.5;
+  white-space: pre; overflow-x: auto;
+  color: var(--fg);
+}
+.screen .rows { display: block; }
+
+/* ---------- inline glyph helpers (inside .screen) ---------- */
+.screen b, .screen strong { font-weight: 700; }
+.t  { color: var(--aurora-teal); }
+.sk { color: var(--aurora-sky); }
+.v  { color: var(--aurora-violet); }
+.g  { color: var(--success); }
+.a  { color: var(--warning); }
+.r  { color: var(--error); }
+.m  { color: var(--muted); }
+.s  { color: var(--subtle); }
+.it { font-style: italic; }
+.bd { font-weight: 700; }
+.ul { text-decoration: underline; }
+.bg2 { background: var(--bg2); }
+.sel { background: var(--selection); }
+
+/* gradient brand text (welcome title, shimmer) */
+.grad {
+  background: var(--aurora-grad);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; font-weight: 700;
+}
+.shimmer {
+  background: linear-gradient(90deg,
+    var(--aurora-teal) 0%, var(--aurora-sky) 35%,
+    var(--aurora-violet) 55%, var(--aurora-sky) 75%,
+    var(--aurora-teal) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  animation: sweep 2.4s linear infinite;
+}
+@keyframes sweep { to { background-position: -220% 0; } }
+
+/* ---------- mascot (Eno) ---------- */
+.eno { display: inline-block; vertical-align: middle; line-height: 1.18; }
+.mo { color: var(--eno-outline); }
+.mb { color: var(--eno-body); }
+.me { color: var(--eno-face); }
+.mk { color: var(--aurora-violet); }  /* sparkles */
+.eno-row { display: block; white-space: pre; }
+
+.float { animation: floaty 4.5s ease-in-out infinite; }
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+/* ---------- component pieces ---------- */
+.userpanel {
+  background: var(--user-bg);
+  border-left: 3px solid var(--aurora-teal);
+  border-radius: 0 8px 8px 0;
+  padding: 6px 12px;
+  white-space: pre-wrap;
+}
+.composer {
+  display: block;
+  border: 1px solid var(--aurora-teal);
+  border-radius: 10px;
+  padding: 6px 12px;
+  white-space: pre-wrap;
+}
+.composer.plan  { border-color: var(--aurora-sky); }
+.composer.shell { border-color: var(--warning); }
+.composer.yolo  { border-color: var(--error); }
+.composer .ph { color: var(--subtle); font-style: italic; }
+.caret { animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.badge {
+  background: var(--bg2); border-radius: 5px;
+  padding: 0 6px; font-weight: 700;
+}
+.permdlg { border-top: 1px solid var(--aurora-violet); padding-top: 8px; }
+.statusbar {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px; color: var(--muted);
+}
+
+/* diff blocks */
+.diff-add { background: var(--diff-add-bg); color: var(--diff-add-fg); display: block; }
+.diff-del { background: var(--diff-del-bg); color: var(--diff-del-fg); display: block; }
+.diff-ctx { color: var(--subtle); display: block; }
+
+/* ---------- cards / swatches / tables ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 20px 0; }
+.card {
+  display: block; text-decoration: none;
+  border: 1px solid var(--border-subtle); border-radius: 12px;
+  background: var(--bg1); padding: 18px;
+  transition: border-color 0.15s ease;
+}
+.card:hover { border-color: var(--aurora-teal); }
+.card h3 { margin: 0 0 6px; font-size: 15px; color: var(--fg); }
+.card p { margin: 0; font-size: 13px; color: var(--muted); }
+
+table.tokens { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 13px; }
+table.tokens th, table.tokens td {
+  text-align: left; padding: 7px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--muted);
+}
+table.tokens th { color: var(--fg); font-weight: 600; }
+table.tokens td code { background: none; padding: 0; }
+.sw {
+  display: inline-block; width: 34px; height: 18px;
+  border-radius: 4px; vertical-align: middle;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+}
+.gradbar {
+  height: 22px; border-radius: 6px; margin: 12px 0;
+  background: var(--aurora-grad);
+}
+
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+
+.figcap { font-size: 12px; color: var(--subtle); margin: -10px 0 24px; }
+
+.btn {
+  display: inline-block; cursor: pointer; user-select: none;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg1); color: var(--fg);
+  font: 600 13px/1 inherit; padding: 8px 16px;
+}
+.btn:hover { border-color: var(--aurora-teal); color: var(--aurora-teal); }
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer, .float, .caret { animation: none; }
+}
+
+/* ============================================================
+   Round-2 additions: continuity fixes, composer states,
+   status-bar segments, dynamics page.
+   Box/tree borders are drawn with CSS (not box-drawing glyphs)
+   because browsers leave line-height gaps in │ runs; a real
+   terminal cell renders them continuous.
+   ============================================================ */
+
+/* --- continuous framed box (replaces ASCII ╭╮╰╯ mocks) --- */
+.boxframe {
+  position: relative;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px 14px;
+  margin: 14px 0 6px;
+  white-space: pre-wrap;
+}
+.boxframe > .boxtitle {
+  position: absolute; top: -0.7em; left: 12px;
+  background: var(--bg0); padding: 0 7px;
+  color: var(--subtle); font-size: 11px;
+  border-radius: 3px;
+}
+.boxframe.violet { border-color: var(--aurora-violet); }
+.boxframe.teal { border-color: var(--aurora-teal); }
+
+/* --- continuous tree rows (replaces ├─/│/└─ glyph mocks) ---
+   Each row draws its own connectors with CSS borders so the
+   vertical run can never break across line boxes. */
+.tl-rows { line-height: 1.5; }
+.tl-row { position: relative; padding-left: 20px; white-space: pre-wrap; }
+.tl-row::before {  /* vertical run through non-last rows */
+  content: ""; position: absolute; left: 6px; top: 0; bottom: 0;
+  border-left: 1px solid var(--subtle);
+}
+.tl-row::after {   /* L-shaped branch into this row */
+  content: ""; position: absolute; left: 6px; top: 0;
+  height: 0.75em; width: 9px;
+  border-left: 1px solid var(--subtle);
+  border-bottom: 1px solid var(--subtle);
+}
+.tl-row.last::before { display: none; }  /* └ stops here */
+
+/* --- block cursor (reverse-video, as bubbles cursor.Model renders) --- */
+.cblock {
+  background: var(--fg); color: var(--bg0);
+  border-radius: 1px;
+  animation: blink 1.06s steps(1) infinite;
+}
+.cblock.steady { animation: none; }
+
+/* --- breathing brand spark (spinner pulse) --- */
+.breathe { animation: breathe 0.96s ease-in-out infinite; display: inline-block; }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* --- status bar segment chips --- */
+.segs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.seg {
+  font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px;
+  background: var(--bg2); border: 1px solid var(--border-subtle);
+  border-radius: 6px; padding: 3px 9px; color: var(--muted);
+}
+.seg b { color: var(--aurora-teal); font-weight: 600; }
+.seg.right { border-color: var(--border); }
+
+/* --- dynamics: layer stack diagram --- */
+.layers { display: grid; gap: 8px; margin: 16px 0; }
+.layer {
+  border: 1px solid var(--border-subtle); border-radius: 8px;
+  background: var(--bg1); padding: 9px 14px; font-size: 13px; color: var(--muted);
+  display: flex; gap: 12px; align-items: baseline;
+}
+.layer .z { color: var(--aurora-violet); font-family: "SF Mono", Menlo, monospace; font-size: 12px; min-width: 34px; }
+.layer .own { margin-left: auto; color: var(--subtle); font-size: 12px; }
+
+/* --- dynamics: timing bars --- */
+.tl { margin: 10px 0; font-size: 12px; font-family: "SF Mono", Menlo, monospace; }
+.tl .row { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+.tl .lbl { width: 210px; color: var(--muted); flex-shrink: 0; }
+.tl .bar { height: 10px; border-radius: 3px; background: var(--aurora-teal); opacity: 0.85; }
+.tl .ms { color: var(--subtle); }
+
+/* toast with live countdown (dynamics page) */
+.toast-live {
+  display: inline-flex; gap: 8px; align-items: center;
+  background: var(--bg2); border-radius: 7px; padding: 4px 10px;
+}

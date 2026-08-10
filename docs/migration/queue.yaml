@@ -1,0 +1,10 @@
+version: 1
+updated: "2026-08-08"
+ready_limit: 1
+
+slices: []
+deferred:
+  - id: P44
+    gaps: [G14]
+    gate: verification/p22-enforcement-promotion-readiness.md
+    reason: Reviewer enforcement has no representative non-zero promotion evidence.

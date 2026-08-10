@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"read-edit-test","prompt":"fix","tools":["Read","Edit","Bash"],"permission_mode":"bypass","max_turns":8,"timeout_milliseconds":30000,"expected":{"exit_code":0,"status":"completed","terminal_reason":"completed","file_sha256":{"calc/calc.go":"52bdb4c72d9c331b8dd9a795523584a00613e1d42ef305e72dc44cdcdf2700ab"},"git_status":[" M calc/calc.go"]}}
