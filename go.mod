@@ -36,7 +36,7 @@ require (
 	github.com/openai/openai-go/v3 v3.35.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	github.com/volcengine/volcengine-go-sdk v1.2.34
 	github.com/yuin/goldmark v1.7.17
 	golang.org/x/crypto v0.51.0
