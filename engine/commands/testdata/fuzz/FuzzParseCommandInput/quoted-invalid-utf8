@@ -1,0 +1,2 @@
+go test fuzz v1
+string("/probe \"nested 'quoted' \xff\" tail")

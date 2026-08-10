@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Docs"
+  short_description: "基于当前源码证据和文档所有权编写、重组或审计技术文档"
+  default_prompt: "使用 $write-docs 基于当前源码编写或校准一篇具备明确所有权、图示和代码引用的技术文档。"

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>项目导读模板</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --surface: #ffffff;
+      --text: #17201c;
+      --muted: #53615a;
+      --accent: #0c6b58;
+      --border: #ccd5cf;
+      --focus: #b64b00;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.65; }
+    a { color: var(--accent); text-underline-offset: 0.18em; }
+    a:focus-visible, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    .skip-link { position: absolute; left: 1rem; top: -5rem; padding: 0.6rem 1rem;
+      background: var(--surface); z-index: 10; }
+    .skip-link:focus { top: 1rem; }
+    header, main, footer { width: min(72rem, calc(100% - 2rem)); margin-inline: auto; }
+    header { padding: 4rem 0 2rem; }
+    nav ul { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0; list-style: none; }
+    main { display: grid; gap: 1rem; padding-bottom: 4rem; }
+    section, article, figure { padding: clamp(1rem, 3vw, 2rem); margin: 0;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; }
+    h1 { max-width: 18ch; font-size: clamp(2rem, 6vw, 4rem); line-height: 1.05; }
+    h2 { line-height: 1.2; }
+    p, li { max-width: 72ch; }
+    .lede { color: var(--muted); font-size: 1.15rem; }
+    .route-grid, .owner-grid { display: grid; grid-template-columns:
+      repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+    .route-grid article, .owner-grid article { padding: 1rem; }
+    .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+    .flow span { padding: 0.55rem 0.8rem; border: 1px solid var(--border); border-radius: 0.4rem; }
+    .flow b { color: var(--muted); }
+    dt { font-weight: 700; }
+    dd { margin: 0 0 0.75rem; }
+    code { overflow-wrap: anywhere; }
+    footer { padding: 1rem 0 3rem; color: var(--muted); }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111713; --surface: #19221d; --text: #edf4ef;
+        --muted: #b3c2b8; --accent: #73d9bd; --border: #39483f; --focus: #ffb067; }
+    }
+    @media print {
+      :root { color-scheme: light; --bg: #fff; --surface: #fff; --text: #000;
+        --muted: #333; --border: #aaa; }
+      nav, .skip-link { display: none; }
+      section, article, figure { break-inside: avoid; box-shadow: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <header>
+    <p>项目导读 · Current contract</p>
+    <h1>用一句结论说明项目</h1>
+    <p class="lede">
+      在 200 字内说明问题、核心机制、非目标与读者下一步。不要从目录树或历史开始。
+    </p>
+    <nav aria-label="页内导航">
+      <ul>
+        <li><a href="#routes">选择阅读路线</a></li>
+        <li><a href="#entrypoints">理解入口边界</a></li>
+        <li><a href="#scenario">追踪真实场景</a></li>
+        <li><a href="#owners">查询事实 owner</a></li>
+        <li><a href="#agent-map">Agent 任务地图</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="routes" aria-labelledby="routes-title">
+      <h2 id="routes-title">按目标选择阅读路线</h2>
+      <div class="route-grid">
+        <article>
+          <h3>第一次进入项目</h3>
+          <p>入口边界 → 一个端到端场景 → 本地验证。</p>
+        </article>
+        <article>
+          <h3>修改核心行为</h3>
+          <p>composition root → 事实 owner → 稳定符号 → 聚焦测试。</p>
+        </article>
+        <article>
+          <h3>审阅安全或恢复</h3>
+          <p>失败分支 → 持久化边界 → 恢复不变量 → 负向测试。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="entrypoints" aria-labelledby="entrypoints-title">
+      <h2 id="entrypoints-title">不同入口不会自动共享同一条主路径</h2>
+      <figure aria-labelledby="entry-flow-caption">
+        <div class="flow" role="img"
+          aria-label="主交互入口进入核心执行 owner，例外入口进入独立服务 owner。">
+          <span>主交互入口</span><b aria-hidden="true">→</b><span>核心执行 owner</span>
+          <b aria-hidden="true">→</b><span>可观察结果</span>
+        </div>
+        <figcaption id="entry-flow-caption">
+          图 1：只回答“入口进入哪个 owner”。例外入口应单独画出并在正文解释原因。
+        </figcaption>
+      </figure>
+      <p>
+        文字等价说明：主交互入口与例外入口分别由各自的 composition root 组装。
+        不要从共享包名推断它们具有相同生命周期。
+      </p>
+    </section>
+
+    <section id="scenario" aria-labelledby="scenario-title">
+      <h2 id="scenario-title">用一个场景穿过关键边界</h2>
+      <ol>
+        <li>用户从明确入口提交意图。</li>
+        <li>核心 owner 执行正常路径。</li>
+        <li>安全、取消或恢复条件触发显式分支。</li>
+        <li>持久事实更新，投影层发布可观察结果。</li>
+        <li>聚焦测试验证正常路径和失败路径。</li>
+      </ol>
+    </section>
+
+    <section id="owners" aria-labelledby="owners-title">
+      <h2 id="owners-title">事实 owner 与投影层必须分开</h2>
+      <div class="owner-grid">
+        <article>
+          <h3>持久事实</h3>
+          <p>说明谁写入、恢复和验证。</p>
+        </article>
+        <article>
+          <h3>实时输入</h3>
+          <p>说明谁协调队列、取消或等待。</p>
+        </article>
+        <article>
+          <h3>运行投影</h3>
+          <p>说明投影的范围、丢失条件和非权威边界。</p>
+        </article>
+        <article>
+          <h3>展示状态</h3>
+          <p>说明哪些状态只属于 UI 或呈现。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="agent-map" aria-labelledby="agent-map-title">
+      <h2 id="agent-map-title">Agent 从问题直接进入验证路径</h2>
+      <article>
+        <h3>任务：填写一个真实问题</h3>
+        <dl>
+          <dt>composition root</dt><dd><code>StableConstructor</code></dd>
+          <dt>持久事实 owner</dt><dd><code>CanonicalOwner</code></dd>
+          <dt>稳定符号</dt><dd><code>CoreOperation</code></dd>
+          <dt>聚焦测试</dt><dd><code>TestObservableContract</code></dd>
+          <dt>禁止推断</dt><dd>不要从目录名推断生产入口或事实 ownership。</dd>
+        </dl>
+      </article>
+    </section>
+  </main>
+
+  <footer>
+    <p>维护合同：当入口、事实 owner 或可观察契约改变时更新本页；状态明细链接到唯一 owner。</p>
+  </footer>
+</body>
+</html>

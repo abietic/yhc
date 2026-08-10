@@ -1,0 +1,177 @@
+version: 1
+repository: github.com/abietic/yhc
+
+modules:
+  engine-runtime:
+    priority: 100
+    production_paths:
+      - include: engine/**
+        exclude: [engine/**/*_test.go, engine/**/testdata/**]
+    test_paths: [engine/**/*_test.go, engine/**/testdata/**]
+    packages: [./engine/...]
+    owner_docs: [docs/architecture/runtime/query-engine.md]
+    risks: [contract, concurrency, e2e]
+    focused_packages: [./engine/...]
+  tool-runtime:
+    priority: 100
+    production_paths:
+      - include: tools/**
+        exclude: [tools/**/*_test.go, tools/**/testdata/**]
+    test_paths: [tools/**/*_test.go, tools/**/testdata/**]
+    packages: [./tools]
+    owner_docs: [docs/architecture/capabilities/tool-registry.md]
+    risks: [contract, e2e]
+    focused_packages: [./tools]
+  cli-entrypoint:
+    priority: 100
+    production_paths:
+      # Own the command tree so rename-from paths remain classifiable. The
+      # canonical package and sole main entrypoint are enforced separately.
+      - include: cmd/**
+        exclude: [cmd/**/*_test.go, cmd/**/testdata/**]
+    test_paths: [cmd/**/*_test.go, cmd/**/testdata/**]
+    packages: [./cmd/yhc/...]
+    owner_docs: [docs/architecture/platform/entrypoints-and-transports.md]
+    risks: [contract, terminal, e2e]
+    focused_packages: [./cmd/yhc/...]
+  tui-adapter:
+    priority: 100
+    production_paths:
+      - include: internal/tui/**
+        exclude: [internal/tui/**/*_test.go, internal/tui/**/testdata/**]
+    test_paths: [internal/tui/**/*_test.go, internal/tui/**/testdata/**]
+    packages: [./internal/tui]
+    owner_docs: [docs/architecture/tui/README.md]
+    risks: [terminal, fuzz]
+    focused_packages: [./internal/tui]
+  acp-adapter:
+    priority: 100
+    production_paths:
+      - include: server/acp/**
+        exclude: [server/acp/**/*_test.go, server/acp/**/testdata/**]
+    test_paths: [server/acp/**/*_test.go, server/acp/**/testdata/**]
+    packages: [./server/acp]
+    owner_docs: [docs/architecture/platform/acp-adapter.md]
+    risks: [contract, concurrency, e2e]
+    focused_packages: [./server/acp]
+  mcp-adapter:
+    priority: 100
+    production_paths:
+      - include: server/mcp/**
+        exclude: [server/mcp/**/*_test.go, server/mcp/**/testdata/**]
+    test_paths: [server/mcp/**/*_test.go, server/mcp/**/testdata/**]
+    packages: [./server/mcp]
+    owner_docs: [docs/architecture/capabilities/mcp.md]
+    risks: [contract, e2e]
+    focused_packages: [./server/mcp]
+  build-metadata:
+    priority: 100
+    production_paths:
+      - include: internal/buildinfo/**
+        exclude: [internal/buildinfo/**/*_test.go]
+    test_paths: [internal/buildinfo/**/*_test.go]
+    packages: [./internal/buildinfo]
+    owner_docs: [docs/architecture/code-map.md]
+    risks: []
+    focused_packages: [./internal/buildinfo]
+  product-identity:
+    priority: 100
+    production_paths:
+      - include: internal/identity/**
+        exclude: [internal/identity/**/*_test.go]
+    test_paths: [internal/identity/**/*_test.go]
+    packages: [./internal/identity]
+    owner_docs: [docs/superpowers/specs/2026-08-09-yhc-public-release-design.md]
+    risks: []
+    focused_packages: [./internal/identity]
+  state-foundation:
+    priority: 100
+    production_paths:
+      - include: internal/statepath/**
+        exclude: [internal/statepath/**/*_test.go]
+      - include: internal/statemigration/**
+        exclude: [internal/statemigration/**/*_test.go]
+    test_paths:
+      - internal/statepath/**/*_test.go
+      - internal/statemigration/**/*_test.go
+    packages: [./internal/statepath, ./internal/statemigration]
+    owner_docs: [docs/superpowers/plans/2026-08-09-yhc-state-foundation.md]
+    risks: [contract, concurrency]
+    focused_packages: [./internal/statepath, ./internal/statemigration]
+  publication-tooling:
+    priority: 100
+    production_paths:
+      - include: scripts/publication/**
+        exclude: [scripts/publication/**/*_test.go, scripts/publication/**/testdata/**]
+    test_paths: [scripts/publication/**/*_test.go, scripts/publication/**/testdata/**]
+    packages: [./scripts/publication]
+    owner_docs: [docs/superpowers/specs/2026-08-09-yhc-public-release-design.md]
+    risks: [contract]
+    focused_packages: [./scripts/publication]
+  repository-tooling:
+    priority: 50
+    production_paths:
+      - include: scripts/**
+        exclude: [scripts/**/*_test.go, scripts/**/testdata/**]
+    test_paths: [scripts/**/*_test.go, scripts/**/testdata/**]
+    packages: [./scripts/...]
+    owner_docs: [docs/contributing/verification.md]
+    risks: []
+    focused_packages: [./scripts/...]
+
+risk_packs:
+  contract:
+    target: test-contract
+    deep_targets: [test-fault-injection, test-e2e-deep]
+    platforms: [all]
+  concurrency:
+    target: test-race
+    deep_targets: [test-fault-injection, test-e2e-deep]
+    platforms: [all]
+  terminal:
+    target: test-pty
+    deep_targets: [test-pty-deep, test-e2e-deep]
+    platforms: [unix]
+  fuzz:
+    target: test-fuzz-smoke
+    deep_targets: [test-fuzz-deep]
+    platforms: [all]
+  e2e:
+    target: test-e2e
+    deep_targets: [test-e2e-deep]
+    platforms: [all]
+
+change_classes:
+  governance:
+    priority: 200
+    paths:
+      - quality/**
+      - scripts/iteration/**
+      - .agents/**
+      - .codex/**
+      - .githooks/**
+      - .github/**
+      - LICENSE
+      - NOTICE
+      - Makefile
+      - PUBLICATION_MANIFEST.json
+    targets: [docs-check-ci, test]
+    focused_packages: [./scripts/iteration]
+  dependency:
+    priority: 150
+    paths: [go.mod, go.sum, sbom.cdx.json, third_party/**, .golangci.yml, .golangci.v2.yml]
+    targets: [test, build]
+  documentation:
+    priority: 120
+    paths: ["**/*.md", docs/**]
+    targets: [docs-check-ci]
+  repository-metadata:
+    priority: 100
+    paths: [.gitignore]
+    targets: [docs-check-ci]
+
+boundaries:
+  forbidden_production_edges:
+    - from: [engine-runtime, tool-runtime]
+      to: [cli-entrypoint, tui-adapter, acp-adapter, mcp-adapter]
+  flat_package_roots: [tools]

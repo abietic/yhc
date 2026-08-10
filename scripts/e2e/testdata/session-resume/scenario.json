@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"session-resume","prompt":"create marker","tools":["Write"],"permission_mode":"bypass","max_turns":4,"timeout_milliseconds":30000,"expected":{"exit_code":0,"status":"completed","terminal_reason":"completed","file_sha256":{"marker.txt":"d4169ac586761c1e922c624e2655466dea2b3266c3c9af4c88b08908f8a12ce8"},"git_status":["?? marker.txt"]}}

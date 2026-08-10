@@ -1,0 +1,4 @@
+interface:
+  display_name: "Runtime Depth Change"
+  short_description: "约束工具、Provider、恢复、Hook 与服务生命周期的高风险运行时变更"
+  default_prompt: "使用 $runtime-depth-change 处理一个 runtime 深水区切片，并记录入口、契约和专项验证。"

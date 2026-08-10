@@ -1,0 +1,34 @@
+[
+  {
+    "method": "_session/status",
+    "params": {
+      "message": "Permission needed: Bash",
+      "sessionId": "golden-session",
+      "status": "waiting_for_permission"
+    }
+  },
+  {
+    "method": "_session/status",
+    "params": {
+      "message": "Approved for session",
+      "sessionId": "golden-session",
+      "status": "permission_allow"
+    }
+  },
+  {
+    "method": "_session/status",
+    "params": {
+      "message": "Running lint check...",
+      "sessionId": "golden-session",
+      "status": "hook_running"
+    }
+  },
+  {
+    "method": "_session/status",
+    "params": {
+      "message": "Lint check failed",
+      "sessionId": "golden-session",
+      "status": "hook_failed"
+    }
+  }
+]

@@ -1,0 +1,32 @@
+== base ==
+ ▎ Inspect the layout contract.
+
+✦ The chat remains visible while activity, hints, editor, and status
+  share the terminal.
+  ├─ ✦ Read internal/tui/app.go [running]
+  └─ ✦ Grep layout regions [running]
+╭──────────────────────────────────────────────────────────────────────╮
+│  /agent                switch agent thread                           │
+│  /compact              compact conversation                          │
+│  /model                select model                                  │
+╰──────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────╮
+│ ❯ /                                                                  │
+╰──────────────────────────────────────────────────────────────────────╯
+   default · thread:main                                      test-model
+== permission ==
+ ▎ Inspect the layout contract.
+
+✦ The chat remains visible while activity, hints, editor, and status
+  share the terminal.
+  ├─ ✦ Read internal/tui/app.go [running]
+────────────────────────────────────────────────────────────────────────
+  Bash command
+  Bash
+    go test ./...
+
+  ❯ Yes
+    Yes, and don't ask again for project
+    No
+
+  ↑/↓ navigate · enter select · tab feedback · esc cancel

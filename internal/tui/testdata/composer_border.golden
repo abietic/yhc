@@ -1,0 +1,17 @@
+[polar-night]
+default="<ESC>[38;2;79;227;193m" width=80 height=3
+plan="<ESC>[38;2;124;212;247m" width=80 height=3
+shell="<ESC>[38;2;242;198;109m" width=80 height=3
+bypass="<ESC>[38;2;242;126;147m" width=80 height=3
+
+[daybreak]
+default="<ESC>[38;2;8;122;102m" width=80 height=3
+plan="<ESC>[38;2;20;107;154m" width=80 height=3
+shell="<ESC>[38;2;138;99;0m" width=80 height=3
+bypass="<ESC>[38;2;185;58;94m" width=80 height=3
+
+[dark-ansi]
+default="<ESC>[96m" width=80 height=3
+plan="<ESC>[94m" width=80 height=3
+shell="<ESC>[33m" width=80 height=3
+bypass="<ESC>[31m" width=80 height=3

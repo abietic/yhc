@@ -1,0 +1,1 @@
+{"schema_version":1,"steps":[{"kind":"block_until_cancel","call_id":"write","tool":"Write","arguments":{"file_path":"target.txt","content":"must-not-write"},"expect_model":"gpt-4o"}]}

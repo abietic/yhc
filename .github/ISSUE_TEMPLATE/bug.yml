@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible YHC defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include passwords, API keys, access tokens, private repository
+        content, or other secrets. Report security vulnerabilities privately via
+        the repository security advisory flow.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: List safe, redacted steps, inputs, and expected behavior.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: YHC version or commit
+      description: Use a public version or commit identifier.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification attempted
+      description: State the focused test, Makefile gate, or safe command you ran.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets and private operational data from this report.
+          required: true

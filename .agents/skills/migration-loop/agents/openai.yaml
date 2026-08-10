@@ -1,0 +1,6 @@
+interface:
+  display_name: "Migration Loop"
+  short_description: "显式编排对齐、规划和单切片执行，并输出可审计的演进信号"
+  default_prompt: "使用 $migration-loop 选择并完成一个 align、plan 或 execute 阶段，记录产品目标、采纳决策与证据后输出继续信号。"
+policy:
+  allow_implicit_invocation: false

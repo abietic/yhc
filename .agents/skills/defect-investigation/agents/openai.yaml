@@ -1,0 +1,4 @@
+interface:
+  display_name: "Defect Investigation"
+  short_description: "复现、定位、修复并端到端验证 YHC 运行时缺陷与回归"
+  default_prompt: "使用 $defect-investigation 复现、定位并验证一个 YHC 缺陷或回归问题。"

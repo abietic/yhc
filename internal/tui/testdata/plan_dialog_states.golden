@@ -1,0 +1,57 @@
+== review ==
+────────────────────────────────────────────────────────────────
+ Ready to implement?
+ Review ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  Review target
+  ══════════════════════════════════════
+  • Step 01 keeps the review viewport deterministic.
+  • Step 02 keeps the review viewport deterministic.
+  • Step 03 keeps the review viewport deterministic.
+  • Step 04 keeps the review viewport deterministic.
+  • Step 05 keeps the review viewport deterministic.
+  • Step 06 keeps the review viewport deterministic.
+  • Step 07 keeps the review viewport deterministic.
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+   1. Approve with previous permissions (default)
+   2. Approve and auto-accept edits
+   3. Approve and bypass permissions
+   4. Request changes and keep planning
+ Review · 1-9/18 · ↑/↓ scroll · pgup/pgdn page · home/end · tab
+== actions ==
+────────────────────────────────────────────────────────────────
+ Ready to implement?
+ Review ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  Review target
+  ══════════════════════════════════════
+  • Step 01 keeps the review viewport deterministic.
+  • Step 02 keeps the review viewport deterministic.
+  • Step 03 keeps the review viewport deterministic.
+  • Step 04 keeps the review viewport deterministic.
+  • Step 05 keeps the review viewport deterministic.
+  • Step 06 keeps the review viewport deterministic.
+  • Step 07 keeps the review viewport deterministic.
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+   1. Approve with previous permissions (default)
+ ❯ 2. Approve and auto-accept edits
+   3. Approve and bypass permissions
+   4. Request changes and keep planning
+ Actions · 1-9/18 · ↑/↓ choose · enter select · tab review · pgu
+== feedback ==
+ Ready to implement?
+ Review ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  Review target
+  ══════════════════════════════════════
+  • Step 01 keeps the review viewport deterministic.
+  • Step 02 keeps the review viewport deterministic.
+  • Step 03 keeps the review viewport deterministic.
+  • Step 04 keeps the review viewport deterministic.
+  • Step 05 keeps the review viewport deterministic.
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+   1. Approve with previous permissions (default)
+   2. Approve and auto-accept edits
+   3. Approve and bypass permissions
+   4. Request changes and keep planning
+   ╭────────────────────────────────────────────────────────╮
+   │┃ cover rollback                                        │
+   ╰────────────────────────────────────────────────────────╯
+ Feedback · 1-7/18 · enter send · ctrl+j newline · ctrl+z undo ·

@@ -1,0 +1,1 @@
+{"schema_version":1,"id":"malformed-tool-input","prompt":"write","tools":["Write"],"permission_mode":"bypass","max_turns":3,"timeout_milliseconds":30000,"expected":{"exit_code":0,"status":"completed","terminal_reason":"completed","absent":["no.txt"],"git_status":[]}}

@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "fixture": "final_no_tools",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "1780198b2a3dfafe",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ],
+        "tools": [
+          {
+            "name": "Read",
+            "description": "read a file"
+          },
+          {
+            "name": "Bash",
+            "description": "run a command"
+          }
+        ],
+        "tool_choice": "auto",
+        "max_tokens": 2048,
+        "thinking": "enabled:512",
+        "task_budget": 2048
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "e920b204bce6401c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "content": "final answer",
+        "reasoning": "concise reasoning",
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 4,
+          "total_tokens": 16
+        },
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"final answer\",\"reasoning_content\":\"concise reasoning\",\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":4,\"total_tokens\":16}}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"final answer\",\"message_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "e920b204bce6401c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 2,
+        "final_message_digest": "a96c17e9da553992"
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Migration Slice"
+  short_description: "按验收契约实现一个有界迁移或演进切片，并完成统一验证"
+  default_prompt: "使用 $migration-slice 执行 PLAN 中一个明确的演进切片，并记录采纳决策、契约、验证和结果。"

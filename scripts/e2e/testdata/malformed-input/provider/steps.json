@@ -1,0 +1,1 @@
+{"schema_version":1,"steps":[{"kind":"tool_call","call_id":"w","tool":"Write","arguments":{"content":"x"}},{"kind":"final","text":"invalid","expect_prior":[{"call_id":"w","contains":"missing required parameter"}]}]}

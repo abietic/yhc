@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "fixture": "truncated_tool_call",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "write a file"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "f28cf58ce2163d71",
+        "messages": [
+          {
+            "role": "user",
+            "content": "write a file"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "tool_calls": [
+          {
+            "id": "<id-1>",
+            "name": "Write",
+            "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"<id-1>\",\"name\":\"Write\",\"arguments\":\"{\\\"content\\\":\\\"a\\\",\\\"file_path\\\":\\\"/tmp/a\\\"}\"}]}}"
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 2,
+        "finish_reason": "max_tokens"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"finish_reason\":\"max_tokens\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"Tool call rejected: model response was truncated before the assistant turn committed\",\"tool_call_id\":\"<id-1>\",\"is_error\":true}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 1,
+        "id": "<id-1>",
+        "name": "Write",
+        "input": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}",
+        "admission": "rejected_truncated",
+        "result_kinds": [
+          "error"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 2,
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "write a file"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "Write",
+                "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
+              }
+            ],
+            "finish_reason": "max_tokens"
+          },
+          {
+            "role": "tool",
+            "content": "Tool call rejected: model response was truncated before the assistant turn committed",
+            "tool_call_id": "<id-1>",
+            "is_error": true
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "01127dd84535c8bd",
+        "messages": [
+          {
+            "role": "user",
+            "content": "write a file"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "Write",
+                "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
+              }
+            ],
+            "finish_reason": "max_tokens"
+          },
+          {
+            "role": "tool",
+            "content": "Tool call rejected: model response was truncated before the assistant turn committed",
+            "tool_call_id": "<id-1>",
+            "is_error": true
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 3,
+        "content": "recovered",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"recovered\",\"finish_reason\":\"stop\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"recovered\",\"message_id\":\"<id-2>\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "01127dd84535c8bd",
+        "messages": [
+          {
+            "role": "user",
+            "content": "write a file"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "id": "<id-1>",
+                "name": "Write",
+                "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
+              }
+            ],
+            "finish_reason": "max_tokens"
+          },
+          {
+            "role": "tool",
+            "content": "Tool call rejected: model response was truncated before the assistant turn committed",
+            "tool_call_id": "<id-1>",
+            "is_error": true
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "p13_h0_commit_barrier",
+        "transition": "reject_truncated",
+        "recovery_counters": {
+          "side_effects": 0
+        }
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 5,
+        "final_message_digest": "9d7bdb2a6f2eba1c"
+      }
+    }
+  ]
+}

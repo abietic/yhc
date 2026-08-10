@@ -1,0 +1,13 @@
+name: help_command
+width: 100
+height: 30
+stable_wait: 500ms
+steps:
+  - wait_for: "(?i)(welcome|ready|what|>|\\$|help)"
+    timeout: 10s
+  - input: "/help"
+  - key: enter
+    delay: 200ms
+  - wait_for: "(?i)(command|help|available)"
+    timeout: 5s
+  - capture: help_output

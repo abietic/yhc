@@ -1,0 +1,4 @@
+interface:
+  display_name: "TUI Runtime Change"
+  short_description: "按 engine truth、回放与终端契约实现并验证 TUI 运行时变更"
+  default_prompt: "使用 $tui-runtime-change 修改或评审当前 TUI/runtime 行为，并记录契约和专项验证。"

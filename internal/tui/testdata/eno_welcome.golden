@@ -1,0 +1,57 @@
+== too-small ==
+          Terminal too small
+
+           Current: 39 x 11
+           Minimum: 40 x 12
+
+  Please resize your terminal window.
+== compact-text ==
+                        YHC vdev
+          Welcome back. What are we building?
+            test-model · default permissions
+              /workspace/eno-agent · 56x24
+    Tip: Use /commands for available slash commands
+╭──────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                    │
+╰──────────────────────────────────────────────────────╯
+   ● default · thread:main · / cmd · ! shell · ctrl+j ne
+== condensed-mascot ==
+            ▟▙       ▟▙
+            ▜██▙   ▟██▌     YHC vdev
+           ▗███████████▖   test-model · default permissions
+           ▐██●█████●██▌   /workspace/eno-agent 69x24
+          ▟██████●██████▙
+             ▝▜█████▛▘
+           Tip: Use /commands for available slash commands
+╭───────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                 │
+╰───────────────────────────────────────────────────────────────────╯
+   ● default · thread:main · / cmd · ! shell · ctrl+j newline · shift
+== full-bordered ==
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │   ▟▙       ▟▙                                                            │
+  │   ▜██▙   ▟██▌     YHC vdev  Welcome back. What are we building?          │
+  │  ▗███████████▖   test-model · default permissions                        │
+  │  ▐██●█████●██▌   /workspace/eno-agent  80x24                             │
+  │ ▟██████●██████▙                                                          │
+  │    ▝▜█████▛▘                                                             │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+                Tip: Use /commands for available slash commands
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   ● default · thread:main · / cmd · ! shell · ctrl+j newline · shift+tab mode
+== wide-full-bordered ==
+                                     ╭──────────────────────────────────────────────────────────────────────────╮
+                                     │   ▟▙       ▟▙                                                            │
+                                     │   ▜██▙   ▟██▌     YHC vdev  Welcome back. What are we building?          │
+                                     │  ▗███████████▖   test-model · default permissions                        │
+                                     │  ▐██●█████●██▌   /workspace/eno-agent  150x24                            │
+                                     │ ▟██████●██████▙                                                          │
+                                     │    ▝▜█████▛▘                                                             │
+                                     ╰──────────────────────────────────────────────────────────────────────────╯
+                                                   Tip: Use /commands for available slash commands
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Ask anything...                                                                                                                                  │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+   ● default · thread:main · / cmd · ! shell · ctrl+j newline · shift+tab mode                                ✦ test-model · /workspace/eno-agent · 0s

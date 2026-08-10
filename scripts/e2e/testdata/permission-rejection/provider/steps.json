@@ -1,0 +1,1 @@
+{"schema_version":1,"steps":[{"kind":"tool_call","call_id":"w","tool":"Write","arguments":{"file_path":"no.txt","content":"no"}},{"kind":"final","text":"denied","expect_prior":[{"call_id":"w","contains":"permission denied"}]}]}

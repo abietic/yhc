@@ -1,0 +1,8 @@
+[polar-night]
+render="\x1b[48;2;21;29;49m \x1b[1;38;2;79;227;193;48;2;21;29;49m▎\x1b[m\x1b[48;2;21;29;49m first line\x1b[m                   \x1b[m\n\x1b[48;2;21;29;49m \x1b[1;38;2;79;227;193;48;2;21;29;49m▎\x1b[m\x1b[48;2;21;29;49m second line\x1b[m                  \x1b[m"
+
+[daybreak]
+render="\x1b[48;2;233;228;216m \x1b[1;38;2;8;122;102;48;2;233;228;216m▎\x1b[m\x1b[48;2;233;228;216m first line\x1b[m                   \x1b[m\n\x1b[48;2;233;228;216m \x1b[1;38;2;8;122;102;48;2;233;228;216m▎\x1b[m\x1b[48;2;233;228;216m second line\x1b[m                  \x1b[m"
+
+[dark-ansi]
+render=" \x1b[1;96m▎\x1b[m first line                   \n \x1b[1;96m▎\x1b[m second line                  "

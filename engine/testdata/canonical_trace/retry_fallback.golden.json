@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "fixture": "retry_fallback",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"primary-api\",\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"attempt_phase\":\"started\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"never_started\",\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":0,\"retry_count\":0,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "8584076286855822",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"primary-api\",\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"attempt_phase\":\"retry_wait\",\"failure_class\":\"rate_limited\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"never_started\",\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":1,\"retry_count\":1,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "attachment",
+        "payload": "{\"api_model\":\"primary-api\",\"attachment_kind\":\"system_api_error\",\"attempt\":0,\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"is_429\":true,\"is_529\":false,\"level\":\"warning\",\"logical_request_id\":\"<id-1>\",\"message\":{\"role\":\"user\",\"content\":\"retry warning <delay>\"},\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":1,\"retry_count\":1,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 2,
+        "model": "primary",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "8584076286855822",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"primary-api\",\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"attempt_phase\":\"retry_wait\",\"failure_class\":\"overloaded\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"never_started\",\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":2,\"retry_count\":2,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "attachment",
+        "payload": "{\"api_model\":\"primary-api\",\"attachment_kind\":\"system_api_error\",\"attempt\":1,\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"is_429\":false,\"is_529\":true,\"level\":\"warning\",\"logical_request_id\":\"<id-1>\",\"message\":{\"role\":\"user\",\"content\":\"retry warning <delay>\"},\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":2,\"retry_count\":2,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 3,
+        "model": "primary",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "8584076286855822",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"primary-api\",\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"attempt_phase\":\"retry_wait\",\"failure_class\":\"overloaded\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"never_started\",\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":3,\"retry_count\":3,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 8,
+        "type": "attachment",
+        "payload": "{\"api_model\":\"primary-api\",\"attachment_kind\":\"system_api_error\",\"attempt\":2,\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"is_429\":false,\"is_529\":true,\"level\":\"warning\",\"logical_request_id\":\"<id-1>\",\"message\":{\"role\":\"user\",\"content\":\"retry warning <delay>\"},\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":3,\"retry_count\":3,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 4,
+        "model": "primary",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "8584076286855822",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 9,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"primary-api\",\"attempt_id\":\"<id-2>\",\"attempt_index\":0,\"attempt_phase\":\"discarded\",\"failure_class\":\"overloaded\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"never_started\",\"profile\":\"primary\",\"provider\":\"agenticopenai\",\"provider_call_count\":4,\"retry_count\":3,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":0}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 10,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"alternate-api\",\"attempt_id\":\"<id-3>\",\"attempt_index\":1,\"attempt_phase\":\"started\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"never_started\",\"profile\":\"alternate\",\"provider\":\"agenticopenai\",\"provider_call_count\":4,\"retry_count\":0,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":1}"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 5,
+        "model": "alternate",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "8584076286855822",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "content": "fallback success",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 11,
+        "type": "assistant",
+        "payload": "{\"api_model\":\"alternate-api\",\"attempt_id\":\"<id-3>\",\"attempt_index\":1,\"logical_request_id\":\"<id-1>\",\"message\":{\"role\":\"assistant\",\"content\":\"fallback success\",\"finish_reason\":\"stop\"},\"profile\":\"alternate\",\"provider\":\"agenticopenai\",\"provider_call_count\":5,\"retry_count\":0,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":1}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 12,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"fallback success\",\"message_id\":\"<id-4>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 13,
+        "type": "model_attempt",
+        "payload": "{\"api_model\":\"alternate-api\",\"attempt_id\":\"<id-3>\",\"attempt_index\":1,\"attempt_phase\":\"committed\",\"logical_request_id\":\"<id-1>\",\"output_disposition\":\"committed\",\"profile\":\"alternate\",\"provider\":\"agenticopenai\",\"provider_call_count\":5,\"retry_count\":0,\"role\":\"main\",\"route_identity_digest\":\"route-primary\",\"switch_count\":1}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "8584076286855822",
+        "messages": [
+          {
+            "role": "user",
+            "content": "retry safely"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 3,
+        "final_message_digest": "85a73f6f4fad8585"
+      }
+    }
+  ]
+}

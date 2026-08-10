@@ -1,0 +1,130 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "content": {
+          "text": "a\n\n",
+          "type": "text"
+        },
+        "messageId": "550e8400-e29b-41d4-a716-446655440000",
+        "sessionUpdate": "agent_message_chunk"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "kind": "read",
+        "sessionUpdate": "tool_call",
+        "status": "pending",
+        "title": "Read",
+        "toolCallId": "call-fragmented"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "locations": [
+          {
+            "path": "x"
+          }
+        ],
+        "rawInput": {
+          "file_path": "x"
+        },
+        "sessionUpdate": "tool_call_update",
+        "status": "in_progress",
+        "toolCallId": "call-fragmented"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "content": [
+          {
+            "content": {
+              "text": "A",
+              "type": "text"
+            },
+            "type": "content"
+          }
+        ],
+        "sessionUpdate": "tool_call_update",
+        "status": "in_progress",
+        "toolCallId": "call-fragmented"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "content": [
+          {
+            "content": {
+              "text": "B",
+              "type": "text"
+            },
+            "type": "content"
+          }
+        ],
+        "sessionUpdate": "tool_call_update",
+        "status": "in_progress",
+        "toolCallId": "call-fragmented"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "content": [
+          {
+            "content": {
+              "text": "failed",
+              "type": "text"
+            },
+            "type": "content"
+          }
+        ],
+        "rawOutput": "failed",
+        "sessionUpdate": "tool_call_update",
+        "status": "failed",
+        "toolCallId": "call-fragmented"
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "session/update",
+    "params": {
+      "sessionId": "p23-1-wire",
+      "update": {
+        "content": {
+          "text": " b",
+          "type": "text"
+        },
+        "messageId": "550e8400-e29b-41d4-a716-446655440000",
+        "sessionUpdate": "agent_message_chunk"
+      }
+    }
+  }
+]

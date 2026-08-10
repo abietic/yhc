@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="polar-night">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revontuli — eino-agent TUI redesign</title>
+<link rel="stylesheet" href="assets/demo.css">
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="nav">
+    <span class="brand">✦ Revontuli</span>
+    <a href="index.html" class="on">Overview</a>
+    <a href="components.html">Components</a>
+    <a href="dynamics.html">Dynamics</a>
+    <a href="mascot.html">Mascot — Eno</a>
+    <a href="themes.html">Themes &amp; tokens</a>
+  </nav>
+
+  <h1>Revontuli <span style="color:var(--subtle);font-weight:400">/ eino-agent TUI redesign</span></h1>
+  <p class="lede">
+    <em>Revontuli</em> is Finnish for the aurora — folklore says a fox sweeping snow with its tail
+    lit the northern lights. This proposal replaces the borrowed Claude Code identity
+    (orange <code>#D77757</code>, the Clawd mascot, the <code>✻</code> glyph) with an aurora
+    gradient system and a new mascot: <strong>Eno, the aurora fox</strong>.
+  </p>
+
+  <!-- ============ BEFORE / AFTER ============ -->
+  <h2>Before / after <span class="tag">the core problem</span></h2>
+  <div class="split">
+    <div>
+      <div class="term">
+        <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> current — claude skin</div>
+        <div class="screen" style="line-height:1.4"><span style="color:#D77757"> ▐▛<span style="background:#000">███</span>▜▌
+▝▜<span style="background:#000">█████</span>▛▘
+  ▘▘ ▝▝</span>
+<span style="color:#D77757" class="bd">Eino Agent</span> <span style="color:#999">v0.9.0</span>
+<span style="color:#999">Welcome back. What are we building?</span></div>
+      </div>
+      <p class="figcap">Clawd on a non-black terminal: the hardcoded <code>#000</code> fill
+      (<code>mascot.go:64-67</code>) renders as black rectangles. Identity, glyph (<code>✻</code>),
+      and orange are Claude Code's.</p>
+    </div>
+    <div>
+      <div class="term">
+        <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> proposed — revontuli</div>
+        <div class="screen" style="line-height:1.4"><span class="eno"><span class="eno-row">  <span class="mo">▟▙</span>       <span class="mo">▟▙</span>  </span><span class="eno-row">  <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>  </span><span class="eno-row"> <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span> </span><span class="eno-row"> <span class="mo">▐</span><span class="mb">██</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">██</span><span class="mo">▌</span> </span><span class="eno-row"><span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span></span><span class="eno-row">   <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>   </span></span>
+<span class="grad">Eino Agent</span> <span class="s">v0.9.0</span>
+<span class="m">The fox is in. What are we building?</span></div>
+      </div>
+      <p class="figcap">Eno uses foreground tones only — no background fills, so it renders
+      cleanly on any terminal. Aurora teal → sky → violet gradient marks the brand.</p>
+    </div>
+  </div>
+
+  <!-- ============ WELCOME SCREEN ============ -->
+  <h2>Welcome screen <span class="tag">wide layout ≥ 70 cols</span></h2>
+  <div class="term">
+    <div class="term-titlebar"><span class="dots"><i></i><i></i><i></i></span> eino-agent — polar night</div>
+    <div class="screen"><span class="t">╭──────────────────────────────────────────────────────────────────────╮</span>
+<span class="t">│</span>                                                                      <span class="t">│</span>
+<span class="t">│</span>     <span class="mo">▟▙</span>       <span class="mo">▟▙</span>       <span class="grad" style="font-size:15px">Eino Agent</span> <span class="s">v0.9.0</span>                              <span class="t">│</span>
+<span class="t">│</span>     <span class="mo">▜</span><span class="mb">██</span><span class="mo">▙</span>   <span class="mo">▟</span><span class="mb">██</span><span class="mo">▌</span>       <span class="m">The fox is in. What are we building?</span>           <span class="t">│</span>
+<span class="t">│</span>    <span class="mo">▗</span><span class="mb">███████████</span><span class="mo">▖</span>      <span class="m">kimi-k2 · </span><span class="sk">plan</span><span class="m"> mode</span>                            <span class="t">│</span>
+<span class="t">│</span>    <span class="mo">▐</span><span class="mb">██</span><span class="me">●</span><span class="mb">█████</span><span class="me">●</span><span class="mb">██</span><span class="mo">▌</span>      <span class="s">~/Code/repos/eino-agent · 96×32</span>                <span class="t">│</span>
+<span class="t">│</span>   <span class="mo">▟</span><span class="mb">██████</span><span class="me">●</span><span class="mb">██████</span><span class="mo">▙</span>     <span class="s">Tip: </span><span class="m">/commands lists everything you can run</span>    <span class="t">│</span>
+<span class="t">│</span>      <span class="mo">▝▜</span><span class="mb">█████</span><span class="mo">▛▘</span>                                                       <span class="t">│</span>
+<span class="t">│</span>                                                                      <span class="t">│</span>
+<span class="t">╰──────────────────────────────────────────────────────────────────────╯</span>
+<span class="t">✧</span> <span class="m">Ready for the next change.</span>
+
+<span class="composer">❯ <span class="ph">Ask anything...</span><span class="cblock"> </span></span>
+<div class="statusbar" style="border:0;margin-top:6px"><span class="t">●</span> main · 3 msgs <span class="s">·</span> <span class="s">^p palette · ? keys</span>                    <span class="t">✦</span> kimi-k2 <span class="s">·</span> eino-agent <span class="s">·</span> <span class="t">▰▰▰▱▱</span> 12%</div></div></div>
+  <p class="figcap">Layout is preserved from the current welcome view (<code>welcome.go</code>) — same
+  bordered card, mascot-left/text-right — re-skinned: teal border, gradient title, <code>✧</code> system
+  prefix, and the new status bar with a context meter (<code>▰▰▰▱▱</code>).</p>
+
+  <h2>Identity at a glance</h2>
+  <div class="cards">
+    <div class="card"><h3><span class="t">✦</span> The spark</h3><p>Agent mark. Prefixes assistant output, anchors the spinner, closes the wordmark. <span class="t">✦</span> filled = agent, <span class="m">✧</span> outline = system.</p></div>
+    <div class="card"><h3>Eno, the aurora fox</h3><p>15×6 block-art mascot in three foreground tones. Blinks, looks around, celebrates shipped work. No background fills — terminal-safe.</p></div>
+    <div class="card"><h3>Aurora ramp</h3><p>One gradient: teal <code>#4FE3C1</code> → sky <code>#7CD4F7</code> → violet <code>#A78BFA</code>. Used with restraint: welcome title, shimmer sweep, focus states.</p></div>
+    <div class="card"><h3>Mode-reactive chrome</h3><p>The composer border carries the mode color — teal default, sky plan, amber shell, red yolo. Mode is visible where your hands are.</p></div>
+  </div>
+
+  <h2>Explore the proposal</h2>
+  <div class="cards">
+    <a class="card" href="components.html"><h3>Components →</h3><p>Chat transcript, tool groups, diffs, permission dialog, spinner states, composer modes, status bar, toasts.</p></a>
+    <a class="card" href="mascot.html"><h3>Mascot — Eno →</h3><p>Anatomy, pose sheet, live animation, coloring rules, and the rendering bug this fixes.</p></a>
+    <a class="card" href="themes.html"><h3>Themes &amp; tokens →</h3><p>Polar Night and Daybreak palettes, ANSI fallback, semantic token map, contrast checks.</p></a>
+  </div>
+
+  <div class="note">
+    Nothing here is implemented yet. The design spec — decisions classified per
+    <code>PROJECT_DIRECTION.md</code>, token tables, glyph inventory, motion rules, and the
+    file-by-file implementation map — lives in this design package's <code>README.md</code>.
+  </div>
+
+</div>
+</body>
+</html>

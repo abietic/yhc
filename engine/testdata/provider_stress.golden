@@ -1,0 +1,17 @@
+[timeout]
+error=provider preflight failed for agenticopenai (timeout): request timed out after 10ms
+
+[invalid_credentials]
+error=provider preflight failed for agenticopenai (auth_failed): authentication failed for provider openai (HTTP 401): check your API key
+secret_leaked=false
+
+[rate_limit]
+attachment kind=system_api_error attempt=0 is_429=true is_529=false content="Rate limited (attempt 1), retrying in <delay>..."
+assistant content="rate-limit recovered"
+terminal=completed calls=[main-model main-model]
+
+[fallback]
+attachment kind=system_api_error attempt=0 is_429=false is_529=true content="Server overloaded (attempt 1), retrying in <delay>..."
+attachment kind=system_api_error attempt=1 is_429=false is_529=true content="Server overloaded (attempt 2), retrying in <delay>..."
+assistant content="fallback recovered"
+terminal=completed calls=[main-model main-model main-model backup-model]

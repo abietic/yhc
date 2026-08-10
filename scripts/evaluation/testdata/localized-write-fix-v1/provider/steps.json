@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "kind": "outside_write",
+      "call_id": "call-outside",
+      "relative_path": "",
+      "content": "blocked",
+      "text": "",
+      "input_tokens": 1,
+      "output_tokens": 1
+    },
+    {
+      "kind": "contained_write",
+      "call_id": "call-repair",
+      "relative_path": "greet/decorate.go",
+      "content": "package greet\n\nfunc decorate(name string) string { return \"hello, \" + name }\n",
+      "text": "",
+      "input_tokens": 1,
+      "output_tokens": 1
+    },
+    {
+      "kind": "final",
+      "call_id": "",
+      "relative_path": "",
+      "content": "",
+      "text": "fixed",
+      "input_tokens": 1,
+      "output_tokens": 1
+    }
+  ]
+}

@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "fixture": "stream_args_delta_bridge",
+  "records": [
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 1,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 1,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use trace tool"
+          }
+        ],
+        "tools": [
+          {
+            "name": "TraceTool"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "c998d4ba7d791437",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use trace tool"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 1,
+        "tool_calls": [
+          {
+            "index": 0,
+            "id": "<id-1>",
+            "name": "TraceTool",
+            "arguments": "{\"value\":"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 2,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"<id-1>\",\"name\":\"TraceTool\",\"arguments\":\"{\\\"value\\\":\"}]}}"
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 2,
+        "tool_calls": [
+          {
+            "index": 0,
+            "id": "<id-1>",
+            "name": "TraceTool",
+            "arguments": "{\"value\":1}"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 8,
+          "completion_tokens": 3,
+          "total_tokens": 11
+        },
+        "finish_reason": "tool_calls"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 3,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"<id-1>\",\"name\":\"TraceTool\",\"arguments\":\"{\\\"value\\\":1}\"}],\"finish_reason\":\"tool_calls\",\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":3,\"total_tokens\":11}}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 4,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_start\",\"tool_call_id\":\"<id-1>\",\"tool_name\":\"TraceTool\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 5,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_input\",\"effective_input\":{\"value\":1},\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 6,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"tool_terminal\",\"outcome\":\"completed\",\"raw_output\":\"trace-result\",\"tool_call_id\":\"<id-1>\"}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 7,
+        "type": "tool_result",
+        "payload": "{\"message\":{\"role\":\"tool\",\"content\":\"trace-result\",\"tool_call_id\":\"<id-1>\"}}"
+      }
+    },
+    {
+      "kind": "tool",
+      "tool": {
+        "ordinal": 1,
+        "id": "<id-1>",
+        "name": "TraceTool",
+        "input": "{\"value\":1}",
+        "admission": "allowed",
+        "start_order": 1,
+        "finish_order": 1,
+        "batch": 1,
+        "result_kinds": [
+          "result"
+        ],
+        "prevent_continuation": false,
+        "context_modified": false
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 8,
+        "type": "stream_request_start"
+      }
+    },
+    {
+      "kind": "model_request",
+      "model_request": {
+        "ordinal": 2,
+        "model": "primary-model",
+        "system_prompt_digest": "cd01e2a747e3b337",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use trace tool"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "<id-1>",
+                "name": "TraceTool",
+                "arguments": "{\"value\":1}"
+              }
+            ],
+            "finish_reason": "tool_calls",
+            "usage": {
+              "prompt_tokens": 8,
+              "completion_tokens": 3,
+              "total_tokens": 11
+            }
+          },
+          {
+            "role": "tool",
+            "content": "trace-result",
+            "tool_call_id": "<id-1>"
+          }
+        ],
+        "tools": [
+          {
+            "name": "TraceTool"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "before_model_request",
+        "message_digest": "b08ef48c7f721bf3",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use trace tool"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "<id-1>",
+                "name": "TraceTool",
+                "arguments": "{\"value\":1}"
+              }
+            ],
+            "finish_reason": "tool_calls",
+            "usage": {
+              "prompt_tokens": 8,
+              "completion_tokens": 3,
+              "total_tokens": 11
+            }
+          },
+          {
+            "role": "tool",
+            "content": "trace-result",
+            "tool_call_id": "<id-1>"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "stream",
+      "stream": {
+        "ordinal": 3,
+        "content": "tool complete",
+        "finish_reason": "stop"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 9,
+        "type": "assistant",
+        "payload": "{\"message\":{\"role\":\"assistant\",\"content\":\"tool complete\",\"finish_reason\":\"stop\"}}"
+      }
+    },
+    {
+      "kind": "event",
+      "event": {
+        "sequence": 10,
+        "type": "canonical_projection",
+        "payload": "{\"canonical_kind\":\"assistant_delta\",\"delta\":\"tool complete\",\"message_id\":\"<id-2>\"}"
+      }
+    },
+    {
+      "kind": "state_boundary",
+      "state_boundary": {
+        "name": "query_terminal",
+        "message_digest": "b08ef48c7f721bf3",
+        "messages": [
+          {
+            "role": "user",
+            "content": "use trace tool"
+          },
+          {
+            "role": "assistant",
+            "content": " ",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "<id-1>",
+                "name": "TraceTool",
+                "arguments": "{\"value\":1}"
+              }
+            ],
+            "finish_reason": "tool_calls",
+            "usage": {
+              "prompt_tokens": 8,
+              "completion_tokens": 3,
+              "total_tokens": 11
+            }
+          },
+          {
+            "role": "tool",
+            "content": "trace-result",
+            "tool_call_id": "<id-1>"
+          }
+        ],
+        "transition": "completed"
+      }
+    },
+    {
+      "kind": "terminal",
+      "terminal": {
+        "reason": "completed",
+        "turn_count": 0,
+        "max_turns": 4,
+        "final_message_digest": "f8a9692c09528d34"
+      }
+    }
+  ]
+}

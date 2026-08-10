@@ -1,0 +1,16 @@
+name: command_hint
+width: 100
+height: 30
+stable_wait: 500ms
+steps:
+  - wait_for: "(?i)(welcome|ready|what|>|\\$|help)"
+    timeout: 10s
+  - input: "/"
+    delay: 200ms
+  - capture: slash_prefix
+  - input: "he"
+    delay: 200ms
+  - capture: command_filter
+  - key: escape
+    delay: 200ms
+  - capture: after_escape

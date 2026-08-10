@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Runtime"
+  short_description: "按准入条件记录项目 skill 生命周期、委派采纳与显式 ROI 实验"
+  default_prompt: "使用 $skill-runtime 判断本次工作是否需要审计日志；需要时记录生命周期、委派采纳或显式 ROI 实验并完整收口。"

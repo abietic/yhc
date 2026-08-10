@@ -1,0 +1,116 @@
+run:
+  # The first CI run compiles the pinned linter and its analyzers from an empty
+  # cache; five minutes is insufficient before the Actions cache is warm.
+  timeout: 15m
+  go: "1.25"
+
+linters:
+  enable:
+    - bodyclose
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - errcheck
+    - errname
+    - errorlint
+    - fatcontext
+    - gofumpt
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - noctx
+    - revive
+    - staticcheck
+    - stylecheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+
+linters-settings:
+  gofumpt:
+    extra-rules: true
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-checks:
+      - appendCombine
+      - commentedOutCode
+      - hugeParam
+      - ifElseChain
+      - rangeValCopy
+      - sprintfQuotedString
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+        disabled: true
+      - name: increment-decrement
+      - name: indent-error-flow
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: unreachable-code
+      - name: var-declaration
+      - name: var-naming
+
+  stylecheck:
+    checks:
+      - all
+      - -ST1000  # package comments not required
+      - -ST1003  # allow non-standard naming when mirroring TS
+
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+  gosec:
+    excludes:
+      - G104  # unhandled errors (errcheck covers this)
+      - G112  # short-lived localhost servers don't need ReadHeaderTimeout
+      - G115  # integer overflow on controlled conversions
+      - G204  # subprocess with variable (expected for Bash tool)
+      - G304  # file path from variable (expected for a file tool)
+      - G306  # 0644 is intentional for user-visible files
+      - G404  # math/rand is fine for jitter/cosmetics
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5
+
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - dupword
+        - errcheck
+        - errorlint
+        - fatcontext
+        - gocritic
+        - gosec
+        - noctx
+        - unparam
+        - usestdlibvars
+        - wastedassign
+
+    - path: tools/
+      text: "G204|G304"
+      linters:
+        - gosec
+
+    - path: scripts/
+      linters:
+        - gocritic

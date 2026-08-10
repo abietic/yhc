@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reference Parity Audit"
+  short_description: "比较多参考实现并为一个可观察问题给出可复核采纳证据"
+  default_prompt: "使用 $reference-parity-audit 调研一个明确的产品或运行时问题，并输出多参考证据矩阵与采纳建议。"
