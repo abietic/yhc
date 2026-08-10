@@ -101,6 +101,49 @@ actual page content`,
 	}
 }
 
+func TestParseStructuredWebFetchHistoryResultBoundsStatusCode(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   int
+	}{
+		{name: "lower HTTP boundary", output: `{"code":100}`, want: 100},
+		{name: "numeric success", output: `{"code":200}`, want: 200},
+		{name: "string failure", output: `{"code":"404"}`, want: 404},
+		{name: "upper HTTP boundary", output: `{"code":599}`, want: 599},
+		{name: "below HTTP range", output: `{"code":99}`},
+		{name: "above HTTP range", output: `{"code":600}`},
+		{name: "above 32 bit", output: `{"code":2147483648}`},
+		{name: "maximum int64", output: `{"code":9223372036854775807}`},
+		{name: "negative", output: `{"code":-1}`},
+		{name: "fractional", output: `{"code":200.5}`},
+		{name: "invalid string", output: `{"code":"not-a-code"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseWebFetchHistoryResult(tt.output)
+			if got.code != tt.want {
+				t.Fatalf("code = %d, want %d", got.code, tt.want)
+			}
+		})
+	}
+}
+
+func TestWebFetchHistoryRendererPreservesValidFailureStatus(t *testing.T) {
+	tool := &ToolMessage{
+		name: "WebFetch", input: `{"url":"https://api.example.com/missing"}`,
+		output: `{"code":404,"codeText":"Not Found","result":"missing"}`,
+		status: ToolSuccess, version: 1,
+	}
+	plain := stripANSIForTest(tool.Render(80, defaultStyles()))
+	for _, want := range []string{"failed", "404 Not Found", "missing"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("structured failure missing %q: %q", want, plain)
+		}
+	}
+}
+
 func TestWebFetchHistoryRendererFailureSanitizesRemoteANSI(t *testing.T) {
 	tool := &ToolMessage{
 		name: "WebFetch", input: `{bad`,

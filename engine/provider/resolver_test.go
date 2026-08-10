@@ -387,6 +387,36 @@ func TestResolveConfig(t *testing.T) {
 	}
 }
 
+func TestMergeAliasesNormalizesAndOverrides(t *testing.T) {
+	if got := mergeAliases(nil, nil); got != nil {
+		t.Fatalf("mergeAliases(nil, nil) = %#v, want nil", got)
+	}
+
+	got := mergeAliases(
+		map[string]string{
+			" GPT ":      " configured ",
+			"Configured": " configured-only ",
+		},
+		map[string]string{
+			"gPt":      " explicit ",
+			"Explicit": " explicit-only ",
+		},
+	)
+	want := map[string]string{
+		"gpt":        "explicit",
+		"configured": "configured-only",
+		"explicit":   "explicit-only",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("mergeAliases length = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for name, value := range want {
+		if got[name] != value {
+			t.Errorf("mergeAliases[%q] = %q, want %q", name, got[name], value)
+		}
+	}
+}
+
 func assertSourceNotKey(t *testing.T, source, key string) {
 	t.Helper()
 	if source == key {

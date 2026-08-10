@@ -389,7 +389,7 @@ func mergeAliases(configured, explicit map[string]string) map[string]string {
 	if len(configured) == 0 && len(explicit) == 0 {
 		return nil
 	}
-	result := make(map[string]string, len(configured)+len(explicit))
+	result := make(map[string]string)
 	for name, value := range configured {
 		result[strings.ToLower(strings.TrimSpace(name))] = strings.TrimSpace(value)
 	}

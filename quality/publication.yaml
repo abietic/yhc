@@ -3218,7 +3218,12 @@ privacy:
       match_sha256: 13b69ed5631514948ae9a29c940809123d29fb86932eb00fa714db65b9f4835a
       purpose: synthetic-security-fixture
     - path: "internal/tui/tool_history_web_test.go"
-      line: 150
+      line: 135
+      rule_id: private-url
+      match_sha256: c3aeb3b09362e2913c65eb0a70f078054e5d366b05c7bf45f9d0e524964729ed
+      purpose: synthetic-security-fixture
+    - path: "internal/tui/tool_history_web_test.go"
+      line: 193
       rule_id: private-url
       match_sha256: 6da19f5057f0dd1085db2213932a52da09a1df6b9194447953db96f7e48663a7
       purpose: synthetic-security-fixture

@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -216,7 +217,7 @@ func parseStructuredWebFetchHistoryResult(output string, result *webFetchHistory
 	if result.bytes == 0 {
 		result.bytes = int64(len(result.content))
 	}
-	result.code = int(webHistoryInt64(value["code"]))
+	result.code = webHistoryHTTPStatus(value["code"])
 	result.codeText, _ = value["codeText"].(string)
 	result.codeText = sanitizeWebHistoryText(result.codeText)
 	result.truncated = strings.Contains(strings.ToLower(result.content), "truncated")
@@ -703,6 +704,40 @@ func webHistoryInt64(value any) int64 {
 	default:
 		return 0
 	}
+}
+
+func webHistoryHTTPStatus(value any) int {
+	const (
+		minHTTPStatus = 100
+		maxHTTPStatus = 599
+	)
+
+	var code int64
+	switch typed := value.(type) {
+	case float64:
+		if math.Trunc(typed) != typed || typed < minHTTPStatus || typed > maxHTTPStatus {
+			return 0
+		}
+		return int(typed)
+	case json.Number:
+		var err error
+		code, err = typed.Int64()
+		if err != nil {
+			return 0
+		}
+	case string:
+		var err error
+		code, err = strconv.ParseInt(typed, 10, 64)
+		if err != nil {
+			return 0
+		}
+	default:
+		return 0
+	}
+	if code < minHTTPStatus || code > maxHTTPStatus {
+		return 0
+	}
+	return int(code)
 }
 
 func formatWebHistoryBytes(bytes int64) string {
