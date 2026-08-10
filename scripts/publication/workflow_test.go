@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -183,6 +184,96 @@ func TestRepositoryDesiredStateMatchesApprovedRules(t *testing.T) {
 		!strings.Contains(string(mustJSON(t, ruleset)), `"CI / Required gates"`) {
 		t.Fatal("master ruleset must require resolved conversations, zero approvals, and CI / Required gates")
 	}
+}
+
+func TestCIClassifiesUnreachablePushBaseAsFullTree(t *testing.T) {
+	workflow := readRepositoryFile(t, ".github/workflows/ci.yml")
+	script := workflowRunBlock(t, workflow, "Resolve comparison base and change class")
+	repository := t.TempDir()
+	runGit(t, repository, "init", "-b", "master")
+	if err := os.WriteFile(filepath.Join(repository, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write root fixture: %v", err)
+	}
+	runGit(t, repository, "add", "main.go")
+	runGit(t, repository, "-c", "commit.gpgsign=false", "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-m", "root")
+
+	scriptPath := filepath.Join(t.TempDir(), "classify.sh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
+		t.Fatalf("write classification script: %v", err)
+	}
+	outputPath := filepath.Join(t.TempDir(), "github-output")
+	summaryPath := filepath.Join(t.TempDir(), "github-summary")
+	cmd := exec.Command("bash", "-e", scriptPath)
+	cmd.Dir = repository
+	cmd.Env = append(os.Environ(),
+		"EVENT_NAME=push",
+		"PR_BASE_SHA=",
+		"PUSH_BASE_SHA="+strings.Repeat("f", 40),
+		"GITHUB_OUTPUT="+outputPath,
+		"GITHUB_STEP_SUMMARY="+summaryPath,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("classify unreachable push base: %v\n%s", err, output)
+	}
+
+	outputs, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read classification outputs: %v", err)
+	}
+	emptyTree := strings.TrimSpace(gitOutputForTest(t, repository, "hash-object", "-t", "tree", "/dev/null"))
+	for _, want := range []string{"base_sha=" + emptyTree, "docs_only=false", "full_tree=true"} {
+		if !strings.Contains(string(outputs), want+"\n") {
+			t.Fatalf("classification outputs %q lack %q", outputs, want)
+		}
+	}
+	for _, want := range []string{
+		"FULL_TREE: ${{ needs.changes.outputs.full_tree }}",
+		"git diff --check \"$BASE_SHA\" HEAD -- .",
+		"if [[ \"$FULL_TREE\" == \"true\" ]]; then\n            make lint",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("full-tree quality fallback lacks %q", want)
+		}
+	}
+}
+
+func workflowRunBlock(t *testing.T, workflow, stepName string) string {
+	t.Helper()
+	stepMarker := "      - name: " + stepName + "\n"
+	stepStart := strings.Index(workflow, stepMarker)
+	if stepStart < 0 {
+		t.Fatalf("workflow lacks step %q", stepName)
+	}
+	remainder := workflow[stepStart+len(stepMarker):]
+	runMarker := "        run: |\n"
+	runStart := strings.Index(remainder, runMarker)
+	if runStart < 0 {
+		t.Fatalf("workflow step %q lacks run block", stepName)
+	}
+	remainder = remainder[runStart+len(runMarker):]
+	lines := make([]string, 0)
+	for _, line := range strings.Split(remainder, "\n") {
+		if line == "" {
+			lines = append(lines, line)
+			continue
+		}
+		if !strings.HasPrefix(line, "          ") {
+			break
+		}
+		lines = append(lines, strings.TrimPrefix(line, "          "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func gitOutputForTest(t *testing.T, directory string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = directory
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
 }
 
 func readRepositoryFile(t *testing.T, path string) string {

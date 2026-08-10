@@ -29,6 +29,7 @@ jobs:
     outputs:
       base_sha: ${{ steps.classify.outputs.base_sha }}
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      full_tree: ${{ steps.classify.outputs.full_tree }}
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -42,6 +43,7 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BASE_SHA: ${{ github.event.before }}
         run: |
+          full_tree=false
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base_sha="$PR_BASE_SHA"
           elif [[ "$EVENT_NAME" == "push" &&
@@ -49,12 +51,18 @@ jobs:
                   "$PUSH_BASE_SHA" != "0000000000000000000000000000000000000000" ]]; then
             base_sha="$PUSH_BASE_SHA"
           else
-            base_sha="$(git rev-parse HEAD^ 2>/dev/null || git hash-object -t tree /dev/null)"
+            base_sha="$(git rev-parse HEAD^ 2>/dev/null || true)"
           fi
-          git cat-file -e "${base_sha}^{commit}" 2>/dev/null ||
-            git cat-file -e "${base_sha}^{tree}"
 
-          changed_files="$(git diff --name-only "${base_sha}...HEAD")"
+          if [[ -z "$base_sha" ]] ||
+             ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null ||
+             ! git merge-base --is-ancestor "$base_sha" HEAD; then
+            full_tree=true
+            base_sha="$(git hash-object -t tree /dev/null)"
+            changed_files="$(git diff --name-only "$base_sha" HEAD)"
+          else
+            changed_files="$(git diff --name-only "${base_sha}...HEAD")"
+          fi
           docs_only=true
           changed_count=0
           while IFS= read -r path; do
@@ -75,10 +83,12 @@ jobs:
 
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "full_tree=$full_tree" >> "$GITHUB_OUTPUT"
           {
             echo "### Change classification"
             echo "- Base: \`$base_sha\`"
             echo "- Documentation only: \`$docs_only\`"
+            echo "- Full-tree fallback: \`$full_tree\`"
             echo "- Changed files: \`$changed_count\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -124,9 +134,17 @@ jobs:
       - name: Check whitespace and documentation
         env:
           BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+          FULL_TREE: ${{ needs.changes.outputs.full_tree }}
         run: |
           started=$SECONDS
-          git diff --check "${BASE_SHA}...HEAD"
+          if [[ "$FULL_TREE" == "true" ]]; then
+            # These two baseline fixtures intentionally preserve trailing spaces.
+            git diff --check "$BASE_SHA" HEAD -- . \
+              ':(exclude)engine/compact/prompt.go' \
+              ':(exclude)internal/tui/testdata/render_test.md'
+          else
+            git diff --check "${BASE_SHA}...HEAD"
+          fi
           make docs-check-ci
           echo "- Whitespace and docs: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
 
@@ -134,10 +152,15 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         env:
           BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+          FULL_TREE: ${{ needs.changes.outputs.full_tree }}
         run: |
           started=$SECONDS
           make fmt-check
-          make lint-new LINT_NEW_BASE="$BASE_SHA"
+          if [[ "$FULL_TREE" == "true" ]]; then
+            make lint
+          else
+            make lint-new LINT_NEW_BASE="$BASE_SHA"
+          fi
           echo "- Formatting and lint: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record quality cache status
