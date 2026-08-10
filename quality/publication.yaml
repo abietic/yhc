@@ -1,7 +1,7 @@
 version: 1
 source:
   repository: github.com/abietic/yhc
-  baseline_commit: 6500a09be6ec641c31348a4322a085eeaa029241
+  baseline_commit: 8e34cc4794f0e1e9ae404c5bcf453d5e71a159c0
 mappings:
   manifest: docs/migration/manifest.yaml
 privacy:
@@ -98,62 +98,62 @@ privacy:
       match_sha256: 6b92323c3a3f154c0a30cc602002b87ff41486d6cba571162e1bae16d7761997
       purpose: build-metadata
     - path: "Makefile"
-      line: 109
+      line: 110
       rule_id: high-entropy-token
       match_sha256: be5a952a6bf7286e30dbcf02b692f61f9eda1e48315ea565d19a20d171b5efa4
       purpose: build-metadata
     - path: "Makefile"
-      line: 110
+      line: 111
       rule_id: high-entropy-token
       match_sha256: 08bf8be3232a88279a98d478ee129562e25717876c4971f05c2f1cd5b1ce86cf
       purpose: build-metadata
     - path: "Makefile"
-      line: 110
+      line: 111
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: "Makefile"
-      line: 110
+      line: 111
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: "Makefile"
-      line: 116
+      line: 117
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: "Makefile"
-      line: 116
+      line: 117
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: "Makefile"
-      line: 139
+      line: 140
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: "Makefile"
-      line: 139
+      line: 140
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: "Makefile"
-      line: 152
+      line: 153
       rule_id: high-entropy-token
       match_sha256: d2e744ec70d978e984e880c92094942b9d29bffedd0d0f76ec3544a516317b7d
       purpose: build-metadata
     - path: "Makefile"
-      line: 172
+      line: 173
       rule_id: credential-assignment
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: "Makefile"
-      line: 182
+      line: 183
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
     - path: "Makefile"
-      line: 184
+      line: 185
       rule_id: credential-assignment
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
@@ -3288,72 +3288,72 @@ privacy:
       match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies.go"
-      line: 487
+      line: 488
       rule_id: home-path
       match_sha256: 46fc9ca045f9ef5c7bcce09b6c89957b8346524752f3388c0b1dd865853e283a
       purpose: detector-definition
     - path: "scripts/publication/dependencies.go"
-      line: 487
+      line: 488
       rule_id: home-path
       match_sha256: 5fcdcf8aa3a9751454b6ea0a7431fdfc94ac6a560eb1b8cb382d44c6ce12b545
       purpose: detector-definition
     - path: "scripts/publication/dependencies_test.go"
-      line: 15
+      line: 16
       rule_id: private-url
       match_sha256: 7d4dfd6dd0f343c0903b433dabeb63f098aa66ea411bed0cd9813cc486c439d4
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 16
+      line: 17
       rule_id: private-url
       match_sha256: 51ce41820549abfd9ee7203bd7168b3e55c99b929847a6bb1c5bceacb82b12f6
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 93
+      line: 94
       rule_id: home-path
       match_sha256: 1c392dfc25a8b3680fa3c8faa1f9d8860100664f7bf61e627ac77bb69c4f45c4
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 93
+      line: 94
       rule_id: home-path
       match_sha256: 5c17f3cf095f267c3c15c35bf8b8a24fbc846ce0f563e94753f22700e4f3132a
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 132
+      line: 133
       rule_id: private-url
       match_sha256: 2ab431ee7139d7c877955364939e43c72e073a22e9dd4e0880f0f48d6b227258
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 133
+      line: 134
       rule_id: private-url
       match_sha256: 193755ac8734d6ed6247d8b1d3004298f6d1cb416da24294453c2ab8a688396d
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 138
+      line: 139
       rule_id: private-url
       match_sha256: 2f9e5404bd00fdb8fcd47bf92729a6200021ea5ec4b8077c310c2d8ca97132de
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 139
+      line: 140
       rule_id: private-url
       match_sha256: 13774116ff26d86dec6841803717cb8c8fa47e0afaab698f17d0ea9dbe405ed4
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 144
+      line: 145
       rule_id: private-url
       match_sha256: 09be5078ff5fd072b8062b4b0d2c43cc7b32aace718036ea25d376649843a857
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 145
+      line: 146
       rule_id: private-url
       match_sha256: 2b51164d4827a6ff151da152ee43560022f9dfa47c574c595a2298aae9eacc85
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 317
+      line: 318
       rule_id: private-url
       match_sha256: 3f1095e4aeac6086fa9200ce02802da9bada700e48b57d77674fa8e517f4de41
       purpose: synthetic-security-fixture
     - path: "scripts/publication/dependencies_test.go"
-      line: 317
+      line: 318
       rule_id: private-url
       match_sha256: c863ac64160c2ca52056d97c558fe4e51f25105c86748a0c2903061a494f4b00
       purpose: synthetic-security-fixture
@@ -3701,6 +3701,11 @@ rules:
     class: project-owned-original
     decision: include
     evidence: [docs/superpowers/plans/2026-08-09-yhc-publication-readiness.md]
+  - id: publication-manifest
+    include: [PUBLICATION_MANIFEST.json]
+    class: project-owned-original
+    decision: include
+    evidence: [docs/publication/root-clearance.md]
   - id: root-apache-license
     include: [LICENSE]
     class: license-compatible-third-party

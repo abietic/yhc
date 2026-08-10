@@ -21,18 +21,18 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: publication <inventory|check|scan-expression|materialize|check-tree|manifest|licenses> --config PATH")
+		return errors.New("usage: publication <inventory|check|scan-expression|materialize|check-tree|manifest|licenses|normalize-sbom> --config PATH")
 	}
 	commandName := args[0]
 	switch commandName {
-	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses":
+	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "normalize-sbom":
 	default:
 		return fmt.Errorf("unknown publication command %q", args[0])
 	}
 	command := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	command.SetOutput(io.Discard)
 	configPath := command.String("config", "", "publication policy")
-	var outputPath, rootPath, sourceCommit *string
+	var inputPath, outputPath, rootPath, sourceCommit *string
 	switch commandName {
 	case "inventory":
 		outputPath = command.String("output", "", "inventory output")
@@ -47,6 +47,9 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	case "manifest":
 		rootPath = command.String("root", "", "publication tree root")
 		outputPath = command.String("output", "", "publication manifest output")
+	case "normalize-sbom":
+		inputPath = command.String("input", "", "raw generated SBOM")
+		outputPath = command.String("output", "", "normalized SBOM output")
 	}
 	if err := command.Parse(args[1:]); err != nil {
 		return err
@@ -63,6 +66,14 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	}
 
 	switch commandName {
+	case "normalize-sbom":
+		if *inputPath == "" {
+			return errors.New("--input is required")
+		}
+		if *outputPath == "" {
+			return errors.New("--output is required")
+		}
+		return normalizeGeneratedSBOMFile(ctx, *inputPath, *outputPath)
 	case "licenses":
 		if *rootPath == "" {
 			return errors.New("--root is required")

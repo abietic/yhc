@@ -17,7 +17,7 @@ import (
 
 const (
 	publicationRepository = "github.com/abietic/yhc"
-	publicationBaseline   = "6500a09be6ec641c31348a4322a085eeaa029241"
+	publicationBaseline   = "8e34cc4794f0e1e9ae404c5bcf453d5e71a159c0"
 )
 
 type Config struct {
