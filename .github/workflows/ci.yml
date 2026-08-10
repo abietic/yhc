@@ -102,7 +102,7 @@ jobs:
 
       - name: Restore Go quality cache
         id: go-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -114,7 +114,7 @@ jobs:
       - name: Restore quality tools
         if: needs.changes.outputs.docs_only != 'true'
         id: tool-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/bin/gofumpt
@@ -186,7 +186,7 @@ jobs:
 
       - name: Restore Go test cache
         id: go-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -197,7 +197,7 @@ jobs:
 
       - name: Restore test tools
         id: tool-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/bin/gotestsum
           key: tools-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('Makefile') }}
@@ -281,7 +281,7 @@ jobs:
 
       - name: Restore Go build cache
         id: go-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
