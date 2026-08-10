@@ -366,7 +366,13 @@ secret-check: prepare-gitleaks
 
 sbom: prepare-cyclonedx-gomod
 	@install -d -m 0700 $(PUBLICATION_REPORT_DIR)
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(PUBLICATION_SBOM_GENERATED) .
+	@task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
+		cleanup() { case "$$task_tree_parent" in /tmp/yhc-sbom-tree.*) rm -rf -- "$$task_tree_parent" ;; esac; }; \
+		trap cleanup EXIT; \
+		task_source_commit="$$(git rev-parse HEAD)"; \
+		$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
+		cd "$$task_tree_parent/tree"; \
+		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(PUBLICATION_SBOM_GENERATED) .
 	@cmp -s $(PUBLICATION_SBOM_GENERATED) sbom.cdx.json || { echo "sbom.cdx.json is missing or stale" >&2; exit 1; }
 
 license-check: sbom

@@ -117,6 +117,21 @@ func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
 			t.Fatalf("source secret-check does not retain %q", contract)
 		}
 	}
+	sbomStart := strings.Index(makefile, "sbom: prepare-cyclonedx-gomod\n")
+	licenseStart := strings.Index(makefile, "license-check: sbom\n")
+	if sbomStart < 0 || licenseStart <= sbomStart {
+		t.Fatal("Makefile lacks a bounded SBOM target")
+	}
+	sbomTarget := makefile[sbomStart:licenseStart]
+	for _, contract := range []string{
+		`publication materialize --config $(PUBLICATION_CONFIG)`,
+		`cd "$$task_tree_parent/tree"`,
+		`-output $(PUBLICATION_SBOM_GENERATED) .`,
+	} {
+		if !strings.Contains(sbomTarget, contract) {
+			t.Fatalf("SBOM generation does not retain VCS-free contract %q", contract)
+		}
+	}
 	required := ci[strings.Index(ci, "  required:\n"):]
 	if !strings.Contains(required, "- publication-safety") || !strings.Contains(required, "PUBLICATION_SAFETY_RESULT") {
 		t.Fatal("Required gates must depend on and enforce publication safety")
