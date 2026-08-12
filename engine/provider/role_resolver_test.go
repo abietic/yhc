@@ -74,6 +74,11 @@ func TestRoleResolverPreservesOnlyLegacyBoundInheritedMain(t *testing.T) {
 	}
 	runtime := roleTestRuntime(nil, entry)
 	runtime.portfolio.Default = "legacy.main"
+	runtime.routes.resolution = ResolveInput{
+		Explicit: Config{Provider: ProviderAgenticClaude, Model: "haiku", BaseURL: "https://api.anthropic.com"},
+		Getenv:   func(string) string { return "" },
+	}
+	runtime.routes.main = ResolvedConfig{Config: runtime.routes.resolution.Explicit}
 
 	main, err := runtime.ResolveFailoverChain(RoleResolutionInput{
 		Role:         engineconfig.RoleMain,
