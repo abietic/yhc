@@ -3564,19 +3564,26 @@ func (e *QueryEngine) promptForTool(
 		grantEvaluator = nil
 	}
 	request := PermissionPromptRequest{
-		ToolName:        toolName,
-		ToolUseID:       currentToolUseID(ctx),
-		Input:           cloneInputMap(input),
-		Message:         e.SessionApprovalDescription(toolName, input),
-		SessionScope:    e.SessionApprovalDescription(toolName, input),
-		ProjectIdentity: e.permissionProjectIdentity,
-		RootSessionID:   e.permissionRootSessionID,
-		SessionID:       sessionID,
-		ThreadID:        threadID,
-		AgentID:         agentID,
-		ToolContext:     toolCtx,
-		PlanApproval:    planApproval,
-		action:          initialAction,
+		Kind:              permissionPromptKind(toolName, planApproval),
+		Source:            "coordinator",
+		ToolName:          toolName,
+		CanonicalToolName: initialAction.CanonicalToolName,
+		ToolUseID:         currentToolUseID(ctx),
+		Input:             cloneInputMap(input),
+		Message:           e.SessionApprovalDescription(toolName, input),
+		SessionScope:      e.SessionApprovalDescription(toolName, input),
+		ProjectIdentity:   e.permissionProjectIdentity,
+		RootSessionID:     e.permissionRootSessionID,
+		SessionID:         sessionID,
+		ThreadID:          threadID,
+		AgentID:           agentID,
+		ToolContext:       toolCtx,
+		PlanApproval:      planApproval,
+		Presentation: permissionPresentationForAction(
+			permissionPromptKind(toolName, planApproval),
+			*initialAction,
+		),
+		action: initialAction,
 	}
 	if graphHITL {
 		return e.resolveProjectGraphHITLPermission(ctx, request, emit)
@@ -3634,6 +3641,16 @@ func (e *QueryEngine) promptForTool(
 	}
 	e.recordPermissionReviewHumanComparison(ctx, *initialAction, result)
 	return result.Allowed(), result.Message
+}
+
+func permissionPromptKind(toolName string, planApproval *PlanApprovalRequest) string {
+	if planApproval != nil {
+		return PermissionInteractionKindPlanApproval
+	}
+	if strings.EqualFold(strings.TrimSpace(toolName), "AskUserQuestion") {
+		return PermissionInteractionKindQuestion
+	}
+	return PermissionInteractionKindPermission
 }
 
 func (e *QueryEngine) invokeLegacyPermissionCallback(
@@ -4005,6 +4022,8 @@ func sdkCompatToolName(name string) string {
 
 type toolUseIDContextKey struct{}
 
+type canonicalToolNameContextKey struct{}
+
 func withToolUseID(ctx context.Context, toolUseID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -4020,6 +4039,21 @@ func currentToolUseID(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+func withCanonicalToolName(ctx context.Context, toolName string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, canonicalToolNameContextKey{}, strings.TrimSpace(toolName))
+}
+
+func currentCanonicalToolName(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	toolName, _ := ctx.Value(canonicalToolNameContextKey{}).(string)
+	return strings.TrimSpace(toolName)
 }
 
 // ToolUseIDFromContext returns the stable tool call identity visible to
@@ -4708,7 +4742,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 	fallbackPermissionMode := e.config.PermissionMode
 	e.mu.Unlock()
 	preserveDurableGraphPlanApproval := restoredGraphInterrupt != nil &&
-		restoredGraphInterrupt.Kind == "plan_approval" &&
+		restoredGraphInterrupt.Kind == PermissionInteractionKindPlanApproval &&
 		restoredGraphInterrupt.PlanApproval != nil &&
 		resumed.Metadata.PlanState != nil &&
 		resumed.Metadata.PlanState.ApprovalRequestID ==

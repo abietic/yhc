@@ -490,14 +490,16 @@ type TaskLifecycleEvent struct {
 // PermissionRequestEvent is emitted by the engine-owned coordinator when a
 // tool begins waiting for an interactive permission decision.
 type PermissionRequestEvent struct {
-	ToolName     string               // the tool requesting permission
-	ToolUseID    string               // the specific tool invocation ID
-	Input        map[string]any       // the tool's input parameters
-	Message      string               // human-readable description of what the tool wants to do
-	Source       string               // coordinator or a specialized interaction owner
-	Kind         string               // permission, question, plan_approval, repeated_tool, or an adapter-specific kind
-	Attempt      int                  // repeated identical call attempt, when Kind is repeated_tool
-	PlanApproval *PlanApprovalRequest // immutable Plan request identity, when Kind is plan_approval
+	ToolName          string                  // the tool requesting permission
+	CanonicalToolName string                  // validated registry identity for presentation and replay
+	ToolUseID         string                  // the specific tool invocation ID
+	Input             map[string]any          // the tool's input parameters
+	Message           string                  // human-readable description of what the tool wants to do
+	Source            string                  // producer that owns interaction semantics
+	Kind              string                  // permission, question, plan_approval, or repeated_tool
+	Attempt           int                     // repeated identical call attempt, when Kind is repeated_tool
+	PlanApproval      *PlanApprovalRequest    // immutable Plan request identity, when Kind is plan_approval
+	Presentation      *PermissionPresentation // bounded ordinary-permission display projection
 }
 
 // PermissionResolvedEvent closes a previously emitted permission request.
