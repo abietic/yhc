@@ -1,0 +1,63 @@
+{
+  "name": "yhc-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop workspace for the YHC coding runtime",
+  "author": "YHC contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs",
+    "package": "electron-builder --dir",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux",
+    "package:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "41.10.4",
+    "electron-builder": "26.15.6"
+  },
+  "build": {
+    "appId": "com.abietic.yhc.desktop",
+    "productName": "YHC",
+    "icon": "assets/icon.png",
+    "files": [
+      "main.cjs",
+      "lifecycle.cjs",
+      "provider_setup.cjs",
+      "request.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../internal/webui/assets",
+        "to": "webui"
+      }
+    ],
+    "mac": {
+      "extraResources": [
+        {
+          "from": "resources/bin/yhc",
+          "to": "bin/yhc"
+        }
+      ]
+    },
+    "linux": {
+      "extraResources": [
+        {
+          "from": "resources/bin/yhc",
+          "to": "bin/yhc"
+        }
+      ]
+    },
+    "win": {
+      "extraResources": [
+        {
+          "from": "resources/bin/yhc.exe",
+          "to": "bin/yhc.exe"
+        }
+      ]
+    }
+  }
+}

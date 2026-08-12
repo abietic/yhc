@@ -903,7 +903,7 @@ func TestAttachTurnReservationCountsTowardSessionLimit(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: t.TempDir(), Title: "second"},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", t.TempDir()).WorkspaceHandle},
 	)
 	if create.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("create during attach = %d: %s", create.StatusCode, readBody(t, create))

@@ -97,14 +97,15 @@ type session struct {
 	closeDone chan struct{}
 	closeErr  error
 
-	id        string
-	threadID  string
-	cwd       string
-	title     string
-	createdAt time.Time
-	updatedAt time.Time
-	status    string
-	lastError string
+	id             string
+	threadID       string
+	cwd            string
+	title          string
+	workspaceLabel string
+	createdAt      time.Time
+	updatedAt      time.Time
+	status         string
+	lastError      string
 
 	engine      SessionEngine
 	lease       *sessionLease
@@ -181,9 +182,9 @@ func newSession(
 	if title == "" {
 		title = baseName(cwd)
 	}
-	s := &session{id: sessionID, threadID: threadID, cwd: cwd, title: title, createdAt: now, updatedAt: now, status: "idle", engine: runtime, lease: lease, events: newEventLog(eventBuffer), activity: newActivityLog(), permissions: permissions, transcript: newTranscriptPager(runtime.TranscriptPath()), rootCtx: sessionCtx, rootCancel: sessionCancel, closeDone: make(chan struct{})}
+	s := &session{id: sessionID, threadID: threadID, cwd: cwd, title: title, workspaceLabel: workspaceLabel(cwd), createdAt: now, updatedAt: now, status: "idle", engine: runtime, lease: lease, events: newEventLog(eventBuffer), activity: newActivityLog(), permissions: permissions, transcript: newTranscriptPager(runtime.TranscriptPath()), rootCtx: sessionCtx, rootCancel: sessionCancel, closeDone: make(chan struct{})}
 	s.startAsyncHookPump()
-	s.publishSynthetic("session.created", "", map[string]any{"cwd": cwd, "title": title, "resumed": input.Resume})
+	s.publishSynthetic("session.created", "", map[string]any{"workspace_label": s.workspaceLabel, "resumed": input.Resume})
 	return s, nil
 }
 
@@ -242,15 +243,14 @@ func (s *session) summary() SessionSummary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return SessionSummary{
-		ID:           s.id,
-		ThreadID:     s.threadID,
-		CWD:          s.cwd,
-		Title:        s.title,
-		Status:       s.status,
-		ActiveTurnID: s.activeTurnID,
-		CreatedAt:    s.createdAt,
-		UpdatedAt:    s.updatedAt,
-		LastError:    s.lastError,
+		ID:             s.id,
+		ThreadID:       s.threadID,
+		WorkspaceLabel: s.workspaceLabel,
+		Status:         s.status,
+		ActiveTurnID:   s.activeTurnID,
+		CreatedAt:      s.createdAt,
+		UpdatedAt:      s.updatedAt,
+		LastError:      s.lastError,
 	}
 }
 

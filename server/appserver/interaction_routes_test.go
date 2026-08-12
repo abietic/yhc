@@ -841,7 +841,7 @@ func newInteractionRouteTestSession(t *testing.T) (*Server, *httptest.Server, *s
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: t.TempDir()},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", t.TempDir()).WorkspaceHandle},
 	)
 	if create.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d: %s", create.StatusCode, readBody(t, create))

@@ -21,11 +21,11 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: publication <inventory|check|scan-expression|materialize|check-tree|manifest|licenses> --config PATH")
+		return errors.New("usage: publication <inventory|check|scan-expression|materialize|check-tree|manifest|licenses|node-sbom> --config PATH")
 	}
 	commandName := args[0]
 	switch commandName {
-	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses":
+	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "node-sbom":
 	default:
 		return fmt.Errorf("unknown publication command %q", args[0])
 	}
@@ -38,7 +38,7 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 		outputPath = command.String("output", "", "inventory output")
 	case "scan-expression", "check-tree":
 		rootPath = command.String("root", "", "publication tree root")
-	case "licenses":
+	case "licenses", "node-sbom":
 		rootPath = command.String("root", "", "repository root")
 		sbomPath = command.String("sbom", "", "CycloneDX SBOM")
 		outputPath = command.String("output", "", "dependency license report")
@@ -84,6 +84,14 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 			return encodeErr
 		}
 		return writeInventory(*outputPath, encoded)
+	case "node-sbom":
+		if *rootPath == "" {
+			return errors.New("--root is required")
+		}
+		if *outputPath == "" {
+			return errors.New("--output is required")
+		}
+		return writeNodeSBOM(*rootPath, filepath.Join(*rootPath, "quality", "node-dependency-licenses.yaml"), filepath.Join(*rootPath, "desktop", "package-lock.json"), *outputPath)
 	case "scan-expression":
 		if *rootPath == "" {
 			return errors.New("--root is required")

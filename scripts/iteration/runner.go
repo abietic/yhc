@@ -24,6 +24,7 @@ var targetDeadlines = map[string]time.Duration{
 	"fmt": 3 * time.Minute, "lint": 10 * time.Minute, "test": 15 * time.Minute, "build": 15 * time.Minute,
 	"docs-check": 5 * time.Minute, "docs-check-ci": 5 * time.Minute, "test-contract": 5 * time.Minute,
 	"test-race": 10 * time.Minute, "test-pty": 5 * time.Minute, "test-fuzz-smoke": 5 * time.Minute, "test-e2e": 10 * time.Minute,
+	"desktop-check": 5 * time.Minute,
 	"check-boundaries": 5 * time.Minute, "test-fault-injection": 10 * time.Minute,
 	"test-fuzz-deep": 10 * time.Minute, "test-e2e-deep": 10 * time.Minute, "test-pty-deep": 10 * time.Minute,
 }

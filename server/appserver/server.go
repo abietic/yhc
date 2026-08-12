@@ -40,6 +40,7 @@ type Config struct {
 	WebAssets          fs.FS
 	BrowserPairingTTL  time.Duration
 	BrowserSessionTTL  time.Duration
+	WorkspaceHandleTTL time.Duration
 	SessionCatalogPath string
 	DiscoveryCWD       string
 	Now                func() time.Time
@@ -66,6 +67,8 @@ type Server struct {
 	creatingIDs            map[string]struct{}
 	activating             map[string]*attachFlight
 	attachReceipts         map[string]attachReceipt
+	workspaceHandles       map[string]workspaceCapability
+	workspaceHandleTTL     time.Duration
 	webEnabled             bool
 	webAssets              fs.FS
 	browserAuth            *browserAuth
@@ -112,6 +115,10 @@ func New(config Config) (*Server, error) {
 	if sessionTTL <= 0 {
 		sessionTTL = 12 * time.Hour
 	}
+	workspaceHandleTTL := config.WorkspaceHandleTTL
+	if workspaceHandleTTL <= 0 {
+		workspaceHandleTTL = defaultWorkspaceHandleTTL
+	}
 	if config.EnableWeb && config.WebAssets == nil {
 		return nil, fmt.Errorf("app-server Web assets are required when Web is enabled")
 	}
@@ -141,6 +148,8 @@ func New(config Config) (*Server, error) {
 		creatingIDs:        make(map[string]struct{}),
 		activating:         make(map[string]*attachFlight),
 		attachReceipts:     make(map[string]attachReceipt),
+		workspaceHandles:   make(map[string]workspaceCapability),
+		workspaceHandleTTL: workspaceHandleTTL,
 		webEnabled:         config.EnableWeb,
 		webAssets:          config.WebAssets,
 		sessionCatalogPath: catalogPath,
@@ -362,6 +371,7 @@ type requestPrincipalKey struct{}
 func (s *Server) routes() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /v1/health", s.handleHealth)
+	api.HandleFunc("POST /v1/workspaces", s.handleRegisterWorkspace)
 	api.HandleFunc("GET /v1/sessions", s.handleListSessions)
 	api.HandleFunc("GET /v1/durable-sessions", s.handleListDurableSessions)
 	api.HandleFunc("GET /v1/durable-sessions/{session_id}/transcript", s.handleDurableTranscriptPage)
@@ -694,15 +704,35 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	requestedID := strings.TrimSpace(input.SessionID)
-	reservationStatus, reservationCode := s.reserveSessionCreation(requestedID)
+	handle, capability, err := s.reserveWorkspaceHandle(input.WorkspaceHandle)
+	if err != nil {
+		code := "workspace_handle_invalid"
+		if errors.Is(err, errWorkspaceHandleMissing) {
+			code = "workspace_handle_required"
+		} else if errors.Is(err, errWorkspaceHandleExpired) {
+			code = "workspace_handle_expired"
+		}
+		writeError(w, http.StatusUnprocessableEntity, code, err.Error())
+		return
+	}
+	reservationStatus, reservationCode := s.reserveSessionCreation("")
 	if reservationStatus != 0 {
+		s.settleWorkspaceHandle(handle, false)
 		writeError(w, reservationStatus, reservationCode, sessionReservationMessage(reservationCode))
 		return
 	}
-	owned, err := newSession(s.ctx, s.factory, s.id, input, nil, s.eventBuffer, s.now().UTC())
+	owned, err := newSession(
+		s.ctx,
+		s.factory,
+		s.id,
+		CreateSessionRequest{CWD: capability.cwd, Title: capability.label},
+		nil,
+		s.eventBuffer,
+		s.now().UTC(),
+	)
 	if err != nil {
-		s.releaseSessionCreation(requestedID)
+		s.releaseSessionCreation("")
+		s.settleWorkspaceHandle(handle, false)
 		status := http.StatusUnprocessableEntity
 		code := "session_create_failed"
 		if strings.Contains(err.Error(), "active app-server owner") {
@@ -713,11 +743,12 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	s.releaseSessionCreationLocked(requestedID)
+	s.releaseSessionCreationLocked("")
 	_, exists := s.sessions[owned.id]
 	closing := s.closing
 	if exists || closing {
 		s.mu.Unlock()
+		s.settleWorkspaceHandle(handle, false)
 		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		_ = owned.close(closeCtx)
 		cancel()
@@ -735,6 +766,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessions[owned.id] = owned
 	s.mu.Unlock()
+	s.settleWorkspaceHandle(handle, true)
 	writeJSON(w, http.StatusCreated, owned.summary())
 }
 

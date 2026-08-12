@@ -694,7 +694,7 @@ binary/build directory is staged.
 
 **Interfaces:**
 
-- Produces: `sbom.node.cdx.json`, `make desktop-audit`,
+- Produces: ignored `build/publication/sbom.node.cdx.json`, `make desktop-audit`,
   `make node-sbom`, `make node-license-check`, and a Desktop-aware
   `Required gates` aggregate.
 - Consumes: the exact `desktop/package-lock.json` graph and vendored Marked
@@ -718,7 +718,7 @@ exist.
 
 Parse only the tracked lockfile, require the approved npm registry host and
 integrity for remote packages, classify the entire reachable Electron build
-graph, emit deterministic `sbom.node.cdx.json`, and validate it against
+graph, emit deterministic ignored `build/publication/sbom.node.cdx.json`, and validate it against
 `quality/node-dependency-licenses.yaml`. Keep the existing Go SBOM and license
 schema unchanged.
 

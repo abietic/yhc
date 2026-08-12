@@ -80,15 +80,13 @@ func (s *Server) handleListDurableSessions(w http.ResponseWriter, r *http.Reques
 	}
 	for _, info := range page.Sessions {
 		cwd := strings.TrimSpace(info.CWD)
-		title := durableSessionTitle(info)
 		status := strings.TrimSpace(info.Status)
 		if status == "" {
 			status = "saved"
 		}
 		response.Sessions = append(response.Sessions, DurableSessionSummary{
 			ID:              info.SessionID,
-			CWD:             cwd,
-			Title:           truncateSnapshotText(title, 160),
+			WorkspaceLabel:  workspaceLabel(cwd),
 			Status:          status,
 			UpdatedAt:       info.LastModified.UTC(),
 			GitBranch:       truncateSnapshotText(info.GitBranch, 160),

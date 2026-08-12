@@ -102,7 +102,7 @@ func (s *Server) handleReviewDiff(w http.ResponseWriter, r *http.Request) {
 	summary := owned.summary()
 	ctx, cancel := context.WithTimeout(r.Context(), reviewDiffTimeout)
 	defer cancel()
-	sources, err := reviewSources(ctx, summary.CWD, ignoreWhitespace)
+	sources, err := reviewSources(ctx, owned.cwd, summary.WorkspaceLabel, ignoreWhitespace)
 	if err != nil {
 		writeError(
 			w,
@@ -114,15 +114,16 @@ func (s *Server) handleReviewDiff(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, ReviewDiffResponse{
-		CWD:         summary.CWD,
-		GeneratedAt: s.now().UTC(),
-		Sources:     sources,
+		WorkspaceLabel: summary.WorkspaceLabel,
+		GeneratedAt:    s.now().UTC(),
+		Sources:        sources,
 	})
 }
 
 func reviewSources(
 	ctx context.Context,
 	cwd string,
+	workspaceLabel string,
 	ignoreWhitespace bool,
 ) ([]ReviewDiffSource, error) {
 	probe, err := runGit(ctx, cwd, reviewGitMetaLimit, "rev-parse", "--is-inside-work-tree")
@@ -178,7 +179,7 @@ func reviewSources(
 	return []ReviewDiffSource{{
 		ID:             "worktree",
 		Kind:           "git_worktree",
-		RepositoryRoot: root,
+		WorkspaceLabel: workspaceLabel,
 		BaseRef:        "HEAD",
 		HeadRef:        headRef,
 		Diff:           diff.text,

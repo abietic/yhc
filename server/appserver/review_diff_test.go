@@ -55,7 +55,7 @@ func TestReviewDiffUsesOwnedSessionCWDAndBoundsOutput(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: root},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", root).WorkspaceHandle},
 	)
 	var summary SessionSummary
 	decodeResponse(t, create, &summary)
@@ -137,7 +137,7 @@ func TestReviewDiffScopesChangesToOwnedSessionDirectory(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: owned},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", owned).WorkspaceHandle},
 	)
 	var summary SessionSummary
 	decodeResponse(t, create, &summary)
@@ -179,7 +179,7 @@ func TestReviewDiffReturnsEmptyForNonGitAndRejectsInvalidQuery(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: t.TempDir()},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", t.TempDir()).WorkspaceHandle},
 	)
 	var summary SessionSummary
 	decodeResponse(t, create, &summary)

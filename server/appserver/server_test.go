@@ -101,11 +101,13 @@ func TestServerReservesSessionCapacityBeforeFactory(t *testing.T) {
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 	firstDone := make(chan *http.Response, 1)
+	firstWorkspace := registerWorkspace(t, httpServer.URL, "test-token", t.TempDir())
+	secondWorkspace := registerWorkspace(t, httpServer.URL, "test-token", t.TempDir())
 	go func() {
-		firstDone <- doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+		firstDone <- doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": firstWorkspace.WorkspaceHandle})
 	}()
 	<-started
-	second := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	second := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": secondWorkspace.WorkspaceHandle})
 	if second.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("second create status = %d, want %d", second.StatusCode, http.StatusTooManyRequests)
 	}
@@ -119,6 +121,11 @@ func TestServerReservesSessionCapacityBeforeFactory(t *testing.T) {
 		t.Fatalf("first create status = %d", first.StatusCode)
 	}
 	_ = first.Body.Close()
+	retried := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": secondWorkspace.WorkspaceHandle})
+	if retried.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("retry after capacity rejection = %d, want %d while first session remains active", retried.StatusCode, http.StatusTooManyRequests)
+	}
+	_ = retried.Body.Close()
 }
 
 type nonLoopbackListener struct{}

@@ -212,7 +212,7 @@ remain unchanged.
 | Boundary | Current source |
 |---|---|
 | Command metadata and compatibility | [`Command`](../../../../engine/commands/registry.go#L197) |
-| Registration/default compatibility behavior | [`applyCommandContractDefaults`](../../../../engine/commands/registry.go#L769) |
+| Registration/default compatibility behavior | [`applyCommandContractDefaults`](../../../../engine/commands/registry.go#L851) |
 | Contextual discovery | [`Registry.ListForContext`](../../../../engine/commands/registry.go#L1266) |
 | Live dispatch revalidation | [`Registry.Dispatch`](../../../../engine/commands/registry.go#L1325) |
 | Exact current inventory | [`TestDefaultCommandContractAndAliasSnapshot`](../../../../engine/commands/commands_test.go#L653) |

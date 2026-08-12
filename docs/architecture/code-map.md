@@ -80,6 +80,7 @@ This initial rule is deliberately narrower than a complete layer DAG.
 | `engine` | [`NewQueryEngine`](../../engine/engine.go) | active | [query engine](runtime/query-engine.md) | Owns conversation orchestration, durable session state, and provider-free administration hosts. |
 | `internal/buildinfo` | [`Current`](../../internal/buildinfo/buildinfo.go) | active | [entrypoints and transports](platform/entrypoints-and-transports.md) | One renderer-neutral build identity feeds CLI, slash, MCP, and release metadata. |
 | `tools` | [`Registry`](../../tools/registry.go) | active | [tool registry](capabilities/tool-registry.md) | Dispatch inventory is distinct from the filtered model-visible projection. |
+| `internal/webui` | [`Assets`](../../internal/webui/assets.go) | entrypoint-specific: `serve app --web` | [desktop workbench](desktop-workbench.md) | Embedded same-origin UI assets and safe client projections; it owns no engine runtime. |
 
 ## Engine modules
 
@@ -140,6 +141,7 @@ Every package in this table is reachable only through the TUI entrypoint.
 |---|---|---|---|---|
 | `server/acp` | [`NewAgent`](../../server/acp/agent.go) | entrypoint-specific: ACP | [ACP adapter](platform/acp-adapter.md) | Owns per-session engines, protocol replay, negotiated extensions, and event projection. |
 | `server/mcp` | [`Serve`](../../server/mcp/server.go) | entrypoint-specific: standalone MCP | [MCP](capabilities/mcp.md) | Dispatches tools directly and creates no conversation engine. |
+| `server/appserver` | [`New`](../../server/appserver/server.go) | entrypoint-specific: `serve app` | [desktop workbench](desktop-workbench.md) | Authenticated loopback app-server, bounded session admission, replay-only durable history, and typed Desktop projection. |
 
 ## Packages outside the released CLI closure
 

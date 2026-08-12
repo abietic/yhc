@@ -84,7 +84,7 @@ func TestExecutionSettingsGetAndPatch(t *testing.T) {
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	createdResponse := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	createdResponse := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, createdResponse, &summary)
 	_ = createdResponse.Body.Close()
@@ -114,7 +114,7 @@ func TestExecutionSettingsRejectsInvalidMutation(t *testing.T) {
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	created := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	created := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, created, &summary)
 	_ = created.Body.Close()
@@ -135,7 +135,7 @@ func TestExecutionSettingsReportsBypassButDoesNotOfferIt(t *testing.T) {
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	created := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	created := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, created, &summary)
 	_ = created.Body.Close()
@@ -160,7 +160,7 @@ func TestExecutionSettingsRejectsCardinalityUnknownAndActiveTurn(t *testing.T) {
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	createdResponse := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	createdResponse := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, createdResponse, &summary)
 	_ = createdResponse.Body.Close()
@@ -205,7 +205,7 @@ func TestExecutionSettingsProjectionIsBoundedAndSafe(t *testing.T) {
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	created := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	created := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, created, &summary)
 	_ = created.Body.Close()
@@ -246,7 +246,7 @@ func TestExecutionSettingsLegacyClaudeThinkingFallback(t *testing.T) {
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	created := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	created := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, created, &summary)
 	_ = created.Body.Close()
@@ -273,7 +273,7 @@ func TestExecutionSettingsBlockedBindingAndUnavailableController(t *testing.T) {
 		defer shutdownTestServer(t, server)
 		httpServer := httptest.NewServer(server.Handler())
 		defer httpServer.Close()
-		createdResponse := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+		createdResponse := createExecutionSettingsTestSession(t, httpServer.URL)
 		var summary SessionSummary
 		decodeResponse(t, createdResponse, &summary)
 		_ = createdResponse.Body.Close()
@@ -302,7 +302,7 @@ func TestExecutionSettingsBlockedBindingAndUnavailableController(t *testing.T) {
 		defer shutdownTestServer(t, server)
 		httpServer := httptest.NewServer(server.Handler())
 		defer httpServer.Close()
-		created := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+		created := createExecutionSettingsTestSession(t, httpServer.URL)
 		var summary SessionSummary
 		decodeResponse(t, created, &summary)
 		_ = created.Body.Close()
@@ -326,7 +326,7 @@ func TestExecutionSettingsMutationsAreIndependentAndInvalidInputsDoNotCallContro
 	defer shutdownTestServer(t, server)
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	createdResponse := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+	createdResponse := createExecutionSettingsTestSession(t, httpServer.URL)
 	var summary SessionSummary
 	decodeResponse(t, createdResponse, &summary)
 	_ = createdResponse.Body.Close()
@@ -385,7 +385,7 @@ func TestExecutionSettingsMapsEngineMutationRacePrecisely(t *testing.T) {
 			defer shutdownTestServer(t, server)
 			httpServer := httptest.NewServer(server.Handler())
 			defer httpServer.Close()
-			createdResponse := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+			createdResponse := createExecutionSettingsTestSession(t, httpServer.URL)
 			var summary SessionSummary
 			decodeResponse(t, createdResponse, &summary)
 			_ = createdResponse.Body.Close()
@@ -434,7 +434,7 @@ func TestExecutionSettingsMapsPlanTransitionSentinelPrecisely(t *testing.T) {
 			defer shutdownTestServer(t, server)
 			httpServer := httptest.NewServer(server.Handler())
 			defer httpServer.Close()
-			createdResponse := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, CreateSessionRequest{CWD: t.TempDir()})
+			createdResponse := createExecutionSettingsTestSession(t, httpServer.URL)
 			var summary SessionSummary
 			decodeResponse(t, createdResponse, &summary)
 			_ = createdResponse.Body.Close()
@@ -477,6 +477,12 @@ func containsExecutionModel(options []ExecutionModelOption, selector string) boo
 		}
 	}
 	return false
+}
+
+func createExecutionSettingsTestSession(t *testing.T, baseURL string) *http.Response {
+	t.Helper()
+	registered := registerWorkspace(t, baseURL, "test-token", t.TempDir())
+	return doJSON(t, baseURL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": registered.WorkspaceHandle})
 }
 
 func stringPointer(value string) *string { return &value }

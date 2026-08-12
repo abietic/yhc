@@ -65,7 +65,7 @@ func TestTranscriptPageIsLosslessFrozenAndSkipsLifecycleCopies(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: t.TempDir()},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", t.TempDir()).WorkspaceHandle},
 	)
 	var summary SessionSummary
 	decodeResponse(t, create, &summary)
@@ -168,7 +168,7 @@ func TestSnapshotUsesTranscriptPhysicalIdentity(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: t.TempDir()},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", t.TempDir()).WorkspaceHandle},
 	)
 	var summary SessionSummary
 	decodeResponse(t, create, &summary)
@@ -234,7 +234,7 @@ func TestSnapshotConversationFallbackWhenTranscriptUnavailable(t *testing.T) {
 		httpServer.URL+"/v1/sessions",
 		"test-token",
 		http.MethodPost,
-		CreateSessionRequest{CWD: t.TempDir()},
+		map[string]string{"workspace_handle": registerWorkspace(t, httpServer.URL, "test-token", t.TempDir()).WorkspaceHandle},
 	)
 	var summary SessionSummary
 	decodeResponse(t, create, &summary)

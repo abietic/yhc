@@ -99,7 +99,8 @@ func TestDurableSessionsDiscoverRegisteredRootsWithBoundedPaging(t *testing.T) {
 	decodeResponse(t, first, &firstPage)
 	if len(firstPage.Sessions) != 1 ||
 		firstPage.Sessions[0].ID != "22222222-2222-4222-8222-222222222222" ||
-		firstPage.Sessions[0].Title != "newer desktop session" ||
+		firstPage.Sessions[0].CWD != "" ||
+		firstPage.Sessions[0].Title != "" ||
 		firstPage.Sessions[0].GitBranch != "feat/desktop" ||
 		!firstPage.Sessions[0].Resumable ||
 		!firstPage.HasMore ||

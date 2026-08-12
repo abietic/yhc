@@ -84,10 +84,28 @@ type ResumeValidator func(context.Context, EngineOptions) error
 
 // CreateSessionRequest creates or resumes one engine-owned durable session.
 type CreateSessionRequest struct {
-	SessionID string `json:"session_id,omitempty"`
-	CWD       string `json:"cwd"`
-	Title     string `json:"title,omitempty"`
-	Resume    bool   `json:"resume,omitempty"`
+	WorkspaceHandle string `json:"workspace_handle"`
+
+	// Deprecated in-process construction fields. They are deliberately not part
+	// of the HTTP JSON contract; durable attach builds this value internally.
+	SessionID string `json:"-"`
+	CWD       string `json:"-"`
+	Title     string `json:"-"`
+	Resume    bool   `json:"-"`
+}
+
+// RegisterWorkspaceRequest is accepted only from the trusted Desktop process.
+// It is the sole transport boundary that can name a local filesystem path.
+type RegisterWorkspaceRequest struct {
+	CWD string `json:"cwd"`
+}
+
+// RegisterWorkspaceResponse returns a short-lived opaque capability for one
+// validated workspace. The renderer must pass the handle, never the path.
+type RegisterWorkspaceResponse struct {
+	WorkspaceHandle string    `json:"workspace_handle"`
+	WorkspaceLabel  string    `json:"workspace_label"`
+	ExpiresAt       time.Time `json:"expires_at"`
 }
 
 // StartTurnRequest starts one prompt in an idle session.
@@ -176,15 +194,18 @@ type ResolveInteractionResponse struct {
 
 // SessionSummary is the bounded desktop session projection.
 type SessionSummary struct {
-	ID           string    `json:"id"`
-	ThreadID     string    `json:"thread_id"`
-	CWD          string    `json:"cwd"`
-	Title        string    `json:"title"`
-	Status       string    `json:"status"`
-	ActiveTurnID string    `json:"active_turn_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	LastError    string    `json:"last_error,omitempty"`
+	ID             string    `json:"id"`
+	ThreadID       string    `json:"thread_id"`
+	WorkspaceLabel string    `json:"workspace_label"`
+	Status         string    `json:"status"`
+	ActiveTurnID   string    `json:"active_turn_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	LastError      string    `json:"last_error,omitempty"`
+
+	// Deprecated in-process compatibility fields. They are never serialized.
+	CWD   string `json:"-"`
+	Title string `json:"-"`
 }
 
 // SessionListResponse lists only sessions owned by this app-server process.
@@ -196,13 +217,16 @@ type SessionListResponse struct {
 // still goes through normal session admission and resume validation.
 type DurableSessionSummary struct {
 	ID              string    `json:"id"`
-	CWD             string    `json:"cwd"`
-	Title           string    `json:"title"`
+	WorkspaceLabel  string    `json:"workspace_label"`
 	Status          string    `json:"status"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	GitBranch       string    `json:"git_branch,omitempty"`
 	ParentSessionID string    `json:"parent_session_id,omitempty"`
 	Resumable       bool      `json:"resumable"`
+
+	// Deprecated in-process compatibility fields. They are never serialized.
+	CWD   string `json:"-"`
+	Title string `json:"-"`
 }
 
 // DurableSessionListResponse is one opaque-cursor page across registered
@@ -231,9 +255,12 @@ type ImportDurableSessionResponse struct {
 // ReviewDiffResponse is a point-in-time, read-only review projection for one
 // live session's owned workspace.
 type ReviewDiffResponse struct {
-	CWD         string             `json:"cwd"`
-	GeneratedAt time.Time          `json:"generated_at"`
-	Sources     []ReviewDiffSource `json:"sources"`
+	WorkspaceLabel string             `json:"workspace_label"`
+	GeneratedAt    time.Time          `json:"generated_at"`
+	Sources        []ReviewDiffSource `json:"sources"`
+
+	// Deprecated in-process compatibility field. It is never serialized.
+	CWD string `json:"-"`
 }
 
 // ReviewDiffSource is one bounded VCS diff. DiffHash and TotalBytes cover the
@@ -241,13 +268,16 @@ type ReviewDiffResponse struct {
 type ReviewDiffSource struct {
 	ID             string `json:"id"`
 	Kind           string `json:"kind"`
-	RepositoryRoot string `json:"repository_root"`
+	WorkspaceLabel string `json:"workspace_label"`
 	BaseRef        string `json:"base_ref"`
 	HeadRef        string `json:"head_ref"`
 	Diff           string `json:"diff"`
 	DiffHash       string `json:"diff_hash"`
 	TotalBytes     int64  `json:"total_bytes"`
 	Truncated      bool   `json:"truncated"`
+
+	// Deprecated in-process compatibility field. It is never serialized.
+	RepositoryRoot string `json:"-"`
 }
 
 // SessionSnapshot is the stable Desktop recovery projection. It deliberately

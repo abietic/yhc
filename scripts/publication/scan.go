@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/scanner"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +25,8 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
+
+const nodePackageLockPath = "desktop/package-lock.json"
 
 type ScanFinding struct {
 	Path        string `json:"path"`
@@ -97,8 +101,24 @@ func scanExpression(ctx context.Context, config Config, rootPath string) (ScanRe
 		if err != nil {
 			return report, err
 		}
+		if name == nodePackageLockPath {
+			if _, err := checkNodeDependencies(rootPath, filepath.Join(rootPath, "quality", "node-dependency-licenses.yaml"), filepath.Join(rootPath, filepath.FromSlash(nodePackageLockPath))); err != nil {
+				return report, fmt.Errorf("validate Node package lock: %w", err)
+			}
+			validated, err := scanOpenRegular(root, name)
+			if err != nil || !bytes.Equal(contents, validated) {
+				return report, fmt.Errorf("scan file %q changed during structured validation", name)
+			}
+		}
 		digests[name] = sha256.Sum256(contents)
-		for _, finding := range scanBytes(contents, name, config) {
+		scanContents := contents
+		if name == nodePackageLockPath {
+			scanContents, err = scanMaskedNodeLockfile(contents)
+			if err != nil {
+				return report, err
+			}
+		}
+		for _, finding := range scanBytes(scanContents, name, config) {
 			if _, exists := seen[finding]; exists {
 				continue
 			}
@@ -139,6 +159,47 @@ func scanExpression(ctx context.Context, config Config, rootPath string) (ScanRe
 		return ScanReport{SchemaVersion: 1, Findings: []ScanFinding{}}, err
 	}
 	return report, nil
+}
+
+func scanMaskedNodeLockfile(contents []byte) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(contents))
+	var document map[string]json.RawMessage
+	if err := decoder.Decode(&document); err != nil {
+		return nil, errors.New("decode Node package lock for expression scan failed")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, errors.New("Node package lock has trailing data during expression scan")
+	}
+	packagesRaw, ok := document["packages"]
+	if !ok {
+		return nil, errors.New("Node package lock lacks packages during expression scan")
+	}
+	var packages map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(packagesRaw, &packages); err != nil {
+		return nil, errors.New("decode Node package records for expression scan failed")
+	}
+	for location, pkg := range packages {
+		if location == "" {
+			continue
+		}
+		if _, ok := pkg["resolved"]; ok {
+			pkg["resolved"] = json.RawMessage(`"validated-node-resolved"`)
+		}
+		if _, ok := pkg["integrity"]; ok {
+			pkg["integrity"] = json.RawMessage(`"validated-node-integrity"`)
+		}
+	}
+	encodedPackages, err := json.Marshal(packages)
+	if err != nil {
+		return nil, errors.New("encode Node package records for expression scan failed")
+	}
+	document["packages"] = encodedPackages
+	masked, err := json.Marshal(document)
+	if err != nil {
+		return nil, errors.New("encode Node package lock for expression scan failed")
+	}
+	return masked, nil
 }
 
 func scanOpenRoot(rootPath string) (*os.Root, os.FileInfo, error) {
