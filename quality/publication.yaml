@@ -4298,27 +4298,27 @@ privacy:
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/interaction_routes_test.go
-        line: 468
+        line: 473
         rule_id: credential-assignment
         match_sha256: 5b8b2eea0f2a667c67d1a8a447a45326490fc55c659a0cc198a79db7f81c3a64
         purpose: synthetic-security-fixture
       - path: server/appserver/interaction_routes_test.go
-        line: 573
+        line: 578
         rule_id: credential-assignment
         match_sha256: b336e990b9b7f9722e03a07a8f903762baeca9075db2a24147c7b4320c75a6f6
         purpose: synthetic-security-fixture
       - path: server/appserver/interaction_routes_test.go
-        line: 614
+        line: 619
         rule_id: bearer-token
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/interaction_routes_test.go
-        line: 818
+        line: 823
         rule_id: bearer-token
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/interaction_routes_test.go
-        line: 830
+        line: 835
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture

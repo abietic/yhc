@@ -87,6 +87,11 @@ func TestServerProtocolV2PlanReviewDigestAuthorizesExactApproval(t *testing.T) {
 	}
 	resultCh := waitForBrokerResult(context.Background(), owned.permissions, request)
 	owned.permissions.observeEvent(request, "turn-plan-http")
+	readyContext, cancelReady := context.WithTimeout(context.Background(), time.Second)
+	defer cancelReady()
+	if _, ready := owned.permissions.awaitInteraction(readyContext, request.ToolUseID); !ready {
+		t.Fatal("Plan review interaction did not become ready")
+	}
 
 	reviewResponse := getBearer(
 		t,
