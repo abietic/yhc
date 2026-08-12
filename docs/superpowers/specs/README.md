@@ -8,7 +8,7 @@
 
 | Specification | Scope | State |
 |---|---|---|
-| [`2026-08-13-untracked-sbom-design.md`](2026-08-13-untracked-sbom-design.md) | Remove the committed SBOM while retaining open-source licensing and fail-closed dependency-license checks | Historical; implemented 2026-08-13 |
+| [`2026-08-13-yhc-desktop-workbench-forward-port-design.md`](2026-08-13-yhc-desktop-workbench-forward-port-design.md) | Public-history-safe Desktop forward-port, YHC identity and state adaptation, app-server authority, Node dependency clearance, and promotion gates | Approved; implementation planning active |
 | [`2026-08-09-yhc-public-release-design.md`](2026-08-09-yhc-public-release-design.md) | Clean public repository, private archive, identity compatibility, source-mapping retention, and publication gates | Historical; implemented 2026-08-11 |
 | [`2026-08-09-iteration-quality-s5-completion-design.md`](2026-08-09-iteration-quality-s5-completion-design.md) | Residual plan/worktree hygiene, independent regression oracles, and local performance measurement after S1-S4 | Approved; F0 executed and S5A-S5C implementation is active |
 | [`2026-08-08-todo-workboard-transcript-mode-hotfix-design.md`](2026-08-08-todo-workboard-transcript-mode-hotfix-design.md) | Legacy transcript-directory repair, truthful Todo runtime-state permission metadata, and Guest protection of `.eino-agent` writes | Implemented; retained as design and verification evidence |
