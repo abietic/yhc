@@ -3164,6 +3164,13 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 	if ruleDecision.Matched && ruleDecision.Action == permission.ActionDeny {
 		return denyInvocationPolicy("permission rule denied tool use")
 	}
+	if canonicalToolName == "EnterPlanMode" &&
+		e.config.CommandEntrypoint == commands.EntrypointAppServer {
+		// EnterPlanMode only moves the runtime into the more restrictive Plan
+		// lifecycle. It is not an authorization request. Plan policy and the
+		// explicit deny rule above remain authoritative.
+		return allowInvocationPolicy()
+	}
 	if planDecision.hasExactFileCapability() {
 		return allowInvocationPolicy()
 	}

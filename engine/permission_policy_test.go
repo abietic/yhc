@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/tools"
 	"github.com/cloudwego/eino/components/model"
@@ -105,6 +106,82 @@ func TestP221aInvocationPolicyProjectionAndLegacyReview(t *testing.T) {
 				t.Fatalf("classifier events = %#v, cleared=%v", events, tt.cleared)
 			}
 		})
+	}
+}
+
+func TestDesktopTypedInteractionTaxonomyAtInvocationBoundary(t *testing.T) {
+	registry := tools.NewRegistry()
+	tools.RegisterDefaults(registry)
+	var requests []PermissionPromptRequest
+	engine := NewQueryEngine(QueryEngineConfig{
+		CWD:               t.TempDir(),
+		ToolRegistry:      registry,
+		CommandEntrypoint: commands.EntrypointAppServer,
+		PermissionPrompt: func(_ context.Context, request PermissionPromptRequest) PermissionInteractionResult {
+			requests = append(requests, request)
+			return PermissionInteractionResult{Decision: PermissionAllowOnce}
+		},
+	})
+	t.Cleanup(engine.Close)
+
+	enter := engine.evaluateInvocationPolicy(
+		withToolUseID(context.Background(), "enter-plan"),
+		nil,
+		"EnterPlanMode",
+		map[string]any{},
+		nil,
+	)
+	if !enter.Allowed || enter.Decision != invocationPolicyAllow {
+		t.Fatalf("EnterPlanMode outcome = %#v, want deterministic allow", enter)
+	}
+	if len(requests) != 0 {
+		t.Fatalf("EnterPlanMode created an interaction: %#v", requests)
+	}
+
+	mcpAuth := engine.evaluateInvocationPolicy(
+		withToolUseID(context.Background(), "mcp-auth"),
+		nil,
+		"McpAuth",
+		map[string]any{"server_name": "demo", "auth_type": "oauth"},
+		nil,
+	)
+	if !mcpAuth.Allowed || mcpAuth.Decision != invocationPolicyRequireHuman {
+		t.Fatalf("McpAuth outcome = %#v, want ordinary human permission", mcpAuth)
+	}
+	if len(requests) != 1 || requests[0].ToolName != "McpAuth" ||
+		requests[0].Kind != PermissionInteractionKindPermission || requests[0].PlanApproval != nil {
+		t.Fatalf("McpAuth interaction = %#v, want ordinary permission", requests)
+	}
+
+	denyRoot := t.TempDir()
+	if err := permission.PersistPermissionRules(
+		denyRoot,
+		[]string{"EnterPlanMode"},
+		permission.ActionDeny,
+		permission.DestLocalSettings,
+	); err != nil {
+		t.Fatal(err)
+	}
+	denied := NewQueryEngine(QueryEngineConfig{
+		CWD:                   denyRoot,
+		PermissionProjectRoot: denyRoot,
+		ToolRegistry:          registry,
+		CommandEntrypoint:     commands.EntrypointAppServer,
+		PermissionPrompt: func(context.Context, PermissionPromptRequest) PermissionInteractionResult {
+			t.Fatal("explicitly denied EnterPlanMode must not prompt")
+			return PermissionInteractionResult{Decision: PermissionAllowOnce}
+		},
+	})
+	t.Cleanup(denied.Close)
+	denyOutcome := denied.evaluateInvocationPolicy(
+		withToolUseID(context.Background(), "enter-plan-denied"),
+		nil,
+		"EnterPlanMode",
+		map[string]any{},
+		nil,
+	)
+	if denyOutcome.Allowed || denyOutcome.Decision != invocationPolicyDeny {
+		t.Fatalf("explicit deny outcome = %#v", denyOutcome)
 	}
 }
 
