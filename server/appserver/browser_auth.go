@@ -155,6 +155,10 @@ func csrfMatches(provided, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
 
+// Browser cookies are Secure even though the app-server uses HTTP: the server
+// admits only explicit loopback authorities, which Chromium treats as secure
+// cookie origins. The same flags are kept on deletion so logout cannot weaken
+// the cookie before expiring it.
 func browserCookie(token string, expiresAt, now time.Time) *http.Cookie {
 	maxAge := int(expiresAt.Sub(now).Seconds())
 	if maxAge < 1 {
@@ -164,6 +168,7 @@ func browserCookie(token string, expiresAt, now time.Time) *http.Cookie {
 		Name:     browserSessionCookieName,
 		Value:    token,
 		Path:     "/v1",
+		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Expires:  expiresAt,
@@ -175,6 +180,7 @@ func expiredBrowserCookie() *http.Cookie {
 	return &http.Cookie{
 		Name:     browserSessionCookieName,
 		Path:     "/v1",
+		Secure:   true,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Expires:  time.Unix(1, 0).UTC(),

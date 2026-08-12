@@ -217,8 +217,8 @@ remain unchanged.
 | Live dispatch revalidation | [`Registry.Dispatch`](../../../../engine/commands/registry.go#L1325) |
 | Exact current inventory | [`TestDefaultCommandContractAndAliasSnapshot`](../../../../engine/commands/commands_test.go#L653) |
 | Single engine action owner | [`QueryEngine.executeCommand`](../../../../engine/command_executor.go#L28) |
-| TUI running-turn admission | [`App.sendSlashCommand`](../../../../internal/tui/app.go#L4393) |
-| TUI discovery environment | [`App.commandCapabilityContext`](../../../../internal/tui/app.go#L4819) |
+| TUI running-turn admission | [`App.sendSlashCommand`](../../../../internal/tui/app.go#L4520) |
+| TUI discovery environment | [`App.commandCapabilityContext`](../../../../internal/tui/app.go#L4956) |
 | Alphabetical empty-query palette | [`sortPaletteItems`](../../../../internal/tui/command_palette.go#L424) |
 | Default workflow data | [`workflows.json`](../../../../engine/plugins/bundled/workflows.json) |
 | Atomic bundled generation | [`buildBundledWorkflowPack`](../../../../engine/plugins/bundled_workflows.go#L46) |

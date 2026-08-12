@@ -30,7 +30,7 @@ an EGC.
 [`App.New`](../../../../internal/tui/app.go#L308) copies a valid injected
 profile or the deterministic default. No setter, engine event, transcript,
 durable schema, permission, replay, terminal-name guess, or hidden probe was
-added. [`App.terminalDiagnostics`](../../../../internal/tui/app.go#L4884)
+added. [`App.terminalDiagnostics`](../../../../internal/tui/app.go#L4987)
 extends `/terminal` with the active identity and policy and explicitly states
 that terminal/font fit requires separate evidence.
 

@@ -20,10 +20,17 @@ type sessionLease struct {
 func acquireSessionLease(transcriptDir, sessionID, serverID string) (*sessionLease, error) {
 	transcriptDir = strings.TrimSpace(transcriptDir)
 	sessionID = strings.TrimSpace(sessionID)
-	if transcriptDir == "" || sessionID == "" || filepath.Base(sessionID) != sessionID {
+	sessionComponent := filepath.Base(sessionID)
+	if transcriptDir == "" || sessionID == "" ||
+		sessionComponent != sessionID || sessionComponent == "." ||
+		sessionComponent == ".." || !filepath.IsLocal(sessionComponent) {
 		return nil, fmt.Errorf("session lease identity is invalid")
 	}
-	lockDir := filepath.Join(transcriptDir, sessionID)
+	transcriptRoot, err := filepath.Abs(transcriptDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session lease root: %w", err)
+	}
+	lockDir := filepath.Join(transcriptRoot, sessionComponent)
 	if err := os.MkdirAll(lockDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session lease directory: %w", err)
 	}

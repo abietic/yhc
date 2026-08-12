@@ -174,3 +174,33 @@ func setNodeFixtureLicense(t *testing.T, policy, lock, license string) {
 		t.Fatal(err)
 	}
 }
+
+func TestNodeDependenciesRejectPathsOutsideRootAndVendoredSymlinks(t *testing.T) {
+	repo, policy, lock := nodeDependencyFixture(t, "https"+"://registry.npmjs.org/example/-/example-1.0.0.tgz", `"integrity":"sha512-YQ=="`)
+	outsidePolicy := filepath.Join(t.TempDir(), "node-dependency-licenses.yaml")
+	contents, err := os.ReadFile(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outsidePolicy, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkNodeDependencies(repo, outsidePolicy, lock); err == nil || !strings.Contains(err.Error(), "outside the repository root") {
+		t.Fatalf("outside policy error = %v", err)
+	}
+
+	licensePath := filepath.Join(repo, "internal/webui/assets/vendor/marked.LICENSE.txt")
+	if err := os.Remove(licensePath); err != nil {
+		t.Fatal(err)
+	}
+	outsideLicense := filepath.Join(t.TempDir(), "marked.LICENSE.txt")
+	if err := os.WriteFile(outsideLicense, []byte("MIT License\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideLicense, licensePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkNodeDependencies(repo, policy, lock); err == nil || !strings.Contains(err.Error(), "required notice") {
+		t.Fatalf("vendored symlink error = %v", err)
+	}
+}

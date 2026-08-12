@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -32,5 +33,21 @@ func TestSessionLeaseRejectsSecondOwnerAndUsesAdmittedTranscriptDir(t *testing.T
 func TestSessionLeaseRejectsUnsafeIdentity(t *testing.T) {
 	if _, err := acquireSessionLease(t.TempDir(), "../session", "server"); err == nil {
 		t.Fatal("unsafe session identifier unexpectedly acquired a lease")
+	}
+}
+
+func TestSessionLeaseRejectsDotPathSessionIdentifiers(t *testing.T) {
+	transcriptDir := filepath.Join(t.TempDir(), "transcripts")
+	if err := os.MkdirAll(transcriptDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, sessionID := range []string{".", ".."} {
+		t.Run(sessionID, func(t *testing.T) {
+			lease, err := acquireSessionLease(transcriptDir, sessionID, "server")
+			if err == nil {
+				_ = lease.close()
+				t.Fatalf("unsafe session identifier %q unexpectedly acquired a lease", sessionID)
+			}
+		})
 	}
 }

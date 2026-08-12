@@ -89,11 +89,28 @@ type nodeSBOMProperty struct {
 }
 
 func checkNodeDependencies(repoRoot, policyPath, lockPath string) (nodeSBOM, error) {
-	policy, err := loadNodeDependencyPolicy(policyPath)
+	absoluteRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return nodeSBOM{}, errors.New("resolve Node dependency repository root failed")
+	}
+	root, rootInfo, err := scanOpenRoot(absoluteRoot)
+	if err != nil {
+		return nodeSBOM{}, errors.New("open Node dependency repository root failed")
+	}
+	defer root.Close()
+	policyName, err := nodeRepositoryRelativePath(absoluteRoot, policyPath)
+	if err != nil {
+		return nodeSBOM{}, errors.New("node dependency policy is outside the repository root")
+	}
+	lockName, err := nodeRepositoryRelativePath(absoluteRoot, lockPath)
+	if err != nil {
+		return nodeSBOM{}, errors.New("node package lock is outside the repository root")
+	}
+	policy, err := loadNodeDependencyPolicy(root, policyName)
 	if err != nil {
 		return nodeSBOM{}, err
 	}
-	lock, err := loadNodeLockfile(lockPath)
+	lock, err := loadNodeLockfile(root, lockName)
 	if err != nil {
 		return nodeSBOM{}, err
 	}
@@ -101,10 +118,14 @@ func checkNodeDependencies(repoRoot, policyPath, lockPath string) (nodeSBOM, err
 	if err != nil {
 		return nodeSBOM{}, err
 	}
-	if err := validateVendoredNodeComponents(repoRoot, policy.Vendored); err != nil {
+	vendored, err := nodeVendoredComponents(root, policy.Vendored)
+	if err != nil {
 		return nodeSBOM{}, err
 	}
-	components = append(components, nodeVendoredComponents(repoRoot, policy.Vendored)...)
+	components = append(components, vendored...)
+	if err := scanRevalidateRoot(absoluteRoot, root, rootInfo); err != nil {
+		return nodeSBOM{}, errors.New("node dependency repository root changed while reading")
+	}
 	sort.Slice(components, func(i, j int) bool {
 		if components[i].Name == components[j].Name {
 			return components[i].Version < components[j].Version
@@ -114,13 +135,52 @@ func checkNodeDependencies(repoRoot, policyPath, lockPath string) (nodeSBOM, err
 	return nodeSBOM{BOMFormat: "CycloneDX", SpecVersion: "1.6", Components: components}, nil
 }
 
-func loadNodeDependencyPolicy(name string) (nodeDependencyPolicy, error) {
-	data, err := os.ReadFile(name)
+func nodeRepositoryRelativePath(repoRoot, name string) (string, error) {
+	absoluteName, err := filepath.Abs(name)
 	if err != nil {
-		return nodeDependencyPolicy{}, errors.New("read Node dependency policy failed")
+		return "", err
 	}
-	if len(data) > 4<<20 {
-		return nodeDependencyPolicy{}, errors.New("node dependency policy is too large")
+	relative, err := filepath.Rel(repoRoot, absoluteName)
+	if err != nil {
+		return "", err
+	}
+	repositoryPath := filepath.ToSlash(relative)
+	if err := validateRepositoryPath(repositoryPath); err != nil {
+		return "", err
+	}
+	return filepath.FromSlash(repositoryPath), nil
+}
+
+func readNodeDependencyFile(root *os.Root, name, description string, maximum int64) ([]byte, error) {
+	before, err := root.Lstat(name)
+	if err != nil || !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || before.Size() < 0 || before.Size() > maximum {
+		return nil, fmt.Errorf("%s is missing or unsafe", description)
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("%s is missing or unsafe", description)
+	}
+	opened, statErr := file.Stat()
+	if statErr != nil || !opened.Mode().IsRegular() || opened.Size() < 0 || opened.Size() > maximum || !os.SameFile(before, opened) {
+		file.Close()
+		return nil, fmt.Errorf("%s changed while opening", description)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maximum+1))
+	closeErr := file.Close()
+	if readErr == nil {
+		readErr = closeErr
+	}
+	after, afterErr := root.Lstat(name)
+	if readErr != nil || afterErr != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || int64(len(data)) > maximum {
+		return nil, fmt.Errorf("%s changed while reading", description)
+	}
+	return data, nil
+}
+
+func loadNodeDependencyPolicy(root *os.Root, name string) (nodeDependencyPolicy, error) {
+	data, err := readNodeDependencyFile(root, name, "Node dependency policy", 4<<20)
+	if err != nil {
+		return nodeDependencyPolicy{}, err
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -161,13 +221,10 @@ func validateNodeDependencyPolicy(policy nodeDependencyPolicy) error {
 	return nil
 }
 
-func loadNodeLockfile(name string) (nodeLockfile, error) {
-	data, err := os.ReadFile(name)
+func loadNodeLockfile(root *os.Root, name string) (nodeLockfile, error) {
+	data, err := readNodeDependencyFile(root, name, "Node package lock", 16<<20)
 	if err != nil {
-		return nodeLockfile{}, errors.New("read Node package lock failed")
-	}
-	if len(data) > 16<<20 {
-		return nodeLockfile{}, errors.New("node package lock is too large")
+		return nodeLockfile{}, err
 	}
 	var lock nodeLockfile
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -181,8 +238,8 @@ func loadNodeLockfile(name string) (nodeLockfile, error) {
 	if lock.LockfileVersion != 3 || lock.Name != "yhc-desktop" || len(lock.Packages) < 2 {
 		return nodeLockfile{}, errors.New("node package lock is not an accepted lockfile v3")
 	}
-	root, ok := lock.Packages[""]
-	if !ok || root.Name != "yhc-desktop" || root.Version == "" {
+	rootPackage, ok := lock.Packages[""]
+	if !ok || rootPackage.Name != "yhc-desktop" || rootPackage.Version == "" {
 		return nodeLockfile{}, errors.New("node package lock has invalid root identity")
 	}
 	return lock, nil
@@ -303,29 +360,24 @@ func nodeComponent(name, version, license, integrity string) nodeSBOMComponent {
 	return component
 }
 
-func validateVendoredNodeComponents(repoRoot string, rows []nodeVendoredPolicyRow) error {
-	for _, row := range rows {
-		for _, name := range []string{row.Notice, row.LicenseFile} {
-			contents, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(name)))
-			if err != nil || len(contents) == 0 {
-				return fmt.Errorf("vendored Node component %q lacks its required notice", row.Package)
-			}
-		}
-	}
-	return nil
-}
-
-func nodeVendoredComponents(repoRoot string, rows []nodeVendoredPolicyRow) []nodeSBOMComponent {
+func nodeVendoredComponents(root *os.Root, rows []nodeVendoredPolicyRow) ([]nodeSBOMComponent, error) {
 	components := make([]nodeSBOMComponent, 0, len(rows))
 	for _, row := range rows {
-		contents, _ := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(row.LicenseFile)))
+		notice, err := readNodeDependencyFile(root, filepath.FromSlash(row.Notice), "vendored Node notice", 1<<20)
+		if err != nil || len(notice) == 0 {
+			return nil, fmt.Errorf("vendored Node component %q lacks its required notice", row.Package)
+		}
+		contents, err := readNodeDependencyFile(root, filepath.FromSlash(row.LicenseFile), "vendored Node license", 1<<20)
+		if err != nil || len(contents) == 0 {
+			return nil, fmt.Errorf("vendored Node component %q lacks its required notice", row.Package)
+		}
 		digest := sha256.Sum256(contents)
 		component := nodeSBOMComponent{Type: "library", Name: row.Package, Version: row.Version, PURL: "pkg:npm/" + row.Package + "@" + row.Version, Hashes: []nodeSBOMHash{{Algorithm: "SHA-256", Content: hex.EncodeToString(digest[:])}}, Properties: []nodeSBOMProperty{{Name: "yhc:vendored", Value: "true"}}}
 		component.Licenses = []nodeSBOMLicense{{}}
 		component.Licenses[0].License.ID = row.License
 		components = append(components, component)
 	}
-	return components
+	return components, nil
 }
 
 func writeNodeSBOM(repoRoot, policyPath, lockPath, outputPath string) error {

@@ -56,7 +56,7 @@ func runServeApp(cmd *cobra.Command, options serveAppOptions) error {
 	if options.maxSessions <= 0 {
 		return usageErrorf("--max-sessions must be positive")
 	}
-	listener, err := net.Listen("tcp", options.listen)
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", options.listen)
 	if err != nil {
 		return fmt.Errorf("listen for app-server: %w", err)
 	}

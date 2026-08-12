@@ -2532,11 +2532,12 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 			}
 			inputJSON, _ := jsonPkg.Marshal(req.Input)
 			kind := threadAttentionPermission
-			if req.Kind == engine.PermissionInteractionKindRepeatedTool {
+			switch req.Kind {
+			case engine.PermissionInteractionKindRepeatedTool:
 				kind = threadAttentionRepeatedTool
-			} else if req.Kind == engine.PermissionInteractionKindQuestion {
+			case engine.PermissionInteractionKindQuestion:
 				kind = threadAttentionQuestion
-			} else if req.Kind == engine.PermissionInteractionKindPlanApproval {
+			case engine.PermissionInteractionKindPlanApproval:
 				kind = threadAttentionPlan
 			}
 			var responseCh chan PermissionResponse

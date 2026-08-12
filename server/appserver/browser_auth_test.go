@@ -43,7 +43,7 @@ func TestBrowserAuthPairingIsSingleUseAndSessionsExpire(t *testing.T) {
 	}
 }
 
-func TestBrowserCookieIsHttpOnlyAndStrictSameSite(t *testing.T) {
+func TestBrowserCookieIsSecureHttpOnlyAndStrictSameSite(t *testing.T) {
 	if browserSessionCookieName != "yhc_browser_session" {
 		t.Fatalf("cookie name = %q", browserSessionCookieName)
 	}
@@ -51,9 +51,14 @@ func TestBrowserCookieIsHttpOnlyAndStrictSameSite(t *testing.T) {
 	cookie := browserCookie("secret", now.Add(time.Hour), now)
 	if cookie.Name != browserSessionCookieName ||
 		cookie.Path != "/v1" ||
+		!cookie.Secure ||
 		!cookie.HttpOnly ||
 		cookie.SameSite != http.SameSiteStrictMode ||
 		cookie.MaxAge != 3600 {
 		t.Fatalf("cookie = %#v", cookie)
+	}
+	expired := expiredBrowserCookie()
+	if !expired.Secure || !expired.HttpOnly || expired.SameSite != http.SameSiteStrictMode || expired.MaxAge != -1 {
+		t.Fatalf("expired cookie = %#v", expired)
 	}
 }

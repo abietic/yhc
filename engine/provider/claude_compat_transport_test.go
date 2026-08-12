@@ -321,7 +321,7 @@ func TestClaudeHTTPClientUsesCompatibilityOnlyForCanonicalDeepSeekEndpoint(t *te
 
 	for _, endpoint := range []string{
 		"https://api.deepseek.com/anthropic",
-		" HTTPS://API.DEEPSEEK.COM:443/anthropic/ ",
+		" " + strings.ToUpper("https://api.deepseek.com:443") + "/anthropic/ ",
 		"https://api.deepseek.com/a/../anthropic",
 	} {
 		if client := claudeHTTPClientForBaseURL(endpoint); client == nil {
