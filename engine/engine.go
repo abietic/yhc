@@ -5099,6 +5099,21 @@ func (e *QueryEngine) GetTranscript() *transcript.Recorder {
 	return e.transcript
 }
 
+// TranscriptPath returns the durable root-session transcript selected by this
+// engine. Callers may use it only for read-only inspection; the recorder and
+// runtime remain the sole mutation authority.
+func (e *QueryEngine) TranscriptPath() string {
+	if e == nil {
+		return ""
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.transcript == nil {
+		return ""
+	}
+	return e.transcript.Path()
+}
+
 // GetTokenBudget returns the engine's token budget tracker.
 func (e *QueryEngine) GetTokenBudget() *budget.TokenBudget {
 	return e.config.TokenBudgetTracker

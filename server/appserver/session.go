@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/abietic/yhc/engine"
+	enginesession "github.com/abietic/yhc/engine/session"
+	"github.com/abietic/yhc/internal/statepath"
 )
 
 var (
@@ -69,6 +72,7 @@ type SessionEngine interface {
 	SessionID() string
 	ThreadID() string
 	AgentID() string
+	TranscriptPath() string
 	Close()
 }
 
@@ -77,6 +81,7 @@ type EngineOptions struct {
 	SessionID              string
 	ThreadID               string
 	CWD                    string
+	TranscriptDir          string
 	Resume                 bool
 	PermissionPrompt       engine.PermissionPromptFn
 	RepeatedToolCallPrompt engine.RepeatedToolCallPromptFn
@@ -102,9 +107,11 @@ type session struct {
 	lastError string
 
 	engine      SessionEngine
+	lease       *sessionLease
 	events      *eventLog
 	activity    *activityLog
 	permissions *permissionBroker
+	transcript  *transcriptPager
 	rootCtx     context.Context
 	rootCancel  context.CancelFunc
 
@@ -114,13 +121,18 @@ type session struct {
 	closed       bool
 }
 
-func newSession(ctx context.Context, factory EngineFactory, input CreateSessionRequest, eventBuffer int, now time.Time) (*session, error) {
-	cwd, err := validateCWD(input.CWD)
+func newSession(
+	ctx context.Context,
+	factory EngineFactory,
+	serverID string,
+	input CreateSessionRequest,
+	admitted *enginesession.SessionInfo,
+	eventBuffer int,
+	now time.Time,
+) (*session, error) {
+	cwd, transcriptDir, err := sessionStorageAdmission(input, admitted)
 	if err != nil {
 		return nil, err
-	}
-	if input.Resume {
-		return nil, fmt.Errorf("session resume is unavailable until an explicit first-turn attach")
 	}
 	sessionID := strings.TrimSpace(input.SessionID)
 	if sessionID == "" {
@@ -128,19 +140,37 @@ func newSession(ctx context.Context, factory EngineFactory, input CreateSessionR
 	} else if sessionID, err = normalizeSessionID(sessionID); err != nil {
 		return nil, err
 	}
+	if input.Resume && admitted == nil {
+		return nil, fmt.Errorf("session resume is unavailable until an explicit first-turn attach")
+	}
+	if input.Resume && strings.TrimSpace(input.SessionID) == "" {
+		return nil, fmt.Errorf("resume requires session_id")
+	}
+	lease, err := acquireSessionLease(transcriptDir, sessionID, serverID)
+	if err != nil {
+		return nil, err
+	}
 	permissions := newPermissionBroker()
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
-	options := EngineOptions{SessionID: sessionID, ThreadID: sessionID, CWD: cwd, PermissionPrompt: permissions.prompt, RepeatedToolCallPrompt: permissions.repeatedPrompt}
+	options := EngineOptions{SessionID: sessionID, ThreadID: sessionID, CWD: cwd, TranscriptDir: transcriptDir, Resume: input.Resume, PermissionPrompt: permissions.prompt, RepeatedToolCallPrompt: permissions.repeatedPrompt}
 	runtime, err := factory(sessionCtx, options)
 	if err != nil {
 		sessionCancel()
 		permissions.close()
+		_ = lease.close()
 		return nil, fmt.Errorf("create session engine: %w", err)
+	}
+	if runtime == nil {
+		sessionCancel()
+		permissions.close()
+		_ = lease.close()
+		return nil, fmt.Errorf("create session engine: factory returned nil runtime")
 	}
 	if actual := strings.TrimSpace(runtime.SessionID()); actual != sessionID {
 		sessionCancel()
 		runtime.Close()
 		permissions.close()
+		_ = lease.close()
 		return nil, fmt.Errorf("session engine identity mismatch: got %q, want %q", actual, sessionID)
 	}
 	threadID := sessionID
@@ -151,10 +181,39 @@ func newSession(ctx context.Context, factory EngineFactory, input CreateSessionR
 	if title == "" {
 		title = baseName(cwd)
 	}
-	s := &session{id: sessionID, threadID: threadID, cwd: cwd, title: title, createdAt: now, updatedAt: now, status: "idle", engine: runtime, events: newEventLog(eventBuffer), activity: newActivityLog(), permissions: permissions, rootCtx: sessionCtx, rootCancel: sessionCancel, closeDone: make(chan struct{})}
+	s := &session{id: sessionID, threadID: threadID, cwd: cwd, title: title, createdAt: now, updatedAt: now, status: "idle", engine: runtime, lease: lease, events: newEventLog(eventBuffer), activity: newActivityLog(), permissions: permissions, transcript: newTranscriptPager(runtime.TranscriptPath()), rootCtx: sessionCtx, rootCancel: sessionCancel, closeDone: make(chan struct{})}
 	s.startAsyncHookPump()
-	s.publishSynthetic("session.created", "", map[string]any{"cwd": cwd, "title": title, "resumed": false})
+	s.publishSynthetic("session.created", "", map[string]any{"cwd": cwd, "title": title, "resumed": input.Resume})
 	return s, nil
+}
+
+func sessionStorageAdmission(
+	input CreateSessionRequest,
+	admitted *enginesession.SessionInfo,
+) (string, string, error) {
+	if admitted != nil {
+		if !input.Resume || admitted.SessionID != strings.TrimSpace(input.SessionID) {
+			return "", "", fmt.Errorf("durable session admission identity mismatch")
+		}
+		cwd, err := validateCWD(admitted.CWD)
+		if err != nil {
+			return "", "", err
+		}
+		transcriptDir := strings.TrimSpace(admitted.TranscriptDir)
+		if transcriptDir == "" || !filepath.IsAbs(transcriptDir) || admitted.ReadOnly || admitted.NeedsImport {
+			return "", "", fmt.Errorf("durable session admission is not canonical and writable")
+		}
+		return cwd, filepath.Clean(transcriptDir), nil
+	}
+	cwd, err := validateCWD(input.CWD)
+	if err != nil {
+		return "", "", err
+	}
+	roots, err := statepath.ProjectRoots(cwd)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve canonical session storage: %w", err)
+	}
+	return cwd, filepath.Join(roots.Canonical, "transcripts"), nil
 }
 
 func (s *session) startAsyncHookPump() {
@@ -205,29 +264,45 @@ func (s *session) snapshot() SessionSnapshot {
 	if !ok {
 		thread = runtime.Threads[s.threadID]
 	}
-	messages := make([]SnapshotMessage, 0, len(thread.Messages)+1)
-	if source, ok := s.engine.(interface{ GetMessages() []*schema.Message }); ok {
-		history := source.GetMessages()
-		if len(history) > 256 {
-			history = history[len(history)-256:]
-		}
-		for index, message := range history {
-			if message == nil || message.Role == schema.System {
-				continue
+	messages, transcriptErr := s.transcript.latest(256)
+	durableLoaded := transcriptErr == nil
+	if transcriptErr != nil {
+		messages = make([]SnapshotMessage, 0, len(thread.Messages)+1)
+		if source, ok := s.engine.(interface{ GetMessages() []*schema.Message }); ok {
+			history := source.GetMessages()
+			if len(history) > 256 {
+				history = history[len(history)-256:]
 			}
-			if isMeta, _ := message.Extra["is_meta"].(bool); isMeta {
-				continue
+			for index, message := range history {
+				if message == nil || message.Role == schema.System {
+					continue
+				}
+				if isMeta, _ := message.Extra["is_meta"].(bool); isMeta {
+					continue
+				}
+				messages = append(messages, snapshotConversationMessage(message, uint64(index+1)))
 			}
-			messages = append(messages, snapshotConversationMessage(message, uint64(index+1)))
 		}
 	}
+
+	s.mu.Lock()
+	activeTurnID := s.activeTurnID
+	activePrompt := s.activePrompt
+	s.mu.Unlock()
 	known := make(map[string]struct{}, len(messages))
 	for _, message := range messages {
 		if message.ID != "" {
 			known[message.ID] = struct{}{}
 		}
 	}
+	runtimeUserOwnsActiveTurn := false
 	for _, message := range thread.Messages {
+		if message.TurnID == activeTurnID && message.Role == string(schema.User) {
+			runtimeUserOwnsActiveTurn = true
+		}
+		if durableLoaded && message.Completed && strings.TrimSpace(message.TranscriptEntryID) == "" {
+			continue
+		}
 		snapshot := snapshotMessage(message)
 		if snapshot.ID == "" {
 			messages = append(messages, snapshot)
@@ -237,6 +312,16 @@ func (s *session) snapshot() SessionSnapshot {
 			messages = append(messages, snapshot)
 			known[snapshot.ID] = struct{}{}
 		}
+	}
+	if activeTurnID != "" && activePrompt != "" && !runtimeUserOwnsActiveTurn {
+		messages = append(messages, SnapshotMessage{
+			ID:        "runtime-prompt:" + activeTurnID,
+			TurnID:    activeTurnID,
+			Role:      string(schema.User),
+			Content:   truncateSnapshotText(activePrompt, 32<<10),
+			Completed: true,
+			Source:    "runtime",
+		})
 	}
 	if live := thread.LiveMessage; live != nil {
 		snapshot := snapshotMessage(*live)
@@ -281,8 +366,12 @@ func snapshotMessage(message engine.RuntimeMessageSnapshot) SnapshotMessage {
 			InputPreview: call.InputPreview,
 		})
 	}
-	id := message.ID
-	source := "runtime"
+	id := strings.TrimSpace(message.TranscriptEntryID)
+	source := "durable"
+	if id == "" {
+		id = message.ID
+		source = "runtime"
+	}
 	return SnapshotMessage{
 		ID:               id,
 		TurnID:           message.TurnID,
@@ -686,6 +775,11 @@ func (s *session) close(ctx context.Context) error {
 
 func (s *session) closeResources() {
 	defer close(s.closeDone)
+	defer func() {
+		if err := s.lease.close(); s.closeErr == nil && err != nil {
+			s.closeErr = err
+		}
+	}()
 	s.mu.Lock()
 	s.closed = true
 	s.status = "closed"

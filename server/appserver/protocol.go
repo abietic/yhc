@@ -214,6 +214,20 @@ type DurableSessionListResponse struct {
 	Scanned    int                     `json:"scanned"`
 }
 
+// ImportDurableSessionRequest is the explicit, stopped-producer attestation
+// required before a server-discovered legacy transcript can be promoted. It
+// intentionally accepts no client path, workspace, catalog, or runtime data.
+type ImportDurableSessionRequest struct {
+	ConfirmLegacyStopped bool `json:"confirm_legacy_stopped"`
+}
+
+// ImportDurableSessionResponse reports only the durable identity after an
+// idempotent canonical promotion. Clients must discover again before attach.
+type ImportDurableSessionResponse struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+}
+
 // ReviewDiffResponse is a point-in-time, read-only review projection for one
 // live session's owned workspace.
 type ReviewDiffResponse struct {

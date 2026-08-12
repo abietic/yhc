@@ -25,45 +25,58 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	enginesession "github.com/abietic/yhc/engine/session"
 )
 
 // Config defines the bounded local app-server runtime.
 type Config struct {
-	Factory           EngineFactory
-	Token             string
-	EventBuffer       int
-	MaxSessions       int
-	EnableWeb         bool
-	WebAssets         fs.FS
-	BrowserPairingTTL time.Duration
-	BrowserSessionTTL time.Duration
-	Now               func() time.Time
+	Factory            EngineFactory
+	ValidateResume     ResumeValidator
+	Token              string
+	EventBuffer        int
+	MaxSessions        int
+	EnableWeb          bool
+	WebAssets          fs.FS
+	BrowserPairingTTL  time.Duration
+	BrowserSessionTTL  time.Duration
+	SessionCatalogPath string
+	DiscoveryCWD       string
+	Now                func() time.Time
 }
 
 // Server owns every live Desktop runtime admitted by this process.
 type Server struct {
-	mu          sync.RWMutex
-	closeOnce   sync.Once
-	creationWG  sync.WaitGroup
-	closing     bool
-	shutdownErr error
-	id          string
-	token       string
-	startedAt   time.Time
-	factory     EngineFactory
-	eventBuffer int
-	maxSessions int
-	now         func() time.Time
-	sessions    map[string]*session
-	creating    int
-	creatingIDs map[string]struct{}
-	webEnabled  bool
-	webAssets   fs.FS
-	browserAuth *browserAuth
-	authority   string
-	ctx         context.Context
-	cancel      context.CancelFunc
-	httpServer  *http.Server
+	mu                     sync.RWMutex
+	closeOnce              sync.Once
+	creationWG             sync.WaitGroup
+	activationWG           sync.WaitGroup
+	closing                bool
+	shutdownErr            error
+	id                     string
+	token                  string
+	startedAt              time.Time
+	factory                EngineFactory
+	validateResume         ResumeValidator
+	eventBuffer            int
+	maxSessions            int
+	now                    func() time.Time
+	sessions               map[string]*session
+	creating               int
+	creatingIDs            map[string]struct{}
+	activating             map[string]*attachFlight
+	attachReceipts         map[string]attachReceipt
+	webEnabled             bool
+	webAssets              fs.FS
+	browserAuth            *browserAuth
+	authority              string
+	sessionCatalogPath     string
+	discoveryCWD           string
+	durableTranscripts     map[string]*transcriptPager
+	durableTranscriptOrder []string
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	httpServer             *http.Server
 }
 
 // New creates an authenticated loopback app-server.
@@ -102,21 +115,39 @@ func New(config Config) (*Server, error) {
 	if config.EnableWeb && config.WebAssets == nil {
 		return nil, fmt.Errorf("app-server Web assets are required when Web is enabled")
 	}
+	catalogPath := strings.TrimSpace(config.SessionCatalogPath)
+	if catalogPath == "" {
+		catalogPath, _ = enginesession.DefaultCatalogPaths()
+	}
+	discoveryCWD := strings.TrimSpace(config.DiscoveryCWD)
+	if discoveryCWD == "" {
+		var err error
+		discoveryCWD, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve app-server discovery workspace: %w", err)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		id:          uuid.NewString(),
-		token:       token,
-		startedAt:   now().UTC(),
-		factory:     config.Factory,
-		eventBuffer: eventBuffer,
-		maxSessions: maxSessions,
-		now:         now,
-		sessions:    make(map[string]*session),
-		creatingIDs: make(map[string]struct{}),
-		webEnabled:  config.EnableWeb,
-		webAssets:   config.WebAssets,
-		ctx:         ctx,
-		cancel:      cancel,
+		id:                 uuid.NewString(),
+		token:              token,
+		startedAt:          now().UTC(),
+		factory:            config.Factory,
+		validateResume:     config.ValidateResume,
+		eventBuffer:        eventBuffer,
+		maxSessions:        maxSessions,
+		now:                now,
+		sessions:           make(map[string]*session),
+		creatingIDs:        make(map[string]struct{}),
+		activating:         make(map[string]*attachFlight),
+		attachReceipts:     make(map[string]attachReceipt),
+		webEnabled:         config.EnableWeb,
+		webAssets:          config.WebAssets,
+		sessionCatalogPath: catalogPath,
+		discoveryCWD:       discoveryCWD,
+		durableTranscripts: make(map[string]*transcriptPager),
+		ctx:                ctx,
+		cancel:             cancel,
 	}
 	if config.EnableWeb {
 		s.browserAuth = newBrowserAuth(now, pairingTTL, sessionTTL)
@@ -250,7 +281,6 @@ func (s *Server) requestAuthorityMatches(request *http.Request) bool {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.closeOnce.Do(func() {
 		var result error
-		s.cancel()
 		s.mu.Lock()
 		s.closing = true
 		owned := make([]*session, 0, len(s.sessions))
@@ -258,8 +288,19 @@ func (s *Server) Shutdown(ctx context.Context) error {
 			owned = append(owned, current)
 			delete(s.sessions, id)
 		}
+		for id, flight := range s.activating {
+			delete(s.activating, id)
+			flight.fail(errDurableServerClosing)
+		}
+		s.attachReceipts = make(map[string]attachReceipt)
+		s.durableTranscripts = make(map[string]*transcriptPager)
+		s.durableTranscriptOrder = nil
 		s.mu.Unlock()
+		s.cancel()
 		if err := s.waitForSessionCreations(ctx); result == nil && err != nil {
+			result = err
+		}
+		if err := s.waitForSessionActivations(ctx); result == nil && err != nil {
 			result = err
 		}
 		if s.browserAuth != nil {
@@ -283,9 +324,23 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) waitForSessionCreations(ctx context.Context) error {
+	return waitForServerWork(ctx, s.creationWG.Wait)
+}
+
+func (s *Server) waitForSessionActivations(ctx context.Context) error {
+	return waitForServerWork(ctx, s.activationWG.Wait)
+}
+
+// waitForAttachActivations is retained as the precise attach lifecycle seam
+// used by focused shutdown tests.
+func (s *Server) waitForAttachActivations(ctx context.Context) error {
+	return s.waitForSessionActivations(ctx)
+}
+
+func waitForServerWork(ctx context.Context, wait func()) error {
 	done := make(chan struct{})
 	go func() {
-		s.creationWG.Wait()
+		wait()
 		close(done)
 	}()
 	select {
@@ -308,10 +363,15 @@ func (s *Server) routes() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /v1/health", s.handleHealth)
 	api.HandleFunc("GET /v1/sessions", s.handleListSessions)
+	api.HandleFunc("GET /v1/durable-sessions", s.handleListDurableSessions)
+	api.HandleFunc("GET /v1/durable-sessions/{session_id}/transcript", s.handleDurableTranscriptPage)
+	api.HandleFunc("POST /v1/durable-sessions/{session_id}/import", s.handleImportDurableSession)
+	api.HandleFunc("POST /v1/durable-sessions/{session_id}/attach-turn", s.handleAttachTurn)
 	api.HandleFunc("POST /v1/sessions", s.handleCreateSession)
 	api.HandleFunc("GET /v1/sessions/{session_id}", s.handleGetSession)
 	api.HandleFunc("DELETE /v1/sessions/{session_id}", s.handleDeleteSession)
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
+	api.HandleFunc("GET /v1/sessions/{session_id}/transcript", s.handleTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/review-diff", s.handleReviewDiff)
 	api.HandleFunc("GET /v1/sessions/{session_id}/execution-settings", s.handleGetExecutionSettings)
 	api.HandleFunc("PATCH /v1/sessions/{session_id}/execution-settings", s.handleUpdateExecutionSettings)
@@ -640,7 +700,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, reservationStatus, reservationCode, sessionReservationMessage(reservationCode))
 		return
 	}
-	owned, err := newSession(s.ctx, s.factory, input, s.eventBuffer, s.now().UTC())
+	owned, err := newSession(s.ctx, s.factory, s.id, input, nil, s.eventBuffer, s.now().UTC())
 	if err != nil {
 		s.releaseSessionCreation(requestedID)
 		status := http.StatusUnprocessableEntity
@@ -684,7 +744,7 @@ func (s *Server) reserveSessionCreation(requestedID string) (int, string) {
 	if s.closing {
 		return http.StatusServiceUnavailable, "server_closing"
 	}
-	if len(s.sessions)+s.creating >= s.maxSessions {
+	if s.sessionOccupancyLocked() >= s.maxSessions {
 		return http.StatusTooManyRequests, "session_limit"
 	}
 	if requestedID != "" {
@@ -699,6 +759,10 @@ func (s *Server) reserveSessionCreation(requestedID string) (int, string) {
 	s.creating++
 	s.creationWG.Add(1)
 	return 0, ""
+}
+
+func (s *Server) sessionOccupancyLocked() int {
+	return len(s.sessions) + s.creating + len(s.activating)
 }
 
 func (s *Server) releaseSessionCreation(requestedID string) {
@@ -767,6 +831,80 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, owned.snapshot())
+}
+
+func (s *Server) handleTranscriptPage(w http.ResponseWriter, r *http.Request) {
+	owned, ok := s.getSession(r.PathValue("session_id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "session_not_found", "session not found")
+		return
+	}
+	cursor, limit, valid := transcriptPageRequest(w, r)
+	if !valid {
+		return
+	}
+	page, err := owned.transcript.page(cursor, limit)
+	writeTranscriptPage(w, page, err)
+}
+
+func (s *Server) handleDurableTranscriptPage(w http.ResponseWriter, r *http.Request) {
+	pager, err := s.resolveDurableTranscript(r.PathValue("session_id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, errDurableSessionNotFound):
+			writeError(w, http.StatusNotFound, "durable_session_not_found", "durable session not found")
+		case errors.Is(err, errDurableSessionAmbiguous):
+			writeError(w, http.StatusConflict, "durable_session_ambiguous", "durable session is ambiguous")
+		case errors.Is(err, errDurableServerClosing):
+			writeError(w, http.StatusServiceUnavailable, "server_closing", "app-server is shutting down")
+		default:
+			writeError(w, http.StatusInternalServerError, "durable_sessions_failed", "could not inspect durable sessions")
+		}
+		return
+	}
+	cursor, limit, valid := transcriptPageRequest(w, r)
+	if !valid {
+		return
+	}
+	page, err := pager.page(cursor, limit)
+	writeTranscriptPage(w, page, err)
+}
+
+func transcriptPageRequest(w http.ResponseWriter, r *http.Request) (string, int, bool) {
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "invalid_cursor", "transcript cursor is too long")
+		return "", 0, false
+	}
+	limit := defaultTranscriptPageLimit
+	if value := strings.TrimSpace(r.URL.Query().Get("limit")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_limit", "transcript limit must be a positive integer")
+			return "", 0, false
+		}
+		limit = parsed
+	}
+	return cursor, limit, true
+}
+
+func writeTranscriptPage(w http.ResponseWriter, page TranscriptPageResponse, err error) {
+	if err == nil {
+		writeJSON(w, http.StatusOK, page)
+		return
+	}
+	switch {
+	case errors.Is(err, errTranscriptUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "transcript_unavailable", "durable transcript is unavailable for this session")
+	case errors.Is(err, errTranscriptCursorInvalid):
+		writeError(w, http.StatusConflict, "transcript_cursor_invalid", "transcript cursor expired; restart paging from the newest page")
+	case isTranscriptPagingConflict(err):
+		writeError(w, http.StatusConflict, "transcript_changed", "durable transcript changed; restart paging from the newest page")
+	case isTranscriptRecordTooLarge(err):
+		writeError(w, http.StatusUnprocessableEntity, "transcript_record_too_large", "a durable transcript record exceeds the paging limit")
+	default:
+		writeError(w, http.StatusInternalServerError, "transcript_page_failed", "could not read durable transcript")
+	}
 }
 
 func (s *Server) handleStartTurn(w http.ResponseWriter, r *http.Request) {
