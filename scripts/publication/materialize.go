@@ -34,14 +34,12 @@ type ReleaseManifest struct {
 	TreeSHA256       string            `json:"tree_sha256"`
 	FileCount        int               `json:"file_count"`
 	Checks           map[string]string `json:"checks"`
-	SBOMSHA256       string            `json:"sbom_sha256"`
 }
 
 type TreeSummary struct {
 	SourceTreeSHA256 string
 	TreeSHA256       string
 	FileCount        int
-	SBOMSHA256       string
 }
 
 type treeFile struct{ path, mode, digest string }
@@ -703,26 +701,26 @@ func checkTree(ctx context.Context, config Config, rootPath string) (summary Tre
 	if err := checkManifestShape(manifest); err != nil {
 		return TreeSummary{}, err
 	}
-	records, sbom, err := scanTree(rootPath, config, true)
+	records, err := scanTree(rootPath, config, true)
 	if err != nil {
 		return TreeSummary{}, err
 	}
 	digest := digestTree(records)
-	if digest != manifest.TreeSHA256 || len(records) != manifest.FileCount || sbom != manifest.SBOMSHA256 || manifest.SourceTreeSHA256 != digest {
+	if digest != manifest.TreeSHA256 || len(records) != manifest.FileCount || manifest.SourceTreeSHA256 != digest {
 		return TreeSummary{}, errors.New("publication manifest does not match tree")
 	}
 	if err := checkExpressionClean(ctx, config, rootPath); err != nil {
 		return TreeSummary{}, err
 	}
-	finalRecords, finalSBOM, err := scanTree(rootPath, config, true)
-	if err != nil || digestTree(finalRecords) != digest || len(finalRecords) != len(records) || finalSBOM != sbom {
+	finalRecords, err := scanTree(rootPath, config, true)
+	if err != nil || digestTree(finalRecords) != digest || len(finalRecords) != len(records) {
 		return TreeSummary{}, errors.New("publication tree changed during checks")
 	}
 	finalManifest, err := readManifest(rootPath)
 	if err != nil || checkManifestShape(finalManifest) != nil || !sameReleaseManifest(manifest, finalManifest) {
 		return TreeSummary{}, errors.New("publication manifest changed during checks")
 	}
-	return TreeSummary{SourceTreeSHA256: manifest.SourceTreeSHA256, TreeSHA256: digest, FileCount: len(records), SBOMSHA256: sbom}, nil
+	return TreeSummary{SourceTreeSHA256: manifest.SourceTreeSHA256, TreeSHA256: digest, FileCount: len(records)}, nil
 }
 
 func currentWorkingDirectoryIs(path string) (bool, error) {
@@ -742,7 +740,7 @@ func currentWorkingDirectoryIs(path string) (bool, error) {
 }
 
 func sameReleaseManifest(left, right ReleaseManifest) bool {
-	return left.SchemaVersion == right.SchemaVersion && left.SourceTreeSHA256 == right.SourceTreeSHA256 && left.TreeSHA256 == right.TreeSHA256 && left.FileCount == right.FileCount && left.SBOMSHA256 == right.SBOMSHA256
+	return left.SchemaVersion == right.SchemaVersion && left.SourceTreeSHA256 == right.SourceTreeSHA256 && left.TreeSHA256 == right.TreeSHA256 && left.FileCount == right.FileCount
 }
 
 func currentApprovedSourceSnapshot(ctx context.Context, config Config) (sourceSnapshot, bool, error) {
@@ -793,7 +791,7 @@ func verifyOptionalManifest(rootPath string, summary TreeSummary) error {
 	if err := checkManifestShape(manifest); err != nil {
 		return err
 	}
-	if manifest.SourceTreeSHA256 != summary.SourceTreeSHA256 || manifest.TreeSHA256 != summary.TreeSHA256 || manifest.FileCount != summary.FileCount || manifest.SBOMSHA256 != summary.SBOMSHA256 {
+	if manifest.SourceTreeSHA256 != summary.SourceTreeSHA256 || manifest.TreeSHA256 != summary.TreeSHA256 || manifest.FileCount != summary.FileCount {
 		return errors.New("publication manifest does not match source inventory")
 	}
 	return nil
@@ -803,7 +801,7 @@ func checkInventoryTreeWithEntries(ctx context.Context, root string, config Conf
 	if err := ctx.Err(); err != nil {
 		return TreeSummary{}, err
 	}
-	records, sbom, err := scanTreeWithOptions(root, config, options)
+	records, err := scanTreeWithOptions(root, config, options)
 	if err != nil {
 		return TreeSummary{}, err
 	}
@@ -829,7 +827,7 @@ func checkInventoryTreeWithEntries(ctx context.Context, root string, config Conf
 	if err != nil {
 		return TreeSummary{}, err
 	}
-	return TreeSummary{SourceTreeSHA256: source, TreeSHA256: d, FileCount: len(records), SBOMSHA256: sbom}, nil
+	return TreeSummary{SourceTreeSHA256: source, TreeSHA256: d, FileCount: len(records)}, nil
 }
 
 func writeReleaseManifest(ctx context.Context, config Config, rootPath, outputPath string) (manifest ReleaseManifest, returnErr error) {
@@ -879,7 +877,7 @@ func writeReleaseManifest(ctx context.Context, config Config, rootPath, outputPa
 	if err := validateSourceSnapshot(ctx, config, snapshot); err != nil {
 		return ReleaseManifest{}, err
 	}
-	m := ReleaseManifest{SchemaVersion: 1, SourceTreeSHA256: summary.SourceTreeSHA256, TreeSHA256: summary.TreeSHA256, FileCount: summary.FileCount, Checks: map[string]string{"policy": "pass", "tree": "pass", "expression": "pass", "sbom": "pass"}, SBOMSHA256: summary.SBOMSHA256}
+	m := ReleaseManifest{SchemaVersion: 2, SourceTreeSHA256: summary.SourceTreeSHA256, TreeSHA256: summary.TreeSHA256, FileCount: summary.FileCount, Checks: map[string]string{"policy": "pass", "tree": "pass", "expression": "pass"}}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return ReleaseManifest{}, err
@@ -907,19 +905,19 @@ func validPublicationDirectoryMode(mode os.FileMode, sourceCheckout bool) bool {
 	return permissions&0o700 == 0o700 && permissions&0o022 == 0
 }
 
-func scanTree(rootPath string, config Config, allowManifest bool) ([]treeFile, string, error) {
+func scanTree(rootPath string, config Config, allowManifest bool) ([]treeFile, error) {
 	return scanTreeWithOptions(rootPath, config, treeScanOptions{allowManifest: allowManifest})
 }
 
-func scanTreeWithOptions(rootPath string, config Config, options treeScanOptions) ([]treeFile, string, error) {
+func scanTreeWithOptions(rootPath string, config Config, options treeScanOptions) ([]treeFile, error) {
 	pinned, err := openPinnedDirectory(rootPath, "publication tree")
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer pinned.Close()
 	root := pinned.root
 	if !validPublicationDirectoryMode(pinned.info.Mode(), options.sourceCheckout) {
-		return nil, "", errors.New("publication tree root has noncanonical mode")
+		return nil, errors.New("publication tree root has noncanonical mode")
 	}
 	var files []treeFile
 	var decisions []FileDecision
@@ -1047,48 +1045,39 @@ func scanTreeWithOptions(rootPath string, config Config, options treeScanOptions
 		return nil
 	}
 	if err := walk(root, ""); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	firePublicationRaceHook("after-tree-root-walk", pinned.path)
 	if err := pinned.revalidate("publication tree"); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if err := collisionFree(files); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	candidates := make([]string, 0, len(decisions))
 	for _, decision := range decisions {
 		candidates = append(candidates, decision.Path)
 	}
 	if mappingBytes == nil {
-		return nil, "", errors.New("publication mapping manifest is missing from tree")
+		return nil, errors.New("publication mapping manifest is missing from tree")
 	}
 	mappings, err := parsePublicationMappings(mappingBytes, candidates)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if err := revalidateTreeMappingBytes(root, config.Mappings.Manifest, mappingBytes); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	for index := range decisions {
 		decisions[index].Mapped = mappings.mapped(decisions[index].Path)
 		if err := checkDecision(decisions[index]); err != nil {
-			return nil, "", err
+			return nil, err
 		}
 	}
 	if err := checkIncludedRuleEvidence(config, Inventory{Files: decisions}); err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	sbom := ""
-	for _, f := range files {
-		if f.path == config.Dependencies.SBOM {
-			sbom = f.digest
-		}
-	}
-	if sbom == "" {
-		return nil, "", errors.New("publication SBOM is missing or unapproved")
-	}
-	return files, sbom, nil
+	return files, nil
 }
 
 func revalidateTreeMappingBytes(root *os.Root, name string, expected []byte) error {
@@ -1298,10 +1287,10 @@ func readManifest(rootPath string) (ReleaseManifest, error) {
 }
 
 func checkManifestShape(m ReleaseManifest) error {
-	if m.SchemaVersion != 1 || !validSHA256Digest(m.SourceTreeSHA256) || !validSHA256Digest(m.TreeSHA256) || !validSHA256Digest(m.SBOMSHA256) || m.SourceTreeSHA256 != m.TreeSHA256 || m.FileCount < 0 {
+	if m.SchemaVersion != 2 || !validSHA256Digest(m.SourceTreeSHA256) || !validSHA256Digest(m.TreeSHA256) || m.SourceTreeSHA256 != m.TreeSHA256 || m.FileCount < 0 {
 		return errors.New("invalid publication manifest")
 	}
-	want := map[string]string{"policy": "pass", "tree": "pass", "expression": "pass", "sbom": "pass"}
+	want := map[string]string{"policy": "pass", "tree": "pass", "expression": "pass"}
 	if len(m.Checks) != len(want) {
 		return errors.New("invalid publication manifest checks")
 	}

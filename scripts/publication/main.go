@@ -21,18 +21,18 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: publication <inventory|check|scan-expression|materialize|check-tree|manifest|licenses|normalize-sbom> --config PATH")
+		return errors.New("usage: publication <inventory|check|scan-expression|materialize|check-tree|manifest|licenses> --config PATH")
 	}
 	commandName := args[0]
 	switch commandName {
-	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "normalize-sbom":
+	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses":
 	default:
 		return fmt.Errorf("unknown publication command %q", args[0])
 	}
 	command := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	command.SetOutput(io.Discard)
 	configPath := command.String("config", "", "publication policy")
-	var inputPath, outputPath, rootPath, sourceCommit *string
+	var outputPath, rootPath, sourceCommit, sbomPath *string
 	switch commandName {
 	case "inventory":
 		outputPath = command.String("output", "", "inventory output")
@@ -40,6 +40,7 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 		rootPath = command.String("root", "", "publication tree root")
 	case "licenses":
 		rootPath = command.String("root", "", "repository root")
+		sbomPath = command.String("sbom", "", "CycloneDX SBOM")
 		outputPath = command.String("output", "", "dependency license report")
 	case "materialize":
 		sourceCommit = command.String("source-commit", "", "exact source commit")
@@ -47,9 +48,6 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	case "manifest":
 		rootPath = command.String("root", "", "publication tree root")
 		outputPath = command.String("output", "", "publication manifest output")
-	case "normalize-sbom":
-		inputPath = command.String("input", "", "raw generated SBOM")
-		outputPath = command.String("output", "", "normalized SBOM output")
 	}
 	if err := command.Parse(args[1:]); err != nil {
 		return err
@@ -66,24 +64,18 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	}
 
 	switch commandName {
-	case "normalize-sbom":
-		if *inputPath == "" {
-			return errors.New("--input is required")
-		}
-		if *outputPath == "" {
-			return errors.New("--output is required")
-		}
-		return normalizeGeneratedSBOMFile(ctx, *inputPath, *outputPath)
 	case "licenses":
 		if *rootPath == "" {
 			return errors.New("--root is required")
+		}
+		if *sbomPath == "" {
+			return errors.New("--sbom is required")
 		}
 		if *outputPath == "" {
 			return errors.New("--output is required")
 		}
 		policyPath := filepath.Join(*rootPath, filepath.FromSlash(config.Dependencies.LicensePolicy))
-		sbomPath := filepath.Join(*rootPath, filepath.FromSlash(config.Dependencies.SBOM))
-		report, checkErr := checkDependencyLicenses(ctx, *rootPath, policyPath, sbomPath)
+		report, checkErr := checkDependencyLicenses(ctx, *rootPath, policyPath, *sbomPath)
 		if checkErr != nil {
 			return checkErr
 		}

@@ -93,15 +93,19 @@ rules:
     decision: include
     evidence: [review]
 `))
+	if err := run(context.Background(), []string{"licenses", "--config", configPath, "--root", t.TempDir(), "--output", filepath.Join(t.TempDir(), "licenses.json")}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || err.Error() != "--sbom is required" {
+		t.Fatalf("licenses without --sbom error = %v, want --sbom is required", err)
+	}
+	if err := run(context.Background(), []string{"normalize-sbom", "--config", configPath}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "unknown publication command") {
+		t.Fatalf("retired normalize-sbom command error = %v", err)
+	}
 	tests := [][]string{
 		{"scan-expression", "--config", configPath},
 		{"materialize", "--config", configPath, "--source-commit", strings.Repeat("a", 40)},
 		{"check-tree", "--config", configPath},
 		{"manifest", "--config", configPath, "--root", t.TempDir()},
-		{"normalize-sbom", "--config", configPath, "--output", filepath.Join(t.TempDir(), "normalized.json")},
-		{"normalize-sbom", "--config", configPath, "--input", filepath.Join(t.TempDir(), "raw.json")},
 		{"inventory", "--config", configPath, "extra"},
-		{"normalize-sbom", "--config", configPath, "--input", "raw.json", "--output", "normalized.json", "extra"},
+		{"licenses", "--config", configPath, "--root", t.TempDir(), "--output", filepath.Join(t.TempDir(), "licenses.json"), "--sbom", "sbom.json", "extra"},
 	}
 	for _, args := range tests {
 		if err := run(context.Background(), args, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {

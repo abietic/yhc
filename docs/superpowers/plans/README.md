@@ -1,13 +1,14 @@
 # Implementation Plan Index
 
 **Status:** active-plan
-**Last verified:** 2026-08-11
+**Last verified:** 2026-08-13
 
 > **Ownership:** discoverability and lifecycle routing for task-level
 > implementation plans
 
 | Plan | Owning accepted contract | State |
 |---|---|---|
+| [`2026-08-13-untracked-sbom.md`](2026-08-13-untracked-sbom.md) | [Untracked SBOM design](../specs/2026-08-13-untracked-sbom-design.md) | Historical; implemented and locally verified 2026-08-13 |
 | [`2026-08-09-yhc-public-release-program.md`](2026-08-09-yhc-public-release-program.md) | [YHC Public Release And Identity Migration design](../specs/2026-08-09-yhc-public-release-design.md) | Historical; completed 2026-08-11 |
 | [`2026-08-09-yhc-publication-readiness.md`](2026-08-09-yhc-publication-readiness.md) | [YHC publication boundary, security gates, and governance](../specs/2026-08-09-yhc-public-release-design.md#public-content-boundary) | Executed and retained as closeout evidence |
 | [`2026-08-09-yhc-core-identity.md`](2026-08-09-yhc-core-identity.md) | [YHC identity and environment compatibility contract](../specs/2026-08-09-yhc-public-release-design.md#identity-contract) | Historical; completed 2026-08-11 |

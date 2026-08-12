@@ -52,7 +52,6 @@ PUBLICATION_REPORT_DIR := $(abspath $(BUILD_DIR)/publication)
 GOVULNCHECK := $(PUBLICATION_TOOLS_DIR)/govulncheck
 GITLEAKS := $(PUBLICATION_TOOLS_DIR)/gitleaks
 CYCLONEDX_GOMOD := $(PUBLICATION_TOOLS_DIR)/cyclonedx-gomod
-PUBLICATION_SBOM_RAW := $(BUILD_DIR)/publication/sbom.raw.cdx.json
 PUBLICATION_SBOM_GENERATED := $(BUILD_DIR)/publication/sbom.cdx.json
 PUBLICATION_LICENSE_REPORT := $(BUILD_DIR)/publication/dependency-licenses.json
 
@@ -374,12 +373,10 @@ sbom: prepare-cyclonedx-gomod
 		task_source_commit="$$(git rev-parse HEAD)"; \
 		$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
 		cd "$$task_tree_parent/tree"; \
-		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(abspath $(PUBLICATION_SBOM_RAW)) .
-	$(GO) run ./scripts/publication normalize-sbom --config $(PUBLICATION_CONFIG) --input $(PUBLICATION_SBOM_RAW) --output $(PUBLICATION_SBOM_GENERATED)
-	@cmp -s $(PUBLICATION_SBOM_GENERATED) sbom.cdx.json || { echo "sbom.cdx.json is missing or stale" >&2; exit 1; }
+		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(abspath $(PUBLICATION_SBOM_GENERATED)) .
 
 license-check: sbom
-	$(GO) run ./scripts/publication licenses --config $(PUBLICATION_CONFIG) --root . --output $(PUBLICATION_LICENSE_REPORT)
+	$(GO) run ./scripts/publication licenses --config $(PUBLICATION_CONFIG) --root . --sbom $(abspath $(PUBLICATION_SBOM_GENERATED)) --output $(PUBLICATION_LICENSE_REPORT)
 
 # CI runs each public-release safety check on every change. These commands are
 # intentionally separate so a later prerequisite cannot hide a skipped gate.
@@ -388,7 +385,6 @@ publication-safety:
 	$(MAKE) publication-scan-expression PUBLICATION_ROOT=.
 	$(MAKE) vuln-check
 	$(MAKE) license-check
-	$(MAKE) sbom
 	$(MAKE) secret-check PUBLICATION_ROOT=.
 
 verify-publication:

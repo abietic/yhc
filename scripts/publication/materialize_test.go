@@ -28,19 +28,17 @@ func TestMaterializeRejectsDirtyOrMismatchedSourceCommit(t *testing.T) {
 func TestScanTreeRecomputesMappingsFromPinnedTreeManifest(t *testing.T) {
 	root := t.TempDir()
 	writePublicationFile(t, root, "README.md", "reference-informed\n")
-	writePublicationFile(t, root, "sbom.cdx.json", "{}\n")
 	writePublicationFile(t, root, migrationMappingManifest, "version: 4\nfiles:\n  - path: src/source.ts\n    targets: [README.md]\n")
 	for _, directory := range []string{root, filepath.Join(root, "docs"), filepath.Join(root, "docs", "migration")} {
 		if err := os.Chmod(directory, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	config := Config{Mappings: MappingPolicy{Manifest: migrationMappingManifest}, Dependencies: DependencyPolicy{SBOM: "sbom.cdx.json"}, Rules: []PathRule{
+	config := Config{Mappings: MappingPolicy{Manifest: migrationMappingManifest}, Rules: []PathRule{
 		{ID: "readme", Include: []string{"README.md"}, Class: "reference-informed-independent", Decision: "include", Evidence: []string{"review"}},
 		{ID: "mapping", Include: []string{migrationMappingManifest}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
-		{ID: "sbom", Include: []string{"sbom.cdx.json"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
 	}}
-	if _, _, err := scanTree(root, config, false); err != nil {
+	if _, err := scanTree(root, config, false); err != nil {
 		t.Fatalf("tree mapping: %v", err)
 	}
 	oldHook := publicationRaceHook
@@ -52,7 +50,7 @@ func TestScanTreeRecomputesMappingsFromPinnedTreeManifest(t *testing.T) {
 			}
 		}
 	}
-	if _, _, err := scanTree(root, config, false); err == nil {
+	if _, err := scanTree(root, config, false); err == nil {
 		t.Fatal("accepted a mapping manifest replaced after its digest read")
 	}
 }
@@ -76,7 +74,7 @@ func TestMaterializeCopiesOnlyIncludedRegularFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	for _, name := range []string{"README.md", "sbom.cdx.json"} {
+	for _, name := range []string{"README.md"} {
 		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
 			t.Fatalf("missing %s: %v", name, err)
 		}
@@ -94,7 +92,7 @@ func TestMaterializeCopiesOnlyIncludedRegularFiles(t *testing.T) {
 	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("release root mode is not 0700: %v, %v", info, err)
 	}
-	for _, name := range []string{"README.md", "sbom.cdx.json", ".gitignore"} {
+	for _, name := range []string{"README.md", ".gitignore"} {
 		if info, err := os.Stat(filepath.Join(out, name)); err != nil || info.Mode().Perm() != 0o644 {
 			t.Fatalf("release file %s mode is not 0644: %v, %v", name, info, err)
 		}
@@ -132,7 +130,7 @@ func TestMaterializeRejectsSymlinkSubmoduleSpecialFileAndCollision(t *testing.T)
 			if err := os.Remove(filepath.Join(repo, "README.md")); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink("sbom.cdx.json", filepath.Join(repo, "README.md")); err != nil {
+			if err := os.Symlink(".gitignore", filepath.Join(repo, "README.md")); err != nil {
 				t.Fatal(err)
 			}
 			inRepo(t, repo, func() {
@@ -146,7 +144,7 @@ func TestMaterializeRejectsSymlinkSubmoduleSpecialFileAndCollision(t *testing.T)
 			if err := os.Remove(filepath.Join(repo, "README.md")); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink("sbom.cdx.json", filepath.Join(repo, "README.md")); err != nil {
+			if err := os.Symlink(".gitignore", filepath.Join(repo, "README.md")); err != nil {
 				t.Fatal(err)
 			}
 			runGit(t, repo, "add", "README.md")
@@ -499,7 +497,7 @@ func TestReleaseManifestIsDeterministicAndContainsNoFindingValues(t *testing.T) 
 	if err := json.Unmarshal(first, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Checks) != 4 || strings.Contains(string(first), "finding") {
+	if len(decoded.Checks) != 3 || strings.Contains(string(first), "finding") {
 		t.Fatal("manifest exposes scan details")
 	}
 }
@@ -507,12 +505,11 @@ func TestReleaseManifestIsDeterministicAndContainsNoFindingValues(t *testing.T) 
 func TestMaterializeExcludesTrackedPriorReleaseManifest(t *testing.T) {
 	repo, config, _ := materializerFixture(t)
 	prior := ReleaseManifest{
-		SchemaVersion:    1,
+		SchemaVersion:    2,
 		SourceTreeSHA256: strings.Repeat("a", 64),
 		TreeSHA256:       strings.Repeat("a", 64),
 		FileCount:        3,
-		Checks:           map[string]string{"policy": "pass", "tree": "pass", "expression": "pass", "sbom": "pass"},
-		SBOMSHA256:       strings.Repeat("b", 64),
+		Checks:           map[string]string{"policy": "pass", "tree": "pass", "expression": "pass"},
 	}
 	encoded, err := json.MarshalIndent(prior, "", "  ")
 	if err != nil {
@@ -587,6 +584,28 @@ func TestReleaseManifestRejectsInvalidExistingManifest(t *testing.T) {
 			t.Fatal("overwrote an invalid existing manifest")
 		}
 	})
+}
+
+func TestReleaseManifestRejectsLegacySchemaOne(t *testing.T) {
+	root := t.TempDir()
+	legacy := `{
+  "schema_version": 1,
+  "source_tree_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tree_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "file_count": 2,
+  "checks": {
+    "expression": "pass",
+    "policy": "pass",
+    "sbom": "pass",
+    "tree": "pass"
+  },
+  "sbom_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
+`
+	writePublicationFile(t, root, publicationManifest, legacy)
+	if _, err := readManifest(root); err == nil {
+		t.Fatal("accepted a schema 1 publication manifest")
+	}
 }
 
 func TestReleaseManifestPinsTargetAndRootAgainstReplacement(t *testing.T) {
@@ -668,12 +687,11 @@ func TestReleaseManifestPinsTargetAndRootAgainstReplacement(t *testing.T) {
 func TestReleaseManifestRejectsNoncanonicalMalformedAndUppercaseJSON(t *testing.T) {
 	digest := strings.Repeat("ab", 32)
 	manifest := ReleaseManifest{
-		SchemaVersion:    1,
+		SchemaVersion:    2,
 		SourceTreeSHA256: digest,
 		TreeSHA256:       digest,
 		FileCount:        2,
-		Checks:           map[string]string{"policy": "pass", "tree": "pass", "expression": "pass", "sbom": "pass"},
-		SBOMSHA256:       strings.Repeat("cd", 32),
+		Checks:           map[string]string{"policy": "pass", "tree": "pass", "expression": "pass"},
 	}
 	canonical, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -685,7 +703,7 @@ func TestReleaseManifestRejectsNoncanonicalMalformedAndUppercaseJSON(t *testing.
 		contents  []byte
 		shapeOnly bool
 	}{
-		{name: "duplicate key", contents: []byte("{\n  \"schema_version\": 1,\n  \"schema_version\": 1\n}\n")},
+		{name: "duplicate key", contents: []byte("{\n  \"schema_version\": 2,\n  \"schema_version\": 2\n}\n")},
 		{name: "unknown key", contents: append([]byte{}, bytesReplaceBeforeObjectEnd(canonical, []byte(",\n  \"unknown\": true"))...)},
 		{name: "trailing JSON", contents: append(append([]byte{}, canonical...), []byte("{}\n")...)},
 		{name: "uppercase digest", shapeOnly: true},
@@ -772,7 +790,7 @@ func TestCheckTreeRejectsManifestSourceDigestMismatchAndRootReplacement(t *testi
 		if err := os.Symlink(out, link); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := scanTree(link, config, true); err == nil {
+		if _, err := scanTree(link, config, true); err == nil {
 			t.Fatal("scanTree followed a root symlink")
 		}
 	}
@@ -785,11 +803,10 @@ func TestCheckTreeRejectsSpecialFilesAndNoncanonicalModes(t *testing.T) {
 	root := t.TempDir()
 	config := materializerConfig(strings.Repeat("a", 40))
 	writePublicationFile(t, root, "README.md", "public\n")
-	writePublicationFile(t, root, "sbom.cdx.json", "{}\n")
 	if err := syscall.Mkfifo(filepath.Join(root, "pipe"), 0o600); err != nil {
 		t.Skipf("mkfifo unavailable: %v", err)
 	}
-	if _, _, err := scanTree(root, config, false); err == nil {
+	if _, err := scanTree(root, config, false); err == nil {
 		t.Fatal("accepted a special file")
 	}
 	if err := os.Remove(filepath.Join(root, "pipe")); err != nil {
@@ -798,7 +815,7 @@ func TestCheckTreeRejectsSpecialFilesAndNoncanonicalModes(t *testing.T) {
 	if err := os.Chmod(filepath.Join(root, "README.md"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := scanTree(root, config, false); err == nil {
+	if _, err := scanTree(root, config, false); err == nil {
 		t.Fatal("accepted a noncanonical file mode")
 	}
 }
@@ -902,7 +919,7 @@ func TestCheckTreePinsRootDirectoriesAndFilesAgainstReplacement(t *testing.T) {
 					}
 				}
 			}
-			if _, _, err := scanTree(out, config, false); err == nil {
+			if _, err := scanTree(out, config, false); err == nil {
 				t.Fatal("accepted publication tree replacement")
 			}
 		})
@@ -973,7 +990,7 @@ func TestCheckTreeRehashesAfterExpressionScan(t *testing.T) {
 
 func materializerFixture(t *testing.T) (string, Config, string) {
 	t.Helper()
-	repo := newPublicationRepo(t, map[string]string{"README.md": "public\n", "sbom.cdx.json": "{}\n", ".gitignore": ".reference/\n.eino-agent/\n.claude/\n"})
+	repo := newPublicationRepo(t, map[string]string{"README.md": "public\n", ".gitignore": ".reference/\n.eino-agent/\n.claude/\n"})
 	var head string
 	inRepo(t, repo, func() {
 		out, err := gitOutput(context.Background(), "rev-parse", "HEAD")
@@ -987,22 +1004,20 @@ func materializerFixture(t *testing.T) (string, Config, string) {
 
 func nestedMaterializerFixture(t *testing.T) (string, Config, string) {
 	t.Helper()
-	repo := newPublicationRepo(t, map[string]string{"docs/README.md": "public\n", "sbom.cdx.json": "{}\n"})
+	repo := newPublicationRepo(t, map[string]string{"docs/README.md": "public\n"})
 	head := repositoryHead(t, repo)
 	config := Config{
-		Mappings:     MappingPolicy{Manifest: migrationMappingManifest},
-		Source:       SourcePolicy{BaselineCommit: head},
-		Dependencies: DependencyPolicy{SBOM: "sbom.cdx.json"},
+		Mappings: MappingPolicy{Manifest: migrationMappingManifest},
+		Source:   SourcePolicy{BaselineCommit: head},
 		Rules: []PathRule{
 			{ID: "docs", Include: []string{"docs/**"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
-			{ID: "sbom", Include: []string{"sbom.cdx.json"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
 		},
 	}
 	return repo, config, head
 }
 
 func materializerConfig(baseline string) Config {
-	return Config{Mappings: MappingPolicy{Manifest: migrationMappingManifest}, Source: SourcePolicy{BaselineCommit: baseline}, Dependencies: DependencyPolicy{SBOM: "sbom.cdx.json"}, Rules: []PathRule{{ID: "docs", Include: []string{"README.md", ".gitignore"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}}, {ID: "mapping", Include: []string{migrationMappingManifest}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}}, {ID: "sbom", Include: []string{"sbom.cdx.json"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}}}}
+	return Config{Mappings: MappingPolicy{Manifest: migrationMappingManifest}, Source: SourcePolicy{BaselineCommit: baseline}, Rules: []PathRule{{ID: "docs", Include: []string{"README.md", ".gitignore"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}}, {ID: "mapping", Include: []string{migrationMappingManifest}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}}}}
 }
 
 func repositoryHead(t *testing.T, repo string) string {

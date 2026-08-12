@@ -65,7 +65,6 @@ type ReviewedFinding struct {
 
 type DependencyPolicy struct {
 	LicensePolicy string `yaml:"license_policy"`
-	SBOM          string `yaml:"sbom"`
 }
 
 func loadConfig(data []byte) (Config, error) {
@@ -101,10 +100,8 @@ func validateConfig(config Config) error {
 	if err := validateRepositoryPath(config.Mappings.Manifest); err != nil {
 		return fmt.Errorf("mapping manifest: %w", err)
 	}
-	for name, value := range map[string]string{"license policy": config.Dependencies.LicensePolicy, "SBOM": config.Dependencies.SBOM} {
-		if err := validateRepositoryPath(value); err != nil {
-			return fmt.Errorf("dependency %s: %w", name, err)
-		}
+	if err := validateRepositoryPath(config.Dependencies.LicensePolicy); err != nil {
+		return fmt.Errorf("dependency license policy: %w", err)
 	}
 	if len(config.Rules) == 0 {
 		return errors.New("publication policy must define path rules")

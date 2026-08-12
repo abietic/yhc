@@ -77,7 +77,6 @@ func TestBuildInventoryUsesTrackedMappingManifestNotWorktreeOrReference(t *testi
 		migrationMappingManifest:           tracked,
 		".gitignore":                       ".reference/\n",
 		"quality/dependency-licenses.yaml": "licenses: []\n",
-		"sbom.cdx.json":                    "{}\n",
 	})
 	writePublicationFile(t, repo, migrationMappingManifest, "version: 4\nfiles: []\n")
 	writePublicationFile(t, repo, ".reference/secret.txt", "never read")
@@ -92,7 +91,6 @@ func TestBuildInventoryUsesTrackedMappingManifestNotWorktreeOrReference(t *testi
 		{ID: "manifest", Include: []string{migrationMappingManifest}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
 		{ID: "ignore", Include: []string{".gitignore"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
 		{ID: "licenses", Include: []string{"quality/**"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
-		{ID: "sbom", Include: []string{"sbom.cdx.json"}, Class: "project-owned-original", Decision: "include", Evidence: []string{"review"}},
 	}}
 	inRepo(t, repo, func() {
 		inventory, err := buildInventory(context.Background(), config)
