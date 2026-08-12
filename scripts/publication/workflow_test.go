@@ -86,7 +86,7 @@ func readWorkflowFiles(t *testing.T) map[string]string {
 	return workflows
 }
 
-func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
+func TestMakefileWiresPublicationSecurityTools(t *testing.T) {
 	ci := readRepositoryFile(t, ".github/workflows/ci.yml")
 	if !strings.Contains(ci, "name: Publication safety") {
 		t.Fatal("CI lacks the publication safety job")
@@ -100,7 +100,6 @@ func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
 		"$(MAKE) publication-scan-expression PUBLICATION_ROOT=.",
 		"$(MAKE) vuln-check",
 		"$(MAKE) license-check",
-		"$(MAKE) sbom",
 		"$(MAKE) secret-check PUBLICATION_ROOT=.",
 	} {
 		if !strings.Contains(makefile, target) {
@@ -127,13 +126,18 @@ func TestRequiredGateDependsOnPublicationSafety(t *testing.T) {
 		`@set -e;`,
 		`publication materialize --config $(PUBLICATION_CONFIG)`,
 		`cd "$$task_tree_parent/tree"`,
-		`-output $(abspath $(PUBLICATION_SBOM_RAW)) .`,
-		`normalize-sbom --config $(PUBLICATION_CONFIG)`,
-		`--output $(PUBLICATION_SBOM_GENERATED)`,
+		`-output $(abspath $(PUBLICATION_SBOM_GENERATED)) .`,
 	} {
 		if !strings.Contains(sbomTarget, contract) {
 			t.Fatalf("SBOM generation does not retain VCS-free contract %q", contract)
 		}
+	}
+	licenseTarget := makefile[licenseStart:]
+	if !strings.Contains(licenseTarget, `licenses --config $(PUBLICATION_CONFIG) --root . --sbom $(abspath $(PUBLICATION_SBOM_GENERATED)) --output $(PUBLICATION_LICENSE_REPORT)`) {
+		t.Fatal("license-check must pass the generated SBOM explicitly")
+	}
+	if strings.Contains(sbomTarget, "normalize-sbom") || strings.Contains(sbomTarget, "sbom.cdx.json") {
+		t.Fatal("SBOM target must not normalize or compare a tracked SBOM")
 	}
 	publicationStart := strings.Index(ci, "  publication-safety:\n")
 	requiredStart := strings.Index(ci, "  required:\n")

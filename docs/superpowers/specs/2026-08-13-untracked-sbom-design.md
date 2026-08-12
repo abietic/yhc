@@ -1,7 +1,8 @@
 # Untracked SBOM Design
 
-**Status:** active-plan
+**Status:** historical
 **Accepted:** 2026-08-13
+**Completed:** 2026-08-13
 **Adoption:** `project-native`
 
 > **Ownership:** accepted contract for removing the committed SBOM while

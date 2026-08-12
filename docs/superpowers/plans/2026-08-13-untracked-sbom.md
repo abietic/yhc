@@ -1,10 +1,13 @@
 # Untracked SBOM Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `$iteration-workflow` for
-> test-first execution, diff-bound verification, and committed evidence. Steps
-> use checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution note:** This plan records the completed local
+> implementation and committed-tree verification. Remote PR and merge state is
+> evidenced by GitHub, not inferred from this source record. No live worker
+> instruction remains.
 
-**Status:** active-plan
+**Status:** historical
+**Completed:** 2026-08-13
+**Plan state:** Completed locally; remote integration follows the closing PR
 
 > **Ownership:** executable steps for removing the committed SBOM while
 > retaining dependency-license verification and publication-tree integrity
@@ -140,7 +143,6 @@ Expected: PASS.
 - Modify: `scripts/publication/inventory_test.go`
 - Modify: `PUBLICATION_MANIFEST.json`
 - Modify: `quality/publication.yaml`
-- Modify: `quality/iteration.yaml`
 - Delete: `sbom.cdx.json`
 
 **Interfaces:**
@@ -208,9 +210,11 @@ schema 2 and exactly `policy`, `tree`, and `expression` pass checks.
 
 - [ ] **Step 4: Remove the tracked artifact and its classification**
 
-Delete `sbom.cdx.json`, the `sbom` path rule in `quality/publication.yaml`, and
-the `sbom.cdx.json` dependency-owner path in `quality/iteration.yaml`. Update
-fixture rules so every remaining tracked path is still classified exactly once.
+Delete `sbom.cdx.json` and the `sbom` path rule in
+`quality/publication.yaml`. Keep the `sbom.cdx.json` dependency-owner path in
+`quality/iteration.yaml` as tombstone ownership so the iteration planner can
+still classify the deletion itself. Update fixture rules so every remaining
+tracked path is still classified exactly once.
 
 - [ ] **Step 5: Run the complete publication package**
 
@@ -290,7 +294,7 @@ git commit --amend --no-edit
 ```
 
 Confirm schema 2, three pass checks, no `sbom` field, and a payload file count
-one lower than the pre-change manifest.
+that exactly matches the materialized source payload.
 
 - [ ] **Step 5: Verify the exact committed tree**
 

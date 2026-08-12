@@ -1,13 +1,11 @@
 {
-  "schema_version": 1,
-  "source_tree_sha256": "d2483d93cdcc3b61aeff043c60e50fc9ce7fcfa090eb9c4bc43119e9bac9546d",
-  "tree_sha256": "d2483d93cdcc3b61aeff043c60e50fc9ce7fcfa090eb9c4bc43119e9bac9546d",
-  "file_count": 1834,
+  "schema_version": 2,
+  "source_tree_sha256": "08f7b6893d5ef9adcbcfa99c8e9f35ab966ac9cd9b80e31aba3bcdcc82ed9010",
+  "tree_sha256": "08f7b6893d5ef9adcbcfa99c8e9f35ab966ac9cd9b80e31aba3bcdcc82ed9010",
+  "file_count": 1835,
   "checks": {
     "expression": "pass",
     "policy": "pass",
-    "sbom": "pass",
     "tree": "pass"
-  },
-  "sbom_sha256": "a8ad37c431845ac3526bcfeeb9be139c0a9b1a774295e800c241ec6348079262"
+  }
 }

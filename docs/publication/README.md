@@ -1,7 +1,7 @@
 # Public Source And Release Boundary
 
 **Status:** current
-**Last verified:** 2026-08-10
+**Last verified:** 2026-08-13
 
 > **Ownership:** public-source classification, provenance clearance, privacy
 > review, and clean-root release boundary
@@ -44,11 +44,18 @@ there are no directory-level or rule-level waivers.
 Release checks also require:
 
 - zero reachable Go vulnerability findings;
-- an exact cross-platform dependency/SBOM component set;
-- reviewed SPDX and NOTICE evidence for every component;
-- a deterministic CycloneDX SBOM;
+- an exact cross-platform dependency component set;
+- a generated CycloneDX inventory reconciled with reviewed SPDX and NOTICE
+  evidence for every component;
 - a pinned secret scanner that first detects its own constructed canary; and
 - the repository Makefile formatting, lint, test, and build gates.
+
+`make sbom` writes the current CycloneDX report only below ignored
+`build/publication/` state. `make license-check` regenerates that report and
+passes it explicitly to the fail-closed dependency-license checker. The report
+is build evidence, not public source and not part of publication-tree identity.
+`quality/dependency-licenses.yaml` remains the reviewed source-of-truth for
+license, notice, replacement, and local modification decisions.
 
 See [`root-clearance.md`](root-clearance.md) for the candidate review summary
 and reproduction commands.
