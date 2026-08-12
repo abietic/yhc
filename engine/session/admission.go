@@ -179,7 +179,7 @@ func requireDefaultSessionImportPair(
 	return nil
 }
 
-func requireSameLegacyImportOwner(initial SessionInfo, fresh SessionInfo) error {
+func requireSameLegacyImportOwner(initial, fresh SessionInfo) error {
 	if fresh.SessionID != initial.SessionID || !fresh.HasResolvedSource() ||
 		!samePath(fresh.sourceCWD, initial.sourceCWD) ||
 		!samePath(fresh.TranscriptDir, initial.TranscriptDir) {

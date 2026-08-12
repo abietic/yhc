@@ -86,7 +86,7 @@ type ResumeValidator func(context.Context, EngineOptions) error
 type CreateSessionRequest struct {
 	WorkspaceHandle string `json:"workspace_handle"`
 
-	// Deprecated in-process construction fields. They are deliberately not part
+	// Deprecated: in-process construction fields. They are deliberately not part
 	// of the HTTP JSON contract; durable attach builds this value internally.
 	SessionID string `json:"-"`
 	CWD       string `json:"-"`
@@ -203,7 +203,7 @@ type SessionSummary struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 	LastError      string    `json:"last_error,omitempty"`
 
-	// Deprecated in-process compatibility fields. They are never serialized.
+	// Deprecated: in-process compatibility fields. They are never serialized.
 	CWD   string `json:"-"`
 	Title string `json:"-"`
 }
@@ -224,7 +224,7 @@ type DurableSessionSummary struct {
 	ParentSessionID string    `json:"parent_session_id,omitempty"`
 	Resumable       bool      `json:"resumable"`
 
-	// Deprecated in-process compatibility fields. They are never serialized.
+	// Deprecated: in-process compatibility fields. They are never serialized.
 	CWD   string `json:"-"`
 	Title string `json:"-"`
 }
@@ -259,7 +259,7 @@ type ReviewDiffResponse struct {
 	GeneratedAt    time.Time          `json:"generated_at"`
 	Sources        []ReviewDiffSource `json:"sources"`
 
-	// Deprecated in-process compatibility field. It is never serialized.
+	// Deprecated: in-process compatibility field. It is never serialized.
 	CWD string `json:"-"`
 }
 
@@ -276,7 +276,7 @@ type ReviewDiffSource struct {
 	TotalBytes     int64  `json:"total_bytes"`
 	Truncated      bool   `json:"truncated"`
 
-	// Deprecated in-process compatibility field. It is never serialized.
+	// Deprecated: in-process compatibility field. It is never serialized.
 	RepositoryRoot string `json:"-"`
 }
 

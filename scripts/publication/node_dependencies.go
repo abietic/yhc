@@ -120,7 +120,7 @@ func loadNodeDependencyPolicy(name string) (nodeDependencyPolicy, error) {
 		return nodeDependencyPolicy{}, errors.New("read Node dependency policy failed")
 	}
 	if len(data) > 4<<20 {
-		return nodeDependencyPolicy{}, errors.New("Node dependency policy is too large")
+		return nodeDependencyPolicy{}, errors.New("node dependency policy is too large")
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -130,7 +130,7 @@ func loadNodeDependencyPolicy(name string) (nodeDependencyPolicy, error) {
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nodeDependencyPolicy{}, errors.New("Node dependency policy has multiple YAML documents")
+		return nodeDependencyPolicy{}, errors.New("node dependency policy has multiple YAML documents")
 	}
 	if err := validateNodeDependencyPolicy(policy); err != nil {
 		return nodeDependencyPolicy{}, err
@@ -140,22 +140,22 @@ func loadNodeDependencyPolicy(name string) (nodeDependencyPolicy, error) {
 
 func validateNodeDependencyPolicy(policy nodeDependencyPolicy) error {
 	if policy.Version != 1 || policy.RegistryHost != nodeRegistryHost || len(policy.Dependencies) == 0 || len(policy.Vendored) == 0 {
-		return errors.New("Node dependency policy must pin registry, dependencies, and vendored components")
+		return errors.New("node dependency policy must pin registry, dependencies, and vendored components")
 	}
 	seen := map[string]struct{}{}
 	for _, row := range policy.Dependencies {
 		if !validNodePackageName(row.Package) || !validNodeVersion(row.Version) || !validNodeLicense(row.License) || row.Decision != "allow" {
-			return errors.New("Node dependency policy has invalid package decision")
+			return errors.New("node dependency policy has invalid package decision")
 		}
 		key := nodePolicyKey(row.Package, row.Version)
 		if _, exists := seen[key]; exists {
-			return errors.New("Node dependency policy repeats a package version")
+			return errors.New("node dependency policy repeats a package version")
 		}
 		seen[key] = struct{}{}
 	}
 	for _, row := range policy.Vendored {
 		if !validNodePackageName(row.Package) || !validNodeVersion(row.Version) || !validNodeLicense(row.License) || validateRepositoryPath(row.Notice) != nil || validateRepositoryPath(row.LicenseFile) != nil {
-			return errors.New("Node vendored dependency policy is invalid")
+			return errors.New("node vendored dependency policy is invalid")
 		}
 	}
 	return nil
@@ -167,7 +167,7 @@ func loadNodeLockfile(name string) (nodeLockfile, error) {
 		return nodeLockfile{}, errors.New("read Node package lock failed")
 	}
 	if len(data) > 16<<20 {
-		return nodeLockfile{}, errors.New("Node package lock is too large")
+		return nodeLockfile{}, errors.New("node package lock is too large")
 	}
 	var lock nodeLockfile
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -176,14 +176,14 @@ func loadNodeLockfile(name string) (nodeLockfile, error) {
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nodeLockfile{}, errors.New("Node package lock has trailing data")
+		return nodeLockfile{}, errors.New("node package lock has trailing data")
 	}
 	if lock.LockfileVersion != 3 || lock.Name != "yhc-desktop" || len(lock.Packages) < 2 {
-		return nodeLockfile{}, errors.New("Node package lock is not an accepted lockfile v3")
+		return nodeLockfile{}, errors.New("node package lock is not an accepted lockfile v3")
 	}
 	root, ok := lock.Packages[""]
 	if !ok || root.Name != "yhc-desktop" || root.Version == "" {
-		return nodeLockfile{}, errors.New("Node package lock has invalid root identity")
+		return nodeLockfile{}, errors.New("node package lock has invalid root identity")
 	}
 	return lock, nil
 }
@@ -202,14 +202,14 @@ func nodeLockComponents(lock nodeLockfile, policy nodeDependencyPolicy) ([]nodeS
 		}
 		name, err := nodePackageName(location, pkg.Name)
 		if err != nil || !validNodeVersion(pkg.Version) || !validNodeResolved(pkg.Resolved) || !validNodeIntegrity(pkg.Integrity) || !validNodeLicense(pkg.License) {
-			return nil, errors.New("Node package lock contains an unsafe reachable dependency")
+			return nil, errors.New("node package lock contains an unsafe reachable dependency")
 		}
 		row, ok := decisions[nodePolicyKey(name, pkg.Version)]
 		if !ok {
-			return nil, fmt.Errorf("Node dependency policy is missing reachable package %q", nodePolicyKey(name, pkg.Version))
+			return nil, fmt.Errorf("node dependency policy is missing reachable package %q", nodePolicyKey(name, pkg.Version))
 		}
 		if pkg.License != row.License {
-			return nil, fmt.Errorf("Node dependency license policy does not match lock package %q", nodePolicyKey(name, pkg.Version))
+			return nil, fmt.Errorf("node dependency license policy does not match lock package %q", nodePolicyKey(name, pkg.Version))
 		}
 		used[nodePolicyKey(name, pkg.Version)] = struct{}{}
 		key := nodePolicyKey(name, pkg.Version)
@@ -219,7 +219,7 @@ func nodeLockComponents(lock nodeLockfile, policy nodeDependencyPolicy) ([]nodeS
 		}
 	}
 	if len(used) != len(decisions) {
-		return nil, errors.New("Node dependency policy contains a stale package decision")
+		return nil, errors.New("node dependency policy contains a stale package decision")
 	}
 	return components, nil
 }

@@ -2813,12 +2813,12 @@ privacy:
         match_sha256: e19e10a3c40394699e9737333eeacabf8e9ade25fd89fee96861714281375a77
         purpose: synthetic-security-fixture
       - path: engine/provider/claude_compat_transport_test.go
-        line: 282
+        line: 285
         rule_id: credential-assignment
         match_sha256: 938e891875eb1ecb7c86e36434e73b905690755e5af8cbee20c4ca47345576e9
         purpose: synthetic-security-fixture
       - path: engine/provider/claude_compat_transport_test.go
-        line: 331
+        line: 337
         rule_id: private-url
         match_sha256: 24300200fc206aed0fbc323730d422827d4d33e2d42db9fc14f789203a278b01
         purpose: synthetic-security-fixture

@@ -264,7 +264,10 @@ func TestClaudeCompatibilityTransportFailsClosedForMalformedDeepSeekJSON(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = transport.RoundTrip(request)
+	response, err := transport.RoundTrip(request)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close() //nolint:errcheck
+	}
 	if err == nil || !strings.Contains(err.Error(), "invalid DeepSeek Anthropic request JSON") {
 		t.Fatalf("error = %v", err)
 	}
@@ -295,7 +298,10 @@ func TestClaudeCompatibilityTransportRedactsBodyReadFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = transport.RoundTrip(request)
+	response, err := transport.RoundTrip(request)
+	if response != nil && response.Body != nil {
+		defer response.Body.Close() //nolint:errcheck
+	}
 	if !errors.Is(err, errDeepSeekAnthropicRequestBodyRead) {
 		t.Fatalf("error = %v, want redacted body-read failure", err)
 	}

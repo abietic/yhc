@@ -100,11 +100,13 @@ func TestServerReservesSessionCapacityBeforeFactory(t *testing.T) {
 	}
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
-	firstDone := make(chan *http.Response, 1)
+	firstDone := make(chan int, 1)
 	firstWorkspace := registerWorkspace(t, httpServer.URL, "test-token", t.TempDir())
 	secondWorkspace := registerWorkspace(t, httpServer.URL, "test-token", t.TempDir())
 	go func() {
-		firstDone <- doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": firstWorkspace.WorkspaceHandle})
+		response := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": firstWorkspace.WorkspaceHandle})
+		defer response.Body.Close()
+		firstDone <- response.StatusCode
 	}()
 	<-started
 	second := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": secondWorkspace.WorkspaceHandle})
@@ -116,11 +118,10 @@ func TestServerReservesSessionCapacityBeforeFactory(t *testing.T) {
 		t.Fatalf("factory calls = %d, want 1 while capacity is reserved", calls.Load())
 	}
 	close(release)
-	first := <-firstDone
-	if first.StatusCode != http.StatusCreated {
-		t.Fatalf("first create status = %d", first.StatusCode)
+	firstStatus := <-firstDone
+	if firstStatus != http.StatusCreated {
+		t.Fatalf("first create status = %d", firstStatus)
 	}
-	_ = first.Body.Close()
 	retried := doJSON(t, httpServer.URL+"/v1/sessions", "test-token", http.MethodPost, map[string]string{"workspace_handle": secondWorkspace.WorkspaceHandle})
 	if retried.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("retry after capacity rejection = %d, want %d while first session remains active", retried.StatusCode, http.StatusTooManyRequests)
@@ -312,43 +313,6 @@ func readBody(t *testing.T, response *http.Response) string {
 	}
 	_ = response.Body.Close()
 	return string(data)
-}
-
-func waitForSessionStatus(
-	t *testing.T,
-	baseURL, sessionID, token, want string,
-) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		request, err := http.NewRequest(http.MethodGet, baseURL+"/v1/sessions/"+sessionID, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		request.Header.Set("Authorization", "Bearer "+token)
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var summary SessionSummary
-		decodeResponse(t, response, &summary)
-		if summary.Status == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("session status = %q, want %q", summary.Status, want)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func hasEventType(events []WireEvent, eventType string) bool {
-	for _, event := range events {
-		if event.Type == eventType {
-			return true
-		}
-	}
-	return false
 }
 
 func shutdownTestServer(t *testing.T, server *Server) {

@@ -169,11 +169,11 @@ func scanMaskedNodeLockfile(contents []byte) ([]byte, error) {
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nil, errors.New("Node package lock has trailing data during expression scan")
+		return nil, errors.New("node package lock has trailing data during expression scan")
 	}
 	packagesRaw, ok := document["packages"]
 	if !ok {
-		return nil, errors.New("Node package lock lacks packages during expression scan")
+		return nil, errors.New("node package lock lacks packages during expression scan")
 	}
 	var packages map[string]map[string]json.RawMessage
 	if err := json.Unmarshal(packagesRaw, &packages); err != nil {
