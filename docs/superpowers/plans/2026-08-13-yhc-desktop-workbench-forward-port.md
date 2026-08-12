@@ -7,7 +7,7 @@
 
 **Status:** active-plan
 **Created:** 2026-08-13
-**Plan state:** Active; Task 1 is the first implementation slice
+**Plan state:** Active; implementation complete, final committed-tree and physical acceptance remain
 
 > **Ownership:** executable, test-first delivery sequence for the accepted
 > [YHC Desktop Workbench Forward-Port design](../specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md)

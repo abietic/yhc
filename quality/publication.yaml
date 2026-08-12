@@ -98,62 +98,62 @@ privacy:
         match_sha256: 6b92323c3a3f154c0a30cc602002b87ff41486d6cba571162e1bae16d7761997
         purpose: build-metadata
       - path: Makefile
-        line: 206
+        line: 205
         rule_id: high-entropy-token
         match_sha256: be5a952a6bf7286e30dbcf02b692f61f9eda1e48315ea565d19a20d171b5efa4
         purpose: build-metadata
       - path: Makefile
-        line: 207
+        line: 206
         rule_id: high-entropy-token
         match_sha256: 08bf8be3232a88279a98d478ee129562e25717876c4971f05c2f1cd5b1ce86cf
         purpose: build-metadata
       - path: Makefile
-        line: 207
+        line: 206
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 207
+        line: 206
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 213
+        line: 212
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 213
+        line: 212
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 236
+        line: 235
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 236
+        line: 235
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 249
+        line: 248
         rule_id: high-entropy-token
         match_sha256: d2e744ec70d978e984e880c92094942b9d29bffedd0d0f76ec3544a516317b7d
         purpose: build-metadata
       - path: Makefile
-        line: 269
+        line: 268
         rule_id: credential-assignment
         match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
         purpose: build-metadata
       - path: Makefile
-        line: 279
+        line: 278
         rule_id: credential-assignment
         match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
         purpose: build-metadata
       - path: Makefile
-        line: 281
+        line: 280
         rule_id: credential-assignment
         match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
         purpose: build-metadata
@@ -1863,19 +1863,19 @@ privacy:
         match_sha256: 5c7f3faa3f5b4d30c946147bc4c8ee762e85b971b12ee28f07d5643f5d3c7f90
         purpose: historical-trace-identifier
       - path: docs/superpowers/plans/README.md
-        line: 18
+        line: 11
         rule_id: high-entropy-token
-        match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
-        purpose: documentation-example
-      - path: docs/superpowers/plans/README.md
-        line: 18
-        rule_id: high-entropy-token
-        match_sha256: a5b00e1d6894f3cbb24189c682ace58404380a1a3ff071b374bb4cbdbcb91510
+        match_sha256: b3175c7bcbfcf7e08b8cdac832a2376e0a049694afbfd60ce7cd7da3b12be6ad
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
         line: 19
         rule_id: high-entropy-token
         match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
+        purpose: documentation-example
+      - path: docs/superpowers/plans/README.md
+        line: 19
+        rule_id: high-entropy-token
+        match_sha256: a5b00e1d6894f3cbb24189c682ace58404380a1a3ff071b374bb4cbdbcb91510
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
         line: 20
@@ -1885,12 +1885,12 @@ privacy:
       - path: docs/superpowers/plans/README.md
         line: 21
         rule_id: high-entropy-token
-        match_sha256: 5d2beaa503e1553527ed6073c18f49fba558245725bb2c93278a57cdbef48e27
+        match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
         line: 22
         rule_id: high-entropy-token
-        match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
+        match_sha256: 5d2beaa503e1553527ed6073c18f49fba558245725bb2c93278a57cdbef48e27
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
         line: 23
@@ -1908,9 +1908,9 @@ privacy:
         match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
-        line: 42
+        line: 26
         rule_id: high-entropy-token
-        match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
+        match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
         line: 43
@@ -1918,12 +1918,17 @@ privacy:
         match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
-        line: 48
+        line: 44
+        rule_id: high-entropy-token
+        match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
+        purpose: documentation-example
+      - path: docs/superpowers/plans/README.md
+        line: 49
         rule_id: high-entropy-token
         match_sha256: 5c7f3faa3f5b4d30c946147bc4c8ee762e85b971b12ee28f07d5643f5d3c7f90
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
-        line: 48
+        line: 49
         rule_id: high-entropy-token
         match_sha256: a275fe1dc3d49fb81622f9dc95948a6a6d610de3b82b5cb88e188d6be3c96f50
         purpose: documentation-example
@@ -1978,7 +1983,12 @@ privacy:
         match_sha256: 7c352fb8617610237b2217f581578dad2357b1a15171cc2916348ac0fa9d570d
         purpose: documentation-example
       - path: docs/superpowers/specs/README.md
-        line: 13
+        line: 12
+        rule_id: high-entropy-token
+        match_sha256: 94be4d498c74ad2304d5aa90d6306cf95f84b167e01dedbd9b3e29a95ac770dd
+        purpose: documentation-example
+      - path: docs/superpowers/specs/README.md
+        line: 14
         rule_id: high-entropy-token
         match_sha256: 5d0e82a9102280a0d4802c5faaf6eaa18898a9ffde30967ef16d38ea5e88f3a7
         purpose: documentation-example
@@ -3743,72 +3753,72 @@ privacy:
         match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies.go
-        line: 488
+        line: 487
         rule_id: home-path
         match_sha256: 46fc9ca045f9ef5c7bcce09b6c89957b8346524752f3388c0b1dd865853e283a
         purpose: detector-definition
       - path: scripts/publication/dependencies.go
-        line: 488
+        line: 487
         rule_id: home-path
         match_sha256: 5fcdcf8aa3a9751454b6ea0a7431fdfc94ac6a560eb1b8cb382d44c6ce12b545
         purpose: detector-definition
       - path: scripts/publication/dependencies_test.go
-        line: 16
+        line: 15
         rule_id: private-url
         match_sha256: 7d4dfd6dd0f343c0903b433dabeb63f098aa66ea411bed0cd9813cc486c439d4
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 17
+        line: 16
         rule_id: private-url
         match_sha256: 51ce41820549abfd9ee7203bd7168b3e55c99b929847a6bb1c5bceacb82b12f6
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 94
+        line: 93
         rule_id: home-path
         match_sha256: 1c392dfc25a8b3680fa3c8faa1f9d8860100664f7bf61e627ac77bb69c4f45c4
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 94
+        line: 93
         rule_id: home-path
         match_sha256: 5c17f3cf095f267c3c15c35bf8b8a24fbc846ce0f563e94753f22700e4f3132a
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 133
+        line: 132
         rule_id: private-url
         match_sha256: 2ab431ee7139d7c877955364939e43c72e073a22e9dd4e0880f0f48d6b227258
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 134
+        line: 133
         rule_id: private-url
         match_sha256: 193755ac8734d6ed6247d8b1d3004298f6d1cb416da24294453c2ab8a688396d
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 139
+        line: 138
         rule_id: private-url
         match_sha256: 2f9e5404bd00fdb8fcd47bf92729a6200021ea5ec4b8077c310c2d8ca97132de
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 140
+        line: 139
         rule_id: private-url
         match_sha256: 13774116ff26d86dec6841803717cb8c8fa47e0afaab698f17d0ea9dbe405ed4
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 145
+        line: 144
         rule_id: private-url
         match_sha256: 09be5078ff5fd072b8062b4b0d2c43cc7b32aace718036ea25d376649843a857
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 146
+        line: 145
         rule_id: private-url
         match_sha256: 2b51164d4827a6ff151da152ee43560022f9dfa47c574c595a2298aae9eacc85
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 318
+        line: 317
         rule_id: private-url
         match_sha256: 3f1095e4aeac6086fa9200ce02802da9bada700e48b57d77674fa8e517f4de41
         purpose: synthetic-security-fixture
       - path: scripts/publication/dependencies_test.go
-        line: 318
+        line: 317
         rule_id: private-url
         match_sha256: c863ac64160c2ca52056d97c558fe4e51f25105c86748a0c2903061a494f4b00
         purpose: synthetic-security-fixture
@@ -3828,27 +3838,27 @@ privacy:
         match_sha256: 8172a023f8733c1c6377deccd97aefc669393f2a8f077b5bee2d1682d9bc307e
         purpose: synthetic-security-fixture
       - path: scripts/publication/materialize_test.go
-        line: 114
+        line: 112
         rule_id: private-email
         match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
         purpose: synthetic-security-fixture
       - path: scripts/publication/materialize_test.go
-        line: 153
+        line: 151
         rule_id: private-email
         match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
         purpose: synthetic-security-fixture
       - path: scripts/publication/materialize_test.go
-        line: 170
+        line: 168
         rule_id: private-email
         match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
         purpose: synthetic-security-fixture
       - path: scripts/publication/materialize_test.go
-        line: 173
+        line: 171
         rule_id: private-email
         match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
         purpose: synthetic-security-fixture
       - path: scripts/publication/materialize_test.go
-        line: 404
+        line: 402
         rule_id: private-email
         match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
         purpose: synthetic-security-fixture

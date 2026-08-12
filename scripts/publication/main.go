@@ -38,10 +38,13 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 		outputPath = command.String("output", "", "inventory output")
 	case "scan-expression", "check-tree":
 		rootPath = command.String("root", "", "publication tree root")
-	case "licenses", "node-sbom":
+	case "licenses":
 		rootPath = command.String("root", "", "repository root")
 		sbomPath = command.String("sbom", "", "CycloneDX SBOM")
 		outputPath = command.String("output", "", "dependency license report")
+	case "node-sbom":
+		rootPath = command.String("root", "", "repository root")
+		outputPath = command.String("output", "", "Node dependency SBOM")
 	case "materialize":
 		sourceCommit = command.String("source-commit", "", "exact source commit")
 		outputPath = command.String("output", "", "publication output directory")
