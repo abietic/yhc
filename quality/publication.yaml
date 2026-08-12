@@ -1552,6 +1552,16 @@ privacy:
       rule_id: high-entropy-token
       match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
       purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
+      line: 48
+      rule_id: high-entropy-token
+      match_sha256: 5c7f3faa3f5b4d30c946147bc4c8ee762e85b971b12ee28f07d5643f5d3c7f90
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
+      line: 48
+      rule_id: high-entropy-token
+      match_sha256: a275fe1dc3d49fb81622f9dc95948a6a6d610de3b82b5cb88e188d6be3c96f50
+      purpose: documentation-example
     - path: "docs/superpowers/specs/2026-08-07-agent-runtime-instruction-freshness-design.md"
       line: 97
       rule_id: high-entropy-token
