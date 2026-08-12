@@ -17,7 +17,7 @@
     "electron": "41.10.4",
     "electron-builder": "26.15.6"
   },
-  "build": {
+    "build": {
     "appId": "com.abietic.yhc.desktop",
     "productName": "YHC",
     "icon": "assets/icon.png",
@@ -29,10 +29,35 @@
       "preload.cjs",
       "package.json"
     ],
+    "afterPack": "scripts/verify_packaged_notices.cjs",
     "extraResources": [
       {
         "from": "../internal/webui/assets",
         "to": "webui"
+      },
+      {
+        "from": "../LICENSE",
+        "to": "licenses/YHC.LICENSE"
+      },
+      {
+        "from": "../NOTICE",
+        "to": "licenses/YHC.NOTICE"
+      },
+      {
+        "from": "../internal/webui/assets/vendor/marked.LICENSE.txt",
+        "to": "licenses/marked.LICENSE.txt"
+      },
+      {
+        "from": "../internal/webui/assets/vendor/marked.NOTICE.txt",
+        "to": "licenses/marked.NOTICE.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "licenses/electron.LICENSE"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "licenses/electron-third-party.LICENSES.html"
       }
     ],
     "mac": {

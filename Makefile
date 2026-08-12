@@ -158,6 +158,7 @@ desktop-check: desktop-test
 	node --check desktop/request.cjs
 	node --check desktop/main.cjs
 	node --check desktop/preload.cjs
+	node --check desktop/scripts/verify_packaged_notices.cjs
 	node --check internal/webui/assets/activity.mjs
 	node --check internal/webui/assets/app.mjs
 	node --check internal/webui/assets/catalog.mjs

@@ -27,6 +27,12 @@ internal/webui/assets/vendor/marked.NOTICE.txt. Marked is third-party
 material; it is not covered by the Apache-2.0 license for YHC-owned
 expression.
 
+Packaged Desktop artifacts include the pinned Electron runtime. Electron's MIT
+license and the Chromium third-party license collection shipped by that exact
+runtime are retained under `resources/licenses/` together with the YHC and
+Marked license/notice material. Electron Builder is a build-time development
+dependency and is not bundled into the application runtime.
+
 Contributor Covenant
 --------------------
 

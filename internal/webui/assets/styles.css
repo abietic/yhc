@@ -687,7 +687,8 @@ summary:focus-visible {
   height: 46px;
   margin: auto;
   border-radius: 14px;
-  font-size: 21px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .empty h2 {

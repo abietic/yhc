@@ -177,6 +177,77 @@ func TestAttachTurnCoalescesAndReplaysReceipt(t *testing.T) {
 	_ = replay.Body.Close()
 }
 
+func TestAttachTurnCountsConcurrentSessionCreationAgainstCapacity(t *testing.T) {
+	catalogDir, root := t.TempDir(), t.TempDir()
+	catalog := filepath.Join(catalogDir, "roots.json")
+	id := "23232323-2323-4232-8232-232323232323"
+	transcriptDir := filepath.Join(root, ".yhc", "transcripts")
+	writeDurableSession(t, transcriptDir, id, root, "saved", "main")
+	if err := enginesession.RegisterSessionRoot(catalog, root, transcriptDir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	server, err := New(Config{
+		Token:              "test-token",
+		MaxSessions:        1,
+		SessionCatalogPath: catalog,
+		DiscoveryCWD:       catalogDir,
+		ValidateResume:     func(context.Context, EngineOptions) error { return nil },
+		Factory: func(_ context.Context, input EngineOptions) (SessionEngine, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+			}
+			<-release
+			return newFakeSessionEngine(input, false), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(server.Handler())
+	defer httpServer.Close()
+	defer shutdownTestServer(t, server)
+	workspace := registerWorkspace(t, httpServer.URL, "test-token", t.TempDir())
+	created := make(chan bufferedJSONResponse, 1)
+	go func() {
+		created <- doJSONBuffered(
+			httpServer.URL+"/v1/sessions",
+			"test-token",
+			http.MethodPost,
+			map[string]string{"workspace_handle": workspace.WorkspaceHandle},
+		)
+	}()
+	<-started
+
+	attached := doJSON(
+		t,
+		httpServer.URL+"/v1/durable-sessions/"+id+"/attach-turn",
+		"test-token",
+		http.MethodPost,
+		AttachTurnRequest{Prompt: "resume", ClientTurnID: "24242424-2424-4242-8242-242424242424"},
+	)
+	defer attached.Body.Close()
+	assertAttachError(t, attached, http.StatusTooManyRequests, "session_limit")
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("factory calls while create reserves capacity = %d, want 1", got)
+	}
+
+	close(release)
+	select {
+	case response := <-created:
+		if response.err != nil {
+			t.Fatal(response.err)
+		}
+		if response.statusCode != http.StatusCreated {
+			t.Fatalf("create after release = %d: %s", response.statusCode, response.body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("create did not complete after factory release")
+	}
+}
+
 func TestAttachTurnConflicts(t *testing.T) {
 	server, base, id := attachTestServer(t)
 	defer shutdownTestServer(t, server)

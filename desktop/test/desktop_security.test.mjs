@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
 import test from 'node:test';
+
+const require = createRequire(import.meta.url);
+const {
+  REQUIRED_LICENSE_FILES,
+  resourcesDirectory,
+  verifyPackagedNotices,
+} = require('../scripts/verify_packaged_notices.cjs');
 
 const mainPath = new URL('../main.cjs', import.meta.url);
 const packagePath = new URL('../package.json', import.meta.url);
@@ -34,7 +45,14 @@ test('platform package resources match each staged desktop backend name', async 
 
   assert.deepEqual(build.extraResources, [
     { from: '../internal/webui/assets', to: 'webui' },
+    { from: '../LICENSE', to: 'licenses/YHC.LICENSE' },
+    { from: '../NOTICE', to: 'licenses/YHC.NOTICE' },
+    { from: '../internal/webui/assets/vendor/marked.LICENSE.txt', to: 'licenses/marked.LICENSE.txt' },
+    { from: '../internal/webui/assets/vendor/marked.NOTICE.txt', to: 'licenses/marked.NOTICE.txt' },
+    { from: 'node_modules/electron/dist/LICENSE', to: 'licenses/electron.LICENSE' },
+    { from: 'node_modules/electron/dist/LICENSES.chromium.html', to: 'licenses/electron-third-party.LICENSES.html' },
   ]);
+  assert.equal(build.afterPack, 'scripts/verify_packaged_notices.cjs');
   assert.deepEqual(build.mac.extraResources, [
     { from: 'resources/bin/yhc', to: 'bin/yhc' },
   ]);
@@ -46,6 +64,34 @@ test('platform package resources match each staged desktop backend name', async 
   ]);
   assert.match(makefile, /desktop-stage-windows-amd64:[^\n]*yhc\.exe/);
   assert.match(makefile, /\$\(DESKTOP_STAGE_DIR\)\/yhc\.exe/);
+});
+
+test('packaged artifact retains project, Marked, Electron, and Chromium license material', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-package-notices-'));
+  try {
+    const linuxContext = { electronPlatformName: 'linux', appOutDir: root };
+    const licenses = path.join(resourcesDirectory(linuxContext), 'licenses');
+    fs.mkdirSync(licenses, { recursive: true });
+    for (const filename of REQUIRED_LICENSE_FILES) {
+      fs.writeFileSync(path.join(licenses, filename), 'retained');
+    }
+    assert.doesNotThrow(() => verifyPackagedNotices(linuxContext));
+
+    fs.writeFileSync(path.join(licenses, 'electron.LICENSE'), '');
+    assert.throws(() => verifyPackagedNotices(linuxContext), /invalid: electron\.LICENSE/);
+
+    const macContext = {
+      electronPlatformName: 'darwin',
+      appOutDir: root,
+      packager: { appInfo: { productFilename: 'YHC' } },
+    };
+    assert.equal(
+      resourcesDirectory(macContext),
+      path.join(root, 'YHC.app', 'Contents', 'Resources'),
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('preload exposes bounded provider setup without a secret read capability', async () => {

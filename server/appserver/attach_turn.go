@@ -150,7 +150,7 @@ func (s *Server) handleAttachTurn(w http.ResponseWriter, r *http.Request) {
 		s.waitAttachFlight(w, r, flight)
 		return
 	}
-	if len(s.sessions)+len(s.activating) >= s.maxSessions {
+	if s.sessionOccupancyLocked() >= s.maxSessions {
 		s.mu.Unlock()
 		writeError(w, http.StatusTooManyRequests, "session_limit", "app-server session limit reached")
 		return

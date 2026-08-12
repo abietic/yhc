@@ -98,62 +98,62 @@ privacy:
         match_sha256: 6b92323c3a3f154c0a30cc602002b87ff41486d6cba571162e1bae16d7761997
         purpose: build-metadata
       - path: Makefile
-        line: 205
+        line: 206
         rule_id: high-entropy-token
         match_sha256: be5a952a6bf7286e30dbcf02b692f61f9eda1e48315ea565d19a20d171b5efa4
         purpose: build-metadata
       - path: Makefile
-        line: 206
+        line: 207
         rule_id: high-entropy-token
         match_sha256: 08bf8be3232a88279a98d478ee129562e25717876c4971f05c2f1cd5b1ce86cf
         purpose: build-metadata
       - path: Makefile
-        line: 206
+        line: 207
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 206
+        line: 207
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 212
+        line: 213
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 212
+        line: 213
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 235
+        line: 236
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 235
+        line: 236
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 248
+        line: 249
         rule_id: high-entropy-token
         match_sha256: d2e744ec70d978e984e880c92094942b9d29bffedd0d0f76ec3544a516317b7d
         purpose: build-metadata
       - path: Makefile
-        line: 268
+        line: 269
         rule_id: credential-assignment
         match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
         purpose: build-metadata
       - path: Makefile
-        line: 278
+        line: 279
         rule_id: credential-assignment
         match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
         purpose: build-metadata
       - path: Makefile
-        line: 280
+        line: 281
         rule_id: credential-assignment
         match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
         purpose: build-metadata
@@ -4108,17 +4108,12 @@ privacy:
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 249
-        rule_id: bearer-token
-        match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
-        purpose: synthetic-security-fixture
-      - path: server/appserver/attach_turn_test.go
-        line: 308
+        line: 193
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 330
+        line: 320
         rule_id: bearer-token
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
@@ -4133,52 +4128,62 @@ privacy:
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 449
+        line: 450
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 475
+        line: 472
         rule_id: bearer-token
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 507
+        line: 520
+        rule_id: credential-assignment
+        match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
+        purpose: synthetic-security-fixture
+      - path: server/appserver/attach_turn_test.go
+        line: 546
         rule_id: bearer-token
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 530
+        line: 578
+        rule_id: bearer-token
+        match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
+        purpose: synthetic-security-fixture
+      - path: server/appserver/attach_turn_test.go
+        line: 601
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 580
+        line: 651
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 645
+        line: 716
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 698
+        line: 769
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 748
+        line: 819
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 870
+        line: 941
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture
       - path: server/appserver/attach_turn_test.go
-        line: 980
+        line: 1051
         rule_id: credential-assignment
         match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
         purpose: synthetic-security-fixture

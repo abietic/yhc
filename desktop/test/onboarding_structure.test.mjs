@@ -6,6 +6,9 @@ const asset = (name) => new URL(`../../internal/webui/assets/${name}`, import.me
 
 test('renderer exposes a semantic Desktop provider setup and reachable history', async () => {
   const html = await readFile(asset('index.html'), 'utf8');
+  assert.match(html, /class="mark"[^>]*>Y<\/span>/);
+  assert.match(html, /class="empty-mark"[^>]*>YHC<\/span>/);
+  assert.doesNotMatch(html, /class="(?:empty-)?mark"[^>]*>E<\/span>/);
   assert.match(html, /id="provider-settings"/);
   assert.match(html, /id="toggle-session-history"/);
   assert.match(html, /<dialog id="provider-dialog"/);
