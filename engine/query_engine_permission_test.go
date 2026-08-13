@@ -12,6 +12,7 @@ import (
 
 	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/engine/containment"
+	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/tools"
 	"github.com/cloudwego/eino/components/model"
@@ -274,6 +275,117 @@ func TestP512CriticalPathDontAskNeverInvokesInteraction(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestP512PreToolRewriteRestartsPermissionAuthority(t *testing.T) {
+	newEngine := func(
+		t *testing.T,
+		prompt PermissionPromptFn,
+	) *QueryEngine {
+		t.Helper()
+		selection, err := NewSandboxSelection(
+			containment.ProfileWorkspaceWrite,
+			containment.SelectionDefault,
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eng := NewQueryEngine(QueryEngineConfig{
+			CWD:               t.TempDir(),
+			CommandEntrypoint: commands.EntrypointTUI,
+			PermissionMode:    permission.ModeAuto,
+			SandboxSelection:  selection,
+			PermissionPrompt:  prompt,
+		})
+		t.Cleanup(eng.Close)
+		return eng
+	}
+	executeRewrite := func(
+		t *testing.T,
+		eng *QueryEngine,
+		updated map[string]any,
+		executions *atomic.Int32,
+	) *toolExecutionOutcome {
+		t.Helper()
+		hookExecutor := hooks.NewExecutor()
+		hookExecutor.RegisterPreTool(func(
+			context.Context,
+			string,
+			string,
+			map[string]any,
+		) *hooks.PreToolHookResult {
+			return &hooks.PreToolHookResult{UpdatedInput: updated}
+		})
+		return executeToolCall(
+			context.Background(),
+			QueryParams{
+				ToolRegistry: eng.toolRegistry,
+				CanUseTool:   eng.wrappedCanUseTool,
+				ToolExecutor: func(_ context.Context, _ string, input string) (string, error) {
+					executions.Add(1)
+					return input, nil
+				},
+			},
+			hookExecutor,
+			&ToolUseContext{Options: &ToolUseOptions{PermissionMode: permission.ModeAuto}},
+			&schema.ToolCall{
+				ID: "rewrite-call",
+				Function: schema.FunctionCall{
+					Name: "Bash", Arguments: `{"command":"git status --short"}`,
+				},
+			},
+			nil,
+		)
+	}
+
+	t.Run("routine to critical requires constrained live decision", func(t *testing.T) {
+		var prompts atomic.Int32
+		var executions atomic.Int32
+		eng := newEngine(t, func(_ context.Context, request PermissionPromptRequest) PermissionInteractionResult {
+			prompts.Add(1)
+			if request.DecisionConstraint != PermissionAllowOnceOnly {
+				t.Fatalf("rewrite constraint = %q", request.DecisionConstraint)
+			}
+			return PermissionInteractionResult{Decision: PermissionDeny}
+		})
+		outcome := executeRewrite(t, eng, map[string]any{"command": "rm -f /"}, &executions)
+		if outcome == nil || outcome.Result == nil || !p221bMessageIsError(outcome.Result) ||
+			prompts.Load() != 1 || executions.Load() != 0 {
+			t.Fatalf("critical rewrite outcome=%#v prompts=%d executions=%d", outcome, prompts.Load(), executions.Load())
+		}
+	})
+
+	t.Run("routine to invalid stops before permission", func(t *testing.T) {
+		var prompts atomic.Int32
+		var executions atomic.Int32
+		eng := newEngine(t, func(context.Context, PermissionPromptRequest) PermissionInteractionResult {
+			prompts.Add(1)
+			return PermissionInteractionResult{Decision: PermissionAllowOnce}
+		})
+		outcome := executeRewrite(t, eng, map[string]any{}, &executions)
+		if outcome == nil || outcome.Result == nil || !p221bMessageIsError(outcome.Result) ||
+			prompts.Load() != 0 || executions.Load() != 0 {
+			t.Fatalf("invalid rewrite outcome=%#v prompts=%d executions=%d", outcome, prompts.Load(), executions.Load())
+		}
+	})
+
+	t.Run("routine to routine receives a fresh proof-bound admission", func(t *testing.T) {
+		var prompts atomic.Int32
+		var executions atomic.Int32
+		eng := newEngine(t, func(context.Context, PermissionPromptRequest) PermissionInteractionResult {
+			prompts.Add(1)
+			return PermissionInteractionResult{Decision: PermissionAllowOnce}
+		})
+		if eng.ExecutionBindingMatrix().Guest().Availability() != containment.BindingAvailable {
+			t.Skip("complete Darwin Guest proof is unavailable")
+		}
+		outcome := executeRewrite(t, eng, map[string]any{"command": "go test ./engine"}, &executions)
+		if outcome == nil || outcome.Result == nil || p221bMessageIsError(outcome.Result) ||
+			prompts.Load() != 0 || executions.Load() != 1 {
+			t.Fatalf("routine rewrite outcome=%#v prompts=%d executions=%d", outcome, prompts.Load(), executions.Load())
+		}
+	})
 }
 
 func TestP512ContainedAutoBashDispatch(t *testing.T) {
