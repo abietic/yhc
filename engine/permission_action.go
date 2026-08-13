@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/tools"
 )
@@ -55,7 +56,31 @@ type PermissionActionDescriptor struct {
 	PlanRevision     uint64
 	PlanFileIdentity string
 	PolicySnapshotID string
+
+	ExecutionPolicyDigest         string
+	ExecutionBindingDigest        string
+	ExecutionProfile              containment.Profile
+	ExecutionState                containment.State
+	ExecutionAdapter              containment.AdapterFamily
+	ExecutionNetwork              containment.NetworkMode
+	CredentialMode                containment.CredentialMode
+	ExecutionAvailability         containment.BindingAvailability
+	ExecutionReasonCode           containment.ReasonCode
+	AdapterAxes                   containment.EnforcementAxes
+	RuntimeAxes                   containment.EnforcementAxes
+	EnforcementAxes               containment.EnforcementAxes
+	ExecutionCapabilityGeneration string
+	GuestProcess                  bool
+	WorkingDirIdentity            containment.RootIdentity
+	admission                     permissionAdmissionKind
 }
+
+type permissionAdmissionKind uint8
+
+const (
+	permissionAdmissionNone permissionAdmissionKind = iota
+	permissionAdmissionContainedAutoBash
+)
 
 type preparedToolInput struct {
 	resolution    tools.ToolResolution
@@ -287,6 +312,46 @@ func (e *QueryEngine) buildPermissionActionDescriptor(
 		}
 	}
 	policySnapshot := e.effectivePolicySnapshot(toolCtx)
+	var executionIdentity containment.ExecutionIdentity
+	bindGuestIdentity := prepared.resolution.CanonicalName == "Bash" &&
+		capabilities.Declared &&
+		capabilities.Origin == tools.ToolOriginBuiltin &&
+		capabilities.ActionKind == tools.ToolActionShell
+	if bindGuestIdentity {
+		hasShellOwner := e.shellManager != nil
+		hasBindingOwner := e.executionBindings != nil &&
+			e.executionBindings.Guest() != nil
+		if hasShellOwner != hasBindingOwner {
+			return PermissionActionDescriptor{}, fmt.Errorf(
+				"permission action Guest execution identity is unavailable",
+			)
+		}
+		if hasShellOwner {
+			var executionErr error
+			executionIdentity, executionErr = e.shellManager.GuestExecutionIdentity()
+			if executionErr != nil {
+				return PermissionActionDescriptor{}, fmt.Errorf(
+					"permission action Guest execution identity: %w",
+					executionErr,
+				)
+			}
+			matrixIdentity, matrixErr := containment.ExecutionIdentityFor(
+				e.executionBindings.Guest(),
+				e.shellManager.GuestExecutionProof(),
+			)
+			if matrixErr != nil || executionIdentity != matrixIdentity {
+				if matrixErr != nil {
+					return PermissionActionDescriptor{}, fmt.Errorf(
+						"permission action Guest execution binding: %w",
+						matrixErr,
+					)
+				}
+				return PermissionActionDescriptor{}, fmt.Errorf(
+					"permission action Guest execution binding changed",
+				)
+			}
+		}
+	}
 	return PermissionActionDescriptor{
 		RequestedToolName:    strings.TrimSpace(requestedToolName),
 		CanonicalToolName:    prepared.resolution.CanonicalName,
@@ -306,28 +371,43 @@ func (e *QueryEngine) buildPermissionActionDescriptor(
 			impl,
 			capabilities,
 		),
-		Network:                  capabilities.Network,
-		Child:                    capabilities.Child,
-		Dynamic:                  capabilities.Dynamic,
-		RequiresUserInteraction:  capabilities.RequiresUserInteraction,
-		ShellComplete:            capabilities.ShellComplete,
-		SchemaValidated:          true,
-		CustomValidationComplete: true,
-		Path:                     path,
-		PathWithinRoots:          pathWithinRoots,
-		WorkingRoots:             workingRoots,
-		CWD:                      e.config.CWD,
-		RootSessionID:            e.permissionRootSessionID,
-		SessionID:                sessionID,
-		ThreadID:                 threadID,
-		AgentID:                  agentID,
-		Entrypoint:               string(e.config.CommandEntrypoint),
-		Mode:                     mode,
-		PlanActive:               mode == permission.ModePlan || toolContextPlanActive(toolCtx),
-		PlanPhase:                plan.Phase,
-		PlanRevision:             plan.Revision,
-		PlanFileIdentity:         plan.PlanFileIdentity,
-		PolicySnapshotID:         policySnapshot.ID(),
+		Network:                       capabilities.Network,
+		Child:                         capabilities.Child,
+		Dynamic:                       capabilities.Dynamic,
+		RequiresUserInteraction:       capabilities.RequiresUserInteraction,
+		ShellComplete:                 capabilities.ShellComplete,
+		SchemaValidated:               true,
+		CustomValidationComplete:      true,
+		Path:                          path,
+		PathWithinRoots:               pathWithinRoots,
+		WorkingRoots:                  workingRoots,
+		CWD:                           e.config.CWD,
+		RootSessionID:                 e.permissionRootSessionID,
+		SessionID:                     sessionID,
+		ThreadID:                      threadID,
+		AgentID:                       agentID,
+		Entrypoint:                    string(e.config.CommandEntrypoint),
+		Mode:                          mode,
+		PlanActive:                    mode == permission.ModePlan || toolContextPlanActive(toolCtx),
+		PlanPhase:                     plan.Phase,
+		PlanRevision:                  plan.Revision,
+		PlanFileIdentity:              plan.PlanFileIdentity,
+		PolicySnapshotID:              policySnapshot.ID(),
+		ExecutionPolicyDigest:         executionIdentity.PolicyDigest,
+		ExecutionBindingDigest:        executionIdentity.BindingDigest,
+		ExecutionProfile:              executionIdentity.Profile,
+		ExecutionState:                executionIdentity.State,
+		ExecutionAdapter:              executionIdentity.Adapter,
+		ExecutionNetwork:              executionIdentity.Network,
+		CredentialMode:                executionIdentity.CredentialMode,
+		ExecutionAvailability:         executionIdentity.Availability,
+		ExecutionReasonCode:           executionIdentity.ReasonCode,
+		AdapterAxes:                   executionIdentity.AdapterAxes,
+		RuntimeAxes:                   executionIdentity.RuntimeAxes,
+		EnforcementAxes:               executionIdentity.Enforced,
+		ExecutionCapabilityGeneration: executionIdentity.CapabilityGeneration,
+		GuestProcess:                  executionIdentity.ProcessClass == containment.ProcessClassGuest,
+		WorkingDirIdentity:            executionIdentity.Root,
 	}, nil
 }
 
@@ -379,7 +459,104 @@ func samePermissionActionAuthorityBinding(
 		initial.PlanRevision == current.PlanRevision &&
 		initial.PlanFileIdentity == current.PlanFileIdentity &&
 		initial.PolicySnapshotID == current.PolicySnapshotID &&
+		initial.ExecutionPolicyDigest == current.ExecutionPolicyDigest &&
+		initial.ExecutionBindingDigest == current.ExecutionBindingDigest &&
+		initial.ExecutionProfile == current.ExecutionProfile &&
+		initial.ExecutionState == current.ExecutionState &&
+		initial.ExecutionAdapter == current.ExecutionAdapter &&
+		initial.ExecutionNetwork == current.ExecutionNetwork &&
+		initial.CredentialMode == current.CredentialMode &&
+		initial.ExecutionAvailability == current.ExecutionAvailability &&
+		initial.ExecutionReasonCode == current.ExecutionReasonCode &&
+		initial.AdapterAxes == current.AdapterAxes &&
+		initial.RuntimeAxes == current.RuntimeAxes &&
+		initial.EnforcementAxes == current.EnforcementAxes &&
+		initial.ExecutionCapabilityGeneration == current.ExecutionCapabilityGeneration &&
+		initial.GuestProcess == current.GuestProcess &&
+		initial.WorkingDirIdentity == current.WorkingDirIdentity &&
 		slices.Equal(initial.WorkingRoots, current.WorkingRoots)
+}
+
+const containedAutoBashAxes = containment.AxisFilesystemRead |
+	containment.AxisFilesystemWrite |
+	containment.AxisNetworkDenied |
+	containment.AxisRootIdentity |
+	containment.AxisDescendantConfinement |
+	containment.AxisDescendantCleanup |
+	containment.AxisWallTime |
+	containment.AxisOutput
+
+const containedAutoBashAdapterAxes = containment.AxisFilesystemRead |
+	containment.AxisFilesystemWrite |
+	containment.AxisNetworkDenied |
+	containment.AxisRootIdentity |
+	containment.AxisDescendantConfinement
+
+const containedAutoBashRuntimeAxes = containment.AxisRootIdentity |
+	containment.AxisDescendantCleanup |
+	containment.AxisWallTime |
+	containment.AxisOutput
+
+func completeContainedAutoBashProof(
+	action PermissionActionDescriptor,
+) (bool, string) {
+	switch {
+	case action.Mode != permission.ModeAuto:
+		return false, "contained Bash requires Auto mode"
+	case action.CanonicalToolName != "Bash" ||
+		action.Origin != tools.ToolOriginBuiltin ||
+		action.ActionKind != tools.ToolActionShell:
+		return false, "contained Bash requires canonical built-in Bash"
+	case !action.Registered || !action.Enabled || !action.Selected ||
+		!action.CapabilitiesDeclared || !action.SchemaValidated ||
+		!action.CustomValidationComplete:
+		return false, "contained Bash action is incomplete"
+	case !action.GuestProcess:
+		return false, "contained Bash requires Guest execution"
+	case action.ExecutionAvailability != containment.BindingAvailable ||
+		action.ExecutionProfile != containment.ProfileWorkspaceWrite ||
+		action.ExecutionState != containment.StateDegraded ||
+		action.ExecutionAdapter != containment.AdapterDarwinSeatbelt ||
+		action.ExecutionNetwork != containment.NetworkDenied ||
+		action.CredentialMode != containment.CredentialAmbientEnvironment:
+		return false, "contained Bash Guest binding is unavailable"
+	case action.ExecutionPolicyDigest == "" ||
+		action.ExecutionBindingDigest == "" ||
+		action.ExecutionCapabilityGeneration == "":
+		return false, "contained Bash Guest identity is incomplete"
+	case action.AdapterAxes != containedAutoBashAdapterAxes ||
+		action.RuntimeAxes != containedAutoBashRuntimeAxes ||
+		action.EnforcementAxes != containedAutoBashAxes:
+		return false, "contained Bash Guest proof axes are incomplete"
+	case action.WorkingDirIdentity.Path == "" ||
+		action.WorkingDirIdentity.Device == 0 ||
+		action.WorkingDirIdentity.Inode == 0:
+		return false, "contained Bash Guest root identity is incomplete"
+	default:
+		return true, ""
+	}
+}
+
+func permissionActionWithExecutionIdentity(
+	action PermissionActionDescriptor,
+	identity containment.ExecutionIdentity,
+) PermissionActionDescriptor {
+	action.ExecutionPolicyDigest = identity.PolicyDigest
+	action.ExecutionBindingDigest = identity.BindingDigest
+	action.ExecutionProfile = identity.Profile
+	action.ExecutionState = identity.State
+	action.ExecutionAdapter = identity.Adapter
+	action.ExecutionNetwork = identity.Network
+	action.CredentialMode = identity.CredentialMode
+	action.ExecutionAvailability = identity.Availability
+	action.ExecutionReasonCode = identity.ReasonCode
+	action.AdapterAxes = identity.AdapterAxes
+	action.RuntimeAxes = identity.RuntimeAxes
+	action.EnforcementAxes = identity.Enforced
+	action.ExecutionCapabilityGeneration = identity.CapabilityGeneration
+	action.GuestProcess = identity.ProcessClass == containment.ProcessClassGuest
+	action.WorkingDirIdentity = identity.Root
+	return action
 }
 
 func permissionActionMatchesPreparedInput(
