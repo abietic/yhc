@@ -1763,7 +1763,7 @@ privacy:
         match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
         purpose: documentation-example
       - path: docs/superpowers/plans/2026-08-07-p51-2-auto-containment-admission.md
-        line: 16
+        line: 15
         rule_id: high-entropy-token
         match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
         purpose: documentation-example
@@ -1931,6 +1931,51 @@ privacy:
         line: 50
         rule_id: high-entropy-token
         match_sha256: a275fe1dc3d49fb81622f9dc95948a6a6d610de3b82b5cb88e188d6be3c96f50
+        purpose: documentation-example
+      - path: docs/superpowers/plans/README.md
+        line: 50
+        rule_id: high-entropy-token
+        match_sha256: c85e6b1dba17abc78857bd855426c0e10970f5fc80123b6f0cda7e8287e612dc
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 68
+        rule_id: home-path
+        match_sha256: 8ef1db4cfe295b8cb1ffefb5359f9b29f89e544883e1ccda102e67ec3850cf4d
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 320
+        rule_id: high-entropy-token
+        match_sha256: b955086022f7dfe0762b9a7ff04f425386e754ca7dbb039342b9417ad21e654b
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 475
+        rule_id: high-entropy-token
+        match_sha256: ab3bb5338e537d449f09fa253739cf02527b564e85e6b568b1ff02062ad821fc
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 839
+        rule_id: high-entropy-token
+        match_sha256: 5509f8201c589ff07ac9245a212a8c81ad00e2a1bf8ac8062f76790ddc77f48b
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 840
+        rule_id: high-entropy-token
+        match_sha256: bd0977010c61f17dbe51f925c6afa1147821ff14d04c9afbd5e0040e70a7f7ef
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 841
+        rule_id: high-entropy-token
+        match_sha256: ab3bb5338e537d449f09fa253739cf02527b564e85e6b568b1ff02062ad821fc
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 842
+        rule_id: high-entropy-token
+        match_sha256: a73928d5a3f2e127dd9354b5b0548122ed738d28501f4958d9994c369c545c12
+        purpose: documentation-example
+      - path: docs/superpowers/plans/2026-08-13-proof-bound-auto-bash-forward-port.md
+        line: 842
+        rule_id: high-entropy-token
+        match_sha256: f0387378e043584805ad9e4ed1766d6eb7184db45be93a22cb2d219f562e8b37
         purpose: documentation-example
       - path: docs/superpowers/specs/2026-08-07-agent-runtime-instruction-freshness-design.md
         line: 97

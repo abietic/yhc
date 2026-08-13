@@ -1,11 +1,10 @@
 # Auto Permission Containment Admission Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `$migration-slice` only after
-> the root queue admits P51.2, then use `$iteration-workflow` for test-first
-> execution, diff-bound verification, and closeout.
+> **Historical note:** this candidate plan is superseded by the public
+> Desktop-aware proof-bound Auto Bash forward-port plan.
 
-**Status:** active-plan
-**Queue state:** pending independent intake; not present in the root queue
+**Status:** historical
+**Queue state:** superseded by the public Desktop-aware forward-port plan
 **Created:** 2026-08-07
 **Source snapshot:** `origin/master` at
 `de74294b29f40d19bfd0e37f09889bd6f8037d90`
