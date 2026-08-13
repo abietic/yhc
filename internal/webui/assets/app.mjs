@@ -35,6 +35,10 @@ import {
   providerSetupProjection,
   shouldDeferWorkspaceForProvider,
 } from './provider_setup.mjs';
+import {
+  activateCreatedSession,
+  createSessionCreationGate,
+} from './session_creation.mjs';
 import { createTransport } from './transport.mjs';
 import { interactionViewModel } from './view_models.mjs';
 
@@ -69,6 +73,7 @@ const pendingWorkspace = createPendingWorkspaceRetry(createSessionForWorkspace);
 const durableHistoryLoader = createDurableHistoryLoader((input) => api(
   'durableTranscriptPage', input,
 ));
+const sessionCreation = createSessionCreationGate(createSession, () => render());
 
 function timelinePosition() {
   return {
@@ -215,6 +220,7 @@ function render() {
   const current = activeSession(state);
   renderSheets();
   renderProviderSetup();
+  renderSessionCreationControls();
   renderSessionList();
   renderActivity(current);
   renderReview(current);
@@ -274,6 +280,15 @@ function render() {
   } else {
     timeline.replaceChildren(...current.messages.map(renderMessage));
   }
+}
+
+function renderSessionCreationControls() {
+  const creating = sessionCreation.busy();
+  const button = $('new-session');
+  const label = button.querySelector('span');
+  button.disabled = creating;
+  button.setAttribute('aria-busy', String(creating));
+  if (label) label.textContent = creating ? 'Creating session…' : 'New session';
 }
 
 function option(value, label, selected = false, disabled = false) {
@@ -408,6 +423,11 @@ function renderEmptyState() {
     : 'Configure provider';
   providerButton.className = providerSetup.launchReady ? 'quiet' : 'primary';
   workspaceButton.hidden = surface === 'web';
+  workspaceButton.disabled = sessionCreation.busy();
+  workspaceButton.setAttribute('aria-busy', String(sessionCreation.busy()));
+  workspaceButton.textContent = sessionCreation.busy()
+    ? 'Creating session…'
+    : 'Open workspace';
   workspaceButton.className = providerSetup.launchReady || providerSetup.hostGuidance
     ? 'primary'
     : 'quiet';
@@ -1341,7 +1361,7 @@ function providerConfigurationFailure(error) {
 
 async function retryAfterProviderSetup() {
   if (pendingWorkspace.pending()) {
-    await pendingWorkspace.retry();
+    await sessionCreation.begin(() => pendingWorkspace.retry());
   }
 }
 
@@ -1392,10 +1412,18 @@ async function createSessionForWorkspace(workspace) {
   const summary = await api('createSession', {
     workspaceHandle: workspace.workspace_handle,
   });
-  await synchronizeSession(summary, '', false);
-  dispatch({ type: 'SESSION_SELECT', id: summary.id }, 'bottom');
-  if (inspectorView === 'review') await loadReview();
-  return summary;
+  return activateCreatedSession(summary, {
+    activate(created) {
+      prepareSessionHydration(created, '', false);
+      dispatch({ type: 'SESSION_SELECT', id: created.id }, 'bottom');
+    },
+    async hydrate(created) {
+      await hydratePreparedSession(created);
+      if (inspectorView === 'review' && state.activeID === created.id) {
+        await loadReview();
+      }
+    },
+  });
 }
 
 async function createSession() {
@@ -1730,30 +1758,43 @@ async function loadTranscript(sessionID, replace = false) {
   }
 }
 
-async function synchronizeSession(summary, draft = '', durable = true) {
+function prepareSessionHydration(summary, draft = '', durable = true) {
   dispatch({
     type: 'SESSION_UPSERT',
     session: {
       ...summary,
+      status: 'restoring',
       draft,
       durable,
       resumable: durable,
       live: true,
     },
   });
+}
+
+async function hydratePreparedSession(summary) {
   try {
     await loadTranscript(summary.id, true);
     const snapshot = await api('snapshot', { sessionID: summary.id });
     dispatch({ type: 'SESSION_SNAPSHOT', id: summary.id, snapshot });
   } catch (error) {
+    const current = state.sessions[summary.id];
     dispatch({
       type: 'SESSION_NOTICE',
       id: summary.id,
+      status: current?.status === 'restoring'
+        ? (summary.status || 'idle')
+        : '',
       notice: `Session restored without complete history: ${error.message}`,
     });
   }
   await loadExecutionSettings(summary.id);
   startStream(summary.id);
+}
+
+async function synchronizeSession(summary, draft = '', durable = true) {
+  prepareSessionHydration(summary, draft, durable);
+  await hydratePreparedSession(summary);
 }
 
 async function restore() {
@@ -2011,7 +2052,7 @@ async function bootstrapApp() {
 
 function beginSessionCreation() {
   if (surface === 'web') return;
-  const creation = createSession();
+  const creation = sessionCreation.begin();
   if (openSheetKind === 'navigation') closeSheet();
   creation.catch(showError);
 }

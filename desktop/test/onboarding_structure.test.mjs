@@ -27,11 +27,35 @@ test('renderer keeps provider key DOM-local and clears it after submit', async (
   assert.match(app, /apiKeyInput\.value = ''/);
   assert.match(app, /executionForDisplay\(session\)/);
   assert.match(app, /createPendingWorkspaceRetry/);
+  assert.match(app, /createSessionCreationGate\(createSession/);
+  assert.match(app, /sessionCreation\.begin\(\)/);
+  assert.match(app, /button\.disabled = creating/);
+  assert.match(app, /workspaceButton\.disabled = sessionCreation\.busy\(\)/);
   assert.match(app, /createDurableHistoryLoader/);
   assert.match(app, /shouldDeferWorkspaceForProvider/);
   assert.match(app, /pendingWorkspace\.defer\(workspace\)/);
   assert.doesNotMatch(app, /state\.(?:provider|setup)[^\n]*(?:apiKey|PROV_API_KEY)/);
   assert.doesNotMatch(app, /localStorage[^\n]*(?:apiKey|provider-api-key|PROV_API_KEY)/);
+});
+
+test('new Desktop sessions activate before target-scoped hydration', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const create = app.slice(
+    app.indexOf('async function createSessionForWorkspace(workspace)'),
+    app.indexOf('async function createSession()'),
+  );
+  const synchronize = app.slice(
+    app.indexOf('function prepareSessionHydration(summary'),
+    app.indexOf('async function restore()'),
+  );
+
+  assert.match(create, /activateCreatedSession\(summary/);
+  assert.match(
+    create,
+    /prepareSessionHydration\(created, '', false\)[\s\S]*?SESSION_SELECT[\s\S]*?hydratePreparedSession\(created\)/,
+  );
+  assert.doesNotMatch(synchronize, /SESSION_SELECT/);
+  assert.match(synchronize, /status: 'restoring'/);
 });
 
 test('WebUI does not retain or solicit absolute workspace paths', async () => {

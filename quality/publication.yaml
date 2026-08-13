@@ -98,62 +98,62 @@ privacy:
         match_sha256: 6b92323c3a3f154c0a30cc602002b87ff41486d6cba571162e1bae16d7761997
         purpose: build-metadata
       - path: Makefile
-        line: 206
+        line: 207
         rule_id: high-entropy-token
         match_sha256: be5a952a6bf7286e30dbcf02b692f61f9eda1e48315ea565d19a20d171b5efa4
         purpose: build-metadata
       - path: Makefile
-        line: 207
+        line: 208
         rule_id: high-entropy-token
         match_sha256: 08bf8be3232a88279a98d478ee129562e25717876c4971f05c2f1cd5b1ce86cf
         purpose: build-metadata
       - path: Makefile
-        line: 207
+        line: 208
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 207
+        line: 208
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 213
+        line: 214
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 213
+        line: 214
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 236
+        line: 237
         rule_id: high-entropy-token
         match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
         purpose: build-metadata
       - path: Makefile
-        line: 236
+        line: 237
         rule_id: high-entropy-token
         match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
         purpose: build-metadata
       - path: Makefile
-        line: 249
+        line: 250
         rule_id: high-entropy-token
         match_sha256: d2e744ec70d978e984e880c92094942b9d29bffedd0d0f76ec3544a516317b7d
         purpose: build-metadata
       - path: Makefile
-        line: 269
+        line: 270
         rule_id: credential-assignment
         match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
         purpose: build-metadata
       - path: Makefile
-        line: 279
+        line: 280
         rule_id: credential-assignment
         match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
         purpose: build-metadata
       - path: Makefile
-        line: 281
+        line: 282
         rule_id: credential-assignment
         match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
         purpose: build-metadata
@@ -1923,12 +1923,12 @@ privacy:
         match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
-        line: 49
+        line: 50
         rule_id: high-entropy-token
         match_sha256: 5c7f3faa3f5b4d30c946147bc4c8ee762e85b971b12ee28f07d5643f5d3c7f90
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
-        line: 49
+        line: 50
         rule_id: high-entropy-token
         match_sha256: a275fe1dc3d49fb81622f9dc95948a6a6d610de3b82b5cb88e188d6be3c96f50
         purpose: documentation-example
@@ -3653,7 +3653,7 @@ privacy:
         match_sha256: 6da19f5057f0dd1085db2213932a52da09a1df6b9194447953db96f7e48663a7
         purpose: synthetic-security-fixture
       - path: internal/webui/assets/app.mjs
-        line: 1352
+        line: 1372
         rule_id: credential-assignment
         match_sha256: 7be5b39a6e1069827d150a278fb65d3c2390f796795f7bb7de3965780d39150c
         purpose: runtime-loopback

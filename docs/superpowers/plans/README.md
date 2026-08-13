@@ -46,6 +46,7 @@
 | [`2026-08-07-closed-gap-traceability.md`](2026-08-07-closed-gap-traceability.md) | [Closed Gap Traceability design](../specs/2026-08-07-closed-gap-traceability-design.md) | Executed and retained as closeout evidence |
 | [`2026-08-06-p46-2-observable-failover.md`](2026-08-06-p46-2-observable-failover.md) | [`P46.2`](../../migration/plans/p46-model-failover-repair.md#p462-observable-attempt-discard-and-switch) | Executed and retained as closeout evidence |
 | [`2026-08-06-p46-1-complete-prompt-footprint.md`](2026-08-06-p46-1-complete-prompt-footprint.md) | [`P46.1`](../../migration/plans/p46-model-failover-repair.md#p461-complete-prompt-footprint-admission) | Executed and retained as closeout evidence |
+| [`2026-08-13-desktop-session-creation-activation.md`](2026-08-13-desktop-session-creation-activation.md) | [Desktop Session Creation Activation design](../specs/2026-08-13-desktop-session-creation-activation-design.md) | Active; implementation and focused verification complete, committed-tree and physical acceptance remain |
 | [`2026-08-13-yhc-desktop-workbench-forward-port.md`](2026-08-13-yhc-desktop-workbench-forward-port.md) | [YHC Desktop Workbench Forward-Port design](../specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md) | Active; implementation complete, final committed-tree and physical acceptance remain |
 
 Boundary enforcement and deep defect discovery are implemented. Overall S4

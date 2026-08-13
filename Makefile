@@ -166,6 +166,7 @@ desktop-check: desktop-test
 	node --check internal/webui/assets/markdown.mjs
 	node --check internal/webui/assets/vendor/marked.esm.js
 	node --check internal/webui/assets/provider_setup.mjs
+	node --check internal/webui/assets/session_creation.mjs
 	node --check internal/webui/assets/state.mjs
 	node --check internal/webui/assets/transport.mjs
 	node --check internal/webui/assets/view_models.mjs
