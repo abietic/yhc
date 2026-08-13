@@ -20,6 +20,7 @@
 | [`2026-08-07-closed-gap-traceability-design.md`](2026-08-07-closed-gap-traceability-design.md) | Durable closed-gap-to-history mapping and validation | Approved; implementation plan pending |
 | [`2026-08-07-acp-boundary-remediation-design.md`](2026-08-07-acp-boundary-remediation-design.md) | Five independent ACP v1 boundary repairs and their rollback boundaries | Approved; P48 contract and implementation plans ready |
 | [`2026-08-13-desktop-session-creation-activation-design.md`](2026-08-13-desktop-session-creation-activation-design.md) | Immediate new-session selection, non-focus-stealing background hydration, and explicit single-flight UI admission | Approved; implementation planning pending |
+| [`2026-08-13-proof-bound-auto-bash-forward-port-design.md`](2026-08-13-proof-bound-auto-bash-forward-port-design.md) | Stacked public forward-port of proof-bound ordinary Auto Bash, narrow critical `AllowOnce`, durable constraint propagation, Desktop/AppServer projection, and publication gates | Approved; admission checkpoint active |
 
 These artifacts freeze a reviewed design but do not change current behavior or
 promote migration queue state. Accepted execution order remains owned by
