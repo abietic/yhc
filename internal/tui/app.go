@@ -618,7 +618,7 @@ func (a *App) MakePermissionPromptFn() engine.PermissionPromptFn {
 				requestID: requestID, threadID: threadID, sessionID: request.SessionID,
 				agentID: request.AgentID, planApproval: planApproval, responseCh: responseCh,
 			})
-		} else if request.ToolName == "AskUserQuestion" {
+		} else if request.Kind == engine.PermissionInteractionKindQuestion {
 			a.program.Send(askUserQuestionMsg{
 				requestID: requestID, threadID: threadID, agentID: request.AgentID,
 				input: inputJSON, responseCh: responseCh,
@@ -707,7 +707,7 @@ func permissionInteractionResult(
 	switch response {
 	case PermissionAllow:
 		result := engine.PermissionInteractionResult{Decision: engine.PermissionAllowOnce}
-		if request.ToolName == "AskUserQuestion" && responseData.answerJSON != "" {
+		if request.Kind == engine.PermissionInteractionKindQuestion && responseData.answerJSON != "" {
 			_ = jsonPkg.Unmarshal([]byte(responseData.answerJSON), &result.UpdatedInput)
 		}
 		return result
@@ -733,6 +733,7 @@ func (a *App) MakeCanUseToolFn() func(ctx contextPkg.Context, toolName string, i
 	prompt := a.MakePermissionPromptFn()
 	return func(ctx contextPkg.Context, toolName string, input map[string]any, toolCtx *engine.ToolUseContext) (allowed bool, reason string) {
 		request := engine.PermissionPromptRequest{
+			Kind:     permissionPromptKindForTUI(toolName),
 			ToolName: toolName, ToolUseID: engine.ToolUseIDFromContext(ctx), Input: input,
 			SessionScope: "this exact tool input", ToolContext: toolCtx,
 		}
@@ -775,6 +776,13 @@ func (a *App) MakeCanUseToolFn() func(ctx contextPkg.Context, toolName string, i
 			return false, result.Message
 		}
 	}
+}
+
+func permissionPromptKindForTUI(toolName string) string {
+	if strings.EqualFold(strings.TrimSpace(toolName), "AskUserQuestion") {
+		return engine.PermissionInteractionKindQuestion
+	}
+	return engine.PermissionInteractionKindPermission
 }
 
 // MakeRepeatedToolCallPromptFn returns a one-call-only repeated-tool override
@@ -2524,11 +2532,12 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 			}
 			inputJSON, _ := jsonPkg.Marshal(req.Input)
 			kind := threadAttentionPermission
-			if req.Kind == "repeated_tool" {
+			switch req.Kind {
+			case engine.PermissionInteractionKindRepeatedTool:
 				kind = threadAttentionRepeatedTool
-			} else if req.ToolName == "AskUserQuestion" {
+			case engine.PermissionInteractionKindQuestion:
 				kind = threadAttentionQuestion
-			} else if req.ToolName == "ExitPlanMode" {
+			case engine.PermissionInteractionKindPlanApproval:
 				kind = threadAttentionPlan
 			}
 			var responseCh chan PermissionResponse
@@ -2568,6 +2577,9 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 						)
 					}
 				}(engine.PermissionPromptRequest{
+					Kind:         req.Kind,
+					Attempt:      req.Attempt,
+					Source:       req.Source,
 					ToolName:     req.ToolName,
 					ToolUseID:    req.ToolUseID,
 					Input:        req.Input,

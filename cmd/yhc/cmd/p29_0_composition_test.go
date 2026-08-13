@@ -17,9 +17,10 @@ const p290SecretSentinel = "p290-" + "secret-" + "sentinel-7f1834d9"
 
 func TestP290CLIRuntimeCompositionRootsStayUnified(t *testing.T) {
 	files := map[string][]string{
-		"root.go":          {"runTUI", "runPlainREPL", "buildEngineConfig"},
+		"root.go":          {"runTUI", "runPlainREPL", "buildEngineConfig", "buildEngineConfigForCWD"},
 		"headless.go":      {"runHeadless"},
 		"headless_goal.go": {"runHeadlessGoal"},
+		"serve_app.go":     {"runServeApp"},
 	}
 	functions := make(map[string]*ast.FuncDecl)
 	for path, names := range files {
@@ -50,8 +51,14 @@ func TestP290CLIRuntimeCompositionRootsStayUnified(t *testing.T) {
 			t.Fatalf("%s no longer calls buildEngineConfig", entrypoint)
 		}
 	}
-	if !p290FunctionCalls(functions["buildEngineConfig"], "provider", "NewConfiguredRuntime") {
-		t.Fatal("buildEngineConfig no longer owns provider.NewConfiguredRuntime composition")
+	if !p290FunctionCalls(functions["runServeApp"], "", "buildEngineConfigForCWD") {
+		t.Fatal("runServeApp no longer calls the shared CWD-aware engine composition owner")
+	}
+	if !p290FunctionCalls(functions["buildEngineConfig"], "", "buildEngineConfigForCWD") {
+		t.Fatal("buildEngineConfig no longer delegates to the shared CWD-aware composition owner")
+	}
+	if !p290FunctionCalls(functions["buildEngineConfigForCWD"], "provider", "NewConfiguredRuntime") {
+		t.Fatal("buildEngineConfigForCWD no longer owns provider.NewConfiguredRuntime composition")
 	}
 }
 

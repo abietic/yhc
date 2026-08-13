@@ -212,6 +212,34 @@ var schema = "token = synthetic-string-secret"
 	}
 }
 
+func TestScanExpressionMasksOnlyValidatedNodeLockFields(t *testing.T) {
+	resolved := "https://" + "registry.npmjs.org/example/-/example-1.0.0.tgz"
+	repo, _, lock := nodeDependencyFixture(t, resolved, `"integrity":"sha512-YQ=="`)
+	if report, err := scanExpression(context.Background(), Config{}, repo); err != nil || len(report.Findings) != 0 {
+		t.Fatalf("valid structured Node lock scan = report=%#v err=%v", report, err)
+	}
+	contents, err := os.ReadFile(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := strings.Join([]string{"Bearer ", "malicious-", "token-123456"}, "")
+	needle := `"license":"MIT"`
+	replacement := needle + `,"metadata":"` + secret + `"`
+	if err := os.WriteFile(lock, []byte(strings.Replace(string(contents), needle, replacement, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := scanExpression(context.Background(), Config{}, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, finding := range report.Findings {
+		if finding.RuleID == "bearer-token" {
+			return
+		}
+	}
+	t.Fatalf("unknown lockfile field escaped generic scan: %#v", report.Findings)
+}
+
 func TestScanExpressionAllowsDocumentedPublicContactsAndTestSentinels(t *testing.T) {
 	t.Run("allowlists and exact sentinels", func(t *testing.T) {
 		provider := "sk-provider-sentinel-123456"

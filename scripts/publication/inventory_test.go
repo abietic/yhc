@@ -50,6 +50,39 @@ rules:
 	})
 }
 
+func TestInventoryDesktopPublicationRulesAreMutuallyExclusive(t *testing.T) {
+	rules := []PathRule{
+		{ID: "command", Include: []string{"cmd/**"}, Exclude: []string{"cmd/yhc/main.go", "cmd/yhc/cmd/serve_app.go"}},
+		{ID: "command-desktop-serve", Include: []string{"cmd/yhc/cmd/serve_app.go"}},
+		{ID: "internal", Include: []string{"internal/**"}, Exclude: []string{"internal/webui/**"}},
+		{ID: "internal-webui", Include: []string{"internal/webui/**"}, Exclude: []string{"internal/webui/assets/vendor/marked.*"}},
+		{ID: "marked-runtime", Include: []string{"internal/webui/assets/vendor/marked.esm.js"}},
+		{ID: "marked-license-notice", Include: []string{"internal/webui/assets/vendor/marked.LICENSE.txt", "internal/webui/assets/vendor/marked.NOTICE.txt"}},
+		{ID: "server", Include: []string{"server/**"}, Exclude: []string{"server/appserver/**"}},
+		{ID: "server-appserver", Include: []string{"server/appserver/**"}},
+		{ID: "desktop", Include: []string{"desktop/**"}},
+	}
+	for name, want := range map[string]string{
+		"cmd/yhc/cmd/root.go":                             "command",
+		"cmd/yhc/cmd/serve_app.go":                        "command-desktop-serve",
+		"internal/webui/assets/app.mjs":                   "internal-webui",
+		"internal/webui/assets/vendor/marked.esm.js":      "marked-runtime",
+		"internal/webui/assets/vendor/marked.LICENSE.txt": "marked-license-notice",
+		"internal/webui/assets/vendor/marked.NOTICE.txt":  "marked-license-notice",
+		"server/appserver/server.go":                      "server-appserver",
+		"server/other.go":                                 "server",
+		"desktop/package-lock.json":                       "desktop",
+	} {
+		rule, err := matchRule(rules, name)
+		if err != nil {
+			t.Fatalf("match %q: %v", name, err)
+		}
+		if rule.ID != want {
+			t.Fatalf("match %q = %q, want %q", name, rule.ID, want)
+		}
+	}
+}
+
 func TestInventoryRejectsUnresolvedForCheckButReportsItForReview(t *testing.T) {
 	repo := newPublicationRepo(t, map[string]string{"README.md": "public\n"})
 	writePublicationFile(t, repo, "policy.yaml", publicationConfig(`

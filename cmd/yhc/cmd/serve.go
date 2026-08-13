@@ -10,12 +10,12 @@ func newServeCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "serve",
 		Short: "Start a protocol server",
-		Long:  "Start " + identity.ProductName + " as a protocol server. Available protocols: acp, mcp.",
+		Long:  "Start " + identity.ProductName + " as a protocol server. Available protocols: app, acp, mcp.",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return usageErrorf("serve requires a protocol: acp or mcp")
+			return usageErrorf("serve requires a protocol: app, acp, or mcp")
 		},
 	}
-	command.AddCommand(newServeACPCommand(), newServeMCPCommand())
+	command.AddCommand(newServeAppCommand(), newServeACPCommand(), newServeMCPCommand())
 	return command
 }

@@ -430,10 +430,6 @@ func (s *SessionService) ImportLegacyAndResumeInfo(
 	if !confirmLegacyStopped {
 		return nil, session.ErrSessionImportAttestationRequired
 	}
-	target, ok := session.LegacySessionImportTarget(requirement)
-	if !ok {
-		return nil, requirement
-	}
 	userRoots, err := session.DefaultSessionImportUserRoots()
 	if err != nil {
 		return nil, err
@@ -443,21 +439,13 @@ func (s *SessionService) ImportLegacyAndResumeInfo(
 	if snapshot.clock != nil {
 		now = snapshot.clock().UTC()
 	}
-	_, err = session.ImportSessionForResume(ctx, session.ImportRequest{
-		Target:               target,
+	admitted, err := session.ImportDiscoveredLegacySession(ctx, session.ImportDiscoveredLegacySessionRequest{
+		Info:                 info,
+		CatalogPath:          snapshot.catalogPath,
+		LegacyCatalogPath:    snapshot.legacyCatalogPath,
 		UserRoots:            userRoots,
-		ConfirmLegacyStopped: true,
+		ConfirmLegacyStopped: confirmLegacyStopped,
 		Now:                  now,
-	})
-	if err != nil && !errors.Is(err, session.ErrSessionImportAlreadyCommitted) {
-		return nil, err
-	}
-	admitted, err := session.AdmitSessionResume(ctx, session.ResumeAdmissionRequest{
-		SessionID:         target.SessionID,
-		CWD:               target.CWD,
-		CatalogPath:       snapshot.catalogPath,
-		LegacyCatalogPath: snapshot.legacyCatalogPath,
-		UserRoots:         userRoots,
 	})
 	if err != nil {
 		return nil, err

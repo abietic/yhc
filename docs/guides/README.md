@@ -14,6 +14,7 @@ and operating YHC; implementation design belongs in the
 | Goal | Guide |
 |---|---|
 | Build the binary and run a first prompt | [Getting started](getting-started.md) |
+| Use the local Electron workbench | [Desktop workbench](desktop-workbench.md) |
 | Select a provider or understand precedence | [Configuration and providers](configuration-and-providers.md) |
 | Choose TUI, plain, headless, ACP, or MCP mode | [Interaction modes and commands](interaction-modes-and-commands.md) |
 | Define safe unattended tool access | [Permissions and safety](permissions-and-safety.md) |

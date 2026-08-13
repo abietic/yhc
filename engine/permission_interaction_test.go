@@ -18,6 +18,65 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestPermissionInteractionKindUsesExplicitProducerIdentity(t *testing.T) {
+	cases := []struct {
+		name    string
+		request PermissionPromptRequest
+		want    string
+	}{
+		{name: "explicit question", request: PermissionPromptRequest{Kind: PermissionInteractionKindQuestion}, want: PermissionInteractionKindQuestion},
+		{name: "legacy empty defaults", request: PermissionPromptRequest{}, want: PermissionInteractionKindPermission},
+		{name: "legacy ask remains permission", request: PermissionPromptRequest{ToolName: "AskUserQuestion"}, want: PermissionInteractionKindPermission},
+		{name: "explicit plan", request: PermissionPromptRequest{Kind: PermissionInteractionKindPlanApproval, PlanApproval: &PlanApprovalRequest{}}, want: PermissionInteractionKindPlanApproval},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := permissionInteractionKind(tc.request); got != tc.want {
+				t.Fatalf("permissionInteractionKind() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPermissionCoordinatorRejectsInvalidTypedIdentityBeforeEmission(t *testing.T) {
+	tests := []struct {
+		name    string
+		request PermissionPromptRequest
+	}{
+		{name: "unknown kind", request: PermissionPromptRequest{Kind: "future"}},
+		{name: "plan payload on question", request: PermissionPromptRequest{Kind: PermissionInteractionKindQuestion, PlanApproval: &PlanApprovalRequest{}}},
+		{name: "plan without payload", request: PermissionPromptRequest{Kind: PermissionInteractionKindPlanApproval}},
+		{name: "plan with presentation", request: PermissionPromptRequest{Kind: PermissionInteractionKindPlanApproval, PlanApproval: &PlanApprovalRequest{}, Presentation: unavailablePermissionPresentation()}},
+		{name: "repeated wrong source", request: PermissionPromptRequest{Kind: PermissionInteractionKindRepeatedTool, Source: "callback", Attempt: 3}},
+		{name: "repeated wrong attempt", request: PermissionPromptRequest{Kind: PermissionInteractionKindRepeatedTool, Source: "repeated_tool_guard", Attempt: 2}},
+		{name: "ordinary with attempt", request: PermissionPromptRequest{Kind: PermissionInteractionKindPermission, Attempt: 3}},
+		{name: "question with presentation", request: PermissionPromptRequest{Kind: PermissionInteractionKindQuestion, Presentation: unavailablePermissionPresentation()}},
+		{name: "repeated with presentation", request: PermissionPromptRequest{Kind: PermissionInteractionKindRepeatedTool, Source: "repeated_tool_guard", Attempt: 3, Presentation: unavailablePermissionPresentation()}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			coordinator := newPermissionCoordinator(PermissionProjectIdentity{})
+			coordinator.registerEngine("engine")
+			request := test.request
+			request.ToolName = "Tool"
+			request.ToolUseID = "call"
+			var prompted bool
+			var events []QueryEvent
+			result := coordinator.request(
+				context.Background(), "engine", request,
+				func(context.Context, PermissionPromptRequest) PermissionInteractionResult {
+					prompted = true
+					return PermissionInteractionResult{Decision: PermissionAllowAlways}
+				},
+				func(event QueryEvent) { events = append(events, event) }, nil, nil,
+			)
+			if result.Decision != PermissionDeny || prompted || len(events) != 0 || coordinator.PendingCount() != 0 {
+				t.Fatalf("invalid identity escaped: result=%#v prompted=%v events=%#v pending=%d", result, prompted, events, coordinator.PendingCount())
+			}
+		})
+	}
+}
+
 func TestClonePermissionInteractionResultPreservesNilAndFreezesUpdatedInput(
 	t *testing.T,
 ) {

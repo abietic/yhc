@@ -24,7 +24,10 @@ func TestPermissionPromptReporterEmitsCallbackLifecycle(t *testing.T) {
 		t.Fatalf("permission lifecycle = %#v", events)
 	}
 	request := events[0].PermissionRequest
-	if request == nil || request.ToolUseID != "tool-1" || request.ToolName != "Bash" || request.Source != "callback" || request.Message != "approve command" {
+	if request == nil || request.ToolUseID != "tool-1" || request.ToolName != "Bash" ||
+		request.CanonicalToolName != "Bash" || request.Source != "callback" ||
+		request.Kind != PermissionInteractionKindPermission ||
+		request.Message != "approve command" {
 		t.Fatalf("permission request = %#v", request)
 	}
 	input["command"] = "mutated"
@@ -34,6 +37,17 @@ func TestPermissionPromptReporterEmitsCallbackLifecycle(t *testing.T) {
 	resolved := events[1].PermissionResolved
 	if resolved == nil || resolved.ToolUseID != "tool-1" || resolved.Decision != string(permission.DecisionAllow) {
 		t.Fatalf("permission resolution = %#v", resolved)
+	}
+}
+
+func TestPermissionPromptReporterClassifiesAskUserQuestionAtProducer(t *testing.T) {
+	var event QueryEvent
+	ctx := withToolUseID(context.Background(), "question-1")
+	ctx = withPermissionPromptEmitter(ctx, func(received QueryEvent) { event = received })
+	ReportPermissionPromptRequested(ctx, " askuserquestion ", nil, "choose")
+	if event.PermissionRequest == nil || event.PermissionRequest.Kind != PermissionInteractionKindQuestion ||
+		event.PermissionRequest.Source != "callback" || event.PermissionRequest.CanonicalToolName != "askuserquestion" {
+		t.Fatalf("permission request = %#v", event.PermissionRequest)
 	}
 }
 
@@ -69,6 +83,10 @@ func TestExecuteToolCallConnectsInteractiveReporterToYieldStream(t *testing.T) {
 		permissionEvents[1].Type != EventPermissionResolved ||
 		permissionEvents[0].PermissionRequest.ToolUseID != "tool-stream-1" {
 		t.Fatalf("yielded permission lifecycle = %#v", events)
+	}
+	if request := permissionEvents[0].PermissionRequest; request.Kind != PermissionInteractionKindPermission ||
+		request.Source != "callback" || request.CanonicalToolName != "Bash" {
+		t.Fatalf("callback producer identity = %#v", request)
 	}
 	if canonicalProjectionKindCount(
 		events,
@@ -106,7 +124,7 @@ func TestThreadAttentionSnapshotsAreUnresolvedOnlyAndRetainTerminalOwner(t *test
 		event.ParentThreadID = "leader-thread"
 		event.PermissionRequest = &PermissionRequestEvent{
 			ToolName: "AskUserQuestion", ToolUseID: "question-1", Input: map[string]any{"questions": []any{"choose"}},
-			Message: "choose", Source: "callback",
+			Message: "choose", Source: "callback", Kind: PermissionInteractionKindQuestion,
 		}
 	}))
 	apply(threadCatalogEvent("child-thread", "child-turn", 3, EventTerminal, func(event *QueryEvent) {

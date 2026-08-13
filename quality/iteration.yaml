@@ -64,6 +64,36 @@ modules:
     owner_docs: [docs/architecture/capabilities/mcp.md]
     risks: [contract, e2e]
     focused_packages: [./server/mcp]
+  app-server-adapter:
+    priority: 100
+    production_paths:
+      - include: server/appserver/**
+        exclude: [server/appserver/**/*_test.go, server/appserver/**/testdata/**]
+    test_paths: [server/appserver/**/*_test.go, server/appserver/**/testdata/**]
+    packages: [./server/appserver]
+    owner_docs: [docs/superpowers/specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md]
+    risks: [contract, concurrency, e2e, desktop]
+    focused_packages: [./server/appserver]
+  webui-adapter:
+    priority: 100
+    production_paths:
+      - include: internal/webui/**
+        exclude: [internal/webui/**/*_test.go, internal/webui/**/testdata/**]
+    test_paths: [internal/webui/**/*_test.go, internal/webui/**/testdata/**]
+    packages: [./internal/webui]
+    owner_docs: [docs/superpowers/specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md]
+    risks: [desktop]
+    focused_packages: [./internal/webui]
+  desktop-workbench:
+    priority: 100
+    production_paths:
+      - include: desktop/**
+        exclude: [desktop/test/**]
+    test_paths: [desktop/test/**]
+    packages: [./cmd/yhc/cmd]
+    owner_docs: [docs/superpowers/specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md]
+    risks: [desktop]
+    focused_packages: [./cmd/yhc/cmd]
   build-metadata:
     priority: 100
     production_paths:
@@ -140,6 +170,10 @@ risk_packs:
     target: test-e2e
     deep_targets: [test-e2e-deep]
     platforms: [all]
+  desktop:
+    target: desktop-check
+    deep_targets: []
+    platforms: [all]
 
 change_classes:
   governance:
@@ -159,7 +193,7 @@ change_classes:
     focused_packages: [./scripts/iteration]
   dependency:
     priority: 150
-    paths: [go.mod, go.sum, sbom.cdx.json, third_party/**, .golangci.yml, .golangci.v2.yml]
+    paths: [go.mod, go.sum, third_party/**, .golangci.yml, .golangci.v2.yml]
     targets: [test, build]
   documentation:
     priority: 120

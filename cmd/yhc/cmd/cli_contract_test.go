@@ -67,6 +67,7 @@ func TestCLICommandTreeAndFlagScope(t *testing.T) {
 	goalRunCommand := findCommand(t, root, "goal", "run")
 	resumeCommand := findCommand(t, root, "resume")
 	acpCommand := findCommand(t, root, "serve", "acp")
+	appCommand := findCommand(t, root, "serve", "app")
 	mcpCommand := findCommand(t, root, "serve", "mcp")
 	versionCommand := findCommand(t, root, "version")
 	completionCommand := findCommand(t, root, "completion")
@@ -100,6 +101,7 @@ func TestCLICommandTreeAndFlagScope(t *testing.T) {
 		goalRunCommand,
 		resumeCommand,
 		acpCommand,
+		appCommand,
 	} {
 		for _, flag := range []string{
 			"provider", "model", "api-key", "base-url", "fallback-model",

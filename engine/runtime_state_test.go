@@ -77,6 +77,53 @@ func TestRuntimeStateStoreDeterministicReplayAndDefensiveSnapshot(t *testing.T) 
 	}
 }
 
+func TestRuntimeInteractionUsesExplicitQuestionKind(t *testing.T) {
+	store := NewRuntimeStateStore()
+	if err := store.Replay([]QueryEvent{runtimeTestEvent(1, "turn-question", EventPermissionRequest, func(event *QueryEvent) {
+		event.PermissionRequest = &PermissionRequestEvent{
+			ToolName: "AskUserQuestion", ToolUseID: "question-1",
+			Kind: PermissionInteractionKindQuestion,
+		}
+	})}); err != nil {
+		t.Fatal(err)
+	}
+	interaction := store.Snapshot("thread-1").Threads["thread-1"].PendingInteractions["question-1"]
+	if interaction.Kind != PermissionInteractionKindQuestion {
+		t.Fatalf("interaction kind = %q, want %q", interaction.Kind, PermissionInteractionKindQuestion)
+	}
+	if err := store.Apply(runtimeTestEvent(2, "turn-legacy-question", EventPermissionRequest, func(event *QueryEvent) {
+		event.PermissionRequest = &PermissionRequestEvent{
+			ToolName: "AskUserQuestion", ToolUseID: "legacy-question",
+		}
+	})); err != nil {
+		t.Fatal(err)
+	}
+	legacy := store.Snapshot("thread-1").Threads["thread-1"].PendingInteractions["legacy-question"]
+	if legacy.Kind != PermissionInteractionKindPermission {
+		t.Fatalf("legacy tool-name-only kind = %q, want %q", legacy.Kind, PermissionInteractionKindPermission)
+	}
+}
+
+func TestRuntimeInteractionPreservesCanonicalToolIdentity(t *testing.T) {
+	store := NewRuntimeStateStore()
+	if err := store.Replay([]QueryEvent{runtimeTestEvent(1, "turn-alias", EventPermissionRequest, func(event *QueryEvent) {
+		event.PermissionRequest = &PermissionRequestEvent{
+			ToolName: "write_alias", CanonicalToolName: "Write", ToolUseID: "permission-alias",
+			Kind: PermissionInteractionKindPermission,
+		}
+	})}); err != nil {
+		t.Fatal(err)
+	}
+	interaction := store.Snapshot("thread-1").Threads["thread-1"].PendingInteractions["permission-alias"]
+	if interaction.ToolName != "write_alias" || interaction.CanonicalToolName != "Write" {
+		t.Fatalf("runtime canonical identity = %#v", interaction)
+	}
+	attention := store.ThreadAttentionSnapshots()
+	if len(attention) != 1 || len(attention[0].Requests) != 1 || attention[0].Requests[0].CanonicalToolName != "Write" {
+		t.Fatalf("attention canonical identity = %#v", attention)
+	}
+}
+
 func TestRuntimeStateStoreRejectsInvalidTransitionsWithoutMutation(t *testing.T) {
 	store := NewRuntimeStateStore()
 	first := runtimeTestEvent(1, "turn-1", EventAssistant, func(evt *QueryEvent) {

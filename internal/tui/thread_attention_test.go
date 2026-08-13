@@ -624,7 +624,7 @@ func TestRepeatedToolAttentionMergesCallbackAndEngineEventByID(t *testing.T) {
 	app := New(Config{Resumed: true})
 	app.rebindLeaderThreadView("leader-thread")
 	app.handleEngineEvent(engine.QueryEvent{Type: engine.EventPermissionRequest, PermissionRequest: &engine.PermissionRequestEvent{
-		ToolName: "Bash", ToolUseID: "repeat-1", Message: "engine repeated call", Source: "callback", Kind: "repeated_tool", Attempt: 3,
+		ToolName: "Bash", ToolUseID: "repeat-1", Message: "engine repeated call", Source: "callback", Kind: engine.PermissionInteractionKindRepeatedTool, Attempt: 3,
 	}})
 	if app.state == StatePermission {
 		t.Fatal("engine event without callback handle presented a dialog")

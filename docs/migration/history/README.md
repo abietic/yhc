@@ -17,6 +17,14 @@ first 30 lines, for example `**Closed gaps:** G22`. Multiple identities use
 history tree. Closeouts that resolve no root Gap omit the field. Sub-program
 identities such as `G11.F2` remain narrative text.
 
+## 2026-08-13 Desktop Workbench Forward-Port
+
+[`2026-08-13-desktop-workbench-forward-port.md`](2026-08-13-desktop-workbench-forward-port.md)
+records the local delivery boundary for the Electron workbench and loopback
+app-server. Current behavior is owned by the
+[Desktop workbench architecture](../../architecture/desktop-workbench.md), not
+by that record.
+
 ## 2026-07-23 Runtime Hardening
 
 [`2026-07-23-runtime-hardening.md`](runtime/2026-07-23-runtime-hardening.md)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/abietic/yhc/internal/statemigration"
 	"github.com/abietic/yhc/internal/statepath"
@@ -48,6 +49,143 @@ type ResolvedResumeAdmissionRequest struct {
 	Info        SessionInfo
 	CatalogPath string
 	UserRoots   statepath.Roots
+}
+
+// ImportDiscoveredLegacySessionRequest carries one previously discovered,
+// read-only legacy row through the explicit stopped-producer import boundary.
+// It is deliberately session-only: it neither constructs a runtime nor
+// acquires a live-session lease.
+type ImportDiscoveredLegacySessionRequest struct {
+	Info                 SessionInfo
+	CatalogPath          string
+	LegacyCatalogPath    string
+	UserRoots            statepath.Roots
+	ConfirmLegacyStopped bool
+	Now                  time.Time
+}
+
+// ImportDiscoveredLegacySession imports one provenance-bearing legacy
+// discovery row into the canonical default store and returns a freshly
+// admitted canonical row. Explicit catalog overrides are intentionally not
+// eligible: a legacy import always binds the default YHC/legacy catalog pair.
+func ImportDiscoveredLegacySession(
+	ctx context.Context,
+	request ImportDiscoveredLegacySessionRequest,
+) (SessionInfo, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return SessionInfo{}, fmt.Errorf("import discovered legacy session: %w", err)
+	}
+	if !request.Info.HasResolvedSource() {
+		return SessionInfo{}, importUnsafe(errors.New("legacy session source provenance is unavailable"))
+	}
+	if err := requireDefaultSessionImportPair(
+		request.CatalogPath,
+		request.LegacyCatalogPath,
+		request.UserRoots,
+	); err != nil {
+		return SessionInfo{}, importUnsafe(err)
+	}
+	if err := RequireCanonicalSession(request.Info); err == nil {
+		return SessionInfo{}, importUnsafe(errors.New("session is not a legacy import candidate"))
+	} else if !errors.Is(err, ErrLegacySessionImportRequired) {
+		return SessionInfo{}, err
+	}
+
+	physicalCWD, err := canonicalPath(request.Info.sourceCWD)
+	if err != nil {
+		return SessionInfo{}, importUnsafe(errors.New("legacy session source provenance is unavailable"))
+	}
+	legacyOwner, err := ResolveSession(SessionQuery{
+		Scope:         SessionScopeCWD,
+		CWD:           physicalCWD,
+		TranscriptDir: request.Info.TranscriptDir,
+	}, request.Info.SessionID)
+	if err != nil {
+		return SessionInfo{}, importUnsafe(fmt.Errorf(
+			"refresh legacy session owner %s: %w",
+			request.Info.SessionID,
+			err,
+		))
+	}
+	if err := requireSameLegacyImportOwner(request.Info, legacyOwner); err != nil {
+		return SessionInfo{}, importUnsafe(err)
+	}
+	fresh, err := ResolveSession(SessionQuery{
+		Scope:             SessionScopeCWD,
+		CWD:               physicalCWD,
+		CatalogPath:       request.CatalogPath,
+		LegacyCatalogPath: request.LegacyCatalogPath,
+	}, request.Info.SessionID)
+	if err != nil {
+		return SessionInfo{}, importUnsafe(fmt.Errorf(
+			"refresh legacy session %s: %w",
+			request.Info.SessionID,
+			err,
+		))
+	}
+	if fresh.ReadOnly || fresh.NeedsImport {
+		if err := requireSameLegacyImportOwner(request.Info, fresh); err != nil {
+			return SessionInfo{}, importUnsafe(err)
+		}
+	} else if fresh.SessionID != request.Info.SessionID || !fresh.HasResolvedSource() ||
+		!samePath(fresh.sourceCWD, physicalCWD) {
+		return SessionInfo{}, importUnsafe(errors.New("canonical session discovery changed before import"))
+	}
+
+	target := LegacySessionTarget{
+		SessionID:     legacyOwner.SessionID,
+		CWD:           legacyOwner.sourceCWD,
+		TranscriptDir: legacyOwner.TranscriptDir,
+		ReadOnly:      true,
+		NeedsImport:   true,
+	}
+	_, err = ImportSessionForResume(ctx, ImportRequest{
+		Target:               target,
+		UserRoots:            request.UserRoots,
+		ConfirmLegacyStopped: request.ConfirmLegacyStopped,
+		Now:                  request.Now,
+	})
+	if err != nil && !errors.Is(err, ErrSessionImportAlreadyCommitted) {
+		return SessionInfo{}, err
+	}
+	return AdmitSessionResume(ctx, ResumeAdmissionRequest{
+		SessionID:         legacyOwner.SessionID,
+		CWD:               legacyOwner.sourceCWD,
+		CatalogPath:       request.CatalogPath,
+		LegacyCatalogPath: request.LegacyCatalogPath,
+		UserRoots:         request.UserRoots,
+	})
+}
+
+func requireDefaultSessionImportPair(
+	catalogPath string,
+	legacyCatalogPath string,
+	userRoots statepath.Roots,
+) error {
+	defaultCatalogPath, defaultLegacyCatalogPath := DefaultCatalogPaths()
+	if defaultCatalogPath == "" || defaultLegacyCatalogPath == "" ||
+		!samePath(catalogPath, defaultCatalogPath) ||
+		!samePath(legacyCatalogPath, defaultLegacyCatalogPath) {
+		return errors.New("legacy session import requires the default catalog pair")
+	}
+	defaultUserRoots, err := DefaultSessionImportUserRoots()
+	if err != nil || !samePath(userRoots.Canonical, defaultUserRoots.Canonical) ||
+		!samePath(userRoots.Legacy, defaultUserRoots.Legacy) {
+		return errors.New("legacy session import requires the default user roots")
+	}
+	return nil
+}
+
+func requireSameLegacyImportOwner(initial, fresh SessionInfo) error {
+	if fresh.SessionID != initial.SessionID || !fresh.HasResolvedSource() ||
+		!samePath(fresh.sourceCWD, initial.sourceCWD) ||
+		!samePath(fresh.TranscriptDir, initial.TranscriptDir) {
+		return errors.New("legacy session discovery changed before import")
+	}
+	return nil
 }
 
 // AdmitSessionResume resolves one exact source and returns it only when the

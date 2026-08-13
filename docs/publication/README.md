@@ -30,8 +30,31 @@ not a license grant or future design authority.
 
 The public tree never copies `.reference`, `.git`, `.eino-agent`, `.yhc`,
 `.claude`, ignored build evidence, local transcripts, credentials, or
-untracked files. The vendored ACP SDK is the only included third-party source
-tree and retains its Apache-2.0 license plus a visible modification notice.
+untracked files. The vendored ACP SDK retains its Apache-2.0 license plus a
+visible modification notice. The Web UI also distributes Marked 18.0.9 as
+third-party MIT material; its retained license and notice are under
+`internal/webui/assets/vendor/`. The root [`NOTICE`](../../NOTICE) records both
+third-party distributions.
+
+`server/appserver/**`, `internal/webui/**`, `desktop/**`, and the desktop serve
+composition file are separately classified as mutually exclusive project-owned
+rules. Marked runtime and retained license/notice paths are separately
+classified as MIT third-party material. The Node dependency policy
+(`quality/node-dependency-licenses.yaml`) is the reviewed source of truth.
+`make node-sbom` deterministically generates CycloneDX evidence below ignored
+`build/publication/` state, matching the Go SBOM boundary; generated reports
+are not public source. In particular,
+`desktop/package-lock.json` is audited by the structured Node lockfile
+validator for exact policy decisions, npm registry `resolved` URLs, and
+integrity values. The generic expression scan still examines all other lockfile
+fields after masking only those validated package fields; the publication URL
+host allowlist contains no npm registry entry and this policy has no directory
+exception for the lockfile.
+
+Desktop packages, staged backend binaries, and platform artifacts remain
+ignored local-QA outputs. They are not source-release evidence and this tree
+does not claim that any local package is signed, notarized, or distribution
+ready.
 
 ## Privacy and dependency gates
 

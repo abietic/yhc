@@ -20,6 +20,7 @@ flowchart TD
     Cobra --> Headless["exec / --print compatibility"]
     Cobra --> GoalRun["goal run"]
     Cobra --> ACP["serve acp over stdio"]
+    Cobra --> App["serve app over loopback HTTP"]
     Cobra --> MCP["serve mcp over stdio"]
     Cobra --> Admin["version / completion / administration"]
     TUI --> Engine["QueryEngine"]
@@ -27,6 +28,8 @@ flowchart TD
     Headless --> Engine
     GoalRun --> Engine
     ACP --> Engine
+    App --> AppServer["server/appserver"]
+    AppServer --> Engine
     MCP --> Registry["standalone tools.Registry"]
 ```
 
@@ -39,6 +42,7 @@ flowchart TD
 | `yhc goal run --resume <id>` | bounded continuation driver; text or one versioned JSON object on stdout | Resumes one exact saved root Goal and invokes only the dedicated continuation claim/submission boundary; it does not dispatch slash input or create/edit Goal state. |
 | `yhc resume <id>` / `--resume` | same surface as selected mode | Resumes the configured session before accepting new input. |
 | `yhc serve acp` | ACP SDK over stdio | `server/acp.Agent` owns multiple ACP sessions, each backed by a `QueryEngine`. |
+| `yhc serve app` | authenticated loopback HTTP/SSE; optional same-origin Web UI | `server/appserver.Server` owns bounded Desktop sessions, typed event/snapshot projection, browser pairing, and one on-demand `QueryEngine` per activated session. |
 | `yhc serve mcp` | MCP SDK over stdio | Exposes registered tools directly; it is not a conversation `QueryEngine` transport. |
 | `yhc version` / `completion` | text or JSON build identity / shell script | Initializes neither a model runtime nor a conversation engine. |
 | `yhc sessions {list,resume,rename,export,fork,delete,recover-workboard}` | text or one versioned JSON administration result | Creates a provider-free administration `QueryEngine` only to reuse its engine-owned `SessionService`; it performs no model call and opens no TUI. Delete owns contained artifact cleanup; destructive WorkBoard recovery requires exact identity, revision, and acknowledgement. |
@@ -54,6 +58,20 @@ unknown-version transcripts remain inspectable but fail continuation before
 model/tool work or transcript rewrite. The standalone MCP server bypasses
 `QueryEngine` and exposes tools directly, so it does not create a conversation
 Graph.
+
+`serve app` is a Desktop transport rather than a second conversation runtime.
+It binds a random bearer capability to a loopback authority and accepts neither
+arbitrary listen hosts nor renderer-supplied workspace paths. The Electron host
+first exchanges a selected workspace for a short-lived opaque handle, then uses
+that handle to create a session. Durable sessions may be listed and their
+transcripts paged without constructing `QueryEngine`; selecting one reconstructs
+chat history only. The first submitted prompt attaches/resumes its exact durable
+session and then starts the turn. Snapshot and SSE data are bounded typed
+projections: safe Markdown is rendered client-side from text, and pending
+permission, question, Plan approval, and repeated-tool decisions are resolved
+through typed interaction requests. The Activity panel is a semantic lifecycle
+projection, not a raw event-stream dump. See the [Desktop workbench
+architecture](../desktop-workbench.md) for boundary details.
 
 Goal is currently narrower than ProjectGraph reachability. Supported production
 composition roots default it on for saved-root TUI and Plain, with no default

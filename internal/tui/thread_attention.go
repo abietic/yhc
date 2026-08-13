@@ -485,11 +485,12 @@ func (a *App) syncRuntimeThreadAttention() tea.Cmd {
 			}
 			input, _ := jsonPkg.Marshal(interaction.Input)
 			kind := threadAttentionPermission
-			if interaction.Kind == "repeated_tool" {
+			switch interaction.Kind {
+			case engine.PermissionInteractionKindRepeatedTool:
 				kind = threadAttentionRepeatedTool
-			} else if interaction.Kind == "question" {
+			case engine.PermissionInteractionKindQuestion:
 				kind = threadAttentionQuestion
-			} else if interaction.ToolName == "ExitPlanMode" {
+			case engine.PermissionInteractionKindPlanApproval:
 				kind = threadAttentionPlan
 			}
 			var planApproval *engine.PlanApprovalRequest

@@ -60,18 +60,21 @@ func init() {
 // checkpoint and are verified through InvocationDigest before a decision can
 // be committed.
 type projectGraphHITLRequest struct {
-	Version          int                  `json:"version"`
-	RequestID        string               `json:"request_id"`
-	InterruptID      string               `json:"interrupt_id,omitempty"`
-	InvocationDigest string               `json:"invocation_digest"`
-	PolicyRevision   string               `json:"policy_revision"`
-	ToolName         string               `json:"tool_name"`
-	Input            map[string]any       `json:"input,omitempty"`
-	Message          string               `json:"message,omitempty"`
-	SessionScope     string               `json:"session_scope,omitempty"`
-	Scope            RuntimeInputScope    `json:"scope"`
-	Kind             string               `json:"kind"`
-	PlanApproval     *PlanApprovalRequest `json:"plan_approval,omitempty"`
+	Version           int                     `json:"version"`
+	RequestID         string                  `json:"request_id"`
+	InterruptID       string                  `json:"interrupt_id,omitempty"`
+	InvocationDigest  string                  `json:"invocation_digest"`
+	PolicyRevision    string                  `json:"policy_revision"`
+	ToolName          string                  `json:"tool_name"`
+	CanonicalToolName string                  `json:"canonical_tool_name,omitempty"`
+	Input             map[string]any          `json:"input,omitempty"`
+	Message           string                  `json:"message,omitempty"`
+	SessionScope      string                  `json:"session_scope,omitempty"`
+	Scope             RuntimeInputScope       `json:"scope"`
+	Kind              string                  `json:"kind"`
+	Attempt           int                     `json:"attempt,omitempty"`
+	PlanApproval      *PlanApprovalRequest    `json:"plan_approval,omitempty"`
+	Presentation      *PermissionPresentation `json:"presentation,omitempty"`
 }
 
 type projectGraphHITLInterruptInfo struct {
@@ -528,6 +531,11 @@ func cloneProjectGraphHITLRequest(
 		approval := *request.PlanApproval
 		request.PlanApproval = &approval
 	}
+	request.Presentation = normalizedPermissionPresentation(
+		request.Kind,
+		projectGraphPresentationToolName(request),
+		request.Presentation,
+	)
 	return request
 }
 
@@ -819,8 +827,9 @@ func (e *QueryEngine) resolveProjectGraphHITLPermission(
 			scope,
 			toolSchemaDigest,
 		),
-		PolicyRevision: e.projectGraphPolicyRevision(request.ToolContext),
-		ToolName:       strings.TrimSpace(request.ToolName),
+		PolicyRevision:    e.projectGraphPolicyRevision(request.ToolContext),
+		ToolName:          strings.TrimSpace(request.ToolName),
+		CanonicalToolName: strings.TrimSpace(request.CanonicalToolName),
 		Input: sanitizeProjectGraphHITLInput(
 			request.ToolName,
 			request.Input,
@@ -829,7 +838,9 @@ func (e *QueryEngine) resolveProjectGraphHITLPermission(
 		SessionScope: strings.TrimSpace(request.SessionScope),
 		Scope:        scope,
 		Kind:         permissionInteractionKind(request),
+		Attempt:      request.Attempt,
 		PlanApproval: request.PlanApproval,
+		Presentation: clonePermissionPresentation(request.Presentation),
 	}
 	if err := validateProjectGraphHITLRequest(durable, false); err != nil {
 		return false, err.Error()
@@ -987,9 +998,14 @@ func emitProjectGraphPermissionResolved(
 			Reason:       reason,
 			Message:      result.Message,
 			Kind:         request.Kind,
+			Attempt:      request.Attempt,
 			PlanApproval: clonePlanApprovalDecision(result.PlanApproval),
 		},
 	})
+}
+
+func projectGraphPresentationToolName(request projectGraphHITLRequest) string {
+	return strings.TrimSpace(request.CanonicalToolName)
 }
 
 func (e *QueryEngine) reprojectProjectGraphInterrupt(
@@ -999,16 +1015,24 @@ func (e *QueryEngine) reprojectProjectGraphInterrupt(
 		return
 	}
 	turnID := "restored-project-graph-" + request.RequestID
+	request.Presentation = normalizedPermissionPresentation(
+		request.Kind,
+		projectGraphPresentationToolName(request),
+		request.Presentation,
+	)
 	e.decorateRuntimeEvent(turnID, QueryEvent{
 		Type: EventPermissionRequest,
 		PermissionRequest: &PermissionRequestEvent{
-			ToolName:     request.ToolName,
-			ToolUseID:    request.RequestID,
-			Input:        cloneInputMap(request.Input),
-			Message:      request.Message,
-			Source:       "project_graph",
-			Kind:         request.Kind,
-			PlanApproval: request.PlanApproval,
+			ToolName:          request.ToolName,
+			CanonicalToolName: request.CanonicalToolName,
+			ToolUseID:         request.RequestID,
+			Input:             cloneInputMap(request.Input),
+			Message:           request.Message,
+			Source:            "project_graph",
+			Kind:              request.Kind,
+			Attempt:           request.Attempt,
+			PlanApproval:      request.PlanApproval,
+			Presentation:      clonePermissionPresentation(request.Presentation),
 		},
 	})
 	terminal := Terminal{Reason: TerminalWaitingInput}
@@ -1038,14 +1062,22 @@ func (e *QueryEngine) PendingProjectGraphPermissionRequest() (
 	if !ok {
 		return PermissionRequestEvent{}, false
 	}
+	request.Presentation = normalizedPermissionPresentation(
+		request.Kind,
+		projectGraphPresentationToolName(request),
+		request.Presentation,
+	)
 	return PermissionRequestEvent{
-		ToolName:     request.ToolName,
-		ToolUseID:    request.RequestID,
-		Input:        cloneInputMap(request.Input),
-		Message:      request.Message,
-		Source:       "project_graph",
-		Kind:         request.Kind,
-		PlanApproval: request.PlanApproval,
+		ToolName:          request.ToolName,
+		CanonicalToolName: request.CanonicalToolName,
+		ToolUseID:         request.RequestID,
+		Input:             cloneInputMap(request.Input),
+		Message:           request.Message,
+		Source:            "project_graph",
+		Kind:              request.Kind,
+		Attempt:           request.Attempt,
+		PlanApproval:      request.PlanApproval,
+		Presentation:      clonePermissionPresentation(request.Presentation),
 	}, true
 }
 

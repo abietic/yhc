@@ -56,6 +56,7 @@ const (
 	EntrypointHeadless      Entrypoint = "headless"
 	EntrypointHeadlessGoal  Entrypoint = "headless-goal"
 	EntrypointACP           Entrypoint = "acp"
+	EntrypointAppServer     Entrypoint = "app-server"
 	EntrypointChildAgent    Entrypoint = "child-agent"
 	EntrypointEmbedded      Entrypoint = "embedded"
 	EntrypointStandaloneMCP Entrypoint = "standalone-mcp"
@@ -613,7 +614,7 @@ func validState(value State) bool {
 
 func validEntrypoint(value Entrypoint) bool {
 	switch value {
-	case EntrypointTUI, EntrypointPlain, EntrypointHeadless, EntrypointHeadlessGoal, EntrypointACP, EntrypointChildAgent, EntrypointEmbedded, EntrypointStandaloneMCP:
+	case EntrypointTUI, EntrypointPlain, EntrypointHeadless, EntrypointHeadlessGoal, EntrypointACP, EntrypointAppServer, EntrypointChildAgent, EntrypointEmbedded, EntrypointStandaloneMCP:
 		return true
 	default:
 		return false

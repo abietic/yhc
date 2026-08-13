@@ -66,6 +66,20 @@ type MessagePageBoundary struct {
 	LegacyRevision     TranscriptRevision
 }
 
+// MessagePageScope selects which durable messages a page exposes.
+type MessagePageScope string
+
+const (
+	// MessagePageScopeActive returns the current model-visible context and
+	// treats the latest lifecycle boundary as authoritative.
+	MessagePageScopeActive MessagePageScope = "active"
+	// MessagePageScopeAudit returns individually appended message records
+	// across the frozen transcript prefix. Lifecycle snapshots are skipped so
+	// the UI can reconstruct the durable conversation without duplicating
+	// checkpoint or compaction payloads.
+	MessagePageScopeAudit MessagePageScope = "audit"
+)
+
 // MessagePageRequest describes one bounded reverse page over a frozen file
 // prefix. ExpectedFile and SnapshotSize bind follow-up requests to the file
 // object and exact initial prefix; appends are ignored, replacement/truncation
@@ -77,6 +91,7 @@ type MessagePageRequest struct {
 	SnapshotSize int64
 	Boundary     MessagePageBoundary
 	ExpectedFile os.FileInfo
+	Scope        MessagePageScope
 }
 
 // MessagePageEntry is one active-context message in transcript source order.
@@ -123,6 +138,13 @@ func LoadMessagePage(request MessagePageRequest) (*MessagePageResult, error) {
 	if path == "" {
 		return nil, errors.New("transcript path is required")
 	}
+	scope := request.Scope
+	if scope == "" {
+		scope = MessagePageScopeActive
+	}
+	if scope != MessagePageScopeActive && scope != MessagePageScopeAudit {
+		return nil, fmt.Errorf("unsupported transcript page scope %q", scope)
+	}
 	limit, maxBytes, err := normalizeMessagePageRequest(request.Limit, request.MaxBytes)
 	if err != nil {
 		return nil, err
@@ -145,12 +167,15 @@ func LoadMessagePage(request MessagePageRequest) (*MessagePageResult, error) {
 	}
 
 	selected := make([]selectedMessageRecord, 0, limit)
+	if scope == MessagePageScopeAudit && boundary.LifecycleOffset >= 0 {
+		return nil, fmt.Errorf("%w: audit cursor cannot continue a lifecycle snapshot", ErrTranscriptPageCursorInvalid)
+	}
 	if boundary.LifecycleOffset >= 0 {
 		if err := selectLifecyclePage(file, boundary, limit, maxBytes, result, &selected); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := selectReverseMessagePage(file, boundary, limit, maxBytes, result, &selected); err != nil {
+		if err := selectReverseMessagePage(file, boundary, limit, maxBytes, scope, result, &selected); err != nil {
 			return nil, err
 		}
 	}
@@ -379,6 +404,7 @@ func selectReverseMessagePage(
 	boundary MessagePageBoundary,
 	limit int,
 	maxBytes int64,
+	scope MessagePageScope,
 	result *MessagePageResult,
 	selected *[]selectedMessageRecord,
 ) error {
@@ -434,6 +460,9 @@ func selectReverseMessagePage(
 			ordinal = validBefore
 		}
 		if kind := LifecycleBoundaryKind(entry.Kind); isLifecycleBoundaryKind(kind) {
+			if scope == MessagePageScopeAudit {
+				continue
+			}
 			messageBefore := len(entry.Messages)
 			for messageBefore > 0 && len(*selected) < limit {
 				messageBefore--

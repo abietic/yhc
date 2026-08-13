@@ -517,6 +517,7 @@ func TestP420EntrypointsAndConcurrentChildDerivation(t *testing.T) {
 		commands.EntrypointHeadless,
 		commands.EntrypointHeadlessGoal,
 		commands.EntrypointACP,
+		commands.EntrypointAppServer,
 	}
 	seen := make(map[string]struct{}, len(entrypoints))
 	for _, entrypoint := range entrypoints {

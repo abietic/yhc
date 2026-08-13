@@ -2025,7 +2025,7 @@ func (a *Agent) streamEvent(ctx context.Context, sessionID acpsdk.SessionId, evt
 		// Permission requests are handled in the CanUseTool callback.
 		// Emit a status event so the client knows a permission is in progress.
 		if evt.PermissionRequest != nil {
-			if evt.PermissionRequest.Kind == "repeated_tool" {
+			if evt.PermissionRequest.Kind == engine.PermissionInteractionKindRepeatedTool {
 				return a.streamStatusEvent(ctx, sessionID, "waiting_for_repeated_tool_override",
 					fmt.Sprintf("Repeated tool call (%d): %s", evt.PermissionRequest.Attempt, evt.PermissionRequest.ToolName))
 			}
@@ -2037,7 +2037,7 @@ func (a *Agent) streamEvent(ctx context.Context, sessionID acpsdk.SessionId, evt
 		if evt.PermissionResolved != nil {
 			resolved := evt.PermissionResolved
 			decision := strings.TrimSpace(resolved.Decision)
-			if resolved.Kind == "repeated_tool" {
+			if resolved.Kind == engine.PermissionInteractionKindRepeatedTool {
 				status := "repeated_tool_" + decision
 				if decision == "" {
 					status = "repeated_tool_resolved"

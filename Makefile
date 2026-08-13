@@ -1,4 +1,4 @@
-.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
+.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit desktop-backend desktop-backend-darwin-amd64 desktop-backend-darwin-arm64 desktop-backend-linux-amd64 desktop-backend-windows-amd64 desktop-stage-host desktop-stage-darwin-amd64 desktop-stage-darwin-arm64 desktop-stage-linux-amd64 desktop-stage-windows-amd64 desktop-install desktop-test desktop-check desktop-dev desktop-package desktop-package-darwin-amd64 desktop-package-darwin-arm64 desktop-package-linux-amd64 desktop-package-windows-amd64 publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom node-sbom node-license-check desktop-audit verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -11,6 +11,10 @@ GOTEST := $(shell $(GO) env GOPATH)/bin/gotestsum
 DLV := $(shell $(GO) env GOPATH)/bin/dlv
 GOLINT_V2_DIR := $(abspath $(BUILD_DIR)/tools)
 GOLINT_V2 := $(GOLINT_V2_DIR)/golangci-lint-v2
+HOST_GOOS := $(shell $(GO) env GOHOSTOS)
+HOST_GOARCH := $(shell $(GO) env GOHOSTARCH)
+DESKTOP_STAGE_DIR := desktop/resources/bin
+DESKTOP_HOST_EXT := $(if $(filter windows,$(HOST_GOOS)),.exe,)
 EVAL_OUTPUT_DIR ?= $(BUILD_DIR)/evaluation
 EVAL_BINARY ?= $(EVAL_OUTPUT_DIR)/yhc$(if $(filter windows,$(shell $(GO) env GOHOSTOS)),.exe,)
 EVAL_REPORT ?= $(EVAL_OUTPUT_DIR)/p43-report.json
@@ -54,8 +58,10 @@ GITLEAKS := $(PUBLICATION_TOOLS_DIR)/gitleaks
 CYCLONEDX_GOMOD := $(PUBLICATION_TOOLS_DIR)/cyclonedx-gomod
 PUBLICATION_SBOM_GENERATED := $(BUILD_DIR)/publication/sbom.cdx.json
 PUBLICATION_LICENSE_REPORT := $(BUILD_DIR)/publication/dependency-licenses.json
+NODE_SBOM_GENERATED := $(BUILD_DIR)/publication/sbom.node.cdx.json
 
 SOURCES := $(shell find cmd engine internal server tools -type f -name '*.go')
+WEBUI_ASSETS := $(shell find internal/webui/assets -type f 2>/dev/null)
 
 # Default provider config (override via ENV or make args)
 PROV ?= agenticdeepseek
@@ -74,23 +80,115 @@ DLV_PORT ?= 2345
 # ── Build ──────────────────────────────────────────────
 build: build/linux-amd64/yhc build/darwin-amd64/yhc build/darwin-arm64/yhc build/windows-amd64/yhc.exe
 
-build/linux-amd64/yhc: $(SOURCES) go.mod go.sum
+build/linux-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
 	@mkdir -p $(BUILD_DIR)/linux-amd64
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/darwin-amd64/yhc: $(SOURCES) go.mod go.sum
+build/darwin-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
 	@mkdir -p $(BUILD_DIR)/darwin-amd64
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/darwin-arm64/yhc: $(SOURCES) go.mod go.sum
+build/darwin-arm64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
 	@mkdir -p $(BUILD_DIR)/darwin-arm64
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/windows-amd64/yhc.exe: $(SOURCES) go.mod go.sum
+build/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
 	@mkdir -p $(BUILD_DIR)/windows-amd64
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
 
 # ── Clear ──────────────────────────────────────────────
+desktop-backend: desktop-stage-host
+
+build/desktop/darwin-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+	@mkdir -p $(dir $@)
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+
+build/desktop/darwin-arm64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+	@mkdir -p $(dir $@)
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+
+build/desktop/linux-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+	@mkdir -p $(dir $@)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+
+build/desktop/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+	@mkdir -p $(dir $@)
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+
+desktop-backend-darwin-amd64: build/desktop/darwin-amd64/yhc
+
+desktop-backend-darwin-arm64: build/desktop/darwin-arm64/yhc
+
+desktop-backend-linux-amd64: build/desktop/linux-amd64/yhc
+
+desktop-backend-windows-amd64: build/desktop/windows-amd64/yhc.exe
+
+desktop-stage-host:
+	$(MAKE) desktop-stage-$(HOST_GOOS)-$(HOST_GOARCH)
+
+desktop-stage-darwin-amd64: build/desktop/darwin-amd64/yhc
+	@mkdir -p $(DESKTOP_STAGE_DIR)
+	rm -f $(DESKTOP_STAGE_DIR)/yhc $(DESKTOP_STAGE_DIR)/yhc.exe
+	install -m 0755 $< $(DESKTOP_STAGE_DIR)/yhc
+
+desktop-stage-darwin-arm64: build/desktop/darwin-arm64/yhc
+	@mkdir -p $(DESKTOP_STAGE_DIR)
+	rm -f $(DESKTOP_STAGE_DIR)/yhc $(DESKTOP_STAGE_DIR)/yhc.exe
+	install -m 0755 $< $(DESKTOP_STAGE_DIR)/yhc
+
+desktop-stage-linux-amd64: build/desktop/linux-amd64/yhc
+	@mkdir -p $(DESKTOP_STAGE_DIR)
+	rm -f $(DESKTOP_STAGE_DIR)/yhc $(DESKTOP_STAGE_DIR)/yhc.exe
+	install -m 0755 $< $(DESKTOP_STAGE_DIR)/yhc
+
+desktop-stage-windows-amd64: build/desktop/windows-amd64/yhc.exe
+	@mkdir -p $(DESKTOP_STAGE_DIR)
+	rm -f $(DESKTOP_STAGE_DIR)/yhc $(DESKTOP_STAGE_DIR)/yhc.exe
+	install -m 0755 $< $(DESKTOP_STAGE_DIR)/yhc.exe
+
+desktop-install:
+	npm --prefix desktop ci --no-audit --no-fund
+
+desktop-test:
+	node --test desktop/test/*.test.mjs
+
+desktop-check: desktop-test
+	node --check desktop/lifecycle.cjs
+	node --check desktop/provider_setup.cjs
+	node --check desktop/request.cjs
+	node --check desktop/main.cjs
+	node --check desktop/preload.cjs
+	node --check desktop/scripts/verify_packaged_notices.cjs
+	node --check internal/webui/assets/activity.mjs
+	node --check internal/webui/assets/app.mjs
+	node --check internal/webui/assets/catalog.mjs
+	node --check internal/webui/assets/layout.mjs
+	node --check internal/webui/assets/markdown.mjs
+	node --check internal/webui/assets/vendor/marked.esm.js
+	node --check internal/webui/assets/provider_setup.mjs
+	node --check internal/webui/assets/session_creation.mjs
+	node --check internal/webui/assets/state.mjs
+	node --check internal/webui/assets/transport.mjs
+	node --check internal/webui/assets/view_models.mjs
+
+desktop-dev: desktop-backend desktop-install
+	YHC_BIN=$(abspath $(DESKTOP_STAGE_DIR)/yhc$(DESKTOP_HOST_EXT)) npm --prefix desktop start
+
+desktop-package: desktop-backend desktop-install desktop-check
+	npm --prefix desktop run package
+
+desktop-package-darwin-amd64: desktop-stage-darwin-amd64 desktop-install desktop-check
+	npm --prefix desktop run package:mac -- --x64
+
+desktop-package-darwin-arm64: desktop-stage-darwin-arm64 desktop-install desktop-check
+	npm --prefix desktop run package:mac -- --arm64
+
+desktop-package-linux-amd64: desktop-stage-linux-amd64 desktop-install desktop-check
+	npm --prefix desktop run package:linux -- --x64
+
+desktop-package-windows-amd64: desktop-stage-windows-amd64 desktop-install desktop-check
+	npm --prefix desktop run package:win -- --x64
+
 clear:
 	rm -rf $(BUILD_DIR)
 
@@ -378,6 +476,16 @@ sbom: prepare-cyclonedx-gomod
 license-check: sbom
 	$(GO) run ./scripts/publication licenses --config $(PUBLICATION_CONFIG) --root . --sbom $(abspath $(PUBLICATION_SBOM_GENERATED)) --output $(PUBLICATION_LICENSE_REPORT)
 
+node-sbom:
+	$(GO) run ./scripts/publication node-sbom --config $(PUBLICATION_CONFIG) --root . --output $(NODE_SBOM_GENERATED)
+
+node-license-check: node-sbom
+	@test -s $(NODE_SBOM_GENERATED) || { echo "generated Node SBOM is missing" >&2; exit 1; }
+
+desktop-audit:
+	cd desktop && npm ci --ignore-scripts --no-fund --no-audit
+	cd desktop && npm audit --audit-level=high
+
 # CI runs each public-release safety check on every change. These commands are
 # intentionally separate so a later prerequisite cannot hide a skipped gate.
 publication-safety:
@@ -385,6 +493,8 @@ publication-safety:
 	$(MAKE) publication-scan-expression PUBLICATION_ROOT=.
 	$(MAKE) vuln-check
 	$(MAKE) license-check
+	$(MAKE) node-license-check
+	$(MAKE) desktop-audit
 	$(MAKE) secret-check PUBLICATION_ROOT=.
 
 verify-publication:
@@ -395,6 +505,8 @@ verify-publication:
 	$(MAKE) vuln-check
 	$(MAKE) secret-check PUBLICATION_ROOT=.
 	$(MAKE) license-check
+	$(MAKE) node-license-check
+	$(MAKE) desktop-audit
 
 verify-publication-tree:
 	@test ! -e .git || { echo "verify-publication-tree requires a tree without .git" >&2; exit 1; }
@@ -403,6 +515,7 @@ verify-publication-tree:
 	$(MAKE) secret-check PUBLICATION_ROOT=.
 	$(MAKE) vuln-check
 	$(MAKE) license-check
+	$(MAKE) node-license-check
 
 # ── Repository setup ──────────────────────────────────
 setup-git-hooks:
