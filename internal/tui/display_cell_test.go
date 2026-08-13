@@ -199,6 +199,12 @@ func FuzzWidthProfileClusterAndControlPreservation(f *testing.F) {
 		if !ok {
 			t.Skip()
 		}
+		// x/ansi is the independent decoder for this property. Some valid OSC-8
+		// payloads containing combining Unicode are outside its parse domain; do
+		// not attribute that pre-existing decoder disagreement to wrapping.
+		if sourceProjection := strings.ReplaceAll(xansi.Strip(input), "\n", ""); sourceProjection != want {
+			t.Skip()
+		}
 		limit := int(width%32) + 1
 		lines := profile.wrap(input, limit, true)
 		got := strings.ReplaceAll(xansi.Strip(strings.Join(lines, "")), "\n", "")

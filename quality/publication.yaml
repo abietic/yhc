@@ -3518,7 +3518,7 @@ privacy:
         match_sha256: a09210f3c35656d0ab2a4ad1d7ceb5eb0673f40d5f7fc5237f5684989a52d134
         purpose: synthetic-security-fixture
       - path: internal/tui/display_cell_test.go
-        line: 283
+        line: 289
         rule_id: private-url
         match_sha256: b626e2b1cf3100e7ae0d12914cd8d8d5140ed65010373601088fff25e24be0c8
         purpose: synthetic-security-fixture
