@@ -1977,6 +1977,11 @@ privacy:
         rule_id: high-entropy-token
         match_sha256: 3c05b136fc68724f0d1c20165c70e112d41e959e59d33a6c43a4f14a4008213b
         purpose: documentation-example
+      - path: docs/superpowers/specs/2026-08-13-desktop-session-creation-activation-design.md
+        line: 6
+        rule_id: high-entropy-token
+        match_sha256: 7c352fb8617610237b2217f581578dad2357b1a15171cc2916348ac0fa9d570d
+        purpose: documentation-example
       - path: docs/superpowers/specs/README.md
         line: 11
         rule_id: high-entropy-token
