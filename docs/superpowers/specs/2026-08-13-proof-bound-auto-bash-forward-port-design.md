@@ -1,6 +1,6 @@
 # Proof-Bound Auto Bash Public Forward-Port Design
 
-**Status:** active-plan
+**Status:** historical
 **Accepted:** 2026-08-13
 **Source review:** public YHC Desktop candidate at `a6c478c`, reviewed
 2026-08-13
@@ -179,8 +179,7 @@ QueryEngine uses one ordering across every entrypoint:
 
 1. Construct and validate the registered canonical action and its current
    Guest execution identity.
-2. Reject unselected, invalid, or required-but-unavailable Guest Bash before
-   permission evaluation.
+2. Reject unselected or invalid Guest Bash before permission evaluation.
 3. Apply Plan containment and explicit deny rules.
 4. Recognize a literal critical Bash target. If matched, bypass rules, grants,
    Bypass mode, and other non-live authorities that could authorize execution,
@@ -251,7 +250,7 @@ three-scope presentation and the constrained available one-scope presentation.
 
 | Condition | Observable result | Forbidden result |
 |---|---|---|
-| Guest binding unavailable | Existing typed sandbox-unavailable failure before spawn | Prompt, grant, classifier allow, or ambient retry |
+| Guest binding unavailable | No proof-bound shortcut; existing Auto fallback may ask or deny, and any eventual launch fails with the existing typed sandbox-unavailable result | Proof-bound admission, process start, or ambient execution retry |
 | Critical request with session/always response | Deny with a bounded constraint error | Persistent grant or execution |
 | Stale or forged durable decision | Reject without settlement | Resume or request coalescing |
 | Proof, root, binding, action, or registry drift | `sandbox_binding_expired` before acquisition/submission | Shell write, process start, or ambient retry |

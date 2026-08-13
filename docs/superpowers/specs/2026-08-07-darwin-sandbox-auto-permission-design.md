@@ -1,7 +1,7 @@
 # Darwin Sandbox And Auto Permission Design
 
-**Status:** active-plan
-**Delivery:** P51.1 complete; P51.2 Ready, not implemented
+**Status:** historical
+**Delivery:** P51.1 and P51.2 complete
 **Accepted:** 2026-08-07
 **Last verified:** 2026-08-08
 **Source snapshot:** `origin/master` at
@@ -402,8 +402,9 @@ descriptor or model reviewer projection.
 
 The existing ordering through tool registration, schema validation, Plan,
 explicit deny/ask rules, exact user authority, and normal mode fast paths is
-preserved. Before any permission decision, a required-but-unavailable Guest
-binding makes Bash execution unavailable for every mode.
+preserved. An incomplete or unavailable Guest binding cannot authorize the
+P51.2 shortcut; the existing Auto fallback may ask or deny, and any eventual
+Guest launch remains fail-closed before spawn.
 
 Only `ModeAuto` plus canonical `Bash` may use the containment shortcut. It
 requires all of:
@@ -534,12 +535,12 @@ containment slices:
 | Order | Slice | Deliverable | Rollback boundary |
 |---:|---|---|---|
 | 1 | P51.1 Darwin Guest adapter `Complete` | Explicit process bindings, user-owned config, real Seatbelt launch and escape tests; no permission behavior change | Restore Guest to truthful ambient/disabled and remove Darwin selection/config as one unit |
-| 2 | P51.2 Auto containment admission `Ready` | Trusted granular proof, narrow critical live AllowOnce, hook rewrite and dispatch revalidation, prompt-reduction fixtures | Remove only the sandbox shortcut while retaining filesystem/network containment |
+| 2 | P51.2 Auto containment admission `Complete` | Trusted granular proof, narrow critical live AllowOnce, hook rewrite and dispatch revalidation, prompt-reduction fixtures | Remove only the sandbox shortcut while retaining filesystem/network containment |
 
 Each slice starts from then-current `origin/master`, ships through one
 short-lived branch and pull request, and updates only current fact owners.
-The root migration plan records P51.1 complete and P51.2 as the sole `Ready`
-slice. It still owns mutable acceptance plus the one-Ready-slice limit. The
+The root migration plan records P51.1 and P51.2 complete with no active queue
+row. It still owns mutable acceptance plus the one-Ready-slice limit. The
 independent public intake, rather than this design, promoted P51.2.
 
 Every code slice closes with:

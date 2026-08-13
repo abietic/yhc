@@ -3,7 +3,7 @@
 **Status:** historical
 **Current execution:** P22.H0-P22.2b complete; P22.1c and P22.3a-P22.6 deferred
 **Created:** 2026-07-26
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-13
 
 > **Ownership:** completed P22 core contract, historical slice decisions,
 > invariants, entrypoint behavior, future re-entry gates, and rollback
@@ -32,6 +32,12 @@ system still:
 
 The product promise is reduced prompt fatigue under a smaller deterministic
 authority envelope. It is not autonomous access to every installed tool.
+
+P51.2 later added one project-native deterministic fast path: ordinary
+canonical Bash in `auto` proceeds without a prompt only when bound to the
+exact complete Darwin Guest proof. It does not promote the deferred model
+reviewer, and critical literal `rm`/`rmdir` still requires a fresh live
+`AllowOnce`.
 
 ## Decision
 

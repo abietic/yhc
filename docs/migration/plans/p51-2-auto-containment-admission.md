@@ -1,6 +1,6 @@
 # P51.2 Proof-Bound Auto Bash Admission
 
-**Status:** active-plan
+**Status:** historical
 **Accepted:** 2026-08-13
 **Adoption:** `project-native`
 **Gap:** G28 remains open
@@ -17,10 +17,10 @@ proof delivered by P51.1. Literal critical `rm` and `rmdir` targets instead
 require a fresh live decision for that exact invocation, and only `AllowOnce`
 may authorize them.
 
-This contract changes no current behavior until the slice is implemented and
-closed. The approved public forward-port design remains the detailed design
-owner; this document owns the executable migration contract and promotion
-boundary.
+The slice is implemented and removed from the active queue. Current behavior
+belongs to architecture and operator documentation; reproducible results are
+owned by the [verification record](../verification/p51-2-auto-containment-admission.md)
+and delivery history by the [closeout](../history/runtime/p51-2-auto-containment-admission.md).
 
 ## Intake evidence
 
@@ -41,9 +41,10 @@ The slice is complete only when all of these outcomes hold:
    only when the exact action carries the complete P51.1 Darwin Guest proof.
 2. A literal critical `rm` or `rmdir` target always receives a fresh live
    request for that exact invocation. Only `AllowOnce` may authorize it.
-3. Tool selection, schema and custom validation, required Guest availability,
-   Plan containment, and explicit deny or ask retain authority ahead of the
-   new shortcut.
+3. Tool selection, schema and custom validation, Plan containment, and explicit
+   deny or ask retain authority ahead of the new shortcut. Incomplete or
+   unavailable Guest proof cannot supply proof-bound admission and instead
+   uses the existing Auto fallback.
 4. Rules, grants, Bypass, DontAsk, classifier or reviewer output, and request
    coalescing cannot authorize a critical request. Bypass must still obtain
    the live `AllowOnce`; DontAsk denies because it cannot prompt.
@@ -87,8 +88,7 @@ Every supported entrypoint uses this QueryEngine-owned order:
 
 1. Construct the registered canonical action and capture its current Guest
    execution identity.
-2. Reject unselected, invalid, or required-but-unavailable Guest Bash before
-   permission evaluation.
+2. Reject unselected or invalid Guest Bash before permission evaluation.
 3. Apply Plan containment and explicit deny rules.
 4. Recognize the narrow literal critical subset. A match bypasses rules,
    grants, Bypass mode, classifiers, reviewer output, and coalescing as
@@ -159,7 +159,7 @@ event projections fail closed rather than coalescing.
 
 | Condition | Required result | Forbidden result |
 |---|---|---|
-| Guest binding unavailable | Existing typed sandbox-unavailable failure before spawn | Prompt, grant, classifier allow, or ambient retry |
+| Guest binding unavailable | No proof-bound shortcut; existing Auto fallback may ask or deny, and any eventual launch fails with the existing typed sandbox-unavailable result | Proof-bound admission, process start, or ambient execution retry |
 | Critical request receives session or always | Bounded constraint denial | Persistent grant or execution |
 | Durable decision is stale, mismatched, or forged | Reject without settlement | Resume or coalescing |
 | Action, root, proof, binding, or registry identity drifts | `sandbox_binding_expired` before acquisition/submission | Shell write, process start, or ambient retry |

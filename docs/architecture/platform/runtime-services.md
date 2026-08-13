@@ -1,7 +1,7 @@
 # Runtime Services
 
 **Status:** current
-**Last verified:** 2026-08-09
+**Last verified:** 2026-08-13
 
 > **Ownership:** entrypoint-specific background-service construction, rebinding, shutdown, and disconnected helpers
 
@@ -79,6 +79,13 @@ binding before persistent Bash starts, and rechecks both binding digest and
 workspace device/inode before every start/command. A missing executable,
 unsupported host, failed probe, or replaced root yields an unavailable Guest
 binding and rejects Bash before spawn; it never retries ambient.
+
+P51.2 exposes a detached value identity for the QueryEngine permission owner;
+it does not expose the pinned binding or environment values. Proof-bound Auto
+Bash revalidates the exact Guest identity before registry acquisition, and
+ShellManager repeats root validation at the last boundary before a new process
+start or persistent-shell stdin write. Any bound-identity drift returns
+`sandbox_binding_expired` without executing or retrying ambient.
 
 The Session-facing CWD retains the caller or restored metadata spelling for
 hooks, permissions, transcripts, and user-visible state. The Guest policy owns

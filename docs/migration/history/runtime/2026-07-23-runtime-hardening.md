@@ -80,7 +80,7 @@ passed ten consecutive focused runs and three race runs locally.
 | Boundary | Current owner |
 |---|---|
 | Terminal descriptor and bounded output | [`runTUI` and `tuiProgramOutput`](../../../../cmd/yhc/cmd/root.go#L235), with PTY evidence in [`TestTUITerminalRestorationPTY`](../../../../cmd/yhc/cmd/terminal_lifecycle_unix_test.go#L39) |
-| Graph-interrupt queue admission | [`QueryEngine.ClaimNextRuntimeItem`](../../../../engine/queued_input.go#L132), with deferred-delivery evidence in [`TestP138ProjectGraphInterruptResumeExecutesToolExactlyOnce`](../../../../engine/graph_hitl_test.go#L20) |
+| Graph-interrupt queue admission | [`QueryEngine.ClaimNextRuntimeItem`](../../../../engine/queued_input.go#L132), with deferred-delivery evidence in [`TestP138ProjectGraphInterruptResumeExecutesToolExactlyOnce`](../../../../engine/graph_hitl_test.go#L21) |
 | Todo permission default | [`QueryEngine.wrapCanUseTool`](../../../../engine/engine.go#L2133) and [`defaultPermissionAllowedTools`](../../../../tools/registry.go#L915) |
 | Todo runtime state scope | [`GetTodoListForAgent`](../../../../tools/todo_write.go#L49) and [`TodoWriteTool`](../../../../tools/todo_write.go#L194) |
 | Required gate cache and PTY ordering | [CI workflow](../../../../.github/workflows/ci.yml) and [`TestTUIWorkflowPTY`](../../../../internal/tui/pty_workflow_unix_test.go#L25) |

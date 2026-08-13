@@ -1,8 +1,8 @@
 # P42 Host Execution Containment
 
 **Status:** active-plan
-**Completed slices:** P42.0, P51.1
-**Ready slice:** P51.2 proof-bound Auto Bash admission
+**Completed slices:** P42.0, P51.1, P51.2
+**Ready slice:** none
 **Adoption:** `project-native`
 **Gap:** G28
 
@@ -14,9 +14,10 @@
 P42.0 completion evidence is
 [`p42-0-execution-policy-snapshot.md`](../history/runtime/p42-0-execution-policy-snapshot.md).
 The 2026-08-08 intake accepted the P42.1 axis-level proof contract, and P51.1
-now implements its first Darwin Guest adapter slice. G28 remains open for the
-deliberately ambient credential, hook/MCP, and hard-resource axes. P51.2 is the
-sole Ready queue row and remains unimplemented.
+now implements its first Darwin Guest adapter slice. P51.2 subsequently bound
+ordinary Auto Bash admission to that exact Guest proof and added a fresh
+`AllowOnce` constraint for the narrow critical path. G28 remains open for the
+deliberately ambient credential, hook/MCP, and hard-resource axes.
 
 ## Problem
 
@@ -349,7 +350,9 @@ That intake probe proved only that the implementation path was viable. P51.1
 subsequently supplied the real subprocess matrix, cross-entrypoint binding,
 race/lifecycle evidence, repository gates, and truthful closeout recorded in
 [`p51-1-darwin-guest-seatbelt.md`](../verification/p51-1-darwin-guest-seatbelt.md).
-P51.2 passed its independent public intake on 2026-08-13 and is now the sole
-Ready queue row. Its accepted contract is
-[`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md);
-admission does not change current permission behavior.
+P51.2 passed its independent public intake and completed on 2026-08-13. Its
+historical contract is
+[`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md),
+and its reproducible delivery evidence is
+[`p51-2-auto-containment-admission.md`](../verification/p51-2-auto-containment-admission.md).
+The migration queue is empty; G28 remains open without an admitted successor.

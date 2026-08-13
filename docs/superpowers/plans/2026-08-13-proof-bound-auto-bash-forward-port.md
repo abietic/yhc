@@ -1,15 +1,14 @@
 # Proof-Bound Auto Bash Public Forward-Port Implementation Plan
 
-**Status:** active-plan
+**Status:** historical
 **Accepted:** 2026-08-13
 **Source baseline:** public Desktop candidate at `a6c478c`
 **Adoption:** `project-native`
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `$migration-slice` after
-> Task 0 makes P51.2 the sole `Ready` slice, use `$runtime-depth-change` and
-> `$tui-runtime-change` for their owned boundaries, and finish each committed
-> checkpoint through `$iteration-workflow`. Steps use checkbox (`- [ ]`)
-> syntax for tracking.
+> **Historical execution note:** delivery used the migration, runtime-depth,
+> TUI-runtime, and iteration workflows after Task 0 admitted P51.2. The
+> unchecked boxes below preserve the original test-first sequence; they are no
+> longer live instructions or queue state.
 >
 > **Ownership:** executable TDD sequence for the public proof-bound Auto Bash
 > admission, runtime, client propagation, Darwin evidence, and closeout
@@ -37,7 +36,9 @@ materialization gates.
 - Do not merge, cherry-pick, name, or publish a private commit, branch, URL,
   implementation diary, or build result.
 - Preserve explicit deny and ask, Plan containment, tool selection, schema and
-  custom validation, and required Guest availability ahead of the shortcut.
+  custom validation ahead of the shortcut. Incomplete or unavailable Guest
+  proof uses the existing Auto fallback and can never supply proof-bound
+  authority.
 - Only canonical built-in `Bash` in `ModeAuto` may use proof-bound admission.
 - Complete proof requires filesystem read/write, network denial, root identity,
   descendant confinement/cleanup, wall time, and bounded output from the exact

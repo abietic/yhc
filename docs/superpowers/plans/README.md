@@ -48,7 +48,7 @@
 | [`2026-08-06-p46-1-complete-prompt-footprint.md`](2026-08-06-p46-1-complete-prompt-footprint.md) | [`P46.1`](../../migration/plans/p46-model-failover-repair.md#p461-complete-prompt-footprint-admission) | Executed and retained as closeout evidence |
 | [`2026-08-13-desktop-session-creation-activation.md`](2026-08-13-desktop-session-creation-activation.md) | [Desktop Session Creation Activation design](../specs/2026-08-13-desktop-session-creation-activation-design.md) | Active; implementation and focused verification complete, committed-tree and physical acceptance remain |
 | [`2026-08-13-yhc-desktop-workbench-forward-port.md`](2026-08-13-yhc-desktop-workbench-forward-port.md) | [YHC Desktop Workbench Forward-Port design](../specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md) | Active; implementation complete, final committed-tree and physical acceptance remain |
-| [`2026-08-13-proof-bound-auto-bash-forward-port.md`](2026-08-13-proof-bound-auto-bash-forward-port.md) | [Proof-Bound Auto Bash Public Forward-Port design](../specs/2026-08-13-proof-bound-auto-bash-forward-port-design.md) | Accepted; public admission is Task 0, runtime implementation follows on the same stacked branch |
+| [`2026-08-13-proof-bound-auto-bash-forward-port.md`](2026-08-13-proof-bound-auto-bash-forward-port.md) | [Proof-Bound Auto Bash Public Forward-Port design](../specs/2026-08-13-proof-bound-auto-bash-forward-port-design.md) | Historical; implemented and locally verified 2026-08-13 |
 
 Boundary enforcement and deep defect discovery are implemented. Overall S4
 product-module acceptance remains open until an accepted `Ready` product

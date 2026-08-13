@@ -2,18 +2,7 @@ version: 1
 updated: "2026-08-13"
 ready_limit: 1
 
-slices:
-  - id: P51.2
-    state: ready
-    priority: 170
-    gaps: [G28]
-    promotion:
-      id: p51-2-public-proof-bound-auto-bash-intake
-      state: satisfied
-      label: public Guest proof and cross-entrypoint permission intake
-      link: plans/p51-2-auto-containment-admission.md#intake-evidence
-    contract: plans/p51-2-auto-containment-admission.md#observable-contract
-    outcome: Auto-allow exact proof-bound Darwin Guest Bash while critical literal rm/rmdir requires fresh AllowOnce and no entrypoint can broaden it.
+slices: []
 deferred:
   - id: P44
     gaps: [G14]
