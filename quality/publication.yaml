@@ -1958,7 +1958,7 @@ privacy:
         match_sha256: a275fe1dc3d49fb81622f9dc95948a6a6d610de3b82b5cb88e188d6be3c96f50
         purpose: documentation-example
       - path: docs/superpowers/plans/README.md
-        line: 50
+        line: 51
         rule_id: high-entropy-token
         match_sha256: c85e6b1dba17abc78857bd855426c0e10970f5fc80123b6f0cda7e8287e612dc
         purpose: documentation-example

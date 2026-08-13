@@ -322,7 +322,7 @@ func TestP512PreToolRewriteRestartsPermissionAuthority(t *testing.T) {
 			QueryParams{
 				ToolRegistry: eng.toolRegistry,
 				CanUseTool:   eng.wrappedCanUseTool,
-				ToolExecutor: func(_ context.Context, _ string, input string) (string, error) {
+				ToolExecutor: func(_ context.Context, _, input string) (string, error) {
 					executions.Add(1)
 					return input, nil
 				},
