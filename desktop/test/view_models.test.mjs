@@ -15,6 +15,8 @@ test('interaction view models expose only the tagged v2 renderer fields', () => 
 test('permission, plan, repeated-tool, and unknown views are safe and tagged', () => {
   assert.deepEqual(interactionViewModel({ request_id: 'p', turn_id: 'turn-1', kind: 'permission', permission: { available: true, tool_label: 'Write', summary: 'Allow this tool action?', evidence: [{ label: 'Access', value: 'May change data' }], grant_scopes: ['allow_once', 'allow_session', 'allow_always'] } }),
     { requestID: 'p', turnID: 'turn-1', kind: 'permission', actionable: true, permission: { available: true, toolLabel: 'Write', summary: 'Allow this tool action?', evidence: [{ label: 'Access', value: 'May change data' }], grantScopes: ['allow_once', 'allow_session', 'allow_always'] } });
+  assert.deepEqual(interactionViewModel({ request_id: 'critical', turn_id: 'turn-1', kind: 'permission', permission: { available: true, tool_label: 'Bash', summary: 'Allow this tool action?', evidence: [{ label: 'Access', value: 'May make destructive changes' }], grant_scopes: ['allow_once'] } }),
+    { requestID: 'critical', turnID: 'turn-1', kind: 'permission', actionable: true, permission: { available: true, toolLabel: 'Bash', summary: 'Allow this tool action?', evidence: [{ label: 'Access', value: 'May make destructive changes' }], grantScopes: ['allow_once'] } });
   assert.deepEqual(interactionViewModel({ request_id: 'r', turn_id: 'turn-1', kind: 'repeated_tool', repeated_tool: { attempt: 2, explanation: 'This repeated tool call needs your decision.', outcomes: ['continue', 'stop'] } }),
     { requestID: 'r', turnID: 'turn-1', kind: 'repeated_tool', actionable: true, repeatedTool: { attempt: 2, explanation: 'This repeated tool call needs your decision.', outcomes: ['continue', 'stop'] } });
   assert.equal(interactionViewModel({ request_id: 'fallback', turn_id: 'turn-1', kind: 'permission', permission: {
@@ -45,6 +47,18 @@ test('known interaction kinds fail closed when their v2 variant is malformed', (
       evidence: [{ label: 'Access', value: 'secret' }],
       grant_scopes: ['allow_once', 'allow_session', 'allow_always'],
     } },
+    ...[
+      [],
+      ['allow_session'],
+      ['allow_once', 'allow_once'],
+      ['allow_session', 'allow_once', 'allow_always'],
+      ['allow_once', 'allow_session'],
+      ['allow_once', 'unknown'],
+    ].map((grantScopes) => ({ request_id: 'permission-scopes', turn_id: 'turn-1', kind: 'permission', permission: {
+      available: true, tool_label: 'Bash', summary: 'Allow this tool action?',
+      evidence: [{ label: 'Access', value: 'May make destructive changes' }],
+      grant_scopes: grantScopes,
+    } })),
     { request_id: 'plan', turn_id: 'turn-1', kind: 'plan_approval', plan_approval: {
       revision: 0, target_modes: ['default'], review_available: true,
     } },

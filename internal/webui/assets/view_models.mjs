@@ -10,6 +10,7 @@ const permissionScopes = Object.freeze([
   'allow_session',
   'allow_always',
 ]);
+const constrainedPermissionScopes = Object.freeze(['allow_once']);
 
 const permissionEvidence = new Set([
   'Access\0Reads data',
@@ -113,11 +114,14 @@ function validPermission(value, normalized) {
       normalized.evidence.length === 0 &&
       scopes.length === 1 && scopes[0] === 'allow_once';
   }
-  return boundedString(normalized.toolLabel, 96, true) &&
-    normalized.summary === 'Allow this tool action?' &&
-    evidenceLabels.filter((label) => label === 'Access').length === 1 &&
-    scopes.length === permissionScopes.length &&
+  const exactOrdinaryScopes = scopes.length === permissionScopes.length &&
     permissionScopes.every((scope, index) => scopes[index] === scope);
+  const exactConstrainedScopes = scopes.length === constrainedPermissionScopes.length &&
+    constrainedPermissionScopes.every((scope, index) => scopes[index] === scope);
+  return boundedString(normalized.toolLabel, 96, true) &&
+		normalized.summary === 'Allow this tool action?' &&
+		evidenceLabels.filter((label) => label === 'Access').length === 1 &&
+		(exactOrdinaryScopes || exactConstrainedScopes);
 }
 
 function normalizeQuestions(value) {

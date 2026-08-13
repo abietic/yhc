@@ -802,19 +802,20 @@ func permissionPromptRequest(
 	request engine.PermissionRequestEvent,
 ) engine.PermissionPromptRequest {
 	return engine.PermissionPromptRequest{
-		Kind:              request.Kind,
-		Attempt:           request.Attempt,
-		Source:            request.Source,
-		ToolName:          request.ToolName,
-		CanonicalToolName: request.CanonicalToolName,
-		ToolUseID:         request.ToolUseID,
-		Input:             request.Input,
-		Message:           request.Message,
-		SessionID:         sessionID,
-		ThreadID:          threadID,
-		AgentID:           agentID,
-		PlanApproval:      request.PlanApproval,
-		Presentation:      clonePermissionPresentationForAppserver(request.Presentation),
+		Kind:               request.Kind,
+		Attempt:            request.Attempt,
+		Source:             request.Source,
+		ToolName:           request.ToolName,
+		CanonicalToolName:  request.CanonicalToolName,
+		ToolUseID:          request.ToolUseID,
+		Input:              request.Input,
+		Message:            request.Message,
+		SessionID:          sessionID,
+		ThreadID:           threadID,
+		AgentID:            agentID,
+		PlanApproval:       request.PlanApproval,
+		Presentation:       clonePermissionPresentationForAppserver(request.Presentation),
+		DecisionConstraint: request.DecisionConstraint,
 	}
 }
 
