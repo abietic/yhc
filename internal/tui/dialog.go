@@ -7,6 +7,8 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/abietic/yhc/engine"
 )
 
 // PermissionResponse represents the user's decision on a permission request.
@@ -43,17 +45,18 @@ func defaultPermissionKeyMap() permissionKeyMap {
 
 // PermissionDialog renders a permission prompt overlay with arrow-key selection.
 type PermissionDialog struct {
-	visible      bool
-	toolName     string
-	toolInput    string
-	sessionScope string
-	repeatedTool bool
-	message      string
-	responseCh   chan<- PermissionResponse
-	styles       Styles
-	environment  RenderEnvironment
-	geometry     modalFrameGeometry
-	keyMap       permissionKeyMap
+	visible            bool
+	toolName           string
+	toolInput          string
+	sessionScope       string
+	repeatedTool       bool
+	message            string
+	responseCh         chan<- PermissionResponse
+	styles             Styles
+	environment        RenderEnvironment
+	geometry           modalFrameGeometry
+	keyMap             permissionKeyMap
+	decisionConstraint engine.PermissionDecisionConstraint
 
 	options     []permOption
 	selectedIdx int
@@ -113,6 +116,12 @@ func buildOptions(toolName, sessionScope string) []permOption {
 
 // Show displays the permission dialog.
 func (d *PermissionDialog) Show(toolName, toolInput, sessionScope string, responseCh chan<- PermissionResponse) {
+	d.ShowWithConstraint(toolName, toolInput, sessionScope, engine.PermissionDecisionUnconstrained, responseCh)
+}
+
+// ShowWithConstraint presents only choices permitted by the engine-owned
+// request constraint.
+func (d *PermissionDialog) ShowWithConstraint(toolName, toolInput, sessionScope string, constraint engine.PermissionDecisionConstraint, responseCh chan<- PermissionResponse) {
 	d.visible = true
 	d.toolName = toolName
 	d.toolInput = toolInput
@@ -121,6 +130,10 @@ func (d *PermissionDialog) Show(toolName, toolInput, sessionScope string, respon
 	d.message = ""
 	d.responseCh = responseCh
 	d.options = buildOptions(toolName, sessionScope)
+	d.decisionConstraint = constraint
+	if constraint == engine.PermissionAllowOnceOnly {
+		d.options = []permOption{{label: "Yes", response: PermissionAllow}, {label: "No", response: PermissionDeny}}
+	}
 	d.selectedIdx = 0
 	d.feedback = ""
 	d.feedbackMode = false
@@ -134,6 +147,7 @@ func (d *PermissionDialog) ShowRepeatedTool(toolName, message string, attempt in
 	d.toolInput = ""
 	d.sessionScope = ""
 	d.repeatedTool = true
+	d.decisionConstraint = engine.PermissionDecisionUnconstrained
 	d.message = strings.TrimSpace(message)
 	if attempt > 0 {
 		d.message = fmt.Sprintf("Attempt %d: %s", attempt, d.message)
@@ -216,10 +230,10 @@ func (d *PermissionDialog) HandleKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	case key.Matches(msg, d.keyMap.deny):
 		d.respond(PermissionDeny)
 		return true, nil
-	case !d.repeatedTool && key.Matches(msg, d.keyMap.allowSession):
+	case !d.repeatedTool && d.decisionConstraint != engine.PermissionAllowOnceOnly && key.Matches(msg, d.keyMap.allowSession):
 		d.respond(PermissionAllowSession)
 		return true, nil
-	case !d.repeatedTool && key.Matches(msg, d.keyMap.allowAlways):
+	case !d.repeatedTool && d.decisionConstraint != engine.PermissionAllowOnceOnly && key.Matches(msg, d.keyMap.allowAlways):
 		d.respond(PermissionAllowAlways)
 		return true, nil
 	}

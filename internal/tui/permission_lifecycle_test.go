@@ -129,6 +129,37 @@ func TestCoordinatorPermissionEventDoesNotDuplicateAdapterDialog(t *testing.T) {
 	}
 }
 
+func TestP512ThreadAttentionCarriesDecisionConstraint(t *testing.T) {
+	app := newTestApp(80, 24)
+	app.handleEngineEvent(engine.QueryEvent{Type: engine.EventPermissionRequest, PermissionRequest: &engine.PermissionRequestEvent{ToolName: "Bash", ToolUseID: "constraint-1", DecisionConstraint: engine.PermissionAllowOnceOnly}})
+	request := app.threadAttention.requests["constraint-1"]
+	if request == nil || request.decisionConstraint != engine.PermissionAllowOnceOnly {
+		t.Fatalf("thread attention constraint = %#v", request)
+	}
+}
+
+func TestP512ActivePermissionDialogHidesPersistentChoices(t *testing.T) {
+	app := newTestApp(80, 24)
+	responses := make(chan PermissionResponse, 1)
+	app.dialog.ShowWithConstraint("Bash", "{}", "this command", engine.PermissionAllowOnceOnly, responses)
+	if len(app.dialog.options) != 2 || app.dialog.options[0].response != PermissionAllow || app.dialog.options[1].response != PermissionDeny {
+		t.Fatalf("constrained active dialog options = %#v", app.dialog.options)
+	}
+}
+
+func TestP512PermissionInteractionRejectsForgedPersistentResponse(t *testing.T) {
+	request := engine.PermissionPromptRequest{
+		Kind:               engine.PermissionInteractionKindPermission,
+		DecisionConstraint: engine.PermissionAllowOnceOnly,
+	}
+	for _, response := range []PermissionResponse{PermissionAllowSession, PermissionAllowAlways} {
+		result := permissionInteractionResult(request, response, threadAttentionResponseData{})
+		if result.Decision != engine.PermissionDeny || !strings.Contains(result.Message, "constraint") {
+			t.Fatalf("forged response %v = %#v", response, result)
+		}
+	}
+}
+
 func TestCoalescedPermissionResolutionClearsOnlyMatchingOwnerAttention(t *testing.T) {
 	app := New(Config{Resumed: true})
 	app.rebindLeaderThreadView("leader-thread")

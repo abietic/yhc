@@ -23,23 +23,24 @@ const (
 )
 
 type threadAttentionRequest struct {
-	ID           string
-	ThreadID     string
-	AgentID      string
-	OwnerLabel   string
-	Kind         threadAttentionKind
-	Tool         string
-	Input        string
-	SessionScope string
-	Attempt      int
-	SessionID    string
-	Source       string
-	PlanApproval *engine.PlanApprovalRequest
-	responseCh   chan<- PermissionResponse
-	uiResponse   chan PermissionResponse
-	responseData threadAttentionResponseData
-	dataCaptured bool
-	order        uint64
+	ID                 string
+	ThreadID           string
+	AgentID            string
+	OwnerLabel         string
+	Kind               threadAttentionKind
+	Tool               string
+	Input              string
+	SessionScope       string
+	Attempt            int
+	SessionID          string
+	Source             string
+	PlanApproval       *engine.PlanApprovalRequest
+	decisionConstraint engine.PermissionDecisionConstraint
+	responseCh         chan<- PermissionResponse
+	uiResponse         chan PermissionResponse
+	responseData       threadAttentionResponseData
+	dataCaptured       bool
+	order              uint64
 }
 
 type threadAttentionResponseData struct {
@@ -133,6 +134,7 @@ func mergeThreadAttentionRequest(current *threadAttentionRequest, incoming threa
 	if incoming.SessionScope != "" {
 		current.SessionScope = incoming.SessionScope
 	}
+	current.decisionConstraint = incoming.decisionConstraint
 	if incoming.Attempt != 0 {
 		current.Attempt = incoming.Attempt
 	}
@@ -299,7 +301,7 @@ func (a *App) presentNextThreadAttention() tea.Cmd {
 		a.pushDialog(StatePermission)
 		return permissionTimeoutTick()
 	default:
-		a.dialog.Show(request.Tool, request.Input, request.SessionScope, uiResponse)
+		a.dialog.ShowWithConstraint(request.Tool, request.Input, request.SessionScope, request.decisionConstraint, uiResponse)
 		a.pushDialog(StatePermission)
 		return permissionTimeoutTick()
 	}
@@ -345,14 +347,15 @@ func (a *App) resolveThreadAttention(requestID string, response PermissionRespon
 	if directGraphResume {
 		result := permissionInteractionResult(
 			engine.PermissionPromptRequest{
-				ToolName:     request.Tool,
-				ToolUseID:    request.ID,
-				Message:      request.SessionScope,
-				SessionScope: request.SessionScope,
-				SessionID:    request.SessionID,
-				ThreadID:     request.ThreadID,
-				AgentID:      request.AgentID,
-				PlanApproval: request.PlanApproval,
+				ToolName:           request.Tool,
+				ToolUseID:          request.ID,
+				Message:            request.SessionScope,
+				SessionScope:       request.SessionScope,
+				DecisionConstraint: request.decisionConstraint,
+				SessionID:          request.SessionID,
+				ThreadID:           request.ThreadID,
+				AgentID:            request.AgentID,
+				PlanApproval:       request.PlanApproval,
 			},
 			response,
 			responseData,
@@ -511,7 +514,7 @@ func (a *App) syncRuntimeThreadAttention() tea.Cmd {
 			a.threadAttention.upsert(threadAttentionRequest{
 				ID: interaction.ID, ThreadID: thread.ThreadID, AgentID: thread.AgentID,
 				OwnerLabel: a.threadAttentionOwnerLabel(thread.ThreadID, thread.AgentID),
-				Kind:       kind, Tool: interaction.ToolName, Input: string(input), SessionScope: interaction.Message, Attempt: interaction.Attempt,
+				Kind:       kind, Tool: interaction.ToolName, Input: string(input), SessionScope: interaction.Message, Attempt: interaction.Attempt, decisionConstraint: interaction.DecisionConstraint,
 				SessionID:    thread.SessionID,
 				Source:       interaction.Source,
 				PlanApproval: planApproval,

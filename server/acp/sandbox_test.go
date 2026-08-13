@@ -2,11 +2,19 @@ package acp
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/abietic/yhc/engine/config"
 	"github.com/abietic/yhc/engine/containment"
+	"github.com/abietic/yhc/engine/permission"
+	"github.com/cloudwego/eino/schema"
+	acpsdk "github.com/coder/acp-go-sdk"
 )
 
 func TestACPSandboxSelectionIsServerOwned(t *testing.T) {
@@ -97,4 +105,144 @@ func TestP511ACPEngineUsesServerOwnedBindingMatrix(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestP512ACPAutoOrdinaryBashEntrypoint(t *testing.T) {
+	conn, client, _, sessionID, root, available := p512ACPEntrypointSession(t,
+		"ordinary-bash",
+		`{"command":"printf p512-ordinary > ordinary.txt"}`,
+	)
+	client.permissionHandler = func(
+		_ context.Context,
+		request acpsdk.RequestPermissionRequest,
+	) (acpsdk.RequestPermissionResponse, error) {
+		return acpsdk.RequestPermissionResponse{},
+			fmt.Errorf("ordinary Bash unexpectedly requested permission: %#v", request)
+	}
+
+	_, err := conn.Prompt(t.Context(), acpsdk.PromptRequest{
+		SessionId: sessionID,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("run ordinary Bash")},
+	})
+	if err == nil && !available {
+		t.Fatal("unavailable Guest Bash completed without a fail-closed permission route")
+	}
+	if err != nil && available {
+		t.Fatalf("complete Darwin Guest proof prompted instead of auto-allowing: %v", err)
+	}
+	client.mu.Lock()
+	calls := append([]acpsdk.ToolCallId(nil), client.permissionRequestCallIDs...)
+	client.mu.Unlock()
+	if available && len(calls) != 0 {
+		t.Fatalf("complete Darwin Guest proof permission calls = %#v", calls)
+	}
+	if available {
+		contents, readErr := os.ReadFile(filepath.Join(root, "ordinary.txt"))
+		if readErr != nil || string(contents) != "p512-ordinary" {
+			t.Fatalf("ordinary ACP Bash output=%q err=%v", contents, readErr)
+		}
+	}
+	if !available && len(calls) != 1 {
+		t.Fatalf("unavailable Guest Bash did not fail closed: calls=%#v err=%v", calls, err)
+	}
+}
+
+func TestP512ACPCriticalBashEntrypoint(t *testing.T) {
+	conn, client, _, sessionID, _, _ := p512ACPEntrypointSession(t,
+		"critical-bash",
+		`{"command":"rm -f /"}`,
+	)
+	var options []string
+	client.permissionHandler = func(
+		_ context.Context,
+		request acpsdk.RequestPermissionRequest,
+	) (acpsdk.RequestPermissionResponse, error) {
+		for _, option := range request.Options {
+			options = append(options, string(option.OptionId))
+		}
+		return acpsdk.RequestPermissionResponse{Outcome: acpsdk.RequestPermissionOutcome{
+			Selected: &acpsdk.RequestPermissionOutcomeSelected{OptionId: "reject"},
+		}}, nil
+	}
+
+	if _, err := conn.Prompt(t.Context(), acpsdk.PromptRequest{
+		SessionId: sessionID,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("run critical Bash")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client.mu.Lock()
+	calls := append([]acpsdk.ToolCallId(nil), client.permissionRequestCallIDs...)
+	client.mu.Unlock()
+	if len(calls) != 1 || !slices.Equal(options, []string{"allow", "reject"}) {
+		t.Fatalf("critical Bash live permission calls/options = %#v/%#v", calls, options)
+	}
+}
+
+func TestP512ACPCriticalBashRejectsForgedPersistentDecision(t *testing.T) {
+	conn, client, agent, sessionID, _, _ := p512ACPEntrypointSession(t,
+		"critical-bash-forged-always",
+		`{"command":"rm -f /"}`,
+	)
+	client.permissionHandler = func(
+		_ context.Context,
+		request acpsdk.RequestPermissionRequest,
+	) (acpsdk.RequestPermissionResponse, error) {
+		return acpsdk.RequestPermissionResponse{Outcome: acpsdk.RequestPermissionOutcome{
+			Selected: &acpsdk.RequestPermissionOutcomeSelected{OptionId: "allow_always"},
+		}}, nil
+	}
+	if _, err := conn.Prompt(t.Context(), acpsdk.PromptRequest{
+		SessionId: sessionID,
+		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock("forge persistent critical Bash approval")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agent.mu.Lock()
+	eng := agent.sessions[sessionID].Engine
+	agent.mu.Unlock()
+	if approvals := eng.GetApprovalTracker().List(); len(approvals) != 0 {
+		t.Fatalf("forged ACP persistent decision created approvals: %#v", approvals)
+	}
+}
+
+func p512ACPEntrypointSession(
+	t *testing.T,
+	callID, arguments string,
+) (*acpsdk.ClientSideConnection, *testClient, *Agent, acpsdk.SessionId, string, bool) {
+	t.Helper()
+	model := &mockChatModel{responses: []*schema.Message{{
+		Role: schema.Assistant,
+		ToolCalls: []schema.ToolCall{{
+			ID: callID, Type: "function",
+			Function: schema.FunctionCall{Name: "Bash", Arguments: arguments},
+		}},
+	}, {Role: schema.Assistant, Content: "done"}}}
+	conn, client, agent := setupTestACPWithAgent(t, model)
+	root := t.TempDir()
+	agent.config.YoloMode = false
+	agent.config.CWD = root
+	agent.config.PermissionModeFlag = string(permission.ModeAuto)
+	agent.config.SandboxProfileFlag = string(containment.ProfileWorkspaceWrite)
+	agent.config.SandboxProfileFlagSet = true
+	if _, err := conn.Initialize(t.Context(), acpsdk.InitializeRequest{
+		ProtocolVersion: acpsdk.ProtocolVersionNumber,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := conn.NewSession(t.Context(), acpsdk.NewSessionRequest{
+		Cwd: root, McpServers: []acpsdk.McpServer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.mu.Lock()
+	engine := agent.sessions[session.SessionId].Engine
+	agent.mu.Unlock()
+	guest := engine.ExecutionBindingMatrix().Guest()
+	if guest.Policy().Spec().Entrypoint != containment.EntrypointACP {
+		t.Fatalf("Guest entrypoint = %q, want ACP", guest.Policy().Spec().Entrypoint)
+	}
+	return conn, client, agent, session.SessionId, root,
+		guest.Availability() == containment.BindingAvailable
 }

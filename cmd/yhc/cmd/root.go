@@ -691,15 +691,21 @@ func resolvePlainProjectGraphPermission(
 		return errors.New("plain ProjectGraph interaction is unavailable")
 	}
 	result := prompt(ctx, engine.PermissionPromptRequest{
-		ToolName:     request.ToolName,
-		ToolUseID:    request.ToolUseID,
-		Input:        request.Input,
-		Message:      request.Message,
-		SessionScope: request.Message,
-		SessionID:    eng.SessionID(),
-		ThreadID:     eng.ThreadID(),
-		AgentID:      eng.AgentID(),
-		PlanApproval: request.PlanApproval,
+		Kind:               request.Kind,
+		Attempt:            request.Attempt,
+		Source:             request.Source,
+		ToolName:           request.ToolName,
+		CanonicalToolName:  request.CanonicalToolName,
+		ToolUseID:          request.ToolUseID,
+		Input:              request.Input,
+		Message:            request.Message,
+		SessionScope:       request.Message,
+		SessionID:          eng.SessionID(),
+		ThreadID:           eng.ThreadID(),
+		AgentID:            eng.AgentID(),
+		PlanApproval:       request.PlanApproval,
+		Presentation:       clonePlainPermissionPresentation(request.Presentation),
+		DecisionConstraint: request.DecisionConstraint,
 	})
 	if !eng.ResolvePermissionInteraction(request.ToolUseID, result) {
 		return fmt.Errorf(
@@ -708,6 +714,18 @@ func resolvePlainProjectGraphPermission(
 		)
 	}
 	return nil
+}
+
+func clonePlainPermissionPresentation(
+	presentation *engine.PermissionPresentation,
+) *engine.PermissionPresentation {
+	if presentation == nil {
+		return nil
+	}
+	cloned := *presentation
+	cloned.Evidence = append([]engine.PermissionPresentationEvidence(nil), presentation.Evidence...)
+	cloned.GrantScopes = append([]engine.PermissionInteractionDecision(nil), presentation.GrantScopes...)
+	return &cloned
 }
 
 func claimPlainProjectGraphResume(
@@ -789,7 +807,11 @@ func makePlainPermissionPrompt(input *plainInputBroker, writer io.Writer) engine
 		if command, ok := request.Input["command"].(string); ok && command != "" {
 			desc += ": " + command
 		}
-		fmt.Fprintf(writer, "Allow %s? [y] once / [s] session / [a] always / [n] deny: ", desc)
+		if request.DecisionConstraint == engine.PermissionAllowOnceOnly {
+			fmt.Fprintf(writer, "Allow %s? [y] once / [n] deny: ", desc)
+		} else {
+			fmt.Fprintf(writer, "Allow %s? [y] once / [s] session / [a] always / [n] deny: ", desc)
+		}
 		result := input.next(ctx)
 		line, err := result.line, result.err
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -803,8 +825,14 @@ func makePlainPermissionPrompt(input *plainInputBroker, writer io.Writer) engine
 		case "y", "yes", "once":
 			return engine.PermissionInteractionResult{Decision: engine.PermissionAllowOnce}
 		case "s", "session":
+			if request.DecisionConstraint == engine.PermissionAllowOnceOnly {
+				return engine.PermissionInteractionResult{Decision: engine.PermissionDeny, Message: "user denied permission"}
+			}
 			return engine.PermissionInteractionResult{Decision: engine.PermissionAllowSession}
 		case "a", "always":
+			if request.DecisionConstraint == engine.PermissionAllowOnceOnly {
+				return engine.PermissionInteractionResult{Decision: engine.PermissionDeny, Message: "user denied permission"}
+			}
 			return engine.PermissionInteractionResult{Decision: engine.PermissionAllowAlways}
 		default:
 			return engine.PermissionInteractionResult{Decision: engine.PermissionDeny, Message: "user denied permission"}

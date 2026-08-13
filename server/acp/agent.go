@@ -1018,14 +1018,20 @@ func (a *Agent) resolveProjectGraphPermission(
 	result := a.makeACPPermissionPrompt(sessionID)(
 		ctx,
 		engine.PermissionPromptRequest{
-			ToolName:     request.ToolName,
-			ToolUseID:    request.ToolUseID,
-			Input:        request.Input,
-			Message:      request.Message,
-			SessionID:    string(sessionID),
-			ThreadID:     queryEngine.ThreadID(),
-			AgentID:      queryEngine.AgentID(),
-			PlanApproval: request.PlanApproval,
+			Kind:               request.Kind,
+			Attempt:            request.Attempt,
+			Source:             request.Source,
+			ToolName:           request.ToolName,
+			CanonicalToolName:  request.CanonicalToolName,
+			ToolUseID:          request.ToolUseID,
+			Input:              request.Input,
+			Message:            request.Message,
+			SessionID:          string(sessionID),
+			ThreadID:           queryEngine.ThreadID(),
+			AgentID:            queryEngine.AgentID(),
+			PlanApproval:       request.PlanApproval,
+			Presentation:       cloneACPPermissionPresentation(request.Presentation),
+			DecisionConstraint: request.DecisionConstraint,
 		},
 	)
 	if !queryEngine.ResolvePermissionInteraction(
@@ -1038,6 +1044,18 @@ func (a *Agent) resolveProjectGraphPermission(
 		)
 	}
 	return nil
+}
+
+func cloneACPPermissionPresentation(
+	presentation *engine.PermissionPresentation,
+) *engine.PermissionPresentation {
+	if presentation == nil {
+		return nil
+	}
+	cloned := *presentation
+	cloned.Evidence = append([]engine.PermissionPresentationEvidence(nil), presentation.Evidence...)
+	cloned.GrantScopes = append([]engine.PermissionInteractionDecision(nil), presentation.GrantScopes...)
+	return &cloned
 }
 
 // Cancel interrupts a running prompt.
@@ -1667,11 +1685,7 @@ func (a *Agent) makeACPPermissionPrompt(sessionID acpsdk.SessionId) engine.Permi
 		}
 		title := fmt.Sprintf("Execute: %s", request.ToolName)
 		var toolContent []acpsdk.ToolCallContent
-		options := []acpsdk.PermissionOption{
-			{Kind: acpsdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"},
-			{Kind: acpsdk.PermissionOptionKindAllowAlways, Name: "Always Allow", OptionId: "allow_always"},
-			{Kind: acpsdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"},
-		}
+		options := acpPermissionOptions(request)
 
 		// Apply permission timeout to avoid indefinite blocking.
 		timeout := a.permissionTimeout
@@ -1718,6 +1732,13 @@ func (a *Agent) makeACPPermissionPrompt(sessionID acpsdk.SessionId) engine.Permi
 			case "allow":
 				return engine.PermissionInteractionResult{Decision: engine.PermissionAllowOnce}
 			case "allow_always":
+				if request.DecisionConstraint == engine.PermissionAllowOnceOnly {
+					return acpPermissionTerminalResult(
+						request,
+						engine.PermissionDeny,
+						"permission decision is not allowed by request constraint",
+					)
+				}
 				return engine.PermissionInteractionResult{Decision: engine.PermissionAllowAlways}
 			}
 		}
@@ -1734,6 +1755,14 @@ func (a *Agent) makeACPPermissionPrompt(sessionID acpsdk.SessionId) engine.Permi
 			"user denied permission",
 		)
 	}
+}
+
+func acpPermissionOptions(request engine.PermissionPromptRequest) []acpsdk.PermissionOption {
+	options := []acpsdk.PermissionOption{{Kind: acpsdk.PermissionOptionKindAllowOnce, Name: "Allow", OptionId: "allow"}}
+	if request.DecisionConstraint != engine.PermissionAllowOnceOnly {
+		options = append(options, acpsdk.PermissionOption{Kind: acpsdk.PermissionOptionKindAllowAlways, Name: "Always Allow", OptionId: "allow_always"})
+	}
+	return append(options, acpsdk.PermissionOption{Kind: acpsdk.PermissionOptionKindRejectOnce, Name: "Reject", OptionId: "reject"})
 }
 
 func acpPermissionTerminalResult(
