@@ -1,9 +1,9 @@
 # Product Evolution Plan
 
 **Created:** 2026-06-15
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-13
 **Status:** active-plan
-**Current stage:** no slice is `Ready`; P44 remains deferred and P51.2 has not passed its own intake.
+**Current stage:** P51.2 is the sole `Ready` slice; P44 remains deferred.
 
 > **Ownership:** accepted future work, dependency-safe execution order, and
 > the next executable slice. [`queue.yaml`](queue.yaml) is the machine-readable
@@ -41,8 +41,9 @@ accepted P42.1 process-class binding contract: model-issued Guest Bash uses a
 real Darwin Seatbelt `workspace-write` adapter, while shell hooks and configured
 stdio MCP remain explicitly ambient. Unsupported or failed Guest enforcement
 is unavailable and fails before spawn rather than retrying ambient. P51.1 does
-not change any permission outcome. P51.2 is not active and must pass its own
-intake before containment proof can reduce Auto prompts.
+not change any permission outcome. P51.2 passed its independent public intake
+and is the sole Ready slice; runtime behavior remains unchanged until that
+slice closes.
 
 P48 records five approved ACP boundary repairs for Session-root deletion, Plan
 tool identity, replay output type, Windows MCP environment identity, and unsafe
@@ -60,7 +61,7 @@ explains why no numeric Goal default was justified, while P49 closed the user
 problem through optional-budget semantics instead. G2 has no accepted
 successor. G28 remains open after P51.1 because environment credentials, shell
 hooks, configured stdio MCP, and hard memory/file-descriptor/process-count
-limits are still ambient. G48-G50 are closed. No slice is currently active.
+limits are still ambient. G48-G50 are closed. P51.2 is the sole active slice.
 
 ## Execution Topology
 
@@ -76,16 +77,22 @@ Three relationships are intentionally separate:
 <!-- migration-queue:begin -->
 > Generated from [`queue.yaml`](queue.yaml). Run `go run ./scripts/migration_queue render` after changing queue data; `make docs-check` rejects drift.
 
-**Snapshot:** 2026-08-08; 0 `Ready`, 0 `Queued`, 0 `Blocked`, 1 deferred decisions.
+**Snapshot:** 2026-08-13; 1 `Ready`, 0 `Queued`, 0 `Blocked`, 1 deferred decisions.
 
 ```mermaid
 flowchart LR
     accTitle: Active evolution promotion topology
     accDescr: Each active slice follows its promotion gate. Solid gate edges are satisfied; dotted gate edges are pending. Future hard slice dependencies are rendered as solid slice-to-slice edges.
-    no_active["No accepted active slices"]
+    gate_slice_p51_2["Gate satisfied: public Guest proof and cross-entrypoint permission intake"] --> slice_p51_2["P51.2 Ready"]
+    classDef ready stroke-width:3px
+    class slice_p51_2 ready
 ```
 
-There is no accepted incomplete slice. Open gaps remain in `REMAINING.md` until intake accepts a successor; they do not become queue rows automatically.
+The diagram is a gate/dependency view, not a schedule. The table below is its text equivalent and adds risk priority.
+
+| Priority | Slice and state | Hard dependencies | Promotion gate | Gap | Accepted outcome |
+|---:|---|---|---|---|---|
+| 170 | [P51.2](plans/p51-2-auto-containment-admission.md#observable-contract) `Ready` | — | [public Guest proof and cross-entrypoint permission intake](plans/p51-2-auto-containment-admission.md#intake-evidence) `Satisfied` | [G28](REMAINING.md#verified-current-implementation-gaps) | Auto-allow exact proof-bound Darwin Guest Bash while critical literal rm/rmdir requires fresh AllowOnce and no entrypoint can broaden it. |
 
 ### Deferred decisions
 

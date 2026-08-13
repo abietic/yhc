@@ -1097,6 +1097,11 @@ privacy:
         rule_id: high-entropy-token
         match_sha256: 09cc0a4d39e209898736536d3eb42ee2c004c6e9dca488be6ace397b168f831c
         purpose: documentation-example
+      - path: docs/migration/plans/p51-2-auto-containment-admission.md
+        line: 32
+        rule_id: high-entropy-token
+        match_sha256: 88bfcc50422170b47a913651b3457654859941d96f3e1f2f3b91bcbea7967636
+        purpose: documentation-example
       - path: docs/migration/reference/tui/global-display-cell-follow-geometry-audit.md
         line: 34
         rule_id: high-entropy-token

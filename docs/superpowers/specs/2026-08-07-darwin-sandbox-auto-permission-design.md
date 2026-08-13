@@ -1,7 +1,7 @@
 # Darwin Sandbox And Auto Permission Design
 
 **Status:** active-plan
-**Delivery:** P51.1 complete; P51.2 pending intake
+**Delivery:** P51.1 complete; P51.2 Ready, not implemented
 **Accepted:** 2026-08-07
 **Last verified:** 2026-08-08
 **Source snapshot:** `origin/master` at
@@ -42,8 +42,9 @@ can be read and printed by Bash.
 
 This document freezes the two-stage design. P51.1 is now implemented and G28
 remains open because credentials, hooks/MCP, and hard resource limits are still
-ambient. P51.2 has not passed its own intake, so the Auto admission sections
-below remain accepted future design rather than current permission behavior.
+ambient. P51.2 passed its independent public intake on 2026-08-13, so the Auto
+admission sections below are executable requirements but not current permission
+behavior.
 
 ### Accepted P42 divergence
 
@@ -533,13 +534,13 @@ containment slices:
 | Order | Slice | Deliverable | Rollback boundary |
 |---:|---|---|---|
 | 1 | P51.1 Darwin Guest adapter `Complete` | Explicit process bindings, user-owned config, real Seatbelt launch and escape tests; no permission behavior change | Restore Guest to truthful ambient/disabled and remove Darwin selection/config as one unit |
-| 2 | P51.2 Auto containment admission `Pending intake` | Trusted granular proof, deterministic risk gate, hook rewrite and dispatch revalidation, prompt-reduction fixtures | Remove only the sandbox shortcut while retaining filesystem/network containment |
+| 2 | P51.2 Auto containment admission `Ready` | Trusted granular proof, narrow critical live AllowOnce, hook rewrite and dispatch revalidation, prompt-reduction fixtures | Remove only the sandbox shortcut while retaining filesystem/network containment |
 
 Each slice starts from then-current `origin/master`, ships through one
 short-lived branch and pull request, and updates only current fact owners.
-The root migration plan records P51.1 complete and currently has no `Ready`
-slice. It still owns mutable acceptance plus the one-Ready-slice limit. This
-design does not self-promote P51.2.
+The root migration plan records P51.1 complete and P51.2 as the sole `Ready`
+slice. It still owns mutable acceptance plus the one-Ready-slice limit. The
+independent public intake, rather than this design, promoted P51.2.
 
 Every code slice closes with:
 

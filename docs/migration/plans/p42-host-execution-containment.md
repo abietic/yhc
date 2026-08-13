@@ -2,7 +2,7 @@
 
 **Status:** active-plan
 **Completed slices:** P42.0, P51.1
-**Pending design stage:** P51.2 is not admitted
+**Ready slice:** P51.2 proof-bound Auto Bash admission
 **Adoption:** `project-native`
 **Gap:** G28
 
@@ -15,8 +15,8 @@ P42.0 completion evidence is
 [`p42-0-execution-policy-snapshot.md`](../history/runtime/p42-0-execution-policy-snapshot.md).
 The 2026-08-08 intake accepted the P42.1 axis-level proof contract, and P51.1
 now implements its first Darwin Guest adapter slice. G28 remains open for the
-deliberately ambient credential, hook/MCP, and hard-resource axes. P51.2 has an
-accepted design but no executable queue row.
+deliberately ambient credential, hook/MCP, and hard-resource axes. P51.2 is the
+sole Ready queue row and remains unimplemented.
 
 ## Problem
 
@@ -349,5 +349,7 @@ That intake probe proved only that the implementation path was viable. P51.1
 subsequently supplied the real subprocess matrix, cross-entrypoint binding,
 race/lifecycle evidence, repository gates, and truthful closeout recorded in
 [`p51-1-darwin-guest-seatbelt.md`](../verification/p51-1-darwin-guest-seatbelt.md).
-The root queue is now empty; P51.2 is not active until its own intake promotes
-it.
+P51.2 passed its independent public intake on 2026-08-13 and is now the sole
+Ready queue row. Its accepted contract is
+[`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md);
+admission does not change current permission behavior.

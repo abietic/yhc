@@ -20,8 +20,8 @@ without enabling reviewer enforcement.
 The subsequent containment intake accepted P42.1's granular proof and explicit
 Guest/hook/stdio-MCP binding contract. P51.1 has now delivered the Darwin Guest
 subset with no Auto Permission outcome change. G28 stays open for ambient
-credentials, hooks/MCP, and missing hard resource limits; P51.2 remains outside
-the executable queue until a separate intake promotes it.
+credentials, hooks/MCP, and missing hard resource limits. P51.2 passed its
+separate public intake and is the sole Ready slice, but is not implemented.
 
 P49 completed the approved budget-optional Goal and restart-attribution repair,
 closing G21/G47. P47.1-P47.7 completed the approved Task Explorer program and
@@ -31,12 +31,13 @@ G36/G37; earlier intake groups have these terminal outcomes:
 
 | Contract | Outcome |
 |---|---|
+| [`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md) | Active executable contract; P51.2 is Ready, G28 remains open, and runtime behavior is unchanged until implementation closes. |
 | [`p50-permission-runtime-remediation.md`](p50-permission-runtime-remediation.md) | Historical approved contract; P50.1-P50.3 completed, closed G48-G50, and left reviewer enforcement deferred. |
 | [`p49-goal-default-unbudgeted.md`](p49-goal-default-unbudgeted.md) | P49 completed the approved budget-optional default-on Goal and restart-attribution repair; G21/G47 are closed. |
 | [`p38-provider-reasoning-origin.md`](p38-provider-reasoning-origin.md) | P38.0 completed under `adapt`, closed G34, and retained conservative public exclusion. |
 | [`p39-workspace-recovery-contract.md`](p39-workspace-recovery-contract.md) | P39.0 completed the test-backed characterization contract; G2 remains open because no production writer or command was added. |
 | [`p38-p45-next-product-intake.md`](p38-p45-next-product-intake.md) | P40.1, P41.1, and P41.2 completed and closed G12, G25, and G26; P44/P45 record `defer` for G14/G21. |
-| [`p42-host-execution-containment.md`](p42-host-execution-containment.md) | P42.0 completed the immutable compatibility seam; P51.1 delivered the P42.1 Darwin Guest binding subset, while G28 remains open and P51.2 is not admitted. |
+| [`p42-host-execution-containment.md`](p42-host-execution-containment.md) | P42.0 completed the immutable compatibility seam; P51.1 delivered the P42.1 Darwin Guest binding subset, while G28 remains open and P51.2 is Ready but not implemented. |
 | [`p43-real-repository-evaluation.md`](p43-real-repository-evaluation.md) | P43.0 completed the opt-in non-authoritative baseline and closed G29. |
 | [`p46-model-failover-repair.md`](p46-model-failover-repair.md) | P46.1 completed complete-request context admission and P46.2 completed explicit disposal plus safe cross-entrypoint fallback visibility; G36/G37 are closed. |
 | [`p47-task-explorer-remediation.md`](p47-task-explorer-remediation.md) | Historical approved contract; P47.1-P47.7 completed and closed G38-G41. |
