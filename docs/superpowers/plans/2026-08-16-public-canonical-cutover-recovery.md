@@ -282,7 +282,15 @@ mappings, by `record_id`; set `Checksum` to the empty string; and encode with
 `never_public`, and `unresolved`; and checksum policies `sha256` and
 `omit_sensitive`. Restore dispositions are exactly `retain_archive`,
 `reexpress_public`, `preserve`, `exclude_public`, and `block`; validation
-requires the classification/disposition pairing implied by those names.
+requires these explicit classification/disposition pairs:
+
+| Classification | Restore disposition |
+|---|---|
+| `already_forward_ported` | `retain_archive` |
+| `candidate_public_delta` | `reexpress_public` |
+| `private_recovery` | `preserve` |
+| `never_public` | `exclude_public` |
+| `unresolved` | `block` |
 
 - [ ] **Step 4: Implement private atomic output**
 
