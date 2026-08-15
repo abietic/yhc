@@ -335,7 +335,9 @@ func testCutoverInput(private, linked, archive string) cutoverInput {
 
 func inventoryReader(private, linked string) fakeGitReader {
 	responses := map[string][]byte{}
-	add := func(root string, output string, args ...string) { responses[gitKey(root, args...)] = []byte(output) }
+	add := func(root, output string, args ...string) {
+		responses[gitKey(root, args...)] = []byte(output)
+	}
 	for _, root := range []string{private, linked} {
 		add(root, root+"\n", "rev-parse", "--show-toplevel")
 		add(root, strings.Repeat("a", 40)+"\n", "rev-parse", "--verify", "HEAD")

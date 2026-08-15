@@ -38,10 +38,7 @@ func verifyLiveState(ctx context.Context, deps dependencies, frozen manifest, ph
 	if err != nil {
 		return err
 	}
-	currentMappings, inverse, err := phaseMappings(frozen.ArchiveMapping, phase)
-	if err != nil {
-		return err
-	}
+	currentMappings, inverse := phaseMappings(frozen.ArchiveMapping, phase)
 	if phase == phasePreMove || phase == phaseRollback {
 		if err := requireAbsent(mappingDestinations(frozen.ArchiveMapping)); err != nil {
 			return err
@@ -111,7 +108,7 @@ func mainMapping(mappings []archiveMappingRecord) (archiveMappingRecord, error) 
 	return main, nil
 }
 
-func phaseMappings(mappings []archiveMappingRecord, phase validationPhase) ([]archiveMappingRecord, map[string]string, error) {
+func phaseMappings(mappings []archiveMappingRecord, phase validationPhase) ([]archiveMappingRecord, map[string]string) {
 	current := make([]archiveMappingRecord, 0, len(mappings))
 	inverse := make(map[string]string, len(mappings))
 	for _, mapping := range mappings {
@@ -123,7 +120,7 @@ func phaseMappings(mappings []archiveMappingRecord, phase validationPhase) ([]ar
 		current = append(current, archiveMappingRecord{Source: mapping.Source, Destination: mapping.Destination})
 		inverse[mapping.Source] = mapping.Source
 	}
-	return current, inverse, nil
+	return current, inverse
 }
 
 func validateMappingTopology(mappings []archiveMappingRecord) error {
@@ -411,13 +408,4 @@ func sameRecords[T comparable](expected, actual []T, id func(T) string) bool {
 		delete(left, key)
 	}
 	return len(left) == 0
-}
-
-func processIDs(records []processRecord) string {
-	ids := make([]string, 0, len(records))
-	for _, record := range records {
-		ids = append(ids, record.RecordID)
-	}
-	sort.Strings(ids)
-	return strings.Join(ids, ",")
 }
