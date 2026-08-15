@@ -79,6 +79,50 @@ func TestValidateExpectedRepositoriesRequiresCanonicalDistinctIdentities(t *test
 	}
 }
 
+func TestCLICaptureRejectsInvalidIdentitiesBeforeRepositoryReads(t *testing.T) {
+	base := mustResolve(t, t.TempDir())
+	private := filepath.Join(base, "private")
+	public := filepath.Join(base, "public")
+	for _, root := range []string{private, public} {
+		if err := os.Mkdir(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := cutoverInput{
+		SchemaVersion:             schemaVersion,
+		ExpectedPublicRepository:  "abietic/yhc",
+		ExpectedPrivateRepository: "abietic/yhc",
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputPath := filepath.Join(base, "cutover-input.json")
+	if err := os.WriteFile(inputPath, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	collector := func(context.Context, processReader, []string) ([]processRecord, error) {
+		t.Fatal("process collection ran before repository identity validation")
+		return nil, nil
+	}
+	deps := dependencies{Git: fakeGitReader{}, Processes: zeroProcessReader{}, Now: time.Now}
+	args := []string{
+		"capture",
+		"--private-root", private,
+		"--public-root", public,
+		"--archive-root", filepath.Join(base, "archive"),
+		"--input", inputPath,
+		"--output", filepath.Join(base, "manifest.json"),
+	}
+	var stdout, stderr bytes.Buffer
+	if code := runWithProcessCollector(args, &stdout, &stderr, deps, collector); code != 1 {
+		t.Fatalf("capture code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "validate repository identities") || strings.Contains(stderr.String(), "unexpected git command") {
+		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestCLICaptureSealsAndStrictlyRereadsOutput(t *testing.T) {
 	base := mustResolve(t, t.TempDir())
 	private := filepath.Join(base, "private")
