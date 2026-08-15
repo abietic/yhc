@@ -22,8 +22,8 @@ SHA-256, GNU Make, repository iteration evidence.
 
 **Status:** active-plan
 **Created:** 2026-08-16
-**Plan state:** Implemented and focused-verified on a topic branch;
-committed-tree evidence and the live cutover remain pending
+**Plan state:** Implementation committed on a topic branch; the live cutover
+remains pending
 
 > **Ownership:** implementation steps for the private recovery envelope,
 > read-only inventory capture, and archive-phase verification defined by the
