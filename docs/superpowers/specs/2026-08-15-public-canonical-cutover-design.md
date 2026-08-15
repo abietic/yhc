@@ -3,7 +3,7 @@
 **Status:** active-plan
 **Last verified:** 2026-08-15
 **Design direction:** approved 2026-08-15
-**Written review:** pending
+**Written review:** approved 2026-08-16
 **Adoption:** `project-native`
 
 > **Ownership:** local development-home cutover from the private-history
@@ -244,6 +244,13 @@ the move, run `git worktree repair PATH...` from the moved main checkout, where
 each `PATH` is the manifest-recorded current location of a retained linked
 worktree.
 
+A prunable registration whose worktree root is already absent remains a
+first-class recovery record, but it has no move mapping and is never passed to
+`git worktree repair`. Pre-move verification permits that registration only
+when the manifest records its absent/prunable state and classification exactly;
+post-move and rollback verification require the same registration to remain in
+the Git worktree inventory. This cutover never runs `git worktree prune`.
+
 Then, for every retained worktree, compare `HEAD`, porcelain status,
 branch or detached identity, and `git rev-parse --git-common-dir` with the
 manifest; `git worktree list --porcelain -z` must enumerate the same record-ID
@@ -326,9 +333,11 @@ Before archive promotion, rollback is simply to keep both saved projects and
 both checkout paths unchanged. Public topic branches are additive and the
 private history remains authoritative for recovery.
 
-After a successful archive rename, rollback moves the exact archived checkout
-and its matching Git administrative data back to the manifest-recorded path,
-but only after the same no-CWD, open-file, and collision preflight. It then runs
+After a successful archive rename, rollback first verifies a distinct
+pre-rollback phase against the archive-side roots, including the same no-CWD,
+open-file, remote, mapping, and collision preflight. Only then does it move the
+exact archived checkout and its matching Git administrative data back to the
+manifest-recorded path. It then runs
 `git worktree repair` with every original linked-worktree path and compares the
 restored record-ID set, refs, statuses, and common directory with the pre-move
 manifest. No rollback rewrites the public Git graph or applies private stashes
