@@ -1,13 +1,14 @@
 # Design Specification Index
 
 **Status:** active-plan
-**Last verified:** 2026-08-13
+**Last verified:** 2026-08-15
 
 > **Ownership:** discoverability and lifecycle routing for approved design
 > specifications written before implementation planning
 
 | Specification | Scope | State |
 |---|---|---|
+| [`2026-08-15-public-canonical-cutover-design.md`](2026-08-15-public-canonical-cutover-design.md) | Public YHC development-home cutover, task continuity, private recovery inventory, archive preconditions, and Desktop deferral | Direction accepted; written review pending |
 | [`2026-08-13-untracked-sbom-design.md`](2026-08-13-untracked-sbom-design.md) | Remove the committed SBOM while retaining open-source licensing and fail-closed dependency-license checks | Historical; implemented 2026-08-13 |
 | [`2026-08-09-yhc-public-release-design.md`](2026-08-09-yhc-public-release-design.md) | Clean public repository, private archive, identity compatibility, source-mapping retention, and publication gates | Historical; implemented 2026-08-11 |
 | [`2026-08-09-iteration-quality-s5-completion-design.md`](2026-08-09-iteration-quality-s5-completion-design.md) | Residual plan/worktree hygiene, independent regression oracles, and local performance measurement after S1-S4 | Approved; F0 executed and S5A-S5C implementation is active |
