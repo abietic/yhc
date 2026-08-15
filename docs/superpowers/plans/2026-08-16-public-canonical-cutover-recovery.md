@@ -22,7 +22,8 @@ SHA-256, GNU Make, repository iteration evidence.
 
 **Status:** active-plan
 **Created:** 2026-08-16
-**Plan state:** Ready for implementation from current public `origin/master`
+**Plan state:** Implemented and focused-verified on a topic branch;
+committed-tree evidence and the live cutover remain pending
 
 > **Ownership:** implementation steps for the private recovery envelope,
 > read-only inventory capture, and archive-phase verification defined by the
@@ -100,7 +101,7 @@ SHA-256, GNU Make, repository iteration evidence.
   `sealManifest(manifest) (manifest, error)`, `readManifest(string) (manifest,
   error)`, and `writeManifestAtomic(string, manifest) error`.
 
-- [ ] **Step 1: Write strict-decoding and canonical-checksum tests**
+- [x] **Step 1: Write strict-decoding and canonical-checksum tests**
 
 Create table tests that require this public shape:
 
@@ -254,7 +255,7 @@ Tests must prove that array order does not change the sealed checksum, changing
 one retained field does change it, the `checksum` field is excluded from its
 own digest, and `readManifest` rejects unknown JSON fields and trailing values.
 
-- [ ] **Step 2: Run the focused test and observe the missing owner**
+- [x] **Step 2: Run the focused test and observe the missing owner**
 
 ```bash
 go test ./scripts/cutover_recovery -run 'Test(ManifestStrictDecode|CanonicalPayload|SealManifest)' -count=1
@@ -262,7 +263,7 @@ go test ./scripts/cutover_recovery -run 'Test(ManifestStrictDecode|CanonicalPayl
 
 Expected: FAIL because the package and types do not exist.
 
-- [ ] **Step 3: Implement the envelope and stable record identities**
+- [x] **Step 3: Implement the envelope and stable record identities**
 
 Use `sha256:<lowercase hex>` for both manifest checksums and record IDs. A
 record ID hashes three NUL-separated fields:
@@ -292,7 +293,7 @@ requires these explicit classification/disposition pairs:
 | `never_public` | `exclude_public` |
 | `unresolved` | `block` |
 
-- [ ] **Step 4: Implement private atomic output**
+- [x] **Step 4: Implement private atomic output**
 
 Resolve the output parent and existing repository roots with `EvalSymlinks`;
 resolve a prospective missing archive path through its nearest existing parent,
@@ -302,7 +303,7 @@ temporary file with mode
 target, then `fsync` the parent directory. Reject a symlink output or a parent
 directory that changes identity during the write.
 
-- [ ] **Step 5: Run the package tests and commit the schema owner**
+- [x] **Step 5: Run the package tests and commit the schema owner**
 
 ```bash
 go test ./scripts/cutover_recovery -count=1
@@ -352,7 +353,7 @@ type repositoryInventory struct {
 }
 ```
 
-- [ ] **Step 1: Write fake-runner tests for complete Git capture**
+- [x] **Step 1: Write fake-runner tests for complete Git capture**
 
 Use NUL-delimited fixtures for:
 
@@ -376,7 +377,7 @@ non-prunable worktree receives one archive mapping; an absent prunable
 registration receives none. Mapping kinds are exactly `main_checkout` and
 `linked_worktree`.
 
-- [ ] **Step 2: Prove the tests fail before the collector exists**
+- [x] **Step 2: Prove the tests fail before the collector exists**
 
 ```bash
 go test ./scripts/cutover_recovery -run 'TestCollect(GitInventory|DirtyRename|Stashes|ClassificationCoverage)' -count=1
@@ -384,14 +385,14 @@ go test ./scripts/cutover_recovery -run 'TestCollect(GitInventory|DirtyRename|St
 
 Expected: FAIL with missing collector symbols.
 
-- [ ] **Step 3: Implement an explicit read-only Git allowlist**
+- [x] **Step 3: Implement an explicit read-only Git allowlist**
 
 Allow only the commands enumerated in Step 1 plus `rev-parse --show-toplevel`.
 Validate `-C` roots against the captured worktree set before execution. Never
 allow `checkout`, `switch`, `reset`, `clean`, `stash apply`, `worktree repair`,
 `remote set-url`, `fetch`, `push`, or arbitrary caller-supplied arguments.
 
-- [ ] **Step 4: Parse and classify every retained Git record**
+- [x] **Step 4: Parse and classify every retained Git record**
 
 Canonicalize paths without following a missing archive destination. A
 prunable registration with an absent root retains its lexically cleaned
@@ -410,7 +411,7 @@ each of `ref`, `worktree`, `dirty_path`, and `stash`. An override rule must
 match one record exactly; zero or multiple matches is an error, and a matched
 override replaces rather than duplicates its kind default.
 
-- [ ] **Step 5: Run focused and full package tests, then commit**
+- [x] **Step 5: Run focused and full package tests, then commit**
 
 ```bash
 go test ./scripts/cutover_recovery -run 'TestCollect(GitInventory|DirtyRename|Stashes|ClassificationCoverage)' -count=1
@@ -462,7 +463,7 @@ type dependencies struct {
 }
 ```
 
-- [ ] **Step 1: Write lsof parser and path-boundary tests**
+- [x] **Step 1: Write lsof parser and path-boundary tests**
 
 Fixture the machine-readable fields emitted after `absolute_root` is resolved
 with `filepath.EvalSymlinks`:
@@ -476,7 +477,7 @@ descriptor beneath the exact root to become `occupancy_kind: open_file`, and
 no command text to be retained. Prove that `/repo-old` does not match `/repo`
 and a failing/missing `lsof` blocks capture rather than returning an empty set.
 
-- [ ] **Step 2: Write phase-verification failure tests**
+- [x] **Step 2: Write phase-verification failure tests**
 
 Cover duplicate/missing record IDs, aggregate mismatch, changed stash OID,
 changed dirty porcelain bytes, changed HEAD/branch/common-dir, an occupied
@@ -487,7 +488,7 @@ not enumerate the original worktree record-ID set. Also reject duplicate,
 nested, or cross-overlapping source/destination mappings. A prunable absent
 registration must remain in the worktree record-ID set but must have no mapping.
 
-- [ ] **Step 3: Run the phase tests and observe failure**
+- [x] **Step 3: Run the phase tests and observe failure**
 
 ```bash
 go test ./scripts/cutover_recovery -run 'Test(ProcessOccupancy|VerifyPreMove|VerifyPostMove|VerifyPreRollback|VerifyRollback|PrunableRegistration)' -count=1
@@ -495,7 +496,7 @@ go test ./scripts/cutover_recovery -run 'Test(ProcessOccupancy|VerifyPreMove|Ver
 
 Expected: FAIL because process and phase verification are not implemented.
 
-- [ ] **Step 4: Implement fail-closed occupancy capture**
+- [x] **Step 4: Implement fail-closed occupancy capture**
 
 On Darwin, run one exact recursive `lsof` query per move root with a bounded
 30-second context. Parse only PID, file
@@ -504,7 +505,7 @@ descriptor, and path; discard command names. Deduplicate by
 empty output as zero occupants. Any missing binary, malformed output, partial
 record, timeout, permission error, or other exit status is an error.
 
-- [ ] **Step 5: Implement phase-specific live comparison**
+- [x] **Step 5: Implement phase-specific live comparison**
 
 `pre-move` re-collects at source paths and additionally requires zero process
 records and non-existent destinations. `post-move` reads destination mappings.
@@ -515,7 +516,7 @@ stable sets plus HEAD, branch/detached identity, porcelain bytes, stash OIDs,
 dirty records, and common-directory ownership. Return a sorted list of mismatch
 codes without mutating either location.
 
-- [ ] **Step 6: Exercise real Git move, repair, and rollback in isolation**
+- [x] **Step 6: Exercise real Git move, repair, and rollback in isolation**
 
 In `integration_test.go`, create a temporary main repository, one live linked
 worktree, one dirty path, one stash, and one linked worktree whose directory is
@@ -531,7 +532,7 @@ go test ./scripts/cutover_recovery -run '^TestIntegrationMoveRepairRollback$' -c
 
 Expected: PASS on any CI platform with Git; it touches only `t.TempDir()`.
 
-- [ ] **Step 7: Run tests and commit the verifier**
+- [x] **Step 7: Run tests and commit the verifier**
 
 ```bash
 go test ./scripts/cutover_recovery -count=1
@@ -562,7 +563,7 @@ Expected: PASS; process occupancy and all mismatches are fail-closed.
   `cutover-recovery-verify`, plus an operator guide that never embeds a personal
   absolute path.
 
-- [ ] **Step 1: Write CLI contract tests**
+- [x] **Step 1: Write CLI contract tests**
 
 Require unknown commands, positional arguments, repeated/missing flags,
 relative paths, an output beneath either repository, unknown phases, and an
@@ -570,7 +571,7 @@ archive root equal to a source root to exit non-zero. Require `capture` to seal
 and re-read its output before success and `verify` to print only a status and
 record counts, never manifest contents.
 
-- [ ] **Step 2: Run the CLI tests and observe failure**
+- [x] **Step 2: Run the CLI tests and observe failure**
 
 ```bash
 go test ./scripts/cutover_recovery -run 'TestCLI' -count=1
@@ -578,7 +579,7 @@ go test ./scripts/cutover_recovery -run 'TestCLI' -count=1
 
 Expected: FAIL because the entrypoint does not exist.
 
-- [ ] **Step 3: Implement CLI parsing and Make targets**
+- [x] **Step 3: Implement CLI parsing and Make targets**
 
 Add these variables and targets without defaults for private paths:
 
@@ -595,7 +596,7 @@ Add both targets to `.PHONY`. Each Make target must fail with exit code `2`
 when a required variable is
 empty, then invoke `$(GO) run ./scripts/cutover_recovery` with explicit flags.
 
-- [ ] **Step 4: Document capture, verify, repair, and rollback ownership**
+- [x] **Step 4: Document capture, verify, repair, and rollback ownership**
 
 The guide defines the private cutover-input schema, exact environment
 variables, capture/verify commands, the external authorized rename step,
@@ -603,7 +604,7 @@ variables, capture/verify commands, the external authorized rename step,
 states that the tool never performs a rename or repair and that an unresolved
 or occupied result is a stop, not a cleanup recommendation.
 
-- [ ] **Step 5: Run focused repository gates**
+- [x] **Step 5: Run focused repository gates**
 
 ```bash
 go test ./scripts/cutover_recovery -count=1

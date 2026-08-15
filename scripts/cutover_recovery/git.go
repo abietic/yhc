@@ -627,9 +627,11 @@ func canonicalExistingPath(path string) (string, error) {
 	}
 	return filepath.Clean(resolved), nil
 }
+
 func canonicalDestinationPath(path string) (string, error) {
 	return resolveProspectivePath(path)
 }
+
 func canonicalWorktreePath(path string, prunable bool) (string, bool, error) {
 	if !filepath.IsAbs(path) {
 		return "", false, errors.New("worktree path is not absolute")
@@ -643,6 +645,7 @@ func canonicalWorktreePath(path string, prunable bool) (string, bool, error) {
 	}
 	return "", false, err
 }
+
 func canonicalGitPath(root, value string) (string, error) {
 	if value == "" {
 		return "", errors.New("git common directory is empty")
@@ -652,11 +655,13 @@ func canonicalGitPath(root, value string) (string, error) {
 	}
 	return canonicalExistingPath(value)
 }
+
 func safeRelativePath(path []byte) bool {
 	raw := string(path)
 	value := filepath.Clean(filepath.FromSlash(raw))
 	return raw != "" && raw == filepath.ToSlash(value) && value != "." && value != ".." && !strings.HasPrefix(value, ".."+string(filepath.Separator)) && !filepath.IsAbs(value)
 }
+
 func parseNULLineRecords(output []byte, wantFields int, kind string) ([][][]byte, error) {
 	if len(output) == 0 {
 		return nil, nil
@@ -683,6 +688,7 @@ func parseNULLineRecords(output []byte, wantFields int, kind string) ([][][]byte
 	}
 	return records, nil
 }
+
 func splitNUL(b []byte) [][]byte {
 	parts := strings.Split(string(b), "\x00")
 	if len(parts) > 0 && parts[len(parts)-1] == "" {
@@ -694,6 +700,7 @@ func splitNUL(b []byte) [][]byte {
 	}
 	return result
 }
+
 func splitNULGroups(b []byte) [][][]byte {
 	fields := splitNUL(b)
 	var groups [][][]byte
@@ -713,6 +720,7 @@ func splitNULGroups(b []byte) [][][]byte {
 	}
 	return groups
 }
+
 func joinNUL(fields [][]byte) []byte {
 	return []byte(strings.Join(func() []string {
 		values := make([]string, len(fields))
