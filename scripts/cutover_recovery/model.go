@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -204,7 +205,7 @@ func validateManifest(m manifest, phase validationPhase) error {
 	if err := validateClassifications(m.Classifications, targets, phase); err != nil {
 		return err
 	}
-	if err := validateProcesses(m.Processes); err != nil {
+	if err := validateProcesses(m.Processes, m.ArchiveMapping); err != nil {
 		return err
 	}
 	return nil
@@ -354,6 +355,8 @@ func addRecords[T any](seen map[string]string, records []T, kind string, id func
 func validateMappings(m manifest) error {
 	seen := make(map[string]struct{}, len(m.ArchiveMapping))
 	worktrees := make(map[string]worktreeRecord, len(m.Worktrees))
+	mapped := make(map[string]archiveMappingRecord, len(m.ArchiveMapping))
+	mainCount := 0
 	for _, worktree := range m.Worktrees {
 		worktrees[worktree.RecordID] = worktree
 	}
@@ -375,8 +378,35 @@ func validateMappings(m manifest) error {
 		if worktree.Prunable && !worktree.Present {
 			return fmt.Errorf("archive mapping %q targets absent prunable worktree", mapping.RecordID)
 		}
+		if !worktree.Present {
+			return fmt.Errorf("archive mapping %q targets absent worktree", mapping.RecordID)
+		}
+		if _, exists := mapped[mapping.WorktreeRecordID]; exists {
+			return fmt.Errorf("multiple archive mappings target worktree %q", mapping.WorktreeRecordID)
+		}
 		if mapping.Source != worktree.Source {
 			return fmt.Errorf("archive mapping %q source does not match worktree %q", mapping.RecordID, mapping.WorktreeRecordID)
+		}
+		if mapping.Kind == "main_checkout" {
+			mainCount++
+			if mapping.Source != m.Private.Root {
+				return fmt.Errorf("main checkout mapping source %q does not match private root", mapping.Source)
+			}
+		} else if mapping.Source == m.Private.Root {
+			return errors.New("private root must use main_checkout mapping")
+		}
+		mapped[mapping.WorktreeRecordID] = mapping
+	}
+	if mainCount != 1 {
+		return fmt.Errorf("archive mapping has %d main checkouts, want exactly one", mainCount)
+	}
+	for _, worktree := range m.Worktrees {
+		_, exists := mapped[worktree.RecordID]
+		if worktree.Present && !exists {
+			return fmt.Errorf("present worktree %q is missing archive mapping", worktree.RecordID)
+		}
+		if !worktree.Present && exists {
+			return fmt.Errorf("absent worktree %q has archive mapping", worktree.RecordID)
 		}
 	}
 	return nil
@@ -444,7 +474,7 @@ func validateClassification(c classificationRecord, phase validationPhase) error
 	return nil
 }
 
-func validateProcesses(processes []processRecord) error {
+func validateProcesses(processes []processRecord, mappings []archiveMappingRecord) error {
 	seen := make(map[string]struct{}, len(processes))
 	for _, process := range processes {
 		if !validDigest(process.RecordID) || process.RootRecordID == "" || process.PID <= 0 || !filepath.IsAbs(process.Path) {
@@ -457,6 +487,20 @@ func validateProcesses(processes []processRecord) error {
 			return fmt.Errorf("duplicate process record %q", process.RecordID)
 		}
 		seen[process.RecordID] = struct{}{}
+		matches := 0
+		for _, mapping := range mappings {
+			if !isWithin(process.Path, mapping.Source) {
+				continue
+			}
+			matches++
+			wantRootID := makeRecordID("process_root", mapping.Source, mapping.Source)
+			if process.RootRecordID != wantRootID {
+				return fmt.Errorf("process %q has wrong root record ID", process.RecordID)
+			}
+		}
+		if matches != 1 {
+			return fmt.Errorf("process %q path must belong to exactly one mapped source", process.RecordID)
+		}
 	}
 	return nil
 }

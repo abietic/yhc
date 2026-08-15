@@ -192,6 +192,46 @@ func TestSealManifestRejectsInvalidGitObjectIDs(t *testing.T) {
 	}
 }
 
+func TestSealManifestRequiresExactPresentWorktreeMappings(t *testing.T) {
+	t.Run("missing present mapping", func(t *testing.T) {
+		m := testManifest(t)
+		m.ArchiveMapping = nil
+		m.Aggregates.ArchiveMappings = 0
+		if _, err := sealManifest(m); err == nil || !strings.Contains(err.Error(), "main checkouts") {
+			t.Fatalf("missing mapping accepted: %v", err)
+		}
+	})
+	t.Run("duplicate mapping", func(t *testing.T) {
+		m := testManifest(t)
+		duplicate := m.ArchiveMapping[0]
+		duplicate.Destination = "/archive-second"
+		duplicate.RecordID = makeRecordID("archive_mapping", duplicate.Source, duplicate.Destination)
+		m.ArchiveMapping = append(m.ArchiveMapping, duplicate)
+		m.Aggregates.ArchiveMappings++
+		if _, err := sealManifest(m); err == nil || !strings.Contains(err.Error(), "multiple archive mappings") {
+			t.Fatalf("duplicate mapping accepted: %v", err)
+		}
+	})
+}
+
+func TestSealManifestRejectsProcessOutsideMappedRootOrWrongRootID(t *testing.T) {
+	for name, test := range map[string]struct{ path, rootID string }{
+		"outside":    {"/outside/file", makeRecordID("process_root", "/private", "/private")},
+		"wrong root": {"/private/file", makeRecordID("process_root", "/other", "/other")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := testManifest(t)
+			record := processRecord{RootRecordID: test.rootID, PID: 99, OccupancyKind: "cwd", Path: test.path}
+			record.RecordID = makeRecordID("process", record.RootRecordID, processIdentity(record))
+			m.Processes = []processRecord{record}
+			m.Aggregates.Processes = 1
+			if _, err := sealManifest(m); err == nil {
+				t.Fatal("invalid process mapping accepted")
+			}
+		})
+	}
+}
+
 func TestWriteManifestAtomicRejectsProtectedRootsAndWrites0600(t *testing.T) {
 	base := t.TempDir()
 	publicRoot := filepath.Join(base, "public")
