@@ -3288,27 +3288,27 @@ privacy:
       match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
       purpose: build-metadata
     - path: "scripts/cutover_recovery/git_test.go"
-      line: 283
+      line: 308
       rule_id: private-email
       match_sha256: 236b84ba8ca74c27fa290ee5b6f4d2d5fdf676b2fefce7b0f95e4d380fe48f20
       purpose: synthetic-security-fixture
     - path: "scripts/cutover_recovery/git_test.go"
-      line: 283
+      line: 308
       rule_id: private-email
       match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
       purpose: synthetic-security-fixture
     - path: "scripts/cutover_recovery/git_test.go"
-      line: 288
+      line: 313
       rule_id: private-email
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: synthetic-security-fixture
     - path: "scripts/cutover_recovery/git_test.go"
-      line: 288
+      line: 313
       rule_id: private-email
       match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
       purpose: synthetic-security-fixture
     - path: "scripts/cutover_recovery/git_test.go"
-      line: 347
+      line: 372
       rule_id: private-email
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: synthetic-security-fixture
