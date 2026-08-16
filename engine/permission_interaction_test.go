@@ -137,6 +137,86 @@ func TestClonePermissionInteractionResultPreservesNilAndFreezesUpdatedInput(
 	}
 }
 
+func TestP512AllowOnceOnlyFailsClosedForForgedPersistentDecisions(t *testing.T) {
+	coordinator := newPermissionCoordinator(ResolvePermissionProjectIdentity(t.TempDir()))
+	coordinator.registerEngine("engine")
+	for _, forged := range []PermissionInteractionDecision{PermissionAllowSession, PermissionAllowAlways} {
+		t.Run(string(forged), func(t *testing.T) {
+			got := coordinator.request(context.Background(), "engine", PermissionPromptRequest{
+				ToolName: "Bash", ToolUseID: "constraint-" + string(forged),
+				DecisionConstraint: PermissionAllowOnceOnly,
+			}, func(context.Context, PermissionPromptRequest) PermissionInteractionResult {
+				return PermissionInteractionResult{Decision: forged}
+			}, nil, nil, nil)
+			if got.Decision != PermissionDeny {
+				t.Fatalf("forged %q = %#v, want deny", forged, got)
+			}
+		})
+	}
+}
+
+func TestP512AllowOnceOnlySettlementMatrixNeverCommitsPersistentIntent(t *testing.T) {
+	coordinator := newPermissionCoordinator(ResolvePermissionProjectIdentity(t.TempDir()))
+	coordinator.registerEngine("engine")
+	for _, test := range []struct {
+		decision PermissionInteractionDecision
+		want     PermissionInteractionDecision
+		commits  int32
+	}{
+		{decision: PermissionAllowOnce, want: PermissionAllowOnce, commits: 1},
+		{decision: PermissionDeny, want: PermissionDeny, commits: 1},
+		{decision: PermissionCancelled, want: PermissionCancelled, commits: 1},
+		{decision: PermissionTimedOut, want: PermissionTimedOut, commits: 1},
+		{decision: PermissionAllowSession, want: PermissionDeny, commits: 0},
+		{decision: PermissionAllowAlways, want: PermissionDeny, commits: 0},
+	} {
+		t.Run(string(test.decision), func(t *testing.T) {
+			var commits atomic.Int32
+			got := coordinator.request(
+				context.Background(),
+				"engine",
+				PermissionPromptRequest{
+					Kind: PermissionInteractionKindPermission, Source: "coordinator",
+					ToolName: "Bash", ToolUseID: "matrix-" + string(test.decision),
+					DecisionConstraint: PermissionAllowOnceOnly,
+				},
+				func(context.Context, PermissionPromptRequest) PermissionInteractionResult {
+					return PermissionInteractionResult{Decision: test.decision}
+				},
+				nil,
+				func(result PermissionInteractionResult) PermissionInteractionResult {
+					commits.Add(1)
+					return result
+				},
+				func(permissionCoalescingGrant) (PermissionActionDescriptor, bool) {
+					t.Fatal("constrained request evaluated a coalesced grant")
+					return PermissionActionDescriptor{}, false
+				},
+			)
+			if got.Decision != test.want || commits.Load() != test.commits {
+				t.Fatalf("settlement = %#v commits=%d, want %s/%d", got, commits.Load(), test.want, test.commits)
+			}
+		})
+	}
+
+	invalid := coordinator.request(
+		context.Background(),
+		"engine",
+		PermissionPromptRequest{
+			Kind: PermissionInteractionKindPermission, Source: "coordinator",
+			ToolName: "Bash", ToolUseID: "invalid-constraint",
+			DecisionConstraint: PermissionDecisionConstraint("invalid"),
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if invalid.Decision != PermissionDeny || !strings.Contains(invalid.Message, "invalid permission decision constraint") {
+		t.Fatalf("invalid constraint result = %#v", invalid)
+	}
+}
+
 func TestPermissionCoordinatorCanonicalProjectRegistryLifecycle(t *testing.T) {
 	root := t.TempDir()
 	aliasParent := t.TempDir()

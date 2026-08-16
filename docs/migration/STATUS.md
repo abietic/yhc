@@ -3,7 +3,7 @@
 **Status:** current
 **Reference ledger:** `claude-code-ripe` (TypeScript)
 **Target:** `eino-agent` (Go)
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-13
 
 > **Ownership:** current verified evolution facts and volatile repository
 > counts. Future work belongs in [`PLAN.md`](PLAN.md), unresolved behavior in
@@ -17,20 +17,20 @@ Product scope and adoption rules are owned by
 
 ## Current Snapshot
 
-Generated with `go run ./scripts/migration_scan -json` on 2026-08-08:
+Generated with `go run ./scripts/migration_scan -json` on 2026-08-13:
 
 | Metric | Value |
 |---|---:|
-| Production Go files | 574 |
-| Production Go lines | 234,244 |
-| Product test Go files | 579 |
-| Product test Go lines | 221,041 |
-| Product Go packages | 63 |
-| Registered tools | 41 |
-| Compiled active core commands | 40 |
+| Production Go files | 627 |
+| Production Go lines | 252,298 |
+| Product test Go files | 629 |
+| Product test Go lines | 240,443 |
+| Product Go packages | 68 |
+| Tool constructors | 44 |
+| Command files | 21 |
 | Canonical compatibility traces | 12 |
-| TUI production files / lines | 100 / 50,663 |
-| TUI test files / lines | 138 / 39,577 |
+| TUI production files / lines | 101 / 51,186 |
+| TUI test files / lines | 141 / 40,144 |
 | Reference files | 1,884 |
 
 Counts are a dated inventory, not a quality score. Refresh them after source,
@@ -41,7 +41,7 @@ test, registration, or reference changes.
 | Surface | Current owner and verified boundary | Open boundary |
 |---|---|---|
 | Query runtime | `QueryEngine` and ProjectGraph own model rounds, tool admission/execution, event ordering, cancellation, recovery, and supported entrypoint projection. See [`query-engine.md`](../architecture/runtime/query-engine.md). | A framework primitive may replace an owner only with observable equivalence and old-owner deletion. |
-| Tools, permissions, and Guest execution | The registry owns canonical tool identity; QueryEngine owns permission policy, exact grants, rewrites, Plan admission, final dispatch binding, and the immutable Guest/hook/stdio-MCP process-class matrix. P50.1-P50.3 retain their revision, latency-denominator, and non-blocking audit guarantees. P51.1 now defaults Darwin model-issued Guest Bash to a real Seatbelt `workspace-write` binding, fails unavailable Guest enforcement before spawn without ambient retry, and leaves hooks, configured stdio MCP, environment inheritance, and every permission outcome unchanged. See [`tool-registry.md`](../architecture/capabilities/tool-registry.md), [`permissions.md`](../architecture/capabilities/permissions.md), and [`runtime-services.md`](../architecture/platform/runtime-services.md). | G28 remains open for ambient environment credentials, hooks/MCP, and missing hard memory/FD/process-count limits; G14 reviewer promotion remains deferred. P51.2 Auto prompt reduction is not admitted. |
+| Tools, permissions, and Guest execution | The registry owns canonical tool identity; QueryEngine owns permission policy, exact grants, rewrites, Plan admission, final dispatch binding, and the immutable Guest/hook/stdio-MCP process-class matrix. P50.1-P50.3 retain their revision, latency-denominator, and non-blocking audit guarantees. P51.1 supplies the Darwin Seatbelt `workspace-write` Guest proof; P51.2 now admits ordinary canonical Auto Bash only with that exact complete proof, requires fresh `AllowOnce` for the narrow critical corpus, persists the constraint through ProjectGraph, and revalidates before acquisition and shell submission. See [`tool-registry.md`](../architecture/capabilities/tool-registry.md), [`permissions.md`](../architecture/capabilities/permissions.md), and [`runtime-services.md`](../architecture/platform/runtime-services.md). | G28 remains open for ambient environment credentials, hooks/MCP, and missing hard memory/FD/process-count limits; G14 reviewer promotion remains deferred. |
 | Sessions and recovery | Append-only transcripts, immutable replay snapshots, staged restore, fork/delete containment, provider-free administration, and the P39 recovery conformance contract are verified. See [`sessions.md`](../architecture/state/sessions.md) and [`transcripts.md`](../architecture/state/transcripts.md). | G2 has no production workspace snapshot writer or rewind command. |
 | Tasks and Agents | WorkBoard owns logical work; AgentRunner owns execution generations; exact WorkItem terminal transitions consult only links for the target items; TaskExplorer supplies the bounded read model, exact generation-bound switch target, and exact current-generation output/lineage reader. See [`tasks-and-agents.md`](../architecture/runtime/tasks-and-agents.md). | Wider stress or control surfaces require a reproduced outcome, not parity inventory. |
 | Providers | Six provider-specific Eino adapters share route identity, capability admission, canonical rounds, complete-request context admission, explicit failed-attempt disposal, cross-entrypoint bounded overload notices, redacted diagnostics, and exact private Agentic reasoning-origin proof. See [`model-providers.md`](../architecture/platform/model-providers.md). | External SDK drift and live-provider modality remain release-time risks, not accepted backlog by default. |

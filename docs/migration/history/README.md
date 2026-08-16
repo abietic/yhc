@@ -1,7 +1,7 @@
 # Runtime Migration History
 
 **Status:** historical
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-13
 
 > **Ownership:** this file indexes completed migration stages and their closeout
 > evidence. It does not own current status, active order, or backlog. Current
@@ -24,6 +24,15 @@ records the local delivery boundary for the Electron workbench and loopback
 app-server. Current behavior is owned by the
 [Desktop workbench architecture](../../architecture/desktop-workbench.md), not
 by that record.
+
+## P51.2 Proof-Bound Auto Bash Admission
+
+[`p51-2-auto-containment-admission.md`](runtime/p51-2-auto-containment-admission.md)
+records the completed `project-native` permission integration: exact detached
+Guest proof admits ordinary Auto Bash, critical literal `rm`/`rmdir` permits
+only a fresh live `AllowOnce`, every client projects the same constraint, and
+dispatch plus ShellManager submission revalidate the exact binding. G28 remains
+open for ambient credentials, hooks/MCP, and hard resource limits.
 
 ## 2026-07-23 Runtime Hardening
 
@@ -560,8 +569,8 @@ records the completed `project-native` Darwin Guest subset: the fixed Seatbelt
 adapter, immutable process-class bindings, user-only selection, fail-closed
 unavailability, ShellManager lifecycle, restore/child re-probe, and real
 escape/product evidence land without changing permission outcomes. G28 remains
-open for ambient credentials, hooks/MCP, and hard resource limits; P51.2 is not
-admitted.
+open for ambient credentials, hooks/MCP, and hard resource limits. P51.2 later
+completed the proof-bound Auto admission described above.
 
 ## P36 ACP Provider-Rich Assistant Replay
 

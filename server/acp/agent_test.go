@@ -730,6 +730,13 @@ func TestACP_AllowAlwaysPersistsRuleThroughEngineCoordinator(t *testing.T) {
 	}
 }
 
+func TestP512ACPPermissionOptionsAllowOnceOnly(t *testing.T) {
+	opts := acpPermissionOptions(engine.PermissionPromptRequest{DecisionConstraint: engine.PermissionAllowOnceOnly})
+	if len(opts) != 2 || opts[0].OptionId != "allow" || opts[1].OptionId != "reject" {
+		t.Fatalf("constrained ACP options = %#v", opts)
+	}
+}
+
 func TestP138ACPDrivesProjectGraphPermissionResume(t *testing.T) {
 	root := t.TempDir()
 	outputPath := filepath.Join(root, "graph-acp.txt")

@@ -49,6 +49,85 @@ func TestPermissionBrokerResolvesExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestP512PermissionBrokerBindsAllowOnceConstraint(t *testing.T) {
+	unconstrained := permissionBrokerTestRequest("critical-bash")
+	unconstrained.ToolName = "Bash"
+	unconstrained.CanonicalToolName = "Bash"
+	unconstrained.Presentation.ToolLabel = "Bash"
+	unconstrained.Presentation.Evidence[0].Value = "May make destructive changes"
+
+	constrained := clonePromptRequest(unconstrained)
+	constrained.DecisionConstraint = engine.PermissionAllowOnceOnly
+	constrained.Presentation.GrantScopes = []engine.PermissionInteractionDecision{
+		engine.PermissionAllowOnce,
+	}
+	reconstructed := permissionPromptRequest(
+		"session-1",
+		"thread-1",
+		"agent-1",
+		engine.PermissionRequestEvent{
+			Kind:               constrained.Kind,
+			Source:             constrained.Source,
+			ToolName:           constrained.ToolName,
+			CanonicalToolName:  constrained.CanonicalToolName,
+			ToolUseID:          constrained.ToolUseID,
+			Presentation:       constrained.Presentation,
+			DecisionConstraint: constrained.DecisionConstraint,
+		},
+	)
+	if reconstructed.DecisionConstraint != engine.PermissionAllowOnceOnly {
+		t.Fatalf("reconstructed constraint = %q", reconstructed.DecisionConstraint)
+	}
+	normalDigest, normalOK := permissionRequestDigest(unconstrained)
+	constrainedDigest, constrainedOK := permissionRequestDigest(constrained)
+	if !normalOK || !constrainedOK || normalDigest == constrainedDigest {
+		t.Fatalf("permission digests normal=%q/%v constrained=%q/%v", normalDigest, normalOK, constrainedDigest, constrainedOK)
+	}
+
+	projected, ok := projectInteraction(constrained, "turn-critical")
+	if !ok || projected.Permission == nil || !projected.Permission.Available ||
+		len(projected.Permission.GrantScopes) != 1 ||
+		projected.Permission.GrantScopes[0] != string(engine.PermissionAllowOnce) {
+		t.Fatalf("constrained projection = %#v, ok=%v", projected, ok)
+	}
+
+	broker := newPermissionBroker()
+	resultCh := waitForBrokerResult(context.Background(), broker, constrained)
+	broker.observeEvent(constrained, "turn-critical")
+	waitForPermissionWaiter(t, broker, constrained.ToolUseID, func(waiter *permissionWaiter) bool {
+		return waiter.eventObserved && waiter.callbackObserved
+	})
+	for _, forged := range []engine.PermissionInteractionDecision{
+		engine.PermissionAllowSession,
+		engine.PermissionAllowAlways,
+	} {
+		if status := broker.resolve(constrained.ToolUseID, ResolveInteractionRequest{
+			Kind:       engine.PermissionInteractionKindPermission,
+			Permission: &ResolvePermissionResult{Decision: string(forged)},
+		}); status != interactionResolveInvalid {
+			t.Fatalf("forged %s status = %v", forged, status)
+		}
+	}
+	if status := broker.resolve(constrained.ToolUseID, ResolveInteractionRequest{
+		Kind:       engine.PermissionInteractionKindPermission,
+		Permission: &ResolvePermissionResult{Decision: string(engine.PermissionAllowOnce)},
+	}); status != interactionResolveAccepted {
+		t.Fatalf("AllowOnce status = %v", status)
+	}
+	if result := receiveBrokerResult(t, resultCh); result.Decision != engine.PermissionAllowOnce {
+		t.Fatalf("AllowOnce result = %#v", result)
+	}
+
+	conflictBroker := newPermissionBroker()
+	conflictResult := make(chan engine.PermissionInteractionResult, 1)
+	go func() { conflictResult <- conflictBroker.wait(context.Background(), unconstrained) }()
+	conflictBroker.observeEvent(constrained, "turn-conflict")
+	if result := receiveBrokerResult(t, conflictResult); result.Decision != engine.PermissionCancelled ||
+		result.Message != "permission request conflict" {
+		t.Fatalf("constraint conflict result = %#v", result)
+	}
+}
+
 func TestPermissionBrokerRejectsUntypedOrMismatchedProducerIdentity(t *testing.T) {
 	valid := permissionBrokerTestRequest("typed-identity")
 	if _, ok := permissionRequestDigest(valid); !ok {

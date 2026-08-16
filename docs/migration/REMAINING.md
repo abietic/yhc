@@ -1,6 +1,6 @@
 # Remaining Product and Evolution Gaps
 
-**Assessed:** 2026-08-08
+**Assessed:** 2026-08-13
 **Status:** gap-inventory
 
 > **Ownership:** reproduced unresolved product gaps. Accepted execution order
@@ -20,16 +20,16 @@ or newer evidence disproves it.
 |---|---|---|---|
 | G2 | `/rewind` has no production runtime dependency and remains unavailable. | P39.0 froze complete-capture, logical-record, conflict/containment, confirmation/permission, partial-retry, entrypoint, migration/deletion, and rollback behavior in a disposable-workspace oracle. It intentionally added no schema, content store, writer, API, handler, or automatic restoration. See the [contract](plans/p39-workspace-recovery-contract.md), [closeout](history/runtime/p39-0-workspace-recovery-contract.md), and [`commands.md`](../architecture/capabilities/commands.md). | No accepted successor. |
 | G14 | The separated permission reviewer remains advisory; the actor-model classifier is authoritative. | The default-off minimized reviewer route and bounded redacted journal cannot authorize actions. P50.2 makes retained-window latency samples truthful, and P50.3 isolates journal sink failure from permission authority while exposing evidence loss, but the provider-free report still lacks representative non-zero workload, latency, direct-human, and versioned-corpus evidence. See [`permissions.md`](../architecture/capabilities/permissions.md) and the [readiness decision](verification/p22-enforcement-promotion-readiness.md). | P44 is `defer`; no executable successor. |
-| G28 | Some supported host-process authority remains outside an enforced envelope. | P51.1 now gives model-issued Guest Bash and its descendants a real Darwin Seatbelt `workspace-write` binding with proven filesystem, network-denial, root-identity, descendant, wall-time, and bounded-output axes. Missing, unsupported, or failed enforcement is unavailable and fails before Guest spawn; an explicit user/CLI `danger-full-access` selection remains the visible ambient rollback. Shell hooks and configured stdio MCP intentionally remain ambient, Guest environment credentials are inherited unchanged, and hard memory/FD/process-count limits remain absent, so aggregate state is still `degraded` and G28 stays open. Permission is not the sandbox and P51.1 changes no permission outcome. See the [current P42.1 contract](plans/p42-host-execution-containment.md#p421-accepted-granular-proof-divergence), [P51.1 verification](verification/p51-1-darwin-guest-seatbelt.md), and [audit](reference/runtime/host-execution-containment-audit.md). | P51.1 completed the Darwin Guest subset; no successor is admitted. P51.2 requires separate intake. |
+| G28 | Some supported host-process authority remains outside an enforced envelope. | P51.1 gives model-issued Guest Bash and its descendants a real Darwin Seatbelt `workspace-write` binding with proven filesystem, network-denial, root-identity, descendant, wall-time, and bounded-output axes. P51.2 now consumes only that exact complete proof for ordinary Auto Bash and requires fresh AllowOnce for the narrow critical corpus. Missing, unsupported, failed, or drifted enforcement fails before Guest execution without ambient retry. Shell hooks and configured stdio MCP intentionally remain ambient, Guest environment credentials are inherited unchanged, and hard memory/FD/process-count limits remain absent, so aggregate state is still `degraded` and G28 stays open. See the [current P42.1 contract](plans/p42-host-execution-containment.md#p421-accepted-granular-proof-divergence), [P51.1 verification](verification/p51-1-darwin-guest-seatbelt.md), [P51.2 verification](verification/p51-2-auto-containment-admission.md), and [audit](reference/runtime/host-execution-containment-audit.md). | No accepted successor; G28 remains open after P51.2. |
 
 P49 closed G21 and G47 by default-enabling supported Goal composition roots
 without inventing a numeric cap, allowing explicit unbudgeted execution, and
 persisting exact provider-attempt admission identity. P47.1-P47.7 closed
 G38-G41, P48.1-P48.5 closed G42-G46, and P50.1-P50.3 closed G48-G50 without
 changing reviewer or permission authority. G2 has no accepted successor, G28
-remains open after the completed P51.1 Darwin Guest subset, and G14 remains
-deferred without an executable queue row. P51.2 is an accepted design stage,
-not an executable queue row.
+remains open after the completed P51.1/P51.2 Darwin Guest and permission
+subsets, and G14 remains deferred without an executable queue row. The active
+migration queue is empty.
 
 ## Gap Intake Record
 

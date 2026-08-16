@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/abietic/yhc/engine/permission"
@@ -1798,5 +1799,149 @@ func TestP200ProjectGraphPlanIdentityRetainsInitialDigest(t *testing.T) {
 	if err := validateProjectGraphHITLRequest(request, true); err == nil ||
 		!strings.Contains(err.Error(), "Plan approval identity") {
 		t.Fatalf("missing Plan digest validation error = %v", err)
+	}
+}
+
+func TestP512ProjectGraphConstraintParticipatesInIdentityAndValidation(t *testing.T) {
+	scope := RuntimeInputScope{SessionID: "constraint-session"}
+	request := PermissionPromptRequest{ToolName: "Bash", ToolUseID: "constraint-call", DecisionConstraint: PermissionAllowOnceOnly}
+	if projectGraphInvocationDigest(request, scope, "schema") == projectGraphInvocationDigest(PermissionPromptRequest{ToolName: "Bash", ToolUseID: "constraint-call"}, scope, "schema") {
+		t.Fatal("permission decision constraint did not participate in ProjectGraph identity")
+	}
+	durable := projectGraphHITLRequest{Version: projectGraphHITLRequestVersion, RequestID: "constraint-call", InterruptID: "interrupt", InvocationDigest: projectGraphInvocationDigest(request, scope, "schema"), PolicyRevision: "policy", ToolName: "Bash", Scope: scope, Kind: "permission", DecisionConstraint: PermissionDecisionConstraint("invalid")}
+	if err := validateProjectGraphHITLRequest(durable, true); err == nil {
+		t.Fatal("invalid decision constraint was accepted")
+	}
+	durable.DecisionConstraint = PermissionAllowOnceOnly
+	if err := validateProjectGraphResumeDecision(durable, RuntimePermissionDecision{Version: projectGraphHITLDecisionVersion, RequestID: durable.RequestID, InterruptID: durable.InterruptID, InvocationDigest: durable.InvocationDigest, PolicyRevision: durable.PolicyRevision, DecisionConstraint: PermissionAllowOnceOnly, Result: PermissionInteractionResult{Decision: PermissionAllowAlways}}); err == nil {
+		t.Fatal("forged persistent ProjectGraph decision was accepted")
+	}
+}
+
+func TestP512ProjectGraphFirstInterruptProjectsConstraint(t *testing.T) {
+	request := PermissionPromptRequest{
+		ToolName: "Bash", ToolUseID: "critical-call",
+		Input:     map[string]any{"command": "rm -rf /"},
+		SessionID: "critical-session", ThreadID: "critical-thread",
+		DecisionConstraint: PermissionAllowOnceOnly,
+	}
+	scope := RuntimeInputScope{SessionID: request.SessionID, ThreadID: request.ThreadID}
+	durable := projectGraphHITLRequest{
+		Version: projectGraphHITLRequestVersion, RequestID: request.ToolUseID,
+		InterruptID:      "critical-interrupt",
+		InvocationDigest: projectGraphInvocationDigest(request, scope, "schema"),
+		PolicyRevision:   "policy", ToolName: request.ToolName,
+		Input: request.Input, Scope: scope, Kind: "permission",
+		DecisionConstraint: PermissionAllowOnceOnly,
+	}
+	info := &compose.InterruptInfo{InterruptContexts: []*compose.InterruptCtx{{
+		ID: durable.InterruptID, IsRootCause: true,
+		Info: projectGraphHITLInterruptInfo{Request: durable},
+	}}}
+	projected, err := projectGraphRootInterrupt(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.DecisionConstraint != PermissionAllowOnceOnly {
+		t.Fatalf("first interrupt constraint = %q", projected.DecisionConstraint)
+	}
+}
+
+func TestP512ProjectGraphResolveRewritesForgedPersistentDecision(t *testing.T) {
+	scope := RuntimeInputScope{SessionID: "constraint-session"}
+	checkpoint, err := newProjectGraphCheckpointStore("", scope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.envelope.Opaque = []byte("opaque")
+	request := projectGraphHITLRequest{
+		Version: projectGraphHITLRequestVersion, RequestID: "constraint-call",
+		InterruptID: "constraint-interrupt", InvocationDigest: "digest",
+		PolicyRevision: "policy", ToolName: "Bash", Scope: scope,
+		Kind: "permission", DecisionConstraint: PermissionAllowOnceOnly,
+	}
+	if err := checkpoint.MarkInterrupt(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	coordinator, err := NewRuntimeInputCoordinator(
+		RuntimeInputCoordinatorConfig{SessionID: scope.SessionID},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &QueryEngine{projectGraphCheckpoint: checkpoint, inputCoordinator: coordinator}
+	if !engine.ResolvePermissionInteraction(
+		request.RequestID,
+		PermissionInteractionResult{Decision: PermissionAllowAlways},
+	) {
+		t.Fatal("forged decision was not durably rewritten")
+	}
+	items := coordinator.Snapshot(scope)
+	if len(items) != 1 || items[0].PermissionDecision == nil ||
+		items[0].PermissionDecision.Result.Decision != PermissionDeny ||
+		!strings.Contains(items[0].PermissionDecision.Result.Message, "constraint") {
+		t.Fatalf("rewritten runtime items = %#v", items)
+	}
+}
+
+func TestP512ProjectGraphColdRestartRetainsAllowOnceConstraint(t *testing.T) {
+	scope := RuntimeInputScope{SessionID: "cold-constraint-session", ThreadID: "cold-constraint-thread"}
+	checkpoint, err := newProjectGraphCheckpointStore("", scope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.envelope.Opaque = []byte("opaque-checkpoint")
+	request := projectGraphHITLRequest{
+		Version: projectGraphHITLRequestVersion, RequestID: "cold-critical-call",
+		InterruptID: "cold-critical-interrupt", InvocationDigest: "cold-invocation",
+		PolicyRevision: "cold-policy", ToolName: "Bash", CanonicalToolName: "Bash",
+		Scope: scope, Kind: PermissionInteractionKindPermission,
+		DecisionConstraint: PermissionAllowOnceOnly,
+		Presentation: &PermissionPresentation{
+			Version: 1, ToolLabel: "Bash", Summary: "Allow this tool action?",
+			Evidence:    []PermissionPresentationEvidence{{Label: "Access", Value: "May make destructive changes"}},
+			GrantScopes: []PermissionInteractionDecision{PermissionAllowOnce},
+		},
+	}
+	if err := checkpoint.MarkInterrupt(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(checkpoint.envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restoredEnvelope projectGraphCheckpointEnvelope
+	if err := json.Unmarshal(encoded, &restoredEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	restoredStore := &projectGraphCheckpointStore{envelope: restoredEnvelope}
+	coordinator, err := NewRuntimeInputCoordinator(
+		RuntimeInputCoordinatorConfig{SessionID: scope.SessionID, ThreadID: scope.ThreadID},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := &QueryEngine{
+		projectGraphCheckpoint: restoredStore,
+		inputCoordinator:       coordinator,
+	}
+	pending, ok := restored.PendingProjectGraphPermissionRequest()
+	if !ok || pending.DecisionConstraint != PermissionAllowOnceOnly ||
+		pending.Presentation == nil || len(pending.Presentation.GrantScopes) != 1 ||
+		pending.Presentation.GrantScopes[0] != PermissionAllowOnce {
+		t.Fatalf("cold pending request = %#v, ok=%v", pending, ok)
+	}
+	if !restored.ResolvePermissionInteraction(
+		request.RequestID,
+		PermissionInteractionResult{Decision: PermissionAllowAlways},
+	) {
+		t.Fatal("cold forged persistent decision was not durably rewritten")
+	}
+	items := coordinator.Snapshot(scope)
+	if len(items) != 1 || items[0].PermissionDecision == nil ||
+		items[0].PermissionDecision.Result.Decision != PermissionDeny {
+		t.Fatalf("cold rewritten runtime items = %#v", items)
 	}
 }

@@ -6,12 +6,16 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/abietic/yhc/engine/commands"
+	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/skills"
@@ -731,6 +735,248 @@ func TestP139bBackgroundProjectGraphKeepsCoordinatorPermissionAndOneTerminal(t *
 			string(queryKernelStageBackgroundChild) {
 		t.Fatalf("background permission metadata = %#v", metadata)
 	}
+}
+
+func TestP512ProjectGraphChildBashUsesDerivedGuestAuthority(t *testing.T) {
+	const (
+		parentSession = "p512-parent-session"
+		parentThread  = "p512-parent-thread"
+		parentAgent   = "p512-parent-agent"
+	)
+
+	newFixture := func(t *testing.T, command string, prompt func(PermissionPromptRequest) PermissionInteractionResult) (*tools.AgentRunner, *permission.ApprovalTracker, string, *containment.Bindings) {
+		t.Helper()
+		root := t.TempDir()
+		if runtime.GOOS == "darwin" {
+			cacheDir, err := os.UserCacheDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, err = os.MkdirTemp(cacheDir, "yhc-p512-child-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := os.RemoveAll(root); err != nil {
+					t.Errorf("remove P51.2 child workspace: %v", err)
+				}
+			})
+		}
+		childCWD := filepath.Join(root, "child")
+		if err := os.Mkdir(childCWD, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		selection, err := NewSandboxSelection(
+			containment.ProfileWorkspaceWrite,
+			containment.SelectionDefault,
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parentBindings, err := ResolveExecutionBindings(
+			context.Background(), root, commands.EntrypointTUI, selection,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parentSpec := parentBindings.Guest().Policy().Spec()
+		for _, tempRoot := range parentSpec.TempRoots {
+			if pathContains(tempRoot, parentSpec.CWD) {
+				t.Fatalf("P51.2 child oracle root is covered by approved temporary root")
+			}
+		}
+		childBindings, err := DeriveChildExecutionBindings(
+			context.Background(), parentBindings, childCWD, "p512-child-agent",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if childBindings.Guest().Digest() == parentBindings.Guest().Digest() {
+			t.Fatal("child Guest binding retained parent identity")
+		}
+
+		registry := tools.NewRegistry()
+		tools.RegisterDefaults(registry)
+		model := &canonicalScriptModel{responses: []canonicalModelResponse{{
+			chunks: []*schema.Message{{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{{
+					ID: "p512-bash-call", Type: "function",
+					Function: schema.FunctionCall{Name: "Bash", Arguments: `{"command":` + strconv.Quote(command) + `}`},
+				}},
+				ResponseMeta: &schema.ResponseMeta{FinishReason: "tool_calls"},
+			}},
+		}}}
+		approvals := permission.NewApprovalTracker()
+		executor := NewSubAgentExecutor(model, registry, root)
+		executor.ExecutionBindings = parentBindings
+		executor.PermissionMode = permission.ModeAuto
+		executor.RootSessionID = parentSession
+		executor.ParentApprovals = approvals
+		executor.MCPManager = tools.NewMCPToolManager()
+		executor.SkillRegistry = skills.NewSkillRegistry()
+		if prompt != nil {
+			executor.ParentPermissionPrompt = func(_ context.Context, request PermissionPromptRequest) PermissionInteractionResult {
+				return prompt(request)
+			}
+		}
+		runner := tools.NewAgentRunner(1)
+		runner.SetOutputDir(filepath.Join(t.TempDir(), "agent-output"))
+		runner.SetExecutor(executor)
+		executor.AgentRunner = runner
+		return runner, approvals, childCWD, childBindings
+	}
+
+	t.Run("ordinary is prompt-free only with a complete derived Guest proof", func(t *testing.T) {
+		var prompts atomic.Int32
+		runner, approvals, childCWD, childBindings := newFixture(
+			t,
+			"printf derived-guest > ordinary.txt",
+			func(PermissionPromptRequest) PermissionInteractionResult {
+				prompts.Add(1)
+				return PermissionInteractionResult{Decision: PermissionAllowOnce}
+			},
+		)
+		if childBindings.Guest().Availability() != containment.BindingAvailable {
+			t.Skip("complete Darwin Guest proof is unavailable")
+		}
+		result, err := tools.RunAgent(context.Background(), runner, tools.AgentExecOptions{
+			Task: "run ordinary Bash", SessionID: "p512-ordinary-session", ThreadID: "p512-ordinary-thread",
+			AgentID: "p512-child-agent", CWD: childCWD, ParentSessionID: parentSession, ParentThreadID: parentThread, ParentAgentID: parentAgent,
+		})
+		if err != nil || result == nil || prompts.Load() != 0 {
+			t.Fatalf("ordinary child result=%#v err=%v prompts=%d", result, err, prompts.Load())
+		}
+		contents, err := os.ReadFile(filepath.Join(childCWD, "ordinary.txt"))
+		if err != nil || string(contents) != "derived-guest" {
+			t.Fatalf("ordinary Bash output=%q err=%v", contents, err)
+		}
+		if approvals.Count() != 0 {
+			t.Fatalf("ordinary contained auto Bash created approvals=%#v", approvals.List())
+		}
+	})
+
+	t.Run("ordinary child cannot write through the wider parent Guest root", func(t *testing.T) {
+		var prompts atomic.Int32
+		runner, approvals, childCWD, childBindings := newFixture(
+			t,
+			"if printf escaped > ../parent-only.txt; then printf escaped-write-succeeded; else printf escaped-write-blocked; fi",
+			func(PermissionPromptRequest) PermissionInteractionResult {
+				prompts.Add(1)
+				return PermissionInteractionResult{Decision: PermissionAllowOnce}
+			},
+		)
+		if childBindings.Guest().Availability() != containment.BindingAvailable {
+			t.Skip("complete Darwin Guest proof is unavailable")
+		}
+		result, err := tools.RunAgent(context.Background(), runner, tools.AgentExecOptions{
+			Task: "prove child Guest narrowing", SessionID: "p512-child-narrow-session", ThreadID: "p512-child-narrow-thread",
+			AgentID: "p512-child-agent", CWD: childCWD, ParentSessionID: parentSession, ParentThreadID: parentThread, ParentAgentID: parentAgent,
+		})
+		if err != nil || result == nil || prompts.Load() != 0 {
+			t.Fatalf("narrow child result=%#v err=%v prompts=%d", result, err, prompts.Load())
+		}
+		var toolOutput string
+		for _, message := range result.Messages {
+			if message != nil && message.Role == schema.Tool {
+				toolOutput += message.Content
+			}
+		}
+		parentOnly := filepath.Join(filepath.Dir(childCWD), "parent-only.txt")
+		if _, statErr := os.Stat(parentOnly); statErr == nil {
+			// The parent binding allows this path while the derived child binding
+			// does not. Remove the sentinel before failing so a broken test does
+			// not leave state in its temporary parent root.
+			if removeErr := os.Remove(parentOnly); removeErr != nil {
+				t.Fatalf("child escaped derived Guest root and sentinel cleanup failed: %v", removeErr)
+			}
+			t.Fatalf("child escaped derived Guest root; tool output=%q", toolOutput)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("inspect child escape sentinel: %v", statErr)
+		}
+		if !strings.HasSuffix(strings.TrimSpace(toolOutput), "escaped-write-blocked") {
+			t.Fatalf("child Guest escape oracle output=%q", toolOutput)
+		}
+		if approvals.Count() != 0 {
+			t.Fatalf("narrow child created approvals=%#v", approvals.List())
+		}
+	})
+
+	t.Run("critical foreground accepts only live AllowOnce", func(t *testing.T) {
+		var requests []PermissionPromptRequest
+		runner, approvals, childCWD, _ := newFixture(t, "rm -f /", func(request PermissionPromptRequest) PermissionInteractionResult {
+			requests = append(requests, request)
+			return PermissionInteractionResult{Decision: PermissionAllowOnce}
+		})
+		result, err := tools.RunAgent(context.Background(), runner, tools.AgentExecOptions{
+			Task: "confirm critical Bash", SessionID: "p512-critical-foreground-session", ThreadID: "p512-critical-foreground-thread",
+			AgentID: "p512-child-agent", CWD: childCWD, ParentSessionID: parentSession, ParentThreadID: parentThread, ParentAgentID: parentAgent,
+		})
+		if err != nil || result == nil || len(requests) != 1 || requests[0].DecisionConstraint != PermissionAllowOnceOnly {
+			t.Fatalf("foreground critical result=%#v err=%v requests=%#v", result, err, requests)
+		}
+		if approvals.Count() != 0 {
+			t.Fatalf("foreground AllowOnce created persistent approvals=%#v", approvals.List())
+		}
+	})
+
+	for _, decision := range []PermissionInteractionDecision{
+		PermissionAllowSession,
+		PermissionAllowAlways,
+	} {
+		t.Run("critical foreground rejects "+string(decision), func(t *testing.T) {
+			var requests []PermissionPromptRequest
+			runner, approvals, childCWD, _ := newFixture(t, "rm -f /", func(request PermissionPromptRequest) PermissionInteractionResult {
+				requests = append(requests, request)
+				return PermissionInteractionResult{Decision: decision}
+			})
+			result, err := tools.RunAgent(context.Background(), runner, tools.AgentExecOptions{
+				Task: "reject persistent critical Bash", SessionID: "p512-critical-persistent-" + string(decision), ThreadID: "p512-critical-persistent-thread",
+				AgentID: "p512-child-agent", CWD: childCWD, ParentSessionID: parentSession, ParentThreadID: parentThread, ParentAgentID: parentAgent,
+			})
+			if err != nil || result == nil || len(requests) != 1 || requests[0].DecisionConstraint != PermissionAllowOnceOnly {
+				t.Fatalf("persistent critical result=%#v err=%v requests=%#v", result, err, requests)
+			}
+			if approvals.Count() != 0 {
+				t.Fatalf("persistent critical decision created approvals=%#v", approvals.List())
+			}
+		})
+	}
+
+	t.Run("critical background uses a live parent route once", func(t *testing.T) {
+		var requests []PermissionPromptRequest
+		runner, approvals, childCWD, _ := newFixture(t, "rm -f /", func(request PermissionPromptRequest) PermissionInteractionResult {
+			requests = append(requests, request)
+			return PermissionInteractionResult{Decision: PermissionAllowOnce}
+		})
+		started, err := tools.RunAgentBackground(context.Background(), runner, tools.AgentExecOptions{
+			Task: "reject critical Bash", SessionID: "p512-critical-background-session", ThreadID: "p512-critical-background-thread",
+			AgentID: "p512-child-agent", CWD: childCWD, ParentSessionID: parentSession, ParentThreadID: parentThread, ParentAgentID: parentAgent,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitForAgentStatus(t, runner, started.ID, "completed", 5*time.Second)
+		if len(requests) != 1 || requests[0].DecisionConstraint != PermissionAllowOnceOnly || approvals.Count() != 0 {
+			t.Fatalf("background critical requests=%#v approvals=%#v", requests, approvals.List())
+		}
+	})
+
+	t.Run("critical background without a live route fails closed", func(t *testing.T) {
+		runner, approvals, childCWD, _ := newFixture(t, "rm -f /", nil)
+		started, err := tools.RunAgentBackground(context.Background(), runner, tools.AgentExecOptions{
+			Task: "reject critical Bash", SessionID: "p512-critical-background-headless-session", ThreadID: "p512-critical-background-headless-thread",
+			AgentID: "p512-child-agent", CWD: childCWD, ParentSessionID: parentSession, ParentThreadID: parentThread, ParentAgentID: parentAgent,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitForAgentStatus(t, runner, started.ID, "completed", 5*time.Second)
+		if approvals.Count() != 0 {
+			t.Fatalf("UI-less background critical approvals=%#v", approvals.List())
+		}
+	})
 }
 
 func TestP139bBackgroundContinuationPreservesExistingKernelPin(t *testing.T) {

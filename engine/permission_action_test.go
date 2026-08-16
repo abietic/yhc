@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/abietic/yhc/engine/commands"
+	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/tools"
@@ -145,6 +146,157 @@ func TestTodoWriteRuntimeStateDescriptor(t *testing.T) {
 	if action.ActionKind != tools.ToolActionRuntimeState ||
 		!action.InternalStateDefaultSafe {
 		t.Fatalf("TodoWrite descriptor = %#v", action)
+	}
+}
+
+func TestP512ContainedAutoBashProofRejectsDescriptorWithoutGuestIdentity(
+	t *testing.T,
+) {
+	action := PermissionActionDescriptor{
+		RequestedToolName:        "Bash",
+		CanonicalToolName:        "Bash",
+		Registered:               true,
+		Enabled:                  true,
+		Selected:                 true,
+		Origin:                   tools.ToolOriginBuiltin,
+		ActionKind:               tools.ToolActionShell,
+		CapabilitiesDeclared:     true,
+		SchemaValidated:          true,
+		CustomValidationComplete: true,
+		Mode:                     permission.ModeAuto,
+	}
+
+	if allowed, reason := completeContainedAutoBashProof(action); allowed ||
+		!strings.Contains(reason, "Guest") {
+		t.Fatalf("proof = (%v, %q), want missing Guest rejection", allowed, reason)
+	}
+}
+
+func TestP512ContainedAutoBashProofRequiresExactGuestFacts(t *testing.T) {
+	base := p512CompleteContainedAutoBashAction()
+	if allowed, reason := completeContainedAutoBashProof(base); !allowed {
+		t.Fatalf("complete proof rejected: %s", reason)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*PermissionActionDescriptor)
+	}{
+		{name: "wrong mode", mutate: func(action *PermissionActionDescriptor) { action.Mode = permission.ModeDefault }},
+		{name: "wrong tool", mutate: func(action *PermissionActionDescriptor) { action.CanonicalToolName = "Write" }},
+		{name: "wrong origin", mutate: func(action *PermissionActionDescriptor) { action.Origin = tools.ToolOriginMCP }},
+		{name: "not selected", mutate: func(action *PermissionActionDescriptor) { action.Selected = false }},
+		{name: "ambient", mutate: func(action *PermissionActionDescriptor) { action.ExecutionAdapter = containment.AdapterAmbientHost }},
+		{name: "unavailable", mutate: func(action *PermissionActionDescriptor) {
+			action.ExecutionAvailability = containment.BindingUnavailable
+		}},
+		{name: "missing policy", mutate: func(action *PermissionActionDescriptor) { action.ExecutionPolicyDigest = "" }},
+		{name: "missing binding", mutate: func(action *PermissionActionDescriptor) { action.ExecutionBindingDigest = "" }},
+		{name: "missing generation", mutate: func(action *PermissionActionDescriptor) { action.ExecutionCapabilityGeneration = "" }},
+		{name: "missing adapter axis", mutate: func(action *PermissionActionDescriptor) { action.AdapterAxes &^= containment.AxisNetworkDenied }},
+		{name: "extra adapter axis", mutate: func(action *PermissionActionDescriptor) { action.AdapterAxes |= containment.AxisMemory }},
+		{name: "missing runtime axis", mutate: func(action *PermissionActionDescriptor) { action.RuntimeAxes &^= containment.AxisOutput }},
+		{name: "extra runtime axis", mutate: func(action *PermissionActionDescriptor) { action.RuntimeAxes |= containment.AxisProcessCount }},
+		{name: "missing combined axis", mutate: func(action *PermissionActionDescriptor) { action.EnforcementAxes &^= containment.AxisWallTime }},
+		{name: "extra combined axis", mutate: func(action *PermissionActionDescriptor) { action.EnforcementAxes |= containment.AxisFileDescriptors }},
+		{name: "aggregate only", mutate: func(action *PermissionActionDescriptor) { action.AdapterAxes, action.RuntimeAxes = 0, 0 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			action := base
+			test.mutate(&action)
+			if allowed, _ := completeContainedAutoBashProof(action); allowed {
+				t.Fatalf("mutated proof accepted: %#v", action)
+			}
+		})
+	}
+}
+
+func TestP512PermissionActionGuestAuthorityDrift(t *testing.T) {
+	base := p512CompleteContainedAutoBashAction()
+	for _, test := range []struct {
+		name   string
+		mutate func(*PermissionActionDescriptor)
+	}{
+		{name: "policy", mutate: func(action *PermissionActionDescriptor) { action.ExecutionPolicyDigest = "other" }},
+		{name: "binding", mutate: func(action *PermissionActionDescriptor) { action.ExecutionBindingDigest = "other" }},
+		{name: "generation", mutate: func(action *PermissionActionDescriptor) { action.ExecutionCapabilityGeneration = "other" }},
+		{name: "root", mutate: func(action *PermissionActionDescriptor) { action.WorkingDirIdentity.Inode++ }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			current := base
+			test.mutate(&current)
+			if samePermissionActionAuthorityBinding(base, current) {
+				t.Fatal("Guest authority drift compared equal")
+			}
+		})
+	}
+}
+
+func TestP512PermissionActionBindsGuestIdentity(t *testing.T) {
+	selection, err := NewSandboxSelection(
+		containment.ProfileWorkspaceWrite,
+		containment.SelectionDefault,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := NewQueryEngine(QueryEngineConfig{
+		CWD:              t.TempDir(),
+		PermissionMode:   permission.ModeAuto,
+		SandboxSelection: selection,
+		CanUseTool: func(context.Context, string, map[string]any, *ToolUseContext) (bool, string) {
+			return false, "unused"
+		},
+	})
+	t.Cleanup(engine.Close)
+	action, err := engine.buildPermissionActionDescriptor(
+		"Bash",
+		map[string]any{"command": "go test ./engine"},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := engine.shellManager.GuestExecutionIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.ExecutionPolicyDigest != identity.PolicyDigest ||
+		action.ExecutionBindingDigest != identity.BindingDigest ||
+		action.ExecutionCapabilityGeneration != identity.CapabilityGeneration ||
+		action.WorkingDirIdentity != identity.Root {
+		t.Fatalf("descriptor Guest identity = %#v, want %#v", action, identity)
+	}
+	if identity.Availability == containment.BindingAvailable {
+		if allowed, reason := completeContainedAutoBashProof(action); !allowed {
+			t.Fatalf("available Darwin proof rejected: %s", reason)
+		}
+	} else if allowed, _ := completeContainedAutoBashProof(action); allowed {
+		t.Fatal("unavailable Guest proof was accepted")
+	}
+}
+
+func p512CompleteContainedAutoBashAction() PermissionActionDescriptor {
+	return PermissionActionDescriptor{
+		RequestedToolName: "Bash", CanonicalToolName: "Bash",
+		Registered: true, Enabled: true, Selected: true,
+		Origin: tools.ToolOriginBuiltin, ActionKind: tools.ToolActionShell,
+		CapabilitiesDeclared: true, SchemaValidated: true,
+		CustomValidationComplete: true, Mode: permission.ModeAuto,
+		ExecutionPolicyDigest: "policy", ExecutionBindingDigest: "binding",
+		ExecutionProfile:              containment.ProfileWorkspaceWrite,
+		ExecutionState:                containment.StateDegraded,
+		ExecutionAdapter:              containment.AdapterDarwinSeatbelt,
+		ExecutionNetwork:              containment.NetworkDenied,
+		CredentialMode:                containment.CredentialAmbientEnvironment,
+		ExecutionAvailability:         containment.BindingAvailable,
+		AdapterAxes:                   containedAutoBashAdapterAxes,
+		RuntimeAxes:                   containedAutoBashRuntimeAxes,
+		EnforcementAxes:               containedAutoBashAxes,
+		ExecutionCapabilityGeneration: "seatbelt-v1", GuestProcess: true,
+		WorkingDirIdentity: containment.RootIdentity{Path: "/workspace", Device: 1, Inode: 2},
 	}
 }
 

@@ -19,7 +19,7 @@ func TestPermissionPresentationIsBoundedAndDoesNotProjectInput(t *testing.T) {
 		CanonicalInput:    secret,
 		CWD:               secret,
 		WorkingRoots:      []string{secret},
-	})
+	}, PermissionDecisionUnconstrained)
 	encoded, err := json.Marshal(presentation)
 	if err != nil {
 		t.Fatal(err)
@@ -35,8 +35,8 @@ func TestPermissionPresentationIsBoundedAndDoesNotProjectInput(t *testing.T) {
 }
 
 func TestPermissionPresentationFailClosedForInvalidOrForgedPayload(t *testing.T) {
-	valid := permissionPresentationForAction("permission", PermissionActionDescriptor{CanonicalToolName: "Write", Write: true})
-	if normalized := normalizedPermissionPresentation("permission", "Write", valid); normalized == nil || normalized.Unavailable {
+	valid := permissionPresentationForAction("permission", PermissionActionDescriptor{CanonicalToolName: "Write", Write: true}, PermissionDecisionUnconstrained)
+	if normalized := normalizedPermissionPresentation("permission", "Write", valid, PermissionDecisionUnconstrained); normalized == nil || normalized.Unavailable {
 		t.Fatalf("valid presentation = %#v", normalized)
 	}
 
@@ -59,14 +59,14 @@ func TestPermissionPresentationFailClosedForInvalidOrForgedPayload(t *testing.T)
 			if name == "mismatched tool" {
 				toolName = "legacy-write"
 			}
-			normalized := normalizedPermissionPresentation("permission", toolName, forged)
+			normalized := normalizedPermissionPresentation("permission", toolName, forged, PermissionDecisionUnconstrained)
 			if normalized == nil || !normalized.Unavailable || normalized.ToolLabel != "" || normalized.Summary != "" || len(normalized.Evidence) != 0 || len(normalized.GrantScopes) != 1 || normalized.GrantScopes[0] != PermissionAllowOnce {
 				t.Fatalf("forged presentation = %#v", normalized)
 			}
 		})
 	}
 
-	if normalizedPermissionPresentation("question", "Write", valid) != nil {
+	if normalizedPermissionPresentation("question", "Write", valid, PermissionDecisionUnconstrained) != nil {
 		t.Fatal("non-permission interaction received a presentation")
 	}
 }
@@ -83,12 +83,12 @@ func TestPermissionPresentationBoundsAndFixedEvidenceAllowlist(t *testing.T) {
 		PathWithinRoots:   false,
 		Network:           true,
 		Child:             true,
-	})
+	}, PermissionDecisionUnconstrained)
 	if valid == nil || valid.Unavailable || len(valid.Evidence) != 4 {
 		t.Fatalf("allowlisted presentation = %#v", valid)
 	}
 	valid.Evidence = append(valid.Evidence, PermissionPresentationEvidence{Label: "Arbitrary", Value: "untrusted"})
-	if normalized := normalizedPermissionPresentation("permission", "Bash", valid); normalized == nil || !normalized.Unavailable {
+	if normalized := normalizedPermissionPresentation("permission", "Bash", valid, PermissionDecisionUnconstrained); normalized == nil || !normalized.Unavailable {
 		t.Fatalf("unallowlisted evidence was accepted: %#v", normalized)
 	}
 }
@@ -99,6 +99,7 @@ func TestPermissionPresentationCoordinatorPreservesCanonicalAliasAndClones(t *te
 	presentation := permissionPresentationForAction(
 		PermissionInteractionKindPermission,
 		PermissionActionDescriptor{CanonicalToolName: "Write", Write: true},
+		PermissionDecisionUnconstrained,
 	)
 	var emitted *PermissionPresentation
 	var adapterPresentation *PermissionPresentation
@@ -149,6 +150,7 @@ func TestProjectGraphPermissionPresentationPersistsAndReprojects(t *testing.T) {
 	presentation := permissionPresentationForAction(
 		PermissionInteractionKindPermission,
 		PermissionActionDescriptor{CanonicalToolName: "Write", Write: true},
+		PermissionDecisionUnconstrained,
 	)
 	request := projectGraphHITLRequest{
 		Version:           projectGraphHITLRequestVersion,

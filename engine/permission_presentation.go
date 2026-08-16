@@ -46,17 +46,25 @@ func clonePermissionPresentation(presentation *PermissionPresentation) *Permissi
 
 // normalizedPermissionPresentation rejects every untrusted or stale display
 // payload. A failed validation deliberately exposes only an allow-once choice.
-func normalizedPermissionPresentation(kind, toolName string, presentation *PermissionPresentation) *PermissionPresentation {
+func normalizedPermissionPresentation(
+	kind, toolName string,
+	presentation *PermissionPresentation,
+	constraint PermissionDecisionConstraint,
+) *PermissionPresentation {
 	if kind != PermissionInteractionKindPermission {
 		return nil
 	}
-	if !validPermissionPresentationForTool(presentation, toolName) {
+	if !validPermissionPresentationForTool(presentation, toolName, constraint) {
 		return unavailablePermissionPresentation()
 	}
 	return clonePermissionPresentation(presentation)
 }
 
-func validPermissionPresentationForTool(presentation *PermissionPresentation, toolName string) bool {
+func validPermissionPresentationForTool(
+	presentation *PermissionPresentation,
+	toolName string,
+	constraint PermissionDecisionConstraint,
+) bool {
 	if !validPermissionPresentation(presentation) {
 		return false
 	}
@@ -69,10 +77,7 @@ func validPermissionPresentationForTool(presentation *PermissionPresentation, to
 	if strings.TrimSpace(presentation.ToolLabel) == "" ||
 		presentation.ToolLabel != strings.TrimSpace(toolName) ||
 		presentation.Summary != "Allow this tool action?" ||
-		len(presentation.GrantScopes) != 3 ||
-		presentation.GrantScopes[0] != PermissionAllowOnce ||
-		presentation.GrantScopes[1] != PermissionAllowSession ||
-		presentation.GrantScopes[2] != PermissionAllowAlways {
+		!permissionPresentationScopesMatchConstraint(presentation.GrantScopes, constraint) {
 		return false
 	}
 
@@ -133,7 +138,11 @@ func boundedPresentationString(value string, maximum int) bool {
 	return utf8.ValidString(value) && utf8.RuneCountInString(value) <= maximum
 }
 
-func permissionPresentationForAction(kind string, action PermissionActionDescriptor) *PermissionPresentation {
+func permissionPresentationForAction(
+	kind string,
+	action PermissionActionDescriptor,
+	constraint PermissionDecisionConstraint,
+) *PermissionPresentation {
 	if kind != PermissionInteractionKindPermission {
 		return nil
 	}
@@ -167,15 +176,35 @@ func permissionPresentationForAction(kind string, action PermissionActionDescrip
 		evidence = append(evidence, PermissionPresentationEvidence{Label: "Process", Value: "Starts a child process"})
 	}
 
+	grantScopes := []PermissionInteractionDecision{PermissionAllowOnce, PermissionAllowSession, PermissionAllowAlways}
+	if constraint == PermissionAllowOnceOnly {
+		grantScopes = []PermissionInteractionDecision{PermissionAllowOnce}
+	}
 	presentation := &PermissionPresentation{
 		Version:     permissionPresentationVersion,
 		ToolLabel:   toolName,
 		Summary:     "Allow this tool action?",
 		Evidence:    evidence,
-		GrantScopes: []PermissionInteractionDecision{PermissionAllowOnce, PermissionAllowSession, PermissionAllowAlways},
+		GrantScopes: grantScopes,
 	}
-	if !validPermissionPresentationForTool(presentation, toolName) {
+	if !validPermissionPresentationForTool(presentation, toolName, constraint) {
 		return unavailablePermissionPresentation()
 	}
 	return presentation
+}
+
+func permissionPresentationScopesMatchConstraint(
+	scopes []PermissionInteractionDecision,
+	constraint PermissionDecisionConstraint,
+) bool {
+	if !constraint.valid() {
+		return false
+	}
+	if constraint == PermissionAllowOnceOnly {
+		return len(scopes) == 1 && scopes[0] == PermissionAllowOnce
+	}
+	return len(scopes) == 3 &&
+		scopes[0] == PermissionAllowOnce &&
+		scopes[1] == PermissionAllowSession &&
+		scopes[2] == PermissionAllowAlways
 }

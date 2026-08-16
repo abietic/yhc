@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -153,6 +154,93 @@ func TestP511AmbientGuestBindingPreservesCompatibility(t *testing.T) {
 	}
 	if starts != 1 || result.Stdout != "ambient" || mgr.GuestExecutionProof() != (containment.ExecutionProof{}) {
 		t.Fatalf("ambient execution = %#v starts=%d proof=%#v", result, starts, mgr.GuestExecutionProof())
+	}
+}
+
+func TestP512GuestExecutionIdentityIsDetachedAndRevalidated(t *testing.T) {
+	binding, adapter := p51GuestBinding(t)
+	mgr := p51GuestShellManager(t, binding, adapter)
+	identity, err := mgr.GuestExecutionIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.BindingDigest != binding.Digest() || identity.Root != binding.Policy().Spec().Root || identity.Enforced != containment.AxisFilesystemRead|containment.AxisFilesystemWrite|containment.AxisNetworkDenied|containment.AxisRootIdentity|containment.AxisDescendantConfinement|containment.AxisDescendantCleanup|containment.AxisWallTime|containment.AxisOutput {
+		t.Fatalf("identity = %#v", identity)
+	}
+	if _, err := mgr.RevalidateGuestExecutionIdentity(); err != nil {
+		t.Fatalf("current root identity rejected: %v", err)
+	}
+	root := binding.Policy().Spec().CWD
+	moved := root + "-moved"
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(moved) })
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.RevalidateGuestExecutionIdentity(); err == nil {
+		t.Fatal("replaced root identity accepted")
+	}
+}
+
+func TestP512AmbientGuestExecutionIdentityStaysZeroProof(t *testing.T) {
+	cwd := t.TempDir()
+	policy, err := containment.NewAmbientHostSnapshot(cwd, containment.EntrypointHeadless, containment.SelectionCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := containment.NewBinding(containment.ProcessClassGuest, policy, containment.NewAmbientHostAdapter(), containment.AdapterProof{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := NewShellManagerWithGuestBinding(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := mgr.RevalidateGuestExecutionIdentity()
+	if err != nil || identity.Enforced != 0 || identity.AdapterAxes != 0 || identity.RuntimeAxes != 0 {
+		t.Fatalf("ambient identity = %#v, %v", identity, err)
+	}
+}
+
+func TestP512GuestSubmissionRejectsExpiredIdentity(t *testing.T) {
+	binding, adapter := p51GuestBinding(t)
+	mgr := p51GuestShellManager(t, binding, adapter)
+	t.Cleanup(func() { _ = mgr.KillAll() })
+	root := binding.Policy().Spec().CWD
+	if _, err := mgr.ExecuteAt(context.Background(), "guest", root, "true", time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	moved := root + "-moved"
+	mgr.beforeGuestCommandSubmissionForTest = func() {
+		mgr.beforeGuestCommandSubmissionForTest = nil
+		if err := os.Rename(root, moved); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(moved) })
+
+	if _, err := mgr.ExecuteAt(
+		context.Background(),
+		"guest",
+		root,
+		"printf should-not-run > submission.txt",
+		time.Second,
+	); !errors.Is(err, ErrSandboxBindingExpired) {
+		t.Fatalf("submission error = %v", err)
+	}
+	for _, candidate := range []string{
+		filepath.Join(root, "submission.txt"),
+		filepath.Join(moved, "submission.txt"),
+	} {
+		if _, err := os.Stat(candidate); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("command reached Guest stdin: %s err=%v", candidate, err)
+		}
 	}
 }
 

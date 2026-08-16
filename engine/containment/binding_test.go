@@ -180,4 +180,115 @@ func TestBindingRejectsAmbientProofAndUnavailableReasons(t *testing.T) {
 	}
 }
 
+func TestP512ExecutionIdentityBindsCompleteGuestProof(t *testing.T) {
+	policy, err := NewExecutionPolicySnapshot(ptr(darwinWorkspaceSpec(t, t.TempDir(), StateDegraded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := &testAdapter{family: AdapterDarwinSeatbelt, generation: "generation-1"}
+	binding, err := NewBinding(ProcessClassGuest, policy, adapter, AdapterProof{PolicyDigest: policy.Digest(), CapabilityGeneration: "generation-1", Enforced: adapterAllowedAxes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := NewExecutionProof(binding, runtimeAllowedAxes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := ExecutionIdentityFor(binding, proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.BindingDigest != binding.Digest() || identity.PolicyDigest != policy.Digest() || identity.Enforced != adapterAllowedAxes|runtimeAllowedAxes || identity.Root != policy.Spec().Root {
+		t.Fatalf("identity = %#v", identity)
+	}
+	if got := fmt.Sprintf("%+v", identity.Diagnostic()); contains(got, identity.Root.Path) || contains(got, "Device:") || contains(got, "Inode:") {
+		t.Fatalf("identity diagnostic leaked root: %s", got)
+	}
+}
+
+func TestP512ExecutionIdentityRejectsInvalidProofs(t *testing.T) {
+	policy, err := NewExecutionPolicySnapshot(ptr(darwinWorkspaceSpec(t, t.TempDir(), StateDegraded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := &testAdapter{family: AdapterDarwinSeatbelt, generation: "generation-1"}
+	binding, err := NewBinding(ProcessClassGuest, policy, adapter, AdapterProof{PolicyDigest: policy.Digest(), CapabilityGeneration: "generation-1", Enforced: adapterAllowedAxes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := NewExecutionProof(binding, runtimeAllowedAxes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherSpec := policy.Spec()
+	otherSpec.CapabilityGeneration = "generation-2"
+	other, err := NewExecutionPolicySnapshot(&otherSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherBinding, err := NewBinding(ProcessClassGuest, other, &testAdapter{family: AdapterDarwinSeatbelt, generation: "generation-2"}, AdapterProof{PolicyDigest: other.Digest(), CapabilityGeneration: "generation-2", Enforced: adapterAllowedAxes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherProof, err := NewExecutionProof(otherBinding, runtimeAllowedAxes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ambient := DisabledCompatibilitySnapshot(t.TempDir(), EntrypointTUI)
+	hooks, err := NewBinding(ProcessClassShellHooks, ambient, &testAdapter{family: AdapterAmbientHost}, AdapterProof{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		binding *Binding
+		proof   ExecutionProof
+	}{
+		"nil":                 {nil, proof},
+		"non-guest":           {hooks, ExecutionProof{}},
+		"cross-binding":       {binding, otherProof},
+		"overclaimed adapter": {binding, ExecutionProof{BindingDigest: proof.BindingDigest, PolicyDigest: proof.PolicyDigest, CapabilityGeneration: proof.CapabilityGeneration, AdapterAxes: proof.AdapterAxes | AxisMemory, RuntimeAxes: proof.RuntimeAxes, Enforced: proof.Enforced | AxisMemory}},
+		"overclaimed runtime": {binding, ExecutionProof{BindingDigest: proof.BindingDigest, PolicyDigest: proof.PolicyDigest, CapabilityGeneration: proof.CapabilityGeneration, AdapterAxes: proof.AdapterAxes, RuntimeAxes: proof.RuntimeAxes | AxisMemory, Enforced: proof.Enforced | AxisMemory}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ExecutionIdentityFor(tc.binding, tc.proof); err == nil {
+				t.Fatal("invalid execution identity accepted")
+			}
+		})
+	}
+	unavailableSpec := policy.Spec()
+	unavailableSpec.State = StateUnavailable
+	unavailable, err := NewExecutionPolicySnapshot(&unavailableSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unavailableBinding, err := NewUnavailableBinding(ProcessClassGuest, unavailable, adapter, ReasonProbeFailed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		binding *Binding
+		proof   ExecutionProof
+	}{
+		"unavailable": {unavailableBinding, ExecutionProof{}},
+		"ambient":     {mustGuestAmbientBinding(t), ExecutionProof{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			identity, err := ExecutionIdentityFor(tc.binding, tc.proof)
+			if err != nil || identity.Enforced != 0 || identity.AdapterAxes != 0 || identity.RuntimeAxes != 0 {
+				t.Fatalf("zero-proof identity = %#v, %v", identity, err)
+			}
+		})
+	}
+}
+
+func mustGuestAmbientBinding(t *testing.T) *Binding {
+	t.Helper()
+	policy := DisabledCompatibilitySnapshot(t.TempDir(), EntrypointTUI)
+	binding, err := NewBinding(ProcessClassGuest, policy, &testAdapter{family: AdapterAmbientHost}, AdapterProof{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return binding
+}
+
 func ptr(value Spec) *Spec { return &value }
