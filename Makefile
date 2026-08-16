@@ -1,4 +1,4 @@
-.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit cutover-recovery-capture cutover-recovery-verify publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
+.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -42,12 +42,6 @@ ITERATION_SLICE_ID ?=
 HOOK_BENCHMARK_RUNS ?= 7
 WORKTREE_AUDIT_BASE ?= origin/master
 WORKTREE_AUDIT_FORMAT ?= text
-CUTOVER_PRIVATE_ROOT ?=
-CUTOVER_PUBLIC_ROOT ?=
-CUTOVER_ARCHIVE_ROOT ?=
-CUTOVER_INPUT ?=
-CUTOVER_MANIFEST ?=
-CUTOVER_PHASE ?= pre-move
 PUBLICATION_CONFIG ?= quality/publication.yaml
 PUBLICATION_ROOT ?=
 PUBLICATION_OUTPUT ?=
@@ -292,19 +286,6 @@ iteration-hook-benchmark:
 worktree-audit:
 	$(GO) run ./scripts/worktree_audit --base $(WORKTREE_AUDIT_BASE) --format $(WORKTREE_AUDIT_FORMAT)
 
-cutover-recovery-capture:
-	@test -n "$(CUTOVER_PRIVATE_ROOT)" || { echo "CUTOVER_PRIVATE_ROOT is required" >&2; exit 2; }
-	@test -n "$(CUTOVER_PUBLIC_ROOT)" || { echo "CUTOVER_PUBLIC_ROOT is required" >&2; exit 2; }
-	@test -n "$(CUTOVER_ARCHIVE_ROOT)" || { echo "CUTOVER_ARCHIVE_ROOT is required" >&2; exit 2; }
-	@test -n "$(CUTOVER_INPUT)" || { echo "CUTOVER_INPUT is required" >&2; exit 2; }
-	@test -n "$(CUTOVER_MANIFEST)" || { echo "CUTOVER_MANIFEST is required" >&2; exit 2; }
-	$(GO) run ./scripts/cutover_recovery capture --private-root "$(CUTOVER_PRIVATE_ROOT)" --public-root "$(CUTOVER_PUBLIC_ROOT)" --archive-root "$(CUTOVER_ARCHIVE_ROOT)" --input "$(CUTOVER_INPUT)" --output "$(CUTOVER_MANIFEST)"
-
-cutover-recovery-verify:
-	@test -n "$(CUTOVER_MANIFEST)" || { echo "CUTOVER_MANIFEST is required" >&2; exit 2; }
-	@test -n "$(CUTOVER_PHASE)" || { echo "CUTOVER_PHASE is required" >&2; exit 2; }
-	$(GO) run ./scripts/cutover_recovery verify --manifest "$(CUTOVER_MANIFEST)" --phase "$(CUTOVER_PHASE)"
-
 publication-inventory:
 	@install -d -m 0700 $(BUILD_DIR)/publication
 	$(GO) run ./scripts/publication inventory --config $(PUBLICATION_CONFIG) --output $(BUILD_DIR)/publication/inventory.json
@@ -447,3 +428,26 @@ prepare-gotestsum:
 
 prepare-dlv:
 	@command -v $(DLV) >/dev/null 2>&1 || $(GO) install github.com/go-delve/delve/cmd/dlv@latest
+
+# ── Public canonical cutover recovery ──────────────────
+.PHONY: cutover-recovery-capture cutover-recovery-verify
+
+CUTOVER_PRIVATE_ROOT ?=
+CUTOVER_PUBLIC_ROOT ?=
+CUTOVER_ARCHIVE_ROOT ?=
+CUTOVER_INPUT ?=
+CUTOVER_MANIFEST ?=
+CUTOVER_PHASE ?= pre-move
+
+cutover-recovery-capture:
+	@test -n "$(CUTOVER_PRIVATE_ROOT)" || { echo "CUTOVER_PRIVATE_ROOT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_PUBLIC_ROOT)" || { echo "CUTOVER_PUBLIC_ROOT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_ARCHIVE_ROOT)" || { echo "CUTOVER_ARCHIVE_ROOT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_INPUT)" || { echo "CUTOVER_INPUT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_MANIFEST)" || { echo "CUTOVER_MANIFEST is required" >&2; exit 2; }
+	$(GO) run ./scripts/cutover_recovery capture --private-root "$(CUTOVER_PRIVATE_ROOT)" --public-root "$(CUTOVER_PUBLIC_ROOT)" --archive-root "$(CUTOVER_ARCHIVE_ROOT)" --input "$(CUTOVER_INPUT)" --output "$(CUTOVER_MANIFEST)"
+
+cutover-recovery-verify:
+	@test -n "$(CUTOVER_MANIFEST)" || { echo "CUTOVER_MANIFEST is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_PHASE)" || { echo "CUTOVER_PHASE is required" >&2; exit 2; }
+	$(GO) run ./scripts/cutover_recovery verify --manifest "$(CUTOVER_MANIFEST)" --phase "$(CUTOVER_PHASE)"

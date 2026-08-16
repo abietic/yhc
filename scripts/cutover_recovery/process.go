@@ -28,6 +28,12 @@ func collectProcessOccupancy(ctx context.Context, reader processReader, roots []
 	if runtime.GOOS != "darwin" {
 		return nil, errors.New("live process occupancy capture is supported only on darwin")
 	}
+	return collectLsofOccupancy(ctx, reader, roots)
+}
+
+// collectLsofOccupancy is pure with respect to the host platform so fake
+// readers can exercise the lsof contract on every supported build target.
+func collectLsofOccupancy(ctx context.Context, reader processReader, roots []string) ([]processRecord, error) {
 	canonicalRoots, err := canonicalProcessRoots(roots)
 	if err != nil {
 		return nil, err

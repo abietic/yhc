@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -36,7 +37,7 @@ func TestProcessOccupancyCapturesCWDAndOpenFiles(t *testing.T) {
 	root := processTestRoot(t, "repo")
 	child := filepath.Join(root, "nested", "file")
 	reader := &fakeProcessReader{results: map[string]commandResult{processKey(root): {Stdout: []byte("p101\nfcwd\nn" + root + "\nf5\nn" + child + "\np202\nf7\nn" + root + "\n")}}, errors: map[string]error{}}
-	records, err := collectProcessOccupancy(context.Background(), reader, []string{root})
+	records, err := collectLsofOccupancy(context.Background(), reader, []string{root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestProcessOccupancyCapturesCWDAndOpenFiles(t *testing.T) {
 func TestProcessOccupancyUsesExactRootBoundariesAndDeduplicates(t *testing.T) {
 	root := processTestRoot(t, "repo")
 	reader := &fakeProcessReader{results: map[string]commandResult{processKey(root): {Stdout: []byte("p9\nfcwd\nn" + root + "\nf8\nn" + root + "\n")}}, errors: map[string]error{}}
-	records, err := collectProcessOccupancy(context.Background(), reader, []string{root, root})
+	records, err := collectLsofOccupancy(context.Background(), reader, []string{root, root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestProcessOccupancyFailsClosed(t *testing.T) {
 		"non canonical path": {results: map[string]commandResult{key: {Stdout: []byte("p1\nf3\nn" + root + "/nested/../file\n")}}, errors: map[string]error{}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			records, err := collectProcessOccupancy(context.Background(), reader, []string{root})
+			records, err := collectLsofOccupancy(context.Background(), reader, []string{root})
 			if name == "exit one empty" {
 				if err != nil || len(records) != 0 {
 					t.Fatalf("zero result = %+v, %v", records, err)
@@ -101,6 +102,16 @@ func TestProcessOccupancyFailsClosed(t *testing.T) {
 				t.Fatal("fail-closed condition was accepted")
 			}
 		})
+	}
+}
+
+func TestLiveProcessOccupancyRejectsNonDarwin(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("Darwin is the supported live capture platform")
+	}
+	_, err := collectProcessOccupancy(context.Background(), &fakeProcessReader{}, []string{processTestRoot(t, "repo")})
+	if err == nil || !strings.Contains(err.Error(), "only on darwin") {
+		t.Fatalf("live collector error = %v", err)
 	}
 }
 

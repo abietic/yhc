@@ -518,7 +518,7 @@ func validGitObjectID(value string) bool {
 		return false
 	}
 	for _, runeValue := range value {
-		if !(runeValue >= '0' && runeValue <= '9' || runeValue >= 'a' && runeValue <= 'f') {
+		if (runeValue < '0' || runeValue > '9') && (runeValue < 'a' || runeValue > 'f') {
 			return false
 		}
 	}
