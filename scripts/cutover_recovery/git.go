@@ -638,7 +638,7 @@ func canonicalWorktreePath(path string, prunable bool) (string, bool, error) {
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err == nil {
-		return filepath.Clean(resolved), true, nil
+		return filepath.Clean(resolved), !prunable, nil
 	}
 	if prunable && errors.Is(err, os.ErrNotExist) {
 		return filepath.Clean(path), false, nil

@@ -260,6 +260,31 @@ func TestCollectRejectsFrozenInventoryMismatches(t *testing.T) {
 	})
 }
 
+func TestCollectPrunableDirectoryShellIsAbsent(t *testing.T) {
+	private := mustResolve(t, t.TempDir())
+	linked := mustResolve(t, t.TempDir())
+	staleShell := mustResolve(t, t.TempDir())
+	for _, root := range []string{private, linked} {
+		if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := testCutoverInput(private, linked, filepath.Join(t.TempDir(), "archive"))
+	reader := inventoryReader(private, linked)
+	reader.responses[gitKey(private, "worktree", "list", "--porcelain", "-z")] = []byte("worktree " + private + "\x00HEAD " + strings.Repeat("a", 40) + "\x00branch refs/heads/main\x00\x00worktree " + linked + "\x00HEAD " + strings.Repeat("b", 40) + "\x00detached\x00\x00worktree " + staleShell + "\x00HEAD " + strings.Repeat("c", 40) + "\x00branch refs/heads/stale\x00prunable gitdir file points to non-existent location\x00\x00")
+
+	inventory, err := collectPrivateInventory(context.Background(), reader, private, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Worktrees) != 3 || inventory.Worktrees[2].Present || !inventory.Worktrees[2].Prunable {
+		t.Fatalf("prunable directory shell = %+v", inventory.Worktrees)
+	}
+	if len(inventory.ArchiveMapping) != 2 {
+		t.Fatalf("prunable directory shell received mapping: %+v", inventory.ArchiveMapping)
+	}
+}
+
 func TestCollectRejectsAliasedDestinationsAndUnknownDefaults(t *testing.T) {
 	private := mustResolve(t, t.TempDir())
 	linked := filepath.Join(t.TempDir(), "linked")
