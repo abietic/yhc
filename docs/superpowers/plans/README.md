@@ -8,7 +8,7 @@
 
 | Plan | Owning accepted contract | State |
 |---|---|---|
-| [`2026-08-16-public-canonical-cutover-recovery.md`](2026-08-16-public-canonical-cutover-recovery.md) | [Public YHC Canonical Cutover design](../specs/2026-08-15-public-canonical-cutover-design.md#recovery-manifest-and-archive-promotion) | Ready; recovery tooling is the first implementation slice |
+| [`2026-08-16-public-canonical-cutover-recovery.md`](2026-08-16-public-canonical-cutover-recovery.md) | [Public YHC Canonical Cutover design](../specs/2026-08-15-public-canonical-cutover-design.md#recovery-manifest-and-archive-promotion) | Active; implementation committed on a topic branch and live cutover pending |
 | [`2026-08-16-public-canonical-cutover-operations.md`](2026-08-16-public-canonical-cutover-operations.md) | [Public YHC Canonical Cutover design](../specs/2026-08-15-public-canonical-cutover-design.md) | Ready; Desktop remains deferred and archive promotion remains preflight-gated |
 | [`2026-08-13-untracked-sbom.md`](2026-08-13-untracked-sbom.md) | [Untracked SBOM design](../specs/2026-08-13-untracked-sbom-design.md) | Historical; implemented and locally verified 2026-08-13 |
 | [`2026-08-09-yhc-public-release-program.md`](2026-08-09-yhc-public-release-program.md) | [YHC Public Release And Identity Migration design](../specs/2026-08-09-yhc-public-release-design.md) | Historical; completed 2026-08-11 |

@@ -37,6 +37,7 @@ publication evidence follow the [source-mapping policy](../publication/README.md
 | Reference comparison | [`migration/reference/`](../migration/reference/README.md) |
 | Completed milestone narrative | [`migration/history/`](../migration/history/README.md) |
 | Commands, fixtures, or performance budget | [`migration/verification/`](../migration/verification/README.md) |
+| Private-to-public workspace cutover or recovery archive | [`public-canonical-cutover.md`](public-canonical-cutover.md) |
 
 Do not update `STATUS.md` from intent or a checklist. Source, focused tests,
 entrypoint wiring, and required repository gates are the evidence.
