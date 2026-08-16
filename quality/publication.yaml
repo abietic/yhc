@@ -1492,25 +1492,30 @@ privacy:
       rule_id: high-entropy-token
       match_sha256: e414e7de77dbc577103c2e7c33e643a7c59f5caaa26acc1bdd49e13b846d4f38
       purpose: documentation-example
+    - path: "docs/superpowers/plans/2026-08-16-public-canonical-cutover-operations.md"
+      line: 29
+      rule_id: high-entropy-token
+      match_sha256: acda422e05df4802c4cb74da96e941aab0de6ead860e060410b7ff795ad272e9
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/2026-08-16-public-canonical-cutover-recovery.md"
+      line: 29
+      rule_id: high-entropy-token
+      match_sha256: acda422e05df4802c4cb74da96e941aab0de6ead860e060410b7ff795ad272e9
+      purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
       line: 11
       rule_id: high-entropy-token
+      match_sha256: acda422e05df4802c4cb74da96e941aab0de6ead860e060410b7ff795ad272e9
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
+      line: 12
+      rule_id: high-entropy-token
+      match_sha256: acda422e05df4802c4cb74da96e941aab0de6ead860e060410b7ff795ad272e9
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
+      line: 13
+      rule_id: high-entropy-token
       match_sha256: b3175c7bcbfcf7e08b8cdac832a2376e0a049694afbfd60ce7cd7da3b12be6ad
-      purpose: documentation-example
-    - path: "docs/superpowers/plans/README.md"
-      line: 19
-      rule_id: high-entropy-token
-      match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
-      purpose: documentation-example
-    - path: "docs/superpowers/plans/README.md"
-      line: 19
-      rule_id: high-entropy-token
-      match_sha256: a5b00e1d6894f3cbb24189c682ace58404380a1a3ff071b374bb4cbdbcb91510
-      purpose: documentation-example
-    - path: "docs/superpowers/plans/README.md"
-      line: 20
-      rule_id: high-entropy-token
-      match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
       line: 21
@@ -1518,19 +1523,24 @@ privacy:
       match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
+      line: 21
+      rule_id: high-entropy-token
+      match_sha256: a5b00e1d6894f3cbb24189c682ace58404380a1a3ff071b374bb4cbdbcb91510
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
       line: 22
       rule_id: high-entropy-token
-      match_sha256: 5d2beaa503e1553527ed6073c18f49fba558245725bb2c93278a57cdbef48e27
+      match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
       line: 23
       rule_id: high-entropy-token
-      match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
+      match_sha256: 28ceb6970443ed103ca4ccf97309aa1873f8c116c9652a0e78ae3712245f832b
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
       line: 24
       rule_id: high-entropy-token
-      match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
+      match_sha256: 5d2beaa503e1553527ed6073c18f49fba558245725bb2c93278a57cdbef48e27
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
       line: 25
@@ -1543,12 +1553,22 @@ privacy:
       match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
-      line: 43
+      line: 27
+      rule_id: high-entropy-token
+      match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
+      line: 28
+      rule_id: high-entropy-token
+      match_sha256: 74915ce7e632c97316066aad48b841831e29e4f2d756f80dbd28ca46f1bbcacb
+      purpose: documentation-example
+    - path: "docs/superpowers/plans/README.md"
+      line: 45
       rule_id: high-entropy-token
       match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
       purpose: documentation-example
     - path: "docs/superpowers/plans/README.md"
-      line: 44
+      line: 46
       rule_id: high-entropy-token
       match_sha256: 6d9332370e0c2dfd8c34753605853a9807fb0b1ae5f54c7990f4f5fc509173bd
       purpose: documentation-example
@@ -1600,10 +1620,15 @@ privacy:
     - path: "docs/superpowers/specs/README.md"
       line: 11
       rule_id: high-entropy-token
+      match_sha256: cfd6d944fa967076277b0a98cf1f596dcbe4ae933c4056d6ab816f16f3f2fd9f
+      purpose: documentation-example
+    - path: "docs/superpowers/specs/README.md"
+      line: 12
+      rule_id: high-entropy-token
       match_sha256: 94be4d498c74ad2304d5aa90d6306cf95f84b167e01dedbd9b3e29a95ac770dd
       purpose: documentation-example
     - path: "docs/superpowers/specs/README.md"
-      line: 13
+      line: 14
       rule_id: high-entropy-token
       match_sha256: 5d0e82a9102280a0d4802c5faaf6eaa18898a9ffde30967ef16d38ea5e88f3a7
       purpose: documentation-example
