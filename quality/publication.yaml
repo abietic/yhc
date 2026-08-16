@@ -1498,7 +1498,7 @@ privacy:
       match_sha256: acda422e05df4802c4cb74da96e941aab0de6ead860e060410b7ff795ad272e9
       purpose: documentation-example
     - path: "docs/superpowers/plans/2026-08-16-public-canonical-cutover-recovery.md"
-      line: 29
+      line: 30
       rule_id: high-entropy-token
       match_sha256: acda422e05df4802c4cb74da96e941aab0de6ead860e060410b7ff795ad272e9
       purpose: documentation-example
@@ -3266,6 +3266,101 @@ privacy:
       line: 1126
       rule_id: private-email
       match_sha256: 5b03e9e76d0e381bfdfcdbfe4fc288c159291aaaed13e6a00b6b03b59ccf2386
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/git.go"
+      line: 605
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: "scripts/cutover_recovery/git.go"
+      line: 606
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: "scripts/cutover_recovery/git.go"
+      line: 607
+      rule_id: private-email
+      match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
+      purpose: build-metadata
+    - path: "scripts/cutover_recovery/git.go"
+      line: 608
+      rule_id: private-email
+      match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
+      purpose: build-metadata
+    - path: "scripts/cutover_recovery/git_test.go"
+      line: 283
+      rule_id: private-email
+      match_sha256: 236b84ba8ca74c27fa290ee5b6f4d2d5fdf676b2fefce7b0f95e4d380fe48f20
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/git_test.go"
+      line: 283
+      rule_id: private-email
+      match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/git_test.go"
+      line: 288
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/git_test.go"
+      line: 288
+      rule_id: private-email
+      match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/git_test.go"
+      line: 347
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 49
+      rule_id: private-email
+      match_sha256: 89eacbba02715f7e5b5f21c49ba229446bf8a0cc24d23379e70f9f893a20b358
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 57
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 58
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 209
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 213
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 214
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/integration_test.go"
+      line: 218
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/main_test.go"
+      line: 141
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/main_test.go"
+      line: 254
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: "scripts/cutover_recovery/main_test.go"
+      line: 259
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: synthetic-security-fixture
     - path: "scripts/evaluation/runner.go"
       line: 300
