@@ -367,12 +367,17 @@ secret-check: prepare-gitleaks
 sbom: prepare-cyclonedx-gomod
 	@install -d -m 0700 $(PUBLICATION_REPORT_DIR)
 	@set -e; \
-		task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
-		cleanup() { case "$$task_tree_parent" in /tmp/yhc-sbom-tree.*) rm -rf -- "$$task_tree_parent" ;; esac; }; \
+		task_sbom_root="."; \
+		task_tree_parent=""; \
+		cleanup() { if [[ -n "$$task_tree_parent" ]]; then case "$$task_tree_parent" in /tmp/yhc-sbom-tree.*) rm -rf -- "$$task_tree_parent" ;; esac; fi; }; \
 		trap cleanup EXIT; \
-		task_source_commit="$$(git rev-parse HEAD)"; \
-		$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
-		cd "$$task_tree_parent/tree"; \
+		if [[ -e "$$task_sbom_root/.git" ]]; then \
+			task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
+			task_source_commit="$$(git rev-parse HEAD)"; \
+			$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
+			task_sbom_root="$$task_tree_parent/tree"; \
+		fi; \
+		cd "$$task_sbom_root"; \
 		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(abspath $(PUBLICATION_SBOM_GENERATED)) .
 
 license-check: sbom
