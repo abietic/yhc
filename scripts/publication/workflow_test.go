@@ -124,13 +124,26 @@ func TestMakefileWiresPublicationSecurityTools(t *testing.T) {
 	sbomTarget := makefile[sbomStart:licenseStart]
 	for _, contract := range []string{
 		`@set -e;`,
+		`task_sbom_root="."`,
+		`if [[ -e "$$task_sbom_root/.git" ]]`,
+		`git rev-parse HEAD`,
 		`publication materialize --config $(PUBLICATION_CONFIG)`,
-		`cd "$$task_tree_parent/tree"`,
+		`task_sbom_root="$$task_tree_parent/tree"`,
+		`cd "$$task_sbom_root"`,
 		`-output $(abspath $(PUBLICATION_SBOM_GENERATED)) .`,
 	} {
 		if !strings.Contains(sbomTarget, contract) {
-			t.Fatalf("SBOM generation does not retain VCS-free contract %q", contract)
+			t.Fatalf("SBOM generation does not retain Git-source and detached-tree contract %q", contract)
 		}
+	}
+	conditionalIndex := strings.Index(sbomTarget, `if [[ -e "$$task_sbom_root/.git" ]]`)
+	gitHeadIndex := strings.Index(sbomTarget, `git rev-parse HEAD`)
+	materializeIndex := strings.Index(sbomTarget, `publication materialize --config $(PUBLICATION_CONFIG)`)
+	rootSwitchIndex := strings.Index(sbomTarget, `task_sbom_root="$$task_tree_parent/tree"`)
+	conditionalEndOffset := strings.Index(sbomTarget[rootSwitchIndex:], `fi;`)
+	directScanIndex := strings.Index(sbomTarget, `cd "$$task_sbom_root"`)
+	if conditionalIndex > gitHeadIndex || gitHeadIndex > materializeIndex || materializeIndex > rootSwitchIndex || conditionalEndOffset < 0 || rootSwitchIndex+conditionalEndOffset > directScanIndex {
+		t.Fatal("SBOM Git materialization must remain bounded before the detached-tree scan")
 	}
 	licenseTarget := makefile[licenseStart:]
 	if !strings.Contains(licenseTarget, `licenses --config $(PUBLICATION_CONFIG) --root . --sbom $(abspath $(PUBLICATION_SBOM_GENERATED)) --output $(PUBLICATION_LICENSE_REPORT)`) {
@@ -161,6 +174,175 @@ func TestMakefileWiresPublicationSecurityTools(t *testing.T) {
 	vulnerabilityIndex := strings.Index(treeTarget, "$(MAKE) vuln-check")
 	if secretIndex < 0 || vulnerabilityIndex < 0 || secretIndex > vulnerabilityIndex {
 		t.Fatal("materialized-tree secret scan must run before generated vulnerability evidence")
+	}
+}
+
+func TestMakefileSBOMSupportsGitSourceAndMaterializedTree(t *testing.T) {
+	makePath, err := exec.LookPath("make")
+	if err != nil {
+		t.Skip("make is unavailable")
+	}
+	makefilePath, err := filepath.Abs(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Fatalf("resolve Makefile: %v", err)
+	}
+
+	for _, test := range []struct {
+		name            string
+		gitFile         bool
+		wantGit         bool
+		wantMaterialize bool
+		wantScanMode    string
+	}{
+		{name: "materialized tree", wantScanMode: "direct"},
+		{name: "linked worktree", gitFile: true, wantGit: true, wantMaterialize: true, wantScanMode: "materialized"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			binDir := filepath.Join(root, "bin")
+			if err := os.Mkdir(binDir, 0o700); err != nil {
+				t.Fatalf("create mock bin: %v", err)
+			}
+			if test.gitFile {
+				if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: mock\n"), 0o600); err != nil {
+					t.Fatalf("write linked-worktree marker: %v", err)
+				}
+			}
+
+			gitMarker := filepath.Join(root, "git-called")
+			materializeMarker := filepath.Join(root, "materialize-called")
+			materializeRootMarker := filepath.Join(root, "materialize-root")
+			scanModeMarker := filepath.Join(root, "scan-mode")
+			writeExecutable(t, binDir, "git", `#!/bin/sh
+set -eu
+printf 'called\n' > "$YHC_TEST_GIT_MARKER"
+[ "$YHC_TEST_ALLOW_GIT" = "1" ] || exit 91
+[ "${1-}" = "rev-parse" ] && [ "${2-}" = "HEAD" ] || exit 92
+printf '0123456789abcdef0123456789abcdef01234567\n'
+`)
+			fakeGo := writeExecutable(t, binDir, "go", `#!/bin/sh
+set -eu
+if [ "${1-}" = "version" ] && [ "${2-}" = "-m" ]; then
+	printf '\tmod\tgithub.com/CycloneDX/cyclonedx-gomod\tv1.10.0\n'
+	exit 0
+fi
+[ "${1-}" = "run" ] || exit 93
+[ "$YHC_TEST_ALLOW_MATERIALIZE" = "1" ] || exit 94
+shift
+[ "${1-}" = "./scripts/publication" ] || exit 95
+shift
+[ "${1-}" = "materialize" ] || exit 96
+shift
+output=""
+source_commit=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--source-commit)
+			shift
+			source_commit="${1-}"
+			;;
+		--output)
+			shift
+			output="${1-}"
+			;;
+	esac
+	shift
+done
+[ "$source_commit" = "0123456789abcdef0123456789abcdef01234567" ] || exit 97
+[ -n "$output" ] || exit 98
+mkdir -p "$output"
+: > "$output/.materialized"
+printf 'called\n' > "$YHC_TEST_MATERIALIZE_MARKER"
+printf '%s\n' "$output" > "$YHC_TEST_MATERIALIZE_ROOT_MARKER"
+`)
+			fakeCycloneDX := writeExecutable(t, binDir, "cyclonedx-gomod", `#!/bin/sh
+set -eu
+output=""
+while [ "$#" -gt 0 ]; do
+	if [ "$1" = "-output" ]; then
+		shift
+		output="${1-}"
+		break
+	fi
+	shift
+done
+[ -n "$output" ] || exit 96
+if [ -f .materialized ]; then
+	printf 'materialized\n' > "$YHC_TEST_SCAN_MODE_MARKER"
+else
+	printf 'direct\n' > "$YHC_TEST_SCAN_MODE_MARKER"
+fi
+printf '{}\n' > "$output"
+`)
+
+			command := exec.Command(makePath, "-f", makefilePath, "sbom", "GO="+fakeGo, "CYCLONEDX_GOMOD="+fakeCycloneDX)
+			command.Dir = root
+			command.Env = append(os.Environ(),
+				"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+				"YHC_TEST_GIT_MARKER="+gitMarker,
+				"YHC_TEST_MATERIALIZE_MARKER="+materializeMarker,
+				"YHC_TEST_MATERIALIZE_ROOT_MARKER="+materializeRootMarker,
+				"YHC_TEST_SCAN_MODE_MARKER="+scanModeMarker,
+				"YHC_TEST_ALLOW_GIT="+boolAtom(test.wantGit),
+				"YHC_TEST_ALLOW_MATERIALIZE="+boolAtom(test.wantMaterialize),
+			)
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("run SBOM target: %v\n%s", err, output)
+			}
+			assertMarker(t, gitMarker, test.wantGit)
+			assertMarker(t, materializeMarker, test.wantMaterialize)
+			assertMarker(t, materializeRootMarker, test.wantMaterialize)
+			if test.wantMaterialize {
+				materializeRoot, err := os.ReadFile(materializeRootMarker)
+				if err != nil {
+					t.Fatalf("read materialized root: %v", err)
+				}
+				if _, err := os.Stat(filepath.Dir(strings.TrimSpace(string(materializeRoot)))); !os.IsNotExist(err) {
+					t.Fatalf("temporary materialized parent was not removed: %v", err)
+				}
+			}
+			scanMode, err := os.ReadFile(scanModeMarker)
+			if err != nil {
+				t.Fatalf("read scan mode: %v", err)
+			}
+			if got := strings.TrimSpace(string(scanMode)); got != test.wantScanMode {
+				t.Fatalf("scan mode = %q, want %q", got, test.wantScanMode)
+			}
+			if info, err := os.Stat(filepath.Join(root, "build", "publication", "sbom.cdx.json")); err != nil || info.Size() == 0 {
+				t.Fatalf("generated SBOM missing or empty: %v", err)
+			}
+		})
+	}
+}
+
+func writeExecutable(t *testing.T, directory, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(directory, name)
+	if err := os.WriteFile(path, []byte(contents), 0o700); err != nil {
+		t.Fatalf("write executable %s: %v", name, err)
+	}
+	return path
+}
+
+func boolAtom(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}
+
+func assertMarker(t *testing.T, path string, want bool) {
+	t.Helper()
+	_, err := os.Stat(path)
+	if want && err != nil {
+		t.Fatalf("expected marker %s: %v", filepath.Base(path), err)
+	}
+	if !want && err == nil {
+		t.Fatalf("unexpected marker %s", filepath.Base(path))
+	}
+	if !want && err != nil && !os.IsNotExist(err) {
+		t.Fatalf("inspect marker %s: %v", filepath.Base(path), err)
 	}
 }
 
