@@ -31,6 +31,7 @@ func TestP241ColdActiveGoalNormalizesToDurablePause(t *testing.T) {
 			return now.Add(time.Hour)
 		},
 	})
+	eng.agentRunner.SetOutputDir(filepath.Join(t.TempDir(), "agent-output"))
 	t.Cleanup(eng.Close)
 	resumed, err := eng.ResumeSessionInfo(t.Context(), session.SessionInfo{
 		SessionID:      "active-goal",
@@ -278,6 +279,7 @@ func TestP241CompleteGoalSurvivesSessionRestart(t *testing.T) {
 		TranscriptDir: dir,
 		Clock:         func() time.Time { return now.Add(time.Hour) },
 	})
+	eng.agentRunner.SetOutputDir(filepath.Join(t.TempDir(), "agent-output"))
 	t.Cleanup(eng.Close)
 	resumed, err := eng.ResumeSessionInfo(t.Context(), session.SessionInfo{
 		SessionID:      "complete-goal",
@@ -386,6 +388,7 @@ func TestP241UnavailableGoalCanOnlyBeCleared(t *testing.T) {
 		TranscriptDir: dir,
 		Clock:         func() time.Time { return now.Add(time.Hour) },
 	})
+	eng.agentRunner.SetOutputDir(filepath.Join(t.TempDir(), "agent-output"))
 	t.Cleanup(eng.Close)
 	if _, err := eng.ResumeSessionInfo(t.Context(), session.SessionInfo{
 		SessionID:      "unknown-goal",
@@ -535,6 +538,7 @@ func TestP241MalformedGoalShapePreservesOuterSessionMetadata(t *testing.T) {
 		TranscriptDir: dir,
 		Clock:         func() time.Time { return now.Add(time.Hour) },
 	})
+	eng.agentRunner.SetOutputDir(filepath.Join(t.TempDir(), "agent-output"))
 	t.Cleanup(eng.Close)
 	resumed, err := eng.ResumeSessionInfo(t.Context(), session.SessionInfo{
 		SessionID:      "malformed-goal",
