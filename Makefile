@@ -465,12 +465,17 @@ secret-check: prepare-gitleaks
 sbom: prepare-cyclonedx-gomod
 	@install -d -m 0700 $(PUBLICATION_REPORT_DIR)
 	@set -e; \
-		task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
-		cleanup() { case "$$task_tree_parent" in /tmp/yhc-sbom-tree.*) rm -rf -- "$$task_tree_parent" ;; esac; }; \
+		task_sbom_root="."; \
+		task_tree_parent=""; \
+		cleanup() { if [[ -n "$$task_tree_parent" ]]; then case "$$task_tree_parent" in /tmp/yhc-sbom-tree.*) rm -rf -- "$$task_tree_parent" ;; esac; fi; }; \
 		trap cleanup EXIT; \
-		task_source_commit="$$(git rev-parse HEAD)"; \
-		$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
-		cd "$$task_tree_parent/tree"; \
+		if [[ -e "$$task_sbom_root/.git" ]]; then \
+			task_tree_parent="$$(mktemp -d /tmp/yhc-sbom-tree.XXXXXX)"; \
+			task_source_commit="$$(git rev-parse HEAD)"; \
+			$(GO) run ./scripts/publication materialize --config $(PUBLICATION_CONFIG) --source-commit "$$task_source_commit" --output "$$task_tree_parent/tree"; \
+			task_sbom_root="$$task_tree_parent/tree"; \
+		fi; \
+		cd "$$task_sbom_root"; \
 		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(CYCLONEDX_GOMOD) mod -licenses -test -json -noserial -notimestamp -output $(abspath $(PUBLICATION_SBOM_GENERATED)) .
 
 license-check: sbom
@@ -541,3 +546,26 @@ prepare-gotestsum:
 
 prepare-dlv:
 	@command -v $(DLV) >/dev/null 2>&1 || $(GO) install github.com/go-delve/delve/cmd/dlv@latest
+
+# ── Public canonical cutover recovery ──────────────────
+.PHONY: cutover-recovery-capture cutover-recovery-verify
+
+CUTOVER_PRIVATE_ROOT ?=
+CUTOVER_PUBLIC_ROOT ?=
+CUTOVER_ARCHIVE_ROOT ?=
+CUTOVER_INPUT ?=
+CUTOVER_MANIFEST ?=
+CUTOVER_PHASE ?= pre-move
+
+cutover-recovery-capture:
+	@test -n "$(CUTOVER_PRIVATE_ROOT)" || { echo "CUTOVER_PRIVATE_ROOT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_PUBLIC_ROOT)" || { echo "CUTOVER_PUBLIC_ROOT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_ARCHIVE_ROOT)" || { echo "CUTOVER_ARCHIVE_ROOT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_INPUT)" || { echo "CUTOVER_INPUT is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_MANIFEST)" || { echo "CUTOVER_MANIFEST is required" >&2; exit 2; }
+	$(GO) run ./scripts/cutover_recovery capture --private-root "$(CUTOVER_PRIVATE_ROOT)" --public-root "$(CUTOVER_PUBLIC_ROOT)" --archive-root "$(CUTOVER_ARCHIVE_ROOT)" --input "$(CUTOVER_INPUT)" --output "$(CUTOVER_MANIFEST)"
+
+cutover-recovery-verify:
+	@test -n "$(CUTOVER_MANIFEST)" || { echo "CUTOVER_MANIFEST is required" >&2; exit 2; }
+	@test -n "$(CUTOVER_PHASE)" || { echo "CUTOVER_PHASE is required" >&2; exit 2; }
+	$(GO) run ./scripts/cutover_recovery verify --manifest "$(CUTOVER_MANIFEST)" --phase "$(CUTOVER_PHASE)"
