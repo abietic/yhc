@@ -1,7 +1,7 @@
 # Implementation Plan Index
 
 **Status:** active-plan
-**Last verified:** 2026-08-16
+**Last verified:** 2026-08-19
 
 > **Ownership:** discoverability and lifecycle routing for task-level
 > implementation plans
@@ -43,7 +43,7 @@
 | [`2026-08-07-p50-2-reviewer-latency-denominator.md`](2026-08-07-p50-2-reviewer-latency-denominator.md) | [Permission Runtime Remediation design](../specs/2026-08-07-permission-remediation-design.md#repair-2-use-reviewer-attempts-as-the-latency-denominator) | Executed and retained as closeout evidence |
 | [`2026-08-07-p50-3-review-audit-dispatcher.md`](2026-08-07-p50-3-review-audit-dispatcher.md) | [Permission Runtime Remediation design](../specs/2026-08-07-permission-remediation-design.md#repair-3-queue-reviewer-audit-without-blocking-permission) | Historical; completed 2026-08-08 |
 | [`2026-08-07-p51-1-darwin-guest-seatbelt.md`](2026-08-07-p51-1-darwin-guest-seatbelt.md) | [Darwin Sandbox and Auto Permission design](../specs/2026-08-07-darwin-sandbox-auto-permission-design.md#delivery-decomposition) | Executed; completed and removed from the migration queue |
-| [`2026-08-07-p51-2-auto-containment-admission.md`](2026-08-07-p51-2-auto-containment-admission.md) | [Darwin Sandbox and Auto Permission design](../specs/2026-08-07-darwin-sandbox-auto-permission-design.md#auto-permission-admission) | Accepted design stage only; not admitted to the migration queue |
+| [`2026-08-07-p51-2-auto-containment-admission.md`](2026-08-07-p51-2-auto-containment-admission.md) | [Darwin Sandbox and Auto Permission design](../specs/2026-08-07-darwin-sandbox-auto-permission-design.md#auto-permission-admission) | Historical; master-native Core completed 2026-08-19, Desktop projection deferred |
 | [`2026-08-07-agent-runtime-instruction-freshness.md`](2026-08-07-agent-runtime-instruction-freshness.md) | [Agent Runtime Instruction Freshness design](../specs/2026-08-07-agent-runtime-instruction-freshness-design.md) | Executed and retained as closeout evidence |
 | [`2026-08-07-closed-gap-traceability.md`](2026-08-07-closed-gap-traceability.md) | [Closed Gap Traceability design](../specs/2026-08-07-closed-gap-traceability-design.md) | Executed and retained as closeout evidence |
 | [`2026-08-06-p46-2-observable-failover.md`](2026-08-06-p46-2-observable-failover.md) | [`P46.2`](../../migration/plans/p46-model-failover-repair.md#p462-observable-attempt-discard-and-switch) | Executed and retained as closeout evidence |

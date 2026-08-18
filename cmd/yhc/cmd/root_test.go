@@ -95,6 +95,55 @@ func TestPlainPermissionPromptUsesTruthfulGrantScopes(t *testing.T) {
 	}
 }
 
+func TestP512PlainPermissionPromptAllowOnceOnly(t *testing.T) {
+	var output bytes.Buffer
+	prompt := makePlainPermissionPrompt(newPlainInputBroker(bufio.NewReader(strings.NewReader("s\n"))), &output)
+	result := prompt(context.Background(), engine.PermissionPromptRequest{ToolName: "Bash", DecisionConstraint: engine.PermissionAllowOnceOnly})
+	if result.Decision != engine.PermissionDeny {
+		t.Fatalf("constrained session answer = %#v, want deny", result)
+	}
+	if strings.Contains(output.String(), "session") || strings.Contains(output.String(), "always") {
+		t.Fatalf("constrained prompt exposed persistent grants: %q", output.String())
+	}
+}
+
+func TestP512PlainProjectGraphReconstructsDecisionConstraint(t *testing.T) {
+	eng := engine.NewQueryEngine(engine.QueryEngineConfig{
+		SessionID: "plain-session",
+		ThreadID:  "plain-thread",
+		AgentID:   "plain-agent",
+		CWD:       t.TempDir(),
+	})
+	t.Cleanup(eng.Close)
+	var captured engine.PermissionPromptRequest
+	err := resolvePlainProjectGraphPermission(
+		context.Background(),
+		eng,
+		func(_ context.Context, request engine.PermissionPromptRequest) engine.PermissionInteractionResult {
+			captured = request
+			return engine.PermissionInteractionResult{Decision: engine.PermissionDeny}
+		},
+		engine.PermissionRequestEvent{
+			Kind:               engine.PermissionInteractionKindPermission,
+			Source:             "project_graph",
+			ToolName:           "Bash",
+			CanonicalToolName:  "Bash",
+			ToolUseID:          "plain-critical",
+			Attempt:            0,
+			DecisionConstraint: engine.PermissionAllowOnceOnly,
+		},
+	)
+	if err == nil {
+		t.Fatal("inactive ProjectGraph request unexpectedly resolved")
+	}
+	if captured.DecisionConstraint != engine.PermissionAllowOnceOnly ||
+		captured.Kind != engine.PermissionInteractionKindPermission ||
+		captured.Source != "project_graph" || captured.CanonicalToolName != "Bash" ||
+		captured.ToolName != "Bash" || captured.ToolUseID != "plain-critical" {
+		t.Fatalf("reconstructed plain request = %#v", captured)
+	}
+}
+
 func TestPlainPlanApprovalReturnsExactStructuredTarget(t *testing.T) {
 	tests := []struct {
 		input     string

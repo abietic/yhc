@@ -1,9 +1,9 @@
 # Darwin Sandbox And Auto Permission Design
 
-**Status:** active-plan
-**Delivery:** P51.1 complete; P51.2 pending intake
+**Status:** historical
+**Delivery:** P51.1 and P51.2 Core complete
 **Accepted:** 2026-08-07
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-19
 **Source snapshot:** `origin/master` at
 `de74294b29f40d19bfd0e37f09889bd6f8037d90`
 **Adoption:** `project-native`
@@ -19,12 +19,13 @@
 
 ## Outcome
 
-P51.1 now defaults model-issued Bash on Darwin amd64 and arm64 to a real
-Seatbelt `workspace-write` envelope. It deliberately leaves all permission
-outcomes unchanged. The later P51.2 stage may stop ordinary Bash prompts in
-Auto mode only when QueryEngine proves that the exact action will use the exact
+P51.1 defaults model-issued Bash on Darwin amd64 and arm64 to a real Seatbelt
+`workspace-write` envelope. It deliberately leaves all permission outcomes
+unchanged. P51.2 Core now stops ordinary Bash prompts through its automatic
+Auto path only when QueryEngine proves that the exact action will use the exact
 Guest binding whose required filesystem, network, root, and descendant axes
-are revalidated before dispatch.
+are revalidated before dispatch. Exact local/user rules remain a separate
+explicit user authority path and never receive proof-bound admission.
 
 The first platform slice contains persistent Bash, its background work, child
 Agent Bash, and all descendants. Shell hooks and configured stdio MCP servers
@@ -40,10 +41,13 @@ design therefore claims neither complete P42 enforcement nor environment
 credential isolation: API keys and tokens already present in the environment
 can be read and printed by Bash.
 
-This document freezes the two-stage design. P51.1 is now implemented and G28
-remains open because credentials, hooks/MCP, and hard resource limits are still
-ambient. P51.2 has not passed its own intake, so the Auto admission sections
-below remain accepted future design rather than current permission behavior.
+This document preserves the original two-stage design. P51.1 and P51.2 Core
+are implemented, while G28 remains open because credentials, hooks/MCP, and hard
+resource limits are still ambient. The master-native
+[`P51.2 Core contract`](../../migration/plans/p51-2-auto-containment-admission.md)
+supersedes this design wherever the critical-command rule or delivered
+entrypoint boundary differs. AppServer, Desktop, and Web UI projection is not
+part of the Core delivery.
 
 ### Accepted P42 divergence
 
@@ -70,8 +74,8 @@ reinterpret this design as complete host containment.
   described as sandboxed.
 - Auto skips ordinary Bash prompts only when the immutable execution proof
   contains every axis required by the narrower Auto admission contract.
-- Deterministically destructive Bash still requires human confirmation unless
-  exact user authority already covers the same command and input.
+- The narrow literal critical `rm`/`rmdir` subset always requires one fresh
+  live `AllowOnce`; exact rules and other persistent authority do not cover it.
 - Filesystem or network denial never triggers an ambient retry or one-shot
   sandbox escalation in the first version.
 
@@ -399,10 +403,13 @@ descriptor or model reviewer projection.
 
 ### Decision order
 
-The existing ordering through tool registration, schema validation, Plan,
-explicit deny/ask rules, exact user authority, and normal mode fast paths is
-preserved. Before any permission decision, a required-but-unavailable Guest
-binding makes Bash execution unavailable for every mode.
+The delivered ordering preserves tool registration, schema validation, Plan,
+and explicit deny first; then it recognizes the narrow critical Bash subset
+before explicit ask/allow, exact user authority, grants, Bypass, classifier,
+reviewer, or coalescing can authorize execution. An incomplete or unavailable
+Guest binding cannot authorize the P51.2 shortcut; the existing Auto fallback
+may ask or deny, and any eventual Guest launch remains fail-closed before
+spawn.
 
 Only `ModeAuto` plus canonical `Bash` may use the containment shortcut. It
 requires all of:
@@ -427,12 +434,14 @@ prompt when the deterministic destructive classifier does not identify it.
 This is an accepted first-version risk, not an implementation claim that
 Seatbelt contains resource consumption.
 
-Use the existing deterministic Bash risk classifier as a workspace-protection
-signal, not a host security boundary:
+Use the delivered narrow literal recognizer as a workspace-protection signal,
+not a host security boundary:
 
-- `destructive` requests human confirmation;
-- `read_only`, `write`, and `unknown` may use the sandbox shortcut; and
-- exact user authority for the same command and input remains authoritative.
+- supported critical `rm`/`rmdir` requests require fresh live `AllowOnce`;
+- non-critical or unknown syntax may use the proof-bound or existing fallback
+  path; and
+- exact local/user authority remains independently authoritative only for
+  non-critical actions.
 
 Non-Bash tools, BashOutput, KillShell, Agent, MCP, dynamic tools, network tools,
 and user-interaction tools retain the current permission flow. Bypass mode may
@@ -533,13 +542,14 @@ containment slices:
 | Order | Slice | Deliverable | Rollback boundary |
 |---:|---|---|---|
 | 1 | P51.1 Darwin Guest adapter `Complete` | Explicit process bindings, user-owned config, real Seatbelt launch and escape tests; no permission behavior change | Restore Guest to truthful ambient/disabled and remove Darwin selection/config as one unit |
-| 2 | P51.2 Auto containment admission `Pending intake` | Trusted granular proof, deterministic risk gate, hook rewrite and dispatch revalidation, prompt-reduction fixtures | Remove only the sandbox shortcut while retaining filesystem/network containment |
+| 2 | P51.2 Auto containment admission `Core complete` | Trusted granular proof, narrow critical live AllowOnce, hook rewrite and dispatch revalidation, prompt-reduction fixtures | Remove only the sandbox shortcut while retaining filesystem/network containment |
 
 Each slice starts from then-current `origin/master`, ships through one
 short-lived branch and pull request, and updates only current fact owners.
-The root migration plan records P51.1 complete and currently has no `Ready`
-slice. It still owns mutable acceptance plus the one-Ready-slice limit. This
-design does not self-promote P51.2.
+The root migration plan records P51.1 and P51.2 Core complete with no active
+queue row. It still owns mutable acceptance plus the one-Ready-slice limit. The
+independent public intake, rather than this design, promoted P51.2. AppServer,
+Desktop, and Web UI projection remains deferred.
 
 Every code slice closes with:
 

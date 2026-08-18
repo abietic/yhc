@@ -16,6 +16,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrSandboxBindingExpired reports that the exact Guest authority admitted by
+// policy no longer matches the execution target at submission time.
+var ErrSandboxBindingExpired = errors.New("sandbox_binding_expired")
+
 // ShellResult holds the output and metadata from a shell command execution.
 type ShellResult struct {
 	Stdout    string
@@ -120,6 +124,9 @@ type ShellManager struct {
 	// beforeGuestStartForTest holds the final identity check immediately before
 	// exec.Cmd.Start. Production code leaves it nil.
 	beforeGuestStartForTest func()
+	// beforeGuestCommandSubmissionForTest holds the last revalidation boundary
+	// before a command is written to an already-running Guest shell.
+	beforeGuestCommandSubmissionForTest func()
 	// beforeFirstPolicyCommitForTest lets white-box tests hold the gap between
 	// the optimistic read and the authoritative write-lock commit. Production
 	// code leaves it nil.
@@ -209,6 +216,32 @@ func (m *ShellManager) GuestExecutionProof() containment.ExecutionProof {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.executionProof
+}
+
+// GuestExecutionIdentity returns a detached Guest containment projection. It
+// never exposes the manager's pinned binding.
+func (m *ShellManager) GuestExecutionIdentity() (containment.ExecutionIdentity, error) {
+	if m == nil {
+		return containment.ExecutionIdentity{}, fmt.Errorf("shell guest binding must be valid")
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return containment.ExecutionIdentityFor(m.binding, m.executionProof)
+}
+
+// RevalidateGuestExecutionIdentity returns the current detached identity only
+// when its bound workspace object still matches the host filesystem.
+func (m *ShellManager) RevalidateGuestExecutionIdentity() (containment.ExecutionIdentity, error) {
+	identity, err := m.GuestExecutionIdentity()
+	if err != nil {
+		return containment.ExecutionIdentity{}, err
+	}
+	if identity.Availability == containment.BindingAvailable && identity.Adapter == containment.AdapterDarwinSeatbelt {
+		if err := m.revalidateGuestRootIdentity(identity.Root); err != nil {
+			return containment.ExecutionIdentity{}, fmt.Errorf("guest root identity changed")
+		}
+	}
+	return identity, nil
 }
 
 func (m *ShellManager) GuestBindingDigest() string {
@@ -346,7 +379,7 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 		executable := "bash"
 		if binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
 			if err := m.revalidateGuestRootIdentity(spec.Root); err != nil {
-				return nil, fmt.Errorf("shell guest root identity invalid")
+				return nil, ErrSandboxBindingExpired
 			}
 			requestedRoot, err := m.captureGuestRootIdentity(cwd)
 			if err != nil || requestedRoot != spec.Root {
@@ -395,11 +428,11 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 			beforeStart()
 		}
 		if m.binding != binding || binding.Digest() != m.bindingDigest {
-			return nil, fmt.Errorf("shell guest binding mismatch")
+			return nil, ErrSandboxBindingExpired
 		}
 		if binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
 			if err := m.revalidateGuestRootIdentity(binding.Policy().Spec().Root); err != nil {
-				return nil, fmt.Errorf("shell guest root identity invalid")
+				return nil, ErrSandboxBindingExpired
 			}
 		}
 	}
@@ -648,11 +681,11 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	if shell.binding != nil {
 		if shell.binding.Digest() != m.GuestBindingDigest() {
 			m.retireLocked(shellID, shell)
-			return nil, fmt.Errorf("shell guest binding mismatch")
+			return nil, ErrSandboxBindingExpired
 		}
 		if shell.binding.AdapterFamily() == containment.AdapterDarwinSeatbelt && m.revalidateGuestRootIdentity(shell.binding.Policy().Spec().Root) != nil {
 			m.retireLocked(shellID, shell)
-			return nil, fmt.Errorf("shell guest root identity invalid")
+			return nil, ErrSandboxBindingExpired
 		}
 	}
 
@@ -685,6 +718,15 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	// needs an unbounded follow-up pwd round trip.
 	wrappedCmd := fmt.Sprintf("echo '%s'; %s 2>&1; __eino_status=$?; printf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
 		startMarker, command, cwdMarker, endMarker)
+	if shell.binding != nil && shell.binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+		if beforeSubmission := m.beforeGuestCommandSubmissionForTest; beforeSubmission != nil {
+			beforeSubmission()
+		}
+		if err := m.revalidateGuestRootIdentity(shell.binding.Policy().Spec().Root); err != nil {
+			m.retireLocked(shellID, shell)
+			return nil, ErrSandboxBindingExpired
+		}
+	}
 
 	_, err := io.WriteString(shell.stdin, wrappedCmd)
 	if err != nil {

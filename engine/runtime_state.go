@@ -75,21 +75,23 @@ type RuntimeTerminalSnapshot struct {
 // RuntimeInteractionSnapshot is an unresolved interactive request. Resolved
 // requests are removed from this projection but remain in the event ring.
 type RuntimeInteractionSnapshot struct {
-	ID                string
-	Kind              string
-	ToolName          string
-	Source            string
-	Message           string
-	Input             map[string]any
-	InputTruncated    bool
-	Attempt           int
-	PlanRevision      uint64
-	PlanFile          string
-	PlanInitialDigest string
-	PlanReturnMode    string
-	TurnID            string
-	Sequence          uint64
-	RequestedAt       time.Time
+	ID                 string
+	Kind               string
+	ToolName           string
+	CanonicalToolName  string
+	Source             string
+	Message            string
+	Input              map[string]any
+	InputTruncated     bool
+	Attempt            int
+	PlanRevision       uint64
+	PlanFile           string
+	PlanInitialDigest  string
+	PlanReturnMode     string
+	DecisionConstraint PermissionDecisionConstraint
+	TurnID             string
+	Sequence           uint64
+	RequestedAt        time.Time
 }
 
 // RuntimeToolCallSnapshot is the bounded tool-call part of a message.
@@ -1354,7 +1356,15 @@ func validateRuntimeEventEnvelope(evt QueryEvent) error {
 		if evt.PermissionRequest == nil || strings.TrimSpace(evt.PermissionRequest.ToolUseID) == "" {
 			return fmt.Errorf("runtime state: permission request has no tool use ID")
 		}
-		if evt.PermissionRequest.Kind == "plan_approval" {
+		if !evt.PermissionRequest.DecisionConstraint.valid() {
+			return fmt.Errorf("runtime state: permission request has invalid decision constraint")
+		}
+		if evt.PermissionRequest.Kind != "" &&
+			evt.PermissionRequest.Kind != PermissionInteractionKindPermission &&
+			evt.PermissionRequest.DecisionConstraint != PermissionDecisionUnconstrained {
+			return fmt.Errorf("runtime state: decision constraint is invalid for interaction kind")
+		}
+		if evt.PermissionRequest.Kind == PermissionInteractionKindPlanApproval {
 			approval := evt.PermissionRequest.PlanApproval
 			if approval == nil ||
 				approval.RequestID != evt.PermissionRequest.ToolUseID ||
@@ -2157,21 +2167,23 @@ func (s *RuntimeStateStore) reduceInteractionLocked(thread *runtimeThreadState, 
 			)
 		}
 		thread.PendingInteractions[evt.PermissionRequest.ToolUseID] = RuntimeInteractionSnapshot{
-			ID:                evt.PermissionRequest.ToolUseID,
-			Kind:              kind,
-			ToolName:          evt.PermissionRequest.ToolName,
-			Source:            evt.PermissionRequest.Source,
-			Message:           truncateRuntimeText(evt.PermissionRequest.Message, maxRuntimeInteractionRunes),
-			Input:             input,
-			InputTruncated:    truncated,
-			Attempt:           evt.PermissionRequest.Attempt,
-			PlanRevision:      planRevision,
-			PlanFile:          planFile,
-			PlanInitialDigest: planInitialDigest,
-			PlanReturnMode:    planReturnMode,
-			TurnID:            evt.TurnID,
-			Sequence:          evt.Sequence,
-			RequestedAt:       evt.Timestamp,
+			ID:                 evt.PermissionRequest.ToolUseID,
+			Kind:               kind,
+			ToolName:           evt.PermissionRequest.ToolName,
+			CanonicalToolName:  evt.PermissionRequest.CanonicalToolName,
+			Source:             evt.PermissionRequest.Source,
+			Message:            truncateRuntimeText(evt.PermissionRequest.Message, maxRuntimeInteractionRunes),
+			Input:              input,
+			InputTruncated:     truncated,
+			Attempt:            evt.PermissionRequest.Attempt,
+			PlanRevision:       planRevision,
+			PlanFile:           planFile,
+			PlanInitialDigest:  planInitialDigest,
+			PlanReturnMode:     planReturnMode,
+			DecisionConstraint: evt.PermissionRequest.DecisionConstraint,
+			TurnID:             evt.TurnID,
+			Sequence:           evt.Sequence,
+			RequestedAt:        evt.Timestamp,
 		}
 		thread.Status = RuntimeThreadWaitingInput
 	case EventPermissionResolved:

@@ -44,6 +44,57 @@ type ExecutionProof struct {
 	Enforced             EnforcementAxes
 }
 
+// ExecutionIdentity is a detached projection of the Guest facts a permission
+// consumer may compare. Root remains host-local identity data and is excluded
+// from Diagnostic.
+type ExecutionIdentity struct {
+	ProcessClass         ProcessClass
+	PolicyDigest         string
+	BindingDigest        string
+	Profile              Profile
+	State                State
+	Adapter              AdapterFamily
+	Network              NetworkMode
+	CredentialMode       CredentialMode
+	CapabilityGeneration string
+	Availability         BindingAvailability
+	ReasonCode           ReasonCode
+	AdapterAxes          EnforcementAxes
+	RuntimeAxes          EnforcementAxes
+	Enforced             EnforcementAxes
+	Root                 RootIdentity
+}
+
+// ExecutionIdentityDiagnostic is safe for diagnostics; it contains no root
+// path or filesystem object identity.
+type ExecutionIdentityDiagnostic struct {
+	ProcessClass         ProcessClass
+	PolicyDigest         string
+	BindingDigest        string
+	Profile              Profile
+	State                State
+	Adapter              AdapterFamily
+	Network              NetworkMode
+	CredentialMode       CredentialMode
+	CapabilityGeneration string
+	Availability         BindingAvailability
+	ReasonCode           ReasonCode
+	AdapterAxes          EnforcementAxes
+	RuntimeAxes          EnforcementAxes
+	Enforced             EnforcementAxes
+}
+
+// Diagnostic returns the redacted execution identity projection.
+func (i ExecutionIdentity) Diagnostic() ExecutionIdentityDiagnostic {
+	return ExecutionIdentityDiagnostic{
+		ProcessClass: i.ProcessClass, PolicyDigest: i.PolicyDigest, BindingDigest: i.BindingDigest,
+		Profile: i.Profile, State: i.State, Adapter: i.Adapter, Network: i.Network,
+		CredentialMode: i.CredentialMode, CapabilityGeneration: i.CapabilityGeneration,
+		Availability: i.Availability, ReasonCode: i.ReasonCode, AdapterAxes: i.AdapterAxes,
+		RuntimeAxes: i.RuntimeAxes, Enforced: i.Enforced,
+	}
+}
+
 type ProcessClass string
 
 const (
@@ -293,6 +344,45 @@ func NewExecutionProof(binding *Binding, runtime EnforcementAxes) (ExecutionProo
 		combined &^= AxisRootIdentity
 	}
 	return ExecutionProof{binding.Digest(), binding.PolicyDigest(), binding.capabilityGeneration, binding.adapterProof.Enforced, runtime, combined}, nil
+}
+
+// ExecutionIdentityFor detaches Guest containment facts from a Binding. It
+// accepts only complete, binding-owned Seatbelt proofs; ambient and unavailable
+// Guest bindings deliberately project zero proof axes so consumers reject them.
+func ExecutionIdentityFor(binding *Binding, proof ExecutionProof) (ExecutionIdentity, error) {
+	if binding == nil || binding.processClass != ProcessClassGuest || binding.policy == nil {
+		return ExecutionIdentity{}, invalid("execution_identity", "guest binding required")
+	}
+	spec := binding.policy.Spec()
+	identity := ExecutionIdentity{
+		ProcessClass: binding.processClass, PolicyDigest: binding.PolicyDigest(), BindingDigest: binding.Digest(),
+		Profile: spec.Profile, State: spec.State, Adapter: binding.adapterFamily, Network: spec.Network.Mode,
+		CredentialMode: spec.Credentials.Mode, CapabilityGeneration: binding.capabilityGeneration,
+		Availability: binding.availability, ReasonCode: binding.reasonCode, Root: spec.Root,
+	}
+	if binding.adapterFamily == AdapterAmbientHost {
+		if proof != (ExecutionProof{}) {
+			return ExecutionIdentity{}, invalid("execution_identity", "ambient binding has no execution proof")
+		}
+		return identity, nil
+	}
+	if binding.adapterFamily != AdapterDarwinSeatbelt {
+		return ExecutionIdentity{}, invalid("execution_identity", "unsupported guest adapter")
+	}
+	if binding.availability == BindingUnavailable {
+		if proof != (ExecutionProof{}) {
+			return ExecutionIdentity{}, invalid("execution_identity", "unavailable binding has no execution proof")
+		}
+		return identity, nil
+	}
+	if binding.availability != BindingAvailable || identity.PolicyDigest == "" || identity.BindingDigest == "" || identity.CapabilityGeneration == "" ||
+		proof.BindingDigest != identity.BindingDigest || proof.PolicyDigest != identity.PolicyDigest || proof.CapabilityGeneration != identity.CapabilityGeneration ||
+		proof.AdapterAxes != binding.adapterProof.Enforced || proof.AdapterAxes != adapterAllowedAxes || proof.AdapterAxes&^adapterAllowedAxes != 0 ||
+		proof.RuntimeAxes&^runtimeAllowedAxes != 0 || proof.Enforced != proof.AdapterAxes|proof.RuntimeAxes {
+		return ExecutionIdentity{}, invalid("execution_identity", "binding or proof mismatch")
+	}
+	identity.AdapterAxes, identity.RuntimeAxes, identity.Enforced = proof.AdapterAxes, proof.RuntimeAxes, proof.Enforced
+	return identity, nil
 }
 
 type Bindings struct{ guest, shellHooks, stdioMCP *Binding }

@@ -1,8 +1,8 @@
 # P42 Host Execution Containment
 
 **Status:** active-plan
-**Completed slices:** P42.0, P51.1
-**Pending design stage:** P51.2 is not admitted
+**Completed slices:** P42.0, P51.1, P51.2 Core
+**Ready slice:** none
 **Adoption:** `project-native`
 **Gap:** G28
 
@@ -14,9 +14,12 @@
 P42.0 completion evidence is
 [`p42-0-execution-policy-snapshot.md`](../history/runtime/p42-0-execution-policy-snapshot.md).
 The 2026-08-08 intake accepted the P42.1 axis-level proof contract, and P51.1
-now implements its first Darwin Guest adapter slice. G28 remains open for the
-deliberately ambient credential, hook/MCP, and hard-resource axes. P51.2 has an
-accepted design but no executable queue row.
+implements its first Darwin Guest adapter slice. P51.2 Core subsequently bound
+ordinary Auto Bash admission to that exact Guest proof and added a fresh
+`AllowOnce` constraint for the narrow critical path. G28 remains open for the
+deliberately ambient credential, hook/MCP, and hard-resource axes. AppServer,
+Desktop, and Web UI projection remains deferred without an executable queue
+row.
 
 ## Problem
 
@@ -331,7 +334,7 @@ A later enforced adapter may roll back only to an explicitly reported
 `danger-full-access`/`disabled` selection with a compatibility warning. It may
 not silently reinterpret a required profile.
 
-## Accepted next slice: P51.1 promotion gate
+## Completed containment slices
 
 The P51.1 promotion gate was satisfied before implementation because:
 
@@ -349,5 +352,9 @@ That intake probe proved only that the implementation path was viable. P51.1
 subsequently supplied the real subprocess matrix, cross-entrypoint binding,
 race/lifecycle evidence, repository gates, and truthful closeout recorded in
 [`p51-1-darwin-guest-seatbelt.md`](../verification/p51-1-darwin-guest-seatbelt.md).
-The root queue is now empty; P51.2 is not active until its own intake promotes
-it.
+P51.2 Core later passed an independent public intake and completed on
+2026-08-19. Its historical contract is
+[`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md),
+and its reproducible delivery evidence is
+[`p51-2-auto-containment-admission.md`](../verification/p51-2-auto-containment-admission.md).
+The root queue is empty; G28 remains open without an admitted successor.

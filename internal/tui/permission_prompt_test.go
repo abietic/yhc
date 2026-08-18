@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/abietic/yhc/engine"
 )
 
 func TestAssessRiskLevel(t *testing.T) {
@@ -218,7 +220,7 @@ func TestGenerateToolContext(t *testing.T) {
 }
 
 func TestBuildPromptOptions(t *testing.T) {
-	opts := buildPromptOptions("Bash", "this command")
+	opts := buildPromptOptions("Bash", "this command", "")
 	if len(opts) < 3 {
 		t.Fatalf("expected at least 3 options, got %d", len(opts))
 	}
@@ -230,6 +232,13 @@ func TestBuildPromptOptions(t *testing.T) {
 	// Last should be Deny
 	if opts[len(opts)-1].Response != PermissionDeny {
 		t.Fatal("last option should be Deny")
+	}
+}
+
+func TestP512BuildPromptOptionsAllowOnceOnly(t *testing.T) {
+	opts := buildPromptOptions("Bash", "this command", engine.PermissionAllowOnceOnly)
+	if len(opts) != 2 || opts[0].Response != PermissionAllow || opts[1].Response != PermissionDeny {
+		t.Fatalf("constrained options = %#v, want allow-once and deny only", opts)
 	}
 }
 
