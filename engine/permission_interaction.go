@@ -28,6 +28,32 @@ const (
 	PermissionTimedOut     PermissionInteractionDecision = "timed_out"
 )
 
+// PermissionDecisionConstraint limits the choices an adapter may offer for a
+// single live permission interaction. Its zero value preserves existing
+// behavior.
+type PermissionDecisionConstraint string
+
+const (
+	PermissionDecisionUnconstrained PermissionDecisionConstraint = ""
+	PermissionAllowOnceOnly         PermissionDecisionConstraint = "allow_once_only"
+)
+
+func (c PermissionDecisionConstraint) valid() bool {
+	return c == PermissionDecisionUnconstrained || c == PermissionAllowOnceOnly
+}
+
+func (c PermissionDecisionConstraint) permits(decision PermissionInteractionDecision) bool {
+	return c != PermissionAllowOnceOnly ||
+		(decision != PermissionAllowSession && decision != PermissionAllowAlways)
+}
+
+const (
+	PermissionInteractionKindPermission   = "permission"
+	PermissionInteractionKindQuestion     = "question"
+	PermissionInteractionKindPlanApproval = "plan_approval"
+	PermissionInteractionKindRepeatedTool = "repeated_tool"
+)
+
 // PlanApprovalOutcome is the canonical semantic result of a Plan review.
 // The generic permission decision remains transport compatibility only.
 type PlanApprovalOutcome string
@@ -101,19 +127,24 @@ func (r PermissionInteractionResult) Allowed() bool {
 // plain CLI, and ACP adapters. The engine retains canonical ownership of the
 // live waiter and terminal transition.
 type PermissionPromptRequest struct {
-	ToolName        string
-	ToolUseID       string
-	Input           map[string]any
-	Message         string
-	SessionScope    string
-	ProjectIdentity PermissionProjectIdentity
-	RootSessionID   string
-	SessionID       string
-	ThreadID        string
-	AgentID         string
-	ToolContext     *ToolUseContext
-	PlanApproval    *PlanApprovalRequest
-	action          *PermissionActionDescriptor
+	Kind               string
+	Attempt            int
+	Source             string
+	ToolName           string
+	CanonicalToolName  string
+	ToolUseID          string
+	Input              map[string]any
+	Message            string
+	SessionScope       string
+	ProjectIdentity    PermissionProjectIdentity
+	RootSessionID      string
+	SessionID          string
+	ThreadID           string
+	AgentID            string
+	ToolContext        *ToolUseContext
+	PlanApproval       *PlanApprovalRequest
+	DecisionConstraint PermissionDecisionConstraint
+	action             *PermissionActionDescriptor
 }
 
 // PlanApprovalRequest is the immutable engine-owned identity presented for one
@@ -459,6 +490,13 @@ func (c *PermissionCoordinator) request(
 	if request.ProjectIdentity.Root != "" && request.ProjectIdentity.key() != c.identity.key() {
 		return PermissionInteractionResult{Decision: PermissionDeny, Message: "permission request project identity mismatch"}
 	}
+	if !request.DecisionConstraint.valid() {
+		return PermissionInteractionResult{Decision: PermissionDeny, Message: "invalid permission decision constraint"}
+	}
+	if permissionInteractionKind(request) != PermissionInteractionKindPermission &&
+		request.DecisionConstraint != PermissionDecisionUnconstrained {
+		return PermissionInteractionResult{Decision: PermissionDeny, Message: "decision constraint is only valid for permission interactions"}
+	}
 	request.PlanApproval = clonePlanApprovalRequest(request.PlanApproval)
 
 	key := permissionRequestKey{engineID: engineID, toolUseID: request.ToolUseID}
@@ -471,6 +509,9 @@ func (c *PermissionCoordinator) request(
 		emit:        emit,
 		commit:      commit,
 		grantAllows: grantAllows,
+	}
+	if request.DecisionConstraint == PermissionAllowOnceOnly {
+		pending.grantAllows = nil
 	}
 
 	c.mu.Lock()
@@ -489,10 +530,12 @@ func (c *PermissionCoordinator) request(
 		emit(QueryEvent{
 			Type: EventPermissionRequest,
 			PermissionRequest: &PermissionRequestEvent{
-				ToolName: request.ToolName, ToolUseID: request.ToolUseID,
-				Input: cloneInputMap(request.Input), Message: request.Message,
-				Source: "coordinator", Kind: permissionInteractionKind(request),
-				PlanApproval: clonePlanApprovalRequest(request.PlanApproval),
+				ToolName: request.ToolName, CanonicalToolName: request.CanonicalToolName,
+				ToolUseID: request.ToolUseID,
+				Input:     cloneInputMap(request.Input), Message: request.Message,
+				Source: permissionInteractionSource(request), Kind: permissionInteractionKind(request), Attempt: request.Attempt,
+				PlanApproval:       clonePlanApprovalRequest(request.PlanApproval),
+				DecisionConstraint: request.DecisionConstraint,
 			},
 		})
 	}
@@ -531,11 +574,25 @@ func callPermissionPrompt(ctx context.Context, prompt PermissionPromptFn, reques
 			return
 		}
 		submittedDecision := result.Decision
-		result = normalizePermissionInteractionResult(result)
+		result = normalizePermissionInteractionResultForConstraint(result, request.DecisionConstraint)
 		result.submittedDecision = submittedDecision
 		result.submittedDecisionCaptured = true
 	}()
 	return prompt(withCoordinatorOwnedPermissionPrompt(ctx), request)
+}
+
+func normalizePermissionInteractionResultForConstraint(
+	result PermissionInteractionResult,
+	constraint PermissionDecisionConstraint,
+) PermissionInteractionResult {
+	result = normalizePermissionInteractionResult(result)
+	if !constraint.valid() || !constraint.permits(result.Decision) {
+		return PermissionInteractionResult{
+			Decision: PermissionDeny,
+			Message:  "permission decision is not allowed by request constraint",
+		}
+	}
+	return result
 }
 
 func normalizePermissionInteractionResult(result PermissionInteractionResult) PermissionInteractionResult {
@@ -575,20 +632,29 @@ func (c *PermissionCoordinator) settleRequest(
 	}
 	pending.cancel()
 
-	result = normalizePermissionInteractionResult(result)
 	submittedDecision := result.Decision
-	submittedDecisionCaptured := false
+	submittedDecisionCaptured := result.submittedDecisionCaptured
 	if result.submittedDecisionCaptured {
 		submittedDecision = result.submittedDecision
-		submittedDecisionCaptured = true
 	}
-	if commitGrant && pending.commit != nil {
+	constraintViolation := !pending.request.DecisionConstraint.permits(submittedDecision)
+	result = normalizePermissionInteractionResultForConstraint(
+		result,
+		pending.request.DecisionConstraint,
+	)
+	if commitGrant && pending.commit != nil && !constraintViolation {
 		if result.Decision == PermissionAllowAlways {
 			c.grantMu.Lock()
-			result = normalizePermissionInteractionResult(pending.commit(result))
+			result = normalizePermissionInteractionResultForConstraint(
+				pending.commit(result),
+				pending.request.DecisionConstraint,
+			)
 			c.grantMu.Unlock()
 		} else {
-			result = normalizePermissionInteractionResult(pending.commit(result))
+			result = normalizePermissionInteractionResultForConstraint(
+				pending.commit(result),
+				pending.request.DecisionConstraint,
+			)
 		}
 	}
 	result.submittedDecision = submittedDecision
@@ -604,6 +670,7 @@ func (c *PermissionCoordinator) settleRequest(
 				Reason:    source,
 				Message:   result.Message,
 				Kind:      permissionInteractionKind(pending.request),
+				Attempt:   pending.request.Attempt,
 				PlanApproval: clonePlanApprovalDecision(
 					result.PlanApproval,
 				),
@@ -622,10 +689,20 @@ func (c *PermissionCoordinator) settleRequest(
 }
 
 func permissionInteractionKind(request PermissionPromptRequest) string {
-	if request.PlanApproval != nil {
-		return "plan_approval"
+	if request.Kind != "" {
+		return request.Kind
 	}
-	return "permission"
+	if request.PlanApproval != nil {
+		return PermissionInteractionKindPlanApproval
+	}
+	return PermissionInteractionKindPermission
+}
+
+func permissionInteractionSource(request PermissionPromptRequest) string {
+	if source := strings.TrimSpace(request.Source); source != "" {
+		return source
+	}
+	return "coordinator"
 }
 
 func clonePlanApprovalRequest(

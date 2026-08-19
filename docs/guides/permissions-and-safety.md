@@ -1,7 +1,7 @@
 # Permissions and Safety
 
 **Status:** current
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-19
 
 > **Ownership:** operator-facing permission modes, rules, approval scope, and unattended safety boundaries
 
@@ -15,7 +15,7 @@ change it during a conversation with `/permissions mode MODE` or `/plan`.
 | `default` | Ask, after deterministic safe paths are considered |
 | `plan` | Deny state-changing tools; allow read-only exploration and the plan-file path |
 | `acceptEdits` | Auto-allow bounded Write/Edit paths; Bash still requires the ordinary interactive or fail-closed decision |
-| `bypassPermissions` | Auto-allow unmatched uses; explicit deny rules still win |
+| `bypassPermissions` | Auto-allow unmatched uses; explicit deny rules and narrow critical Bash live confirmation still win |
 | `dontAsk` | Deny unmatched uses and convert asks to denies |
 | `auto` | Apply exact user authority and typed bounded fast paths; incomplete shell, Agent/child, network, MCP/app/dynamic, and direct-interaction actions require a person; remaining complete built-ins may reach the primary model classifier |
 
@@ -30,10 +30,18 @@ isolated, trusted workspace.
 
 It is not equivalent to bypass: explicit rules, Plan containment, exact grants,
 typed fast paths, classification, and prompt fallback still run. P22.H0
-removed the old Bash first-token shortcut. P22.1b now treats Bash's incomplete
-shell representation as human-required before classifier work, so every
-unmatched Bash invocation prompts or fails closed in both `acceptEdits` and
-`auto`.
+removed the old command-prefix Bash shortcut. P51.2 Core now admits ordinary
+canonical built-in Bash without a prompt through its new automatic path only
+when the exact action carries a complete available Darwin Guest proof. Missing
+or incomplete proof follows the existing Auto prompt/classifier/fail-closed
+path. An exact local/user rule remains separate explicit user authority; it is
+not proof-bound admission.
+
+A narrow literal critical `rm`/`rmdir` subset is handled earlier. It always
+requires one fresh live `AllowOnce`, including in `bypassPermissions`;
+`dontAsk` denies it. Exact rules, session/always grants, classifier, reviewer,
+and a different request's decision cannot authorize it. Unsupported shell
+syntax is not newly blocked merely because the recognizer cannot classify it.
 
 The authoritative Auto classifier still reuses the primary conversation model
 and includes recent assistant/tool message contents in its context. Do not
@@ -87,8 +95,8 @@ continues running, but Bash fails before spawn and never retries ambient.
 
 The Darwin Guest still inherits `os.Environ()` byte-for-byte and has no hard
 memory, file-descriptor, or process-count limit. Its aggregate state is
-therefore `degraded`, not fully contained. P51.1 does not reduce Auto prompts;
-that requires a separately admitted P51.2 implementation.
+therefore `degraded`, not fully contained. P51.2 checks the exact granular
+proof instead of treating this aggregate label as authority.
 
 Runtime bypass has a separate confirmation boundary:
 
@@ -159,6 +167,8 @@ Before prompting, the engine can allow:
 
 - explicit allow rules outside Auto, or an exact local/user allow for the
   canonical current action in Auto;
+- ordinary canonical built-in Bash in Auto when its exact Darwin Guest proof
+  is complete;
 - `TodoWrite`, which changes only the current process-local Session/Agent task
   list and does not require ordinary interactive approval;
 - an exact session-scoped command/path/input approval, or a contained
@@ -170,11 +180,12 @@ Before prompting, the engine can allow:
 Explicit `deny` and `ask` rules are evaluated before these path-based defaults.
 They also override TodoWrite's default allow behavior.
 
-Bash is not a bounded `acceptEdits` or classifier-eligible action today.
-Explicit deny rules remain useful defense in depth, but they are not a shell
-parser or an external execution sandbox. Agent/child, network, MCP/app/dynamic,
-and direct-interaction capabilities follow the same human-required rule in
-Auto unless the user supplied exact authority for that action.
+Proof-bound ordinary Bash is a separate Auto path, not an `acceptEdits` path or
+a command-name allowlist. Explicit deny rules remain useful defense in depth,
+but they are not a shell parser or an external execution sandbox. Agent/child,
+network, MCP/app/dynamic, and direct-interaction capabilities follow the same
+human-required rule in Auto unless the user supplied exact authority for that
+action.
 
 ## Interactive approval scope
 
@@ -183,7 +194,12 @@ mode prompts with `once`, `session`, `always`, and `deny`; `always` writes an
 allow rule to `.claude/settings.local.json`. Session approvals are scoped to the
 current root session and are not a substitute for a reviewed durable rule.
 Both session and always decisions are derived from the final post-rewrite
-action. Always persistence encodes an exact command, exact resolved path, or
+action. A critical Bash request is different: every Core adapter exposes only
+`AllowOnce` and denial, and the engine rejects a forged persistent response.
+An ordinary request rewritten by an adapter into a critical command is denied
+without execution or grant persistence; submit the changed command again to
+receive its own live `AllowOnce` request.
+Always persistence encodes an exact command, exact resolved path, or
 canonical JSON input with rule metacharacters escaped; if that identity cannot
 round-trip, persistence fails instead of widening to a wildcard. Concurrent
 always decisions in one running process serialize the settings read-merge-write
@@ -206,10 +222,12 @@ For a narrow unattended job, prefer an allowlist:
 go run ./cmd/yhc --tools Read,Grep,Glob,Bash -p "run go test ./... and summarize failures"
 ```
 
-For Auto, pair it with an exact local/user `Bash(go test ./...)` allow rule; a
+For Auto, an ordinary Bash command can run unattended from a complete Darwin
+Guest proof or from an exact local/user `Bash(go test ./...)` rule. The rule is
+explicit user authority, not proof, and never authorizes a critical request. A
 checked-in project allow cannot widen unattended authority. Use `-y` only when
-broad tool access is intentional; explicit deny rules remain useful defense in
-depth.
+broad tool access is intentional; critical Bash still asks for `AllowOnce` and
+explicit deny rules remain useful defense in depth.
 
 ## Evaluate the separate reviewer shadow
 

@@ -9,6 +9,8 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/abietic/yhc/engine"
 )
 
 // RiskLevel represents the assessed risk of a tool operation.
@@ -53,15 +55,16 @@ type PermissionPromptOption struct {
 //
 // Reference: claude-code-ripe BashPermissionRequest / FileEditPermissionRequest
 type PermissionPrompt struct {
-	visible      bool
-	toolName     string
-	toolInput    string
-	inputParams  map[string]any
-	sessionScope string
-	riskLevel    RiskLevel
-	context      string // human-readable description of what the tool wants to do
-	responseCh   chan<- PermissionResponse
-	styles       Styles
+	visible            bool
+	toolName           string
+	toolInput          string
+	inputParams        map[string]any
+	sessionScope       string
+	riskLevel          RiskLevel
+	context            string // human-readable description of what the tool wants to do
+	responseCh         chan<- PermissionResponse
+	styles             Styles
+	decisionConstraint engine.PermissionDecisionConstraint
 
 	options     []PermissionPromptOption
 	selectedIdx int
@@ -111,7 +114,7 @@ func (p *PermissionPrompt) Show(toolName, toolInput, sessionScope string, respon
 	p.context = generateToolContext(toolName, p.inputParams)
 
 	// Build options
-	p.options = buildPromptOptions(toolName, sessionScope)
+	p.options = buildPromptOptions(toolName, sessionScope, p.decisionConstraint)
 
 	// Set timeout for high-risk operations
 	if p.riskLevel == RiskHigh {
@@ -197,6 +200,9 @@ func (p *PermissionPrompt) HandleKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		p.respond(PermissionAllow)
 		return true, nil
 	case "A": // Allow always (session)
+		if p.decisionConstraint == engine.PermissionAllowOnceOnly {
+			return false, nil
+		}
 		p.respond(PermissionAllowSession)
 		return true, nil
 	case "d": // Deny
@@ -700,9 +706,13 @@ func permissionToolTitle(toolName string) string {
 }
 
 // buildPromptOptions constructs the list of selectable options.
-func buildPromptOptions(_, sessionScope string) []PermissionPromptOption {
+func buildPromptOptions(_, sessionScope string, constraint engine.PermissionDecisionConstraint) []PermissionPromptOption {
 	opts := []PermissionPromptOption{
 		{Label: "Allow Once", Shortcut: "a", Response: PermissionAllow},
+	}
+
+	if constraint == engine.PermissionAllowOnceOnly {
+		return append(opts, PermissionPromptOption{Label: "Deny", Shortcut: "d", Response: PermissionDeny})
 	}
 
 	// Session-scope option

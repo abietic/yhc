@@ -201,7 +201,13 @@ func FuzzWidthProfileClusterAndControlPreservation(f *testing.F) {
 		}
 		limit := int(width%32) + 1
 		lines := profile.wrap(input, limit, true)
-		got := strings.ReplaceAll(xansi.Strip(strings.Join(lines, "")), "\n", "")
+		got, ok := expectedWidthProfileFuzzProjection(
+			profile,
+			strings.Join(lines, ""),
+		)
+		if !ok {
+			t.Fatalf("wrap produced an unprojectable tab for %q", input)
+		}
 		if got != want {
 			t.Fatalf("wrap changed bytes: got %q, want %q", got, want)
 		}

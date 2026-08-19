@@ -1,7 +1,7 @@
 # Permissions
 
 **Status:** current
-**Last verified:** 2026-08-09
+**Last verified:** 2026-08-19
 
 > **Ownership:** QueryEngine permission coordinator; `engine/permission` primitives
 
@@ -36,26 +36,35 @@ AwaitingApproval owns the boundary.
    identity, absolute clean exact session/Agent path, and symlink containment
    succeed. It bypasses ordinary allow/ask, modes, grants, prompting,
    classifier, coalescing, and denial tracking.
-6. Evaluate ordinary explicit `ask` and `allow` rules for non-capability
+6. Before any positive rule, grant, Bypass, classifier, reviewer, or
+   coalescing authority, recognize the narrow literal critical Bash subset.
+   A match requires a fresh engine-owned `AllowOnce`; DontAsk denies it
+   without prompting. Explicit deny remains authoritative ahead of this guard.
+7. Evaluate ordinary explicit `ask` and `allow` rules for non-capability
    operations. Outside Auto, existing allow compatibility remains. In Auto, an
    allow can become deterministic authority only when the winning local/user
    rule is exact for the canonical action and input; project, tool-wide, or
-   wildcard allows fall through.
-7. Apply bypass mode behavior.
-8. Auto-allow a registry contract explicitly marked safe from interactive
+   wildcard allows fall through. This is explicit human authority, not the
+   P51.2 automatic proof-bound path, and it never receives that admission
+   marker.
+8. Apply bypass mode behavior for non-critical invocations.
+9. Auto-allow a registry contract explicitly marked safe from interactive
    permission, currently TodoWrite's built-in host-owned runtime-state update.
-9. Apply don't-ask behavior to every still-unmatched invocation.
-10. Check typed root-session approvals. Auto accepts exact command/path/input
+10. Apply don't-ask behavior to every still-unmatched invocation.
+11. Check typed root-session approvals. Auto accepts exact command/path/input
     identity or a contained Read/Grep/Glob root scope, not broad text matching.
-11. Apply safe memory/working-directory reads and the bounded memory,
+12. Apply safe memory/working-directory reads and the bounded memory,
     accept-edits, and plan-file write contracts.
-12. In Auto, route missing capability facts, MCP/app/dynamic origins, Agent/
+13. In Auto, admit an exact non-critical canonical built-in Bash action when
+    it carries the complete available Darwin Seatbelt Guest proof. This path
+    skips only the ordinary permission prompt and classifier.
+14. In Auto, route remaining missing capability facts, MCP/app/dynamic origins, Agent/
     child, network, user-interaction, and incompletely represented shell
     actions to a person before classifier work. Without an interactive adapter,
     this is a stable denial.
-13. Run the existing primary-model classifier only for a remaining complete
+15. Run the existing primary-model classifier only for a remaining complete
     built-in action while denial limits permit.
-14. On supported entrypoints, prompt through the shared coordinator or use the
+16. On supported entrypoints, prompt through the shared coordinator or use the
     installed fail-closed callback when interaction is unavailable.
 
 The execution boundary adapts this result through `permission.Checker` and
@@ -66,6 +75,15 @@ before policy. One permission result may replace input once; QueryEngine then
 rebuilds the registered descriptor and rechecks selection, validation, Plan,
 deny, rules, grants, mode, and Auto before committing an exact session/always
 grant. Only the final canonical JSON is accounted and dispatched.
+If an interactive result rewrites an ordinary Bash request into the critical
+corpus, settlement denies it before committing a session or persistent grant;
+the critical final invocation needs a new live constrained request.
+
+Critical requests carry an additive `allow_once_only` decision constraint.
+ProjectGraph includes it in request/decision identity and durable replay;
+Plain, TUI, and ACP project only permitted choices, while engine settlement
+independently rejects a forged persistent result. The zero constraint preserves
+all pre-P51.2 requests.
 
 The settled descriptor binds requested/canonical tool identity, registry
 capability generation, detached input, resolved path/root facts, CWD and
@@ -127,9 +145,9 @@ owner.
 | `default` | Prompt when no safe fast path applies. |
 | `plan` | Only the explicit exploration/clarification capability set, TodoWrite, exact session/Agent plan-file Write/Edit, and Exit are admitted. |
 | `acceptEdits` | Write/Edit inside allowed roots are auto-approved. Bash has no command-name fast path and returns to the existing interactive prompt or fail-closed callback boundary. |
-| `bypassPermissions` | Auto-allow after explicit rule handling. |
+| `bypassPermissions` | Auto-allow after explicit rule handling, except the narrow critical Bash subset still requires live `AllowOnce`. |
 | `dontAsk` | Deny instead of prompting. |
-| `auto` | Apply exact user authority and typed contained/default-safe paths; incomplete shell, Agent/child, network, MCP/app/dynamic, and user-interaction actions require a person. Remaining complete built-ins may use the primary model classifier. Model error/uncertainty and denial thresholds fall back to prompting. G14 limits the current reviewer claim. |
+| `auto` | Apply exact user authority and typed contained/default-safe paths; ordinary canonical Bash may also use the complete Guest-proof path. Remaining incomplete shell, Agent/child, network, MCP/app/dynamic, and user-interaction actions require a person. Complete built-ins may use the primary model classifier. Model error/uncertainty and denial thresholds fall back to prompting. G14 limits the current reviewer claim. |
 | `bubble` | Surface child-agent prompts to the parent interaction. |
 
 `bubble` is an internal child-to-parent coordination mode and is not accepted
@@ -178,19 +196,28 @@ The authoritative Auto path remains synchronous and shares the turn context:
    descriptor before deterministic policy.
 2. Exact local/user rules, exact typed session grants, contained
    Read/Grep/Glob, contained Write/Edit, and explicitly declared built-in
-   internal-state defaults may admit their bounded action. Duplicate name-only production
-   allowlists no longer authorize Auto.
-3. Bash and other incomplete shell actions, Agent/child, WebFetch/WebSearch,
+   internal-state defaults may admit their bounded action. An exact local/user
+   rule is independent explicit authority; it does not assert or receive
+   proof-bound admission. Duplicate name-only production allowlists no longer
+   authorize Auto.
+3. A non-critical canonical built-in Bash action skips the ordinary prompt
+   through P51.2's automatic path only when its exact descriptor carries the
+   complete available Darwin Guest proof. Incomplete or unavailable proof
+   falls through; aggregate `degraded` state alone is not authority.
+4. The narrow literal critical `rm`/`rmdir` corpus always requires one fresh
+   `AllowOnce`. Exact rules, session/always responses, grants, Bypass,
+   classifier, reviewer, and coalescing cannot authorize it; DontAsk denies.
+5. Other incomplete shell actions, Agent/child, WebFetch/WebSearch,
    MCP/app/dynamic, network, and user-interaction actions require a person
    unless exact user authority covers the current action.
-4. A remaining complete built-in reaches the same primary `ChatModel`, which
+6. A remaining complete built-in reaches the same primary `ChatModel`, which
    receives raw tool input and the last five non-empty message contents,
    including assistant or tool-role prose. The call has a 256-token output
    budget but no reviewer-specific model route or deadline.
-5. After complete or unterminated thinking sections are stripped, exactly one
+7. After complete or unterminated thinking sections are stripped, exactly one
    detectable `<allow/>` or `<block/>` tag selects allow or deny. Empty,
    malformed, or ambiguous output denies.
-6. Model error or `ask` clears classifier status and reaches the existing
+8. Model error or `ask` clears classifier status and reaches the existing
    prompt. After 3 consecutive or 20 total denials, interactive Auto falls back
    to prompting; a prompt-unavailable entrypoint denies.
 
@@ -295,22 +322,22 @@ boundary:
   defaults Darwin Guest Bash to a real Seatbelt `workspace-write` binding for
   every permission mode, including bypass. Shell hooks and configured stdio
   MCP remain ambient; unsupported or failed Guest enforcement fails before
-  spawn. Auto does not yet consume that proof, so unmatched Bash still prompts
-  or fails closed exactly as before.
+  spawn. P51.2 Core consumes only the complete exact Guest proof for ordinary
+  canonical Bash; it does not infer safety from the `degraded` aggregate.
 
 The accepted policy-first target and ordered repair are
 [`P22 Auto Permission Review`](../../migration/plans/p22-auto-permission-review.md);
 the dated cross-agent evidence is the
 [`Auto Permission audit`](../../migration/reference/runtime/auto-permission-review-audit.md).
-P22.H0 removed the deterministic Bash bypass, and P22.1b now classifies its
-incomplete shell facts as human-required before model classification. `auto`
-still is not an independent security-review boundary while G14 remains.
-Unmatched Bash therefore reaches a person or the same fail-closed callback in
-both `acceptEdits` and `auto`.
-P51.2 may add a containment-backed Bash fast path only after its own intake and
-must bind the exact action, policy digest, Guest binding digest, capability
-generation, named adapter/runtime axes, and final dispatch. Aggregate
-`degraded` state alone is not authority.
+P22.H0 removed the command-prefix Bash bypass. P51.2 adds a different,
+proof-bound automatic path: canonical input, registry generation,
+policy/binding digest, adapter generation, exact adapter/runtime axes, and root
+identity are compared again immediately before acquisition and submission.
+Drift returns `sandbox_binding_expired`. Unknown shell syntax is a
+critical-classifier non-match and follows the ordinary proof/fallback path
+rather than becoming a new denial. Exact local/user rules remain a separate
+explicit authorization path; critical Bash is the deliberate exception and
+cannot use them.
 P22.1a delivery evidence is retained in the
 [`permission decision snapshot record`](../../migration/history/runtime/p22-1a-permission-decision-snapshot.md).
 P22.1b delivery evidence is retained in the

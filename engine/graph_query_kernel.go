@@ -141,13 +141,16 @@ func (kernel *projectGraphQueryKernel) run(
 			runtime.yield(QueryEvent{
 				Type: EventPermissionRequest,
 				PermissionRequest: &PermissionRequestEvent{
-					ToolName:     request.ToolName,
-					ToolUseID:    request.RequestID,
-					Input:        cloneInputMap(request.Input),
-					Message:      request.Message,
-					Source:       "project_graph",
-					Kind:         request.Kind,
-					PlanApproval: request.PlanApproval,
+					ToolName:           request.ToolName,
+					CanonicalToolName:  request.CanonicalToolName,
+					ToolUseID:          request.RequestID,
+					Input:              cloneInputMap(request.Input),
+					Message:            request.Message,
+					Source:             "project_graph",
+					Kind:               request.Kind,
+					Attempt:            request.Attempt,
+					PlanApproval:       request.PlanApproval,
+					DecisionConstraint: request.DecisionConstraint,
 				},
 			})
 			runtime.terminal = &Terminal{

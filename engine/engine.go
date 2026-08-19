@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -2443,6 +2444,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 	}
 	var impl tools.ToolImpl
 	binding, hasBinding := permissionDispatchActionFromContext(ctx)
+	var currentAction PermissionActionDescriptor
 	if hasBinding {
 		input, err := parseToolInput(jsonInput)
 		if err != nil {
@@ -2452,7 +2454,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 				err,
 			)
 		}
-		currentAction, err := e.buildPermissionActionDescriptor(
+		currentAction, err = e.buildPermissionActionDescriptor(
 			toolName,
 			input,
 			binding.toolCtx,
@@ -2460,6 +2462,9 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 		if err != nil ||
 			!samePermissionActionBinding(binding.action, currentAction) ||
 			binding.action.CanonicalInput != currentAction.CanonicalInput {
+			if binding.action.admission == permissionAdmissionContainedAutoBash {
+				return "", errors.New("sandbox_binding_expired")
+			}
 			if err != nil {
 				return "", fmt.Errorf(
 					"permission action changed before dispatch: %w",
@@ -2510,19 +2515,49 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 	)
 	ctx = tools.WithMediaSupport(ctx, modelcaps.GetCapabilities(e.config.Model).SupportsImages)
 	if hasBinding {
+		if binding.action.admission == permissionAdmissionContainedAutoBash {
+			freshAction, freshErr := e.buildPermissionActionDescriptor(
+				toolName,
+				currentAction.Input,
+				binding.toolCtx,
+			)
+			if freshErr != nil {
+				return "", errors.New("sandbox_binding_expired")
+			}
+			identity, identityErr := e.shellManager.RevalidateGuestExecutionIdentity()
+			if identityErr != nil {
+				return "", errors.New("sandbox_binding_expired")
+			}
+			freshAction = permissionActionWithExecutionIdentity(freshAction, identity)
+			if !samePermissionActionBinding(binding.action, freshAction) ||
+				binding.action.CanonicalInput != freshAction.CanonicalInput {
+				return "", errors.New("sandbox_binding_expired")
+			}
+			if allowed, _ := completeContainedAutoBashProof(freshAction); !allowed {
+				return "", errors.New("sandbox_binding_expired")
+			}
+		}
 		lease, err := e.toolRegistry.AcquireExecution(
 			toolName,
 			binding.action.CanonicalToolName,
 			binding.action.CapabilityGeneration,
 		)
 		if err != nil {
+			if binding.action.admission == permissionAdmissionContainedAutoBash {
+				return "", errors.New("sandbox_binding_expired")
+			}
 			return "", fmt.Errorf(
 				"permission action changed before dispatch: %w",
 				err,
 			)
 		}
 		defer lease.Cancel()
-		return lease.Execute(ctx, jsonInput)
+		output, executeErr := lease.Execute(ctx, jsonInput)
+		if binding.action.admission == permissionAdmissionContainedAutoBash &&
+			errors.Is(executeErr, tools.ErrSandboxBindingExpired) {
+			return "", errors.New("sandbox_binding_expired")
+		}
+		return output, executeErr
 	}
 	// Prefer context-aware execution when available (supports progress streaming).
 	if impl.ExecuteCtx != nil {
@@ -3146,6 +3181,7 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 			input,
 			toolCtx,
 			&actionDescriptor,
+			PermissionDecisionUnconstrained,
 		)
 		return requireHumanInvocationPolicy(allowed, reason)
 	}
@@ -3164,6 +3200,25 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 	if ruleDecision.Matched && ruleDecision.Action == permission.ActionDeny {
 		return denyInvocationPolicy("permission rule denied tool use")
 	}
+	if canonicalToolName == "Bash" {
+		if critical := classifyCriticalBashAction(actionDescriptor); critical.Match {
+			allowed, reason := e.promptForCriticalBash(
+				ctx,
+				inner,
+				toolName,
+				input,
+				toolCtx,
+				&actionDescriptor,
+			)
+			return e.recordPromptPolicyOutcome(
+				ctx,
+				actionDescriptor,
+				allowed,
+				reason,
+				false,
+			)
+		}
+	}
 	if planDecision.hasExactFileCapability() {
 		return allowInvocationPolicy()
 	}
@@ -3176,6 +3231,7 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 			input,
 			toolCtx,
 			&actionDescriptor,
+			PermissionDecisionUnconstrained,
 		)
 		return e.recordPromptPolicyOutcome(
 			ctx,
@@ -3252,6 +3308,12 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 		}
 	}
 
+	if allowed, _ := completeContainedAutoBashProof(actionDescriptor); allowed {
+		actionDescriptor.admission = permissionAdmissionContainedAutoBash
+		setSettledPermissionAction(ctx, &actionDescriptor)
+		return allowInvocationPolicy()
+	}
+
 	if mode == permission.ModeAuto {
 		if requiresHuman, reason := actionDescriptor.requiresHumanCapabilityInAuto(); requiresHuman {
 			allowed, promptReason := e.promptForTool(
@@ -3261,6 +3323,7 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 				input,
 				toolCtx,
 				&actionDescriptor,
+				PermissionDecisionUnconstrained,
 			)
 			if strings.TrimSpace(promptReason) == "" {
 				promptReason = reason
@@ -3368,6 +3431,7 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 		input,
 		toolCtx,
 		&actionDescriptor,
+		PermissionDecisionUnconstrained,
 	)
 	return e.recordPromptPolicyOutcome(
 		ctx,
@@ -3475,6 +3539,7 @@ func (e *QueryEngine) promptForTool(
 	input map[string]any,
 	toolCtx *ToolUseContext,
 	initialAction *PermissionActionDescriptor,
+	constraint PermissionDecisionConstraint,
 ) (bool, string) {
 	if initialAction == nil {
 		action, err := e.buildPermissionActionDescriptor(toolName, input, toolCtx)
@@ -3563,20 +3628,27 @@ func (e *QueryEngine) promptForTool(
 		// another ordinary permission request cannot answer this exact revision.
 		grantEvaluator = nil
 	}
+	if constraint == PermissionAllowOnceOnly {
+		grantEvaluator = nil
+	}
 	request := PermissionPromptRequest{
-		ToolName:        toolName,
-		ToolUseID:       currentToolUseID(ctx),
-		Input:           cloneInputMap(input),
-		Message:         e.SessionApprovalDescription(toolName, input),
-		SessionScope:    e.SessionApprovalDescription(toolName, input),
-		ProjectIdentity: e.permissionProjectIdentity,
-		RootSessionID:   e.permissionRootSessionID,
-		SessionID:       sessionID,
-		ThreadID:        threadID,
-		AgentID:         agentID,
-		ToolContext:     toolCtx,
-		PlanApproval:    planApproval,
-		action:          initialAction,
+		Kind:               permissionPromptKind(toolName, planApproval),
+		Source:             "coordinator",
+		ToolName:           toolName,
+		CanonicalToolName:  initialAction.CanonicalToolName,
+		ToolUseID:          currentToolUseID(ctx),
+		Input:              cloneInputMap(input),
+		Message:            e.SessionApprovalDescription(toolName, input),
+		SessionScope:       e.SessionApprovalDescription(toolName, input),
+		ProjectIdentity:    e.permissionProjectIdentity,
+		RootSessionID:      e.permissionRootSessionID,
+		SessionID:          sessionID,
+		ThreadID:           threadID,
+		AgentID:            agentID,
+		ToolContext:        toolCtx,
+		PlanApproval:       planApproval,
+		DecisionConstraint: constraint,
+		action:             initialAction,
 	}
 	if graphHITL {
 		return e.resolveProjectGraphHITLPermission(ctx, request, emit)
@@ -3634,6 +3706,92 @@ func (e *QueryEngine) promptForTool(
 	}
 	e.recordPermissionReviewHumanComparison(ctx, *initialAction, result)
 	return result.Allowed(), result.Message
+}
+
+func (e *QueryEngine) promptForCriticalBash(
+	ctx context.Context,
+	inner CanUseToolFn,
+	toolName string,
+	input map[string]any,
+	toolCtx *ToolUseContext,
+	initialAction *PermissionActionDescriptor,
+) (bool, string) {
+	if initialAction == nil || initialAction.Mode == permission.ModeDontAsk {
+		return false, "sandbox_critical_path_confirmation_required"
+	}
+	if e.config.PermissionPrompt == nil &&
+		projectGraphHITLProbeFromContext(ctx) == nil &&
+		projectGraphHITLExecutionFromContext(ctx) == nil &&
+		inner == nil {
+		return false, "sandbox_critical_path_confirmation_required"
+	}
+	allowed, reason := e.promptForTool(
+		ctx,
+		inner,
+		toolName,
+		input,
+		toolCtx,
+		initialAction,
+		PermissionAllowOnceOnly,
+	)
+	if !allowed && strings.TrimSpace(reason) == "" {
+		reason = "sandbox_critical_path_confirmation_required"
+	}
+	return allowed, reason
+}
+
+func canonicalCriticalPathRoot(action PermissionActionDescriptor) string {
+	root := strings.TrimSpace(action.WorkingDirIdentity.Path)
+	if root == "" {
+		root = strings.TrimSpace(action.CWD)
+	}
+	abs, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return ""
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(abs)
+}
+
+func canonicalCriticalPathHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return filepath.Join(string(filepath.Separator), ".yhc-no-home")
+	}
+	abs, err := filepath.Abs(filepath.Clean(home))
+	if err != nil {
+		return filepath.Join(string(filepath.Separator), ".yhc-no-home")
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(abs)
+}
+
+func classifyCriticalBashAction(
+	action PermissionActionDescriptor,
+) permission.BashCriticalPathDecision {
+	if action.CanonicalToolName != "Bash" {
+		return permission.BashCriticalPathDecision{}
+	}
+	command, _ := action.Input["command"].(string)
+	return permission.ClassifyBashCriticalPath(
+		command,
+		canonicalCriticalPathRoot(action),
+		canonicalCriticalPathHome(),
+	)
+}
+
+func permissionPromptKind(toolName string, planApproval *PlanApprovalRequest) string {
+	if planApproval != nil {
+		return PermissionInteractionKindPlanApproval
+	}
+	if strings.EqualFold(strings.TrimSpace(toolName), "AskUserQuestion") {
+		return PermissionInteractionKindQuestion
+	}
+	return PermissionInteractionKindPermission
 }
 
 func (e *QueryEngine) invokeLegacyPermissionCallback(
@@ -3707,6 +3865,15 @@ func (e *QueryEngine) settlePermissionInteraction(
 		return PermissionInteractionResult{
 			Decision:      PermissionDeny,
 			Message:       "permission action or policy changed while awaiting confirmation",
+			UpdatedInput:  finalAction.Input,
+			settledAction: &finalAction,
+		}
+	}
+	if initialAction.CanonicalInput != finalAction.CanonicalInput &&
+		classifyCriticalBashAction(finalAction).Match {
+		return PermissionInteractionResult{
+			Decision:      PermissionDeny,
+			Message:       "sandbox_critical_path_confirmation_required",
 			UpdatedInput:  finalAction.Input,
 			settledAction: &finalAction,
 		}
@@ -4114,8 +4281,9 @@ func (e *QueryEngine) ResolvePermissionInteraction(toolUseID string, result Perm
 				coordinatorErr != nil {
 				return false
 			}
-			result = normalizePermissionInteractionResult(
+			result = normalizePermissionInteractionResultForConstraint(
 				clonePermissionInteractionResult(result),
+				active.DecisionConstraint,
 			)
 			item := RuntimeItem{
 				ID:         projectGraphPermissionDecisionItemID(active),
@@ -4126,12 +4294,13 @@ func (e *QueryEngine) ResolvePermissionInteraction(toolUseID string, result Perm
 				Origin:     "project_graph",
 				Provenance: "eino-compose-stateful-interrupt",
 				PermissionDecision: &RuntimePermissionDecision{
-					Version:          projectGraphHITLDecisionVersion,
-					RequestID:        active.RequestID,
-					InterruptID:      active.InterruptID,
-					InvocationDigest: active.InvocationDigest,
-					PolicyRevision:   active.PolicyRevision,
-					Result:           result,
+					Version:            projectGraphHITLDecisionVersion,
+					RequestID:          active.RequestID,
+					InterruptID:        active.InterruptID,
+					InvocationDigest:   active.InvocationDigest,
+					PolicyRevision:     active.PolicyRevision,
+					DecisionConstraint: active.DecisionConstraint,
+					Result:             result,
 				},
 			}
 			_, err := coordinator.EnqueueBounded(item, 1)

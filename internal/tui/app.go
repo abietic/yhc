@@ -627,6 +627,7 @@ func (a *App) MakePermissionPromptFn() engine.PermissionPromptFn {
 			a.program.Send(permissionRequestMsg{
 				requestID: requestID, threadID: threadID, agentID: request.AgentID,
 				tool: request.ToolName, input: inputJSON, sessionScope: sessionScope, responseCh: responseCh,
+				decisionConstraint: request.DecisionConstraint,
 			})
 		}
 
@@ -702,6 +703,13 @@ func permissionInteractionResult(
 			Decision:     engine.PermissionDeny,
 			Message:      "Plan interaction ended without an explicit terminal result.",
 			PlanApproval: approval,
+		}
+	}
+	if request.DecisionConstraint == engine.PermissionAllowOnceOnly &&
+		(response == PermissionAllowSession || response == PermissionAllowAlways) {
+		return engine.PermissionInteractionResult{
+			Decision: engine.PermissionDeny,
+			Message:  "permission decision is not allowed by request constraint",
 		}
 	}
 	switch response {
@@ -1278,6 +1286,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			ID: msg.requestID, ThreadID: msg.threadID, AgentID: msg.agentID,
 			Kind: kind, Tool: msg.tool, Input: msg.input,
 			SessionScope: msg.sessionScope, Attempt: msg.attempt, Source: "callback", responseCh: msg.responseCh,
+			decisionConstraint: msg.decisionConstraint,
 		})
 		return a, cmd
 
@@ -2568,15 +2577,20 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 						)
 					}
 				}(engine.PermissionPromptRequest{
-					ToolName:     req.ToolName,
-					ToolUseID:    req.ToolUseID,
-					Input:        req.Input,
-					Message:      req.Message,
-					SessionScope: req.Message,
-					SessionID:    evt.SessionID,
-					ThreadID:     evt.ThreadID,
-					AgentID:      evt.AgentID,
-					PlanApproval: req.PlanApproval,
+					Kind:               req.Kind,
+					Attempt:            req.Attempt,
+					Source:             req.Source,
+					ToolName:           req.ToolName,
+					CanonicalToolName:  req.CanonicalToolName,
+					ToolUseID:          req.ToolUseID,
+					Input:              req.Input,
+					Message:            req.Message,
+					SessionScope:       req.Message,
+					SessionID:          evt.SessionID,
+					ThreadID:           evt.ThreadID,
+					AgentID:            evt.AgentID,
+					PlanApproval:       req.PlanApproval,
+					DecisionConstraint: req.DecisionConstraint,
 				})
 			}
 			return a.enqueueThreadAttention(threadAttentionRequest{
@@ -2584,6 +2598,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 				Kind: kind, Tool: req.ToolName, Input: string(inputJSON), SessionScope: req.Message, Attempt: req.Attempt,
 				SessionID: evt.SessionID, Source: source,
 				PlanApproval: req.PlanApproval, responseCh: responseCh,
+				decisionConstraint: req.DecisionConstraint,
 			})
 		}
 
@@ -3855,15 +3870,16 @@ type eventsDoneMsg struct {
 }
 
 type permissionRequestMsg struct {
-	requestID    string
-	threadID     string
-	agentID      string
-	tool         string
-	input        string
-	sessionScope string
-	kind         threadAttentionKind
-	attempt      int
-	responseCh   chan<- PermissionResponse
+	requestID          string
+	threadID           string
+	agentID            string
+	tool               string
+	input              string
+	sessionScope       string
+	decisionConstraint engine.PermissionDecisionConstraint
+	kind               threadAttentionKind
+	attempt            int
+	responseCh         chan<- PermissionResponse
 }
 
 type planApprovalMsg struct {

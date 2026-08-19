@@ -278,6 +278,7 @@ func TestP241CompleteGoalSurvivesSessionRestart(t *testing.T) {
 		TranscriptDir: dir,
 		Clock:         func() time.Time { return now.Add(time.Hour) },
 	})
+	eng.agentRunner.SetOutputDir(filepath.Join(t.TempDir(), "agent-output"))
 	t.Cleanup(eng.Close)
 	resumed, err := eng.ResumeSessionInfo(t.Context(), session.SessionInfo{
 		SessionID:      "complete-goal",
