@@ -40,14 +40,17 @@ For the local packaged-app smoke path:
 make desktop-package
 ```
 
-The package command creates a local artifact under `desktop/dist/`. Its
-`resources/licenses/` directory retains the YHC and Marked material plus the
-license and Chromium third-party collection from the exact pinned Electron
-runtime. Packaging fails if any required file is missing, empty, or not a
-regular file. The artifact is an ignored QA output; it is not proof of code
-signing, notarization, or release readiness. Run `make desktop-check` for the
-deterministic Node/unit and syntax checks. The browser-only transport can also
-be started explicitly with:
+The package command creates a local artifact under `desktop/dist/`.
+`app.asar` contains only the six declared Desktop host files, while the WebUI
+tree and platform backend under `resources/` must match the staged source bytes
+exactly. Unix backends must remain executable. `resources/licenses/` retains
+the YHC and Marked material plus the license and Chromium third-party
+collection from the exact pinned Electron runtime. Packaging fails when any of
+these contracts is incomplete, unsafe, or divergent. CI repeats the unpacked
+assembly for Linux x64 without uploading it as a release artifact. The output
+is still ignored QA evidence, not proof of code signing, notarization, or
+release readiness. Run `make desktop-check` for deterministic Node/unit and
+syntax checks. The browser-only transport can also be started explicitly with:
 
 ```bash
 yhc serve app --web

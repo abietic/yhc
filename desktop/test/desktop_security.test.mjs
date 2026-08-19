@@ -43,6 +43,7 @@ test('platform package resources match each staged desktop backend name', async 
   ]);
   const build = manifest.build;
 
+  assert.equal(manifest.devDependencies?.['@electron/asar'], '3.4.1');
   assert.deepEqual(build.extraResources, [
     { from: '../internal/webui/assets', to: 'webui' },
     { from: '../LICENSE', to: 'licenses/YHC.LICENSE' },
@@ -52,7 +53,7 @@ test('platform package resources match each staged desktop backend name', async 
     { from: 'node_modules/electron/dist/LICENSE', to: 'licenses/electron.LICENSE' },
     { from: 'node_modules/electron/dist/LICENSES.chromium.html', to: 'licenses/electron-third-party.LICENSES.html' },
   ]);
-  assert.equal(build.afterPack, 'scripts/verify_packaged_notices.cjs');
+  assert.equal(build.afterPack, 'scripts/verify_packaged_artifact.cjs');
   assert.deepEqual(build.mac.extraResources, [
     { from: 'resources/bin/yhc', to: 'bin/yhc' },
   ]);

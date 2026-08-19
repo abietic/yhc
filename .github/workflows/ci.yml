@@ -410,6 +410,11 @@ jobs:
       - name: Verify Node SBOM and license policy
         run: make node-sbom node-license-check
 
+      - name: Build and verify unpacked Linux Desktop
+        run: |
+          npm --prefix desktop rebuild electron --no-audit --no-fund
+          make desktop-package-smoke-linux-amd64
+
   required:
     name: Required gates
     if: always()

@@ -128,10 +128,16 @@ credentials to another endpoint or silently switch provider protocols.
 
 `make desktop-dev` stages the host backend then starts Electron. `make
 desktop-check` runs the renderer/host tests and Node syntax checks; `make
-desktop-package` builds a local Electron artifact. The artifact is ignored
-local QA output. This architecture document does not claim signature,
-notarization, distribution readiness, remote CI success, or compatibility with
-an arbitrary endpoint that implements a different provider/tool dialect.
+desktop-package` builds a local unpacked Electron artifact. Its
+[`afterPack` verifier](../../desktop/scripts/verify_packaged_artifact.cjs)
+requires the exact application archive entry set, a byte-identical WebUI tree,
+the byte-identical staged platform backend, an executable Unix backend, and the
+required license material. The Desktop CI job assembles the same unpacked
+layout for Linux x64 after the Node audit, SBOM, and license checks; it neither
+uploads nor promotes that unsigned output. These artifacts remain ignored QA
+output. This architecture document does not claim signature, notarization,
+distribution readiness, remote CI success, or compatibility with an arbitrary
+endpoint that implements a different provider/tool dialect.
 
 Related owners: [entrypoints and transports](platform/entrypoints-and-transports.md),
 [sessions](state/sessions.md), [model providers](platform/model-providers.md),
