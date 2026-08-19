@@ -9,9 +9,12 @@ const DEVTOOLS_TIMEOUT_MS = 30_000;
 const RENDERER_TIMEOUT_MS = 20_000;
 const APP_EXIT_TIMEOUT_MS = 15_000;
 const BACKEND_EXIT_TIMEOUT_MS = 10_000;
+const NO_RESTART_OBSERVATION_MS = 11_000;
 const CLEANUP_TIMEOUT_MS = 3_000;
 const CDP_COMMAND_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 100;
+const BACKEND_UNAVAILABLE_NOTICE =
+  'Backend stopped unexpectedly. Restart YHC to reconnect.';
 
 function appendBounded(current, chunk, maximum = MAX_DIAGNOSTIC_CHARS) {
   if (!Number.isSafeInteger(maximum) || maximum <= 0) {
@@ -117,6 +120,27 @@ async function poll(probe, milliseconds, label) {
   throw new Error(`${label} timed out${lastError ? `: ${lastError.message}` : ''}`);
 }
 
+async function observeStable(
+  probe,
+  milliseconds,
+  label,
+  { now = Date.now, wait = delay } = {},
+) {
+  if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) {
+    throw new TypeError('positive observation window required');
+  }
+  const expires = now() + milliseconds;
+  let samples = 0;
+  while (now() < expires) {
+    if (await probe() !== true) throw new Error(`${label} changed during observation`);
+    samples += 1;
+    const remaining = expires - now();
+    if (remaining > 0) await wait(Math.min(POLL_INTERVAL_MS, remaining));
+  }
+  if (samples === 0) throw new Error(`${label} was not observed`);
+  return samples;
+}
+
 function readLinuxProcessIdentity(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 1) {
     throw new Error('invalid backend process ID');
@@ -134,6 +158,34 @@ function originalProcessAlive(identity) {
     if (error?.code === 'ENOENT') return false;
     throw error;
   }
+}
+
+function killVerifiedBackend(
+  identity,
+  {
+    readIdentity = readLinuxProcessIdentity,
+    signalProcess = process.kill,
+  } = {},
+) {
+  const current = readIdentity(identity?.pid);
+  if (
+    current.pid !== identity?.pid ||
+    current.startTime !== identity?.startTime ||
+    current.executable !== identity?.executable ||
+    current.state === 'Z'
+  ) {
+    throw new Error('backend process identity changed before crash injection');
+  }
+  signalProcess(identity.pid, 'SIGKILL');
+}
+
+function crashContainmentMatches(result) {
+  return result?.bootstrapReady === true &&
+    result.notificationCount === 1 &&
+    result.backendUnavailable === true &&
+    result.notice === BACKEND_UNAVAILABLE_NOTICE &&
+    result.status === 'Offline' &&
+    result.checkedControlsDisabled === true;
 }
 
 class CDPConnection {
@@ -325,21 +377,45 @@ async function terminateProcessGroup(pid) {
 }
 
 function parseArguments(argv) {
-  if (
-    (argv.length !== 2 && argv.length !== 3) ||
-    argv[0] !== '--app' ||
-    !argv[1] ||
-    (argv.length === 3 && argv[2] !== '--no-sandbox')
-  ) {
-    throw new Error('usage: unpacked_lifecycle_smoke.cjs --app PATH [--no-sandbox]');
+  let appPath;
+  let crashBackend = false;
+  let disableSandbox = false;
+  let invalid = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--app') {
+      const candidate = argv[index + 1];
+      if (appPath || !candidate || candidate.startsWith('--')) {
+        invalid = true;
+        break;
+      }
+      appPath = candidate;
+      index += 1;
+    } else if (argument === '--crash-backend' && !crashBackend) {
+      crashBackend = true;
+    } else if (argument === '--no-sandbox' && !disableSandbox) {
+      disableSandbox = true;
+    } else {
+      invalid = true;
+      break;
+    }
+  }
+  if (invalid || !appPath) {
+    throw new Error(
+      'usage: unpacked_lifecycle_smoke.cjs --app PATH [--crash-backend] [--no-sandbox]',
+    );
   }
   return {
-    appPath: path.resolve(argv[1]),
-    disableSandbox: argv[2] === '--no-sandbox',
+    appPath: path.resolve(appPath),
+    crashBackend,
+    disableSandbox,
   };
 }
 
-async function runSmoke(appCandidate, { disableSandbox = false } = {}) {
+async function runSmoke(
+  appCandidate,
+  { crashBackend = false, disableSandbox = false } = {},
+) {
   if (process.platform !== 'linux' || process.arch !== 'x64') {
     throw new Error('unpacked lifecycle smoke requires Linux x64');
   }
@@ -431,6 +507,7 @@ async function runSmoke(appCandidate, { disableSandbox = false } = {}) {
           webAvailable: info?.webAvailable,
           rendererURL: location.href,
           title: document.title,
+          newSessionEnabled: document.querySelector('#new-session')?.disabled === false,
           requiredDOM: Boolean(
             document.querySelector('#session-title') &&
             document.querySelector('#composer') &&
@@ -451,6 +528,7 @@ async function runSmoke(appCandidate, { disableSandbox = false } = {}) {
       probe.webAvailable !== true ||
       probe.rendererURL !== expectedRendererURL ||
       probe.title !== 'YHC' ||
+      probe.newSessionEnabled !== true ||
       probe.requiredDOM !== true
     ) {
       throw new Error('packaged renderer contract did not match');
@@ -459,6 +537,67 @@ async function runSmoke(appCandidate, { disableSandbox = false } = {}) {
     const backend = readLinuxProcessIdentity(probe.backendPID);
     if (backend.state === 'Z' || backend.executable !== expectedBackend) {
       throw new Error('packaged backend process identity did not match');
+    }
+    if (crashBackend) {
+      const subscribed = await evaluate(connection, attached.sessionId, `(() => {
+        const bridge = globalThis.yhcDesktop;
+        if (typeof bridge?.onBackendExit !== 'function') return false;
+        globalThis.__yhcCrashCount = 0;
+        globalThis.__yhcCrashUnsubscribe = bridge.onBackendExit(() => {
+          globalThis.__yhcCrashCount += 1;
+        });
+        return typeof globalThis.__yhcCrashUnsubscribe === 'function';
+      })()`);
+      if (subscribed !== true) throw new Error('backend crash observer was not installed');
+
+      killVerifiedBackend(backend);
+      await poll(
+        () => !originalProcessAlive(backend),
+        BACKEND_EXIT_TIMEOUT_MS,
+        'crashed backend exit',
+      );
+      const readCrashContainment = () => evaluate(
+        connection,
+        attached.sessionId,
+        `(async () => {
+          const bridge = globalThis.yhcDesktop;
+          const info = typeof bridge?.getInfo === 'function'
+            ? await bridge.getInfo()
+            : undefined;
+          const controls = [
+            '#new-session',
+            '#prompt',
+            '#send',
+            '#cancel',
+            '#open-web',
+            '#provider-settings',
+          ];
+          return {
+            bootstrapReady: document.documentElement.dataset.yhcBootstrap === 'ready',
+            notificationCount: globalThis.__yhcCrashCount,
+            backendUnavailable: info === null,
+            notice: document.querySelector('#turn-state')?.textContent?.trim() || '',
+            status: document.querySelector('#status')?.textContent?.trim() || '',
+            checkedControlsDisabled: controls.every((selector) => (
+              document.querySelector(selector)?.disabled === true
+            )),
+          };
+        })()`,
+      );
+      await poll(async () => {
+        const result = await readCrashContainment();
+        return crashContainmentMatches(result) ? result : null;
+      }, RENDERER_TIMEOUT_MS, 'backend crash containment');
+      await observeStable(
+        async () => crashContainmentMatches(await readCrashContainment()),
+        NO_RESTART_OBSERVATION_MS,
+        'backend crash containment',
+      );
+      await evaluate(connection, attached.sessionId, `(() => {
+        globalThis.__yhcCrashUnsubscribe?.();
+        delete globalThis.__yhcCrashUnsubscribe;
+        return true;
+      })()`);
     }
     try {
       await evaluate(connection, attached.sessionId, 'globalThis.close(); true');
@@ -472,17 +611,21 @@ async function runSmoke(appCandidate, { disableSandbox = false } = {}) {
     if (appExit.code !== 0 || appExit.signal !== null) {
       throw new Error(`Desktop exited abnormally (${appExit.code ?? appExit.signal})`);
     }
-    await poll(
-      () => !originalProcessAlive(backend),
-      BACKEND_EXIT_TIMEOUT_MS,
-      'packaged backend exit',
-    );
+    if (!crashBackend) {
+      await poll(
+        () => !originalProcessAlive(backend),
+        BACKEND_EXIT_TIMEOUT_MS,
+        'packaged backend exit',
+      );
+    }
     passed = true;
     process.stdout.write(`${JSON.stringify({
       status: 'pass',
       protocol_version: probe.protocolVersion,
       surface: probe.surface,
       backend_pid: probe.backendPID,
+      crash_containment: crashBackend ? 'pass' : 'not_run',
+      no_restart_observation_ms: crashBackend ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
   } catch (error) {
     const diagnostic = stderr.trim();
@@ -501,7 +644,10 @@ async function runSmoke(appCandidate, { disableSandbox = false } = {}) {
 
 async function main() {
   const input = parseArguments(process.argv.slice(2));
-  await runSmoke(input.appPath, { disableSandbox: input.disableSandbox });
+  await runSmoke(input.appPath, {
+    crashBackend: input.crashBackend,
+    disableSandbox: input.disableSandbox,
+  });
 }
 
 if (require.main === module) {
@@ -512,9 +658,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  NO_RESTART_OBSERVATION_MS,
   appendBounded,
+  crashContainmentMatches,
+  killVerifiedBackend,
   makeIsolatedEnvironment,
+  observeStable,
   observeSpawnedChild,
+  parseArguments,
   parseDevToolsEndpoint,
   parseProcStat,
   safeProcessGroupID,

@@ -9,9 +9,14 @@ import test from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  NO_RESTART_OBSERVATION_MS,
   appendBounded,
+  crashContainmentMatches,
+  killVerifiedBackend,
   makeIsolatedEnvironment,
+  observeStable,
   observeSpawnedChild,
+  parseArguments,
   parseDevToolsEndpoint,
   parseProcStat,
   safeProcessGroupID,
@@ -72,6 +77,117 @@ test('diagnostics and process-group cleanup remain bounded', () => {
   }
 });
 
+test('smoke arguments admit one explicit crash mode and reject ambiguity', () => {
+  const app = path.resolve('/opt/yhc/yhc-desktop');
+  assert.deepEqual(
+    parseArguments(['--app', app]),
+    { appPath: app, crashBackend: false, disableSandbox: false },
+  );
+  assert.deepEqual(
+    parseArguments(['--crash-backend', '--app', app, '--no-sandbox']),
+    { appPath: app, crashBackend: true, disableSandbox: true },
+  );
+  for (const invalid of [
+    [],
+    ['--app'],
+    ['--app', app, '--app', app],
+    ['--app', app, '--crash-backend', '--crash-backend'],
+    ['--app', app, '--no-sandbox', '--no-sandbox'],
+    ['--app', app, '--unknown'],
+  ]) {
+    assert.throws(() => parseArguments(invalid), /usage: unpacked_lifecycle_smoke/);
+  }
+});
+
+test('crash injection requires a matching current backend identity', () => {
+  const expected = {
+    pid: 4242,
+    state: 'S',
+    startTime: '987654',
+    executable: '/opt/yhc/resources/bin/yhc',
+  };
+  const signals = [];
+  killVerifiedBackend(expected, {
+    readIdentity: () => ({ ...expected }),
+    signalProcess: (pid, signal) => signals.push([pid, signal]),
+  });
+  assert.deepEqual(signals, [[expected.pid, 'SIGKILL']]);
+
+  for (const current of [
+    { ...expected, pid: 4243 },
+    { ...expected, startTime: '987655' },
+    { ...expected, executable: '/tmp/reused' },
+    { ...expected, state: 'Z' },
+  ]) {
+    assert.throws(
+      () => killVerifiedBackend(expected, {
+        readIdentity: () => current,
+        signalProcess: () => assert.fail('mismatched process must not be signalled'),
+      }),
+      /backend process identity changed before crash injection/,
+    );
+  }
+});
+
+test('crash containment stays stable beyond the Host bootstrap budget', async () => {
+  const contained = {
+    bootstrapReady: true,
+    notificationCount: 1,
+    backendUnavailable: true,
+    notice: 'Backend stopped unexpectedly. Restart YHC to reconnect.',
+    status: 'Offline',
+    checkedControlsDisabled: true,
+  };
+  assert.equal(crashContainmentMatches(contained), true);
+  for (const changed of [
+    { ...contained, notificationCount: 2 },
+    { ...contained, backendUnavailable: false },
+    { ...contained, bootstrapReady: false },
+    { ...contained, checkedControlsDisabled: false },
+  ]) {
+    assert.equal(crashContainmentMatches(changed), false);
+  }
+  const main = await readFile(new URL('../main.cjs', import.meta.url), 'utf8');
+  const budgetMatch = main.match(/const BOOTSTRAP_TIMEOUT_MS = ([0-9_]+);/);
+  assert.ok(budgetMatch, 'Host bootstrap budget must remain explicit');
+  const bootstrapBudget = Number(budgetMatch[1].replaceAll('_', ''));
+  assert.ok(NO_RESTART_OBSERVATION_MS > bootstrapBudget);
+
+  let currentTime = 0;
+  let samples = 0;
+  await observeStable(
+    () => {
+      samples += 1;
+      return true;
+    },
+    250,
+    'stable fixture',
+    {
+      now: () => currentTime,
+      wait: async (milliseconds) => { currentTime += milliseconds; },
+    },
+  );
+  assert.equal(samples, 3);
+
+  currentTime = 0;
+  samples = 0;
+  await assert.rejects(
+    observeStable(
+      () => {
+        samples += 1;
+        return samples < 3;
+      },
+      500,
+      'changing fixture',
+      {
+        now: () => currentTime,
+        wait: async (milliseconds) => { currentTime += milliseconds; },
+      },
+    ),
+    /changed during observation/,
+  );
+});
+
 test('spawn observation handles an asynchronous error before PID validation', async () => {
   const child = new EventEmitter();
   child.pid = undefined;
@@ -128,8 +244,29 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
     makefile,
     /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/linux-unpacked\/yhc-desktop --no-sandbox/,
   );
-  assert.match(workflow, /make desktop-unpacked-lifecycle-smoke-linux-amd64-ci/);
+  assert.match(
+    makefile,
+    /desktop-unpacked-crash-containment-smoke-linux-amd64: desktop-package-smoke-linux-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/linux-unpacked\/yhc-desktop --crash-backend\n/,
+  );
+  assert.match(
+    makefile,
+    /desktop-unpacked-crash-containment-smoke-linux-amd64-ci: desktop-package-smoke-linux-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/linux-unpacked\/yhc-desktop --crash-backend --no-sandbox/,
+  );
+  assert.match(workflow, /desktop-unpacked-lifecycle-smoke-linux-amd64-ci/);
+  assert.match(workflow, /desktop-unpacked-crash-containment-smoke-linux-amd64-ci/);
   assert.doesNotMatch(workflow, /make desktop-unpacked-lifecycle-smoke-linux-amd64\s*(?:\n|$)/);
+  assert.doesNotMatch(
+    workflow,
+    /make desktop-unpacked-crash-containment-smoke-linux-amd64\s*(?:\n|$)/,
+  );
   assert.doesNotMatch(workflow, /make desktop-package-smoke-linux-amd64/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'ready'/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'error'/);

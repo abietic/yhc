@@ -213,8 +213,16 @@ starts that exact executable in an isolated Xvfb profile and uses a temporary
 loopback DevTools connection to verify the packaged renderer, frozen preload
 bridge, trusted `app:get-info` IPC, and the packaged backend process identity.
 Closing the renderer must end Electron normally and retire that exact backend
-PID. The renderer exposes only a `data-yhc-bootstrap` ready/error state for
-this read-only completion oracle.
+PID. The same job launches a second isolated instance in explicit crash mode,
+immediately rechecks the backend PID, Linux start time, and executable before
+sending `SIGKILL`, and requires the renderer to remain ready. That pre-signal
+check is a best-effort guard; it is not atomic Linux pidfd ownership. One
+backend-exit notification must produce the fixed recovery guidance and disable
+the checked new-session, composer, Cancel, Open Web, and provider controls.
+Those observations and an empty `app:get-info` must remain stable for 11
+seconds—longer than the Host's 10-second bootstrap budget—before Electron
+closes normally. The renderer exposes only a `data-yhc-bootstrap` ready/error
+state for these read-only completion oracles.
 
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
 [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L104) stops event
@@ -239,10 +247,13 @@ Windows app, produce installer media, sign code, or upload artifacts.
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS
 sandbox, a physical display, native user interaction, or another platform. CI
-neither uploads nor promotes the unsigned output. These artifacts remain
-ignored QA output. This architecture document does not claim signature,
-notarization, distribution readiness, remote CI success, or compatibility with
-an arbitrary endpoint that implements a different provider/tool dialect.
+also does not construct an active provider turn for the crash oracle, so
+active-turn preservation remains covered by deterministic state tests and
+physical acceptance rather than this Xvfb scenario. CI neither uploads nor
+promotes the unsigned output. These artifacts remain ignored QA output. This
+architecture document does not claim signature, notarization, distribution
+readiness, remote CI success, or compatibility with an arbitrary endpoint that
+implements a different provider/tool dialect.
 
 ## Code references
 

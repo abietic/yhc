@@ -64,7 +64,8 @@ sidebar footer shows the accepted version, short commit, and `dirty` marker
 when applicable. This is an accidental-mismatch guard, not proof that a binary
 is authentic or signed.
 
-On a Linux x64 host with `xvfb-run`, the same full unpacked lifecycle gate is:
+On a Linux x64 host with `xvfb-run`, the normal-shutdown unpacked lifecycle gate
+is:
 
 ```bash
 make desktop-unpacked-lifecycle-smoke-linux-amd64
@@ -73,11 +74,23 @@ make desktop-unpacked-lifecycle-smoke-linux-amd64
 It uses a fresh HOME/XDG profile with no inherited provider credentials,
 launches the packaged renderer, crosses preload IPC to identify the bundled
 backend, closes the window, and requires both the app and that backend process
-to exit. This local target keeps Chromium's sandbox enabled. The hosted CI job
-uses the dedicated `desktop-unpacked-lifecycle-smoke-linux-amd64-ci` target,
-which opts into `--no-sandbox`; that CI run therefore does not validate the
-production OS sandbox or replace physical UI acceptance on Linux, macOS, or
-Windows.
+to exit. To exercise the packaged unexpected-exit path separately, run:
+
+```bash
+make desktop-unpacked-crash-containment-smoke-linux-amd64
+```
+
+The crash target verifies the backend executable and Linux process start time,
+immediately rechecks that identity, and only then sends `SIGKILL` to that PID.
+This is a best-effort pre-signal guard, not an atomic pidfd guarantee. It
+requires Electron and the renderer to remain alive, the fixed restart guidance
+and checked entry controls to stay disabled, and `app:get-info` to return no
+accepted bootstrap throughout an 11-second observation window. The app must
+then close normally without accepting a replacement bootstrap during that
+window. Both local targets keep Chromium's sandbox enabled. The hosted CI job
+uses their dedicated `-ci` variants, which opt into `--no-sandbox`; those runs
+therefore do not validate the production OS sandbox, an active provider turn,
+or physical UI behavior on Linux, macOS, or Windows.
 
 Run `make desktop-check` for deterministic Node/unit and syntax checks. The
 browser-only transport can also be started explicitly with:
