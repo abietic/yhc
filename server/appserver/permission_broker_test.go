@@ -94,7 +94,7 @@ func TestRepeatedPromptPreservesTypedIdentity(t *testing.T) {
 	broker := newPermissionBroker()
 	event := engine.PermissionRequestEvent{
 		Kind: engine.PermissionInteractionKindRepeatedTool, Attempt: 3, Source: "repeated_tool_guard",
-		ToolName: "Bash", ToolUseID: "repeated-1",
+		ToolName: "Bash", CanonicalToolName: "Bash", ToolUseID: "repeated-1",
 		Message: engine.RepeatedToolInteractionPromptMessage,
 	}
 	request := permissionPromptRequest("session-1", "thread-1", "agent-1", event)
@@ -121,6 +121,7 @@ func TestRepeatedPromptPreservesTypedIdentity(t *testing.T) {
 	if pendingRequest.Kind != engine.PermissionInteractionKindRepeatedTool ||
 		pendingRequest.Source != "repeated_tool_guard" || pendingRequest.Attempt != 3 ||
 		pendingRequest.Message != engine.RepeatedToolInteractionPromptMessage ||
+		pendingRequest.CanonicalToolName != "Bash" ||
 		pendingRequest.SessionID != "session-1" || pendingRequest.ThreadID != "thread-1" ||
 		pendingRequest.AgentID != "agent-1" {
 		t.Fatalf("repeated request = %#v", pendingRequest)

@@ -45,6 +45,11 @@ test('desktop request map preserves every trusted operation', () => {
         prompt: 'hello', client_turn_id: 'a47ac10b-58cc-4372-a567-0e02b2c3d479',
       },
     ]],
+    ['importDurableSession', { sessionID, confirmLegacyStopped: true }, [
+      `/v1/durable-sessions/${sessionID}/import`, 'POST', {
+        confirm_legacy_stopped: true,
+      },
+    ]],
     ['cancelTurn', { sessionID, turnID: 'turn-1', mode: 'immediate', reason: 'cancel' }, [
       `/v1/sessions/${sessionID}/cancel`, 'POST', {
         turn_id: 'turn-1', mode: 'immediate', reason: 'cancel',
@@ -127,6 +132,12 @@ test('desktop operation map rejects invalid session ids and arbitrary operations
   assert.throws(() => desktopOperation('attachTurn', {
     sessionID, prompt: 'hello', clientTurnID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479', title: 'nope',
   }), /unsupported attach turn field/);
+  assert.throws(() => desktopOperation('importDurableSession', {
+    sessionID, confirmLegacyStopped: false,
+  }), /stopped producer attestation required/);
+  assert.throws(() => desktopOperation('importDurableSession', {
+    sessionID, confirmLegacyStopped: true, cwd: '/not-accepted',
+  }), /unsupported durable import field/);
 });
 
 test('desktop attach validates and sends the same normalized prompt bytes', () => {

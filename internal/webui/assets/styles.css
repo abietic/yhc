@@ -1125,6 +1125,16 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
+.legacy-import-remediation {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.legacy-import-remediation #legacy-import-copy {
+  flex: 1;
+  margin: 0;
+}
+
 .composer-actions {
   display: flex;
   flex: 0 0 auto;

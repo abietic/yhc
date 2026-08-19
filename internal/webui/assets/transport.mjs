@@ -1,6 +1,7 @@
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const UUID_PATTERN = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const ATTACH_TURN_FIELDS = new Set(['sessionID', 'prompt', 'clientTurnID']);
+const DURABLE_IMPORT_FIELDS = new Set(['sessionID', 'confirmLegacyStopped']);
 const EXECUTION_FIELDS = new Set([
   'model',
   'reasoning_effort',
@@ -58,6 +59,22 @@ function requireAttachTurn(payload) {
     prompt,
     client_turn_id: payload.clientTurnID,
   };
+}
+
+function requireDurableImport(payload) {
+  if (payload === null || typeof payload !== 'object') {
+    throw new TypeError('durable import payload required');
+  }
+  for (const field of Object.keys(payload)) {
+    if (!DURABLE_IMPORT_FIELDS.has(field)) {
+      throw new TypeError('unsupported durable import field');
+    }
+  }
+  requireSessionID(payload.sessionID);
+  if (payload.confirmLegacyStopped !== true) {
+    throw new TypeError('stopped producer attestation required');
+  }
+  return { confirm_legacy_stopped: true };
 }
 
 function requireInteractionRequestID(value) {
@@ -162,6 +179,12 @@ function operationPath(operation, payload = {}) {
         `/v1/durable-sessions/${id()}/attach-turn`,
         'POST',
         requireAttachTurn(payload),
+      ];
+    case 'importDurableSession':
+      return [
+        `/v1/durable-sessions/${id()}/import`,
+        'POST',
+        requireDurableImport(payload),
       ];
     case 'cancelTurn':
       return [`/v1/sessions/${id()}/cancel`, 'POST', {

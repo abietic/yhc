@@ -15,9 +15,20 @@ test('composer keeps draft admission separate and exposes explicit rebind', asyn
   ]);
 
   assert.match(html, /id="model-remediation"/);
+  assert.match(html, /id="legacy-import-remediation"/);
+  assert.match(html, /id="legacy-import"[^>]*type="button"/s);
+  assert.match(html, />Import and continue</);
   assert.match(html, /id="model-rebind"[^>]*type="button"/s);
   assert.match(html, />Rebind current model</);
   assert.match(app, /canEditDraft/);
+  assert.match(app, /canImportDurableSession/);
+  assert.match(app, /async function importDurableSession/);
+  assert.match(app, /confirmLegacyStopped: true/);
+  assert.ok(
+    app.indexOf("dispatch({ type: 'DURABLE_IMPORT_COMPLETED'") >
+      app.indexOf("throw new Error('Imported session did not pass canonical catalog admission.'"),
+    'import completion must follow canonical catalog admission',
+  );
   assert.match(app, /modelRebindSelector/);
   assert.match(app, /\$\('prompt'\)\.disabled = !canEditDraft\(current\)/);
   assert.match(app, /\$\('send'\)\.disabled = !canSubmitTurn\(current\)/);

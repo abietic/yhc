@@ -73,10 +73,19 @@ yhc serve app --web
 
 Selecting a saved session first loads its durable transcript and renders chat
 history. It does not resume the model runtime or contact a provider merely
-because the row was opened. The first new prompt attaches the exact durable
-session and starts the turn. This avoids accidental continuation while browsing
-old conversations, but means an old session can still fail at first send if its
-saved model/provider configuration is no longer valid.
+because the row was opened.
+
+For a canonical saved session, the first new prompt attaches the exact durable
+session and starts the turn. For a legacy-only row, **Send** remains disabled:
+choose **Import and continue** only after every older agent process that could
+write the session has stopped. Import leaves the legacy bytes
+unchanged and does not send the draft. Desktop first refreshes the catalog and
+requires the row to pass canonical admission; only a later explicit **Send**
+attaches it.
+
+This avoids accidental continuation while browsing old conversations, but an
+old session can still fail at first send if its saved model/provider
+configuration is no longer valid.
 
 ## Troubleshooting
 
@@ -84,6 +93,7 @@ saved model/provider configuration is no longer valid.
 |---|---|
 | Provider setup appears before a first session | Supply a supported provider profile, then retry the deferred workspace selection. |
 | A saved session fails when first sent | Read the safe turn error, then choose a compatible provider/model or create a new session. The app cannot infer that one provider's credential or HTTP dialect is safe for another. |
+| Legacy history cannot continue | Stop every older producer, then use **Import and continue**. A failed import keeps history and the draft available for retry and does not modify the legacy bytes. |
 | A decision card has no actionable control | Reload session state. The server fails closed when it cannot project a safe typed interaction. |
 | Desktop app will not start | Run `make desktop-check`, then use `make desktop-dev` to see local backend/Electron diagnostics. |
 

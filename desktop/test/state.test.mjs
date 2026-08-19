@@ -8,6 +8,7 @@ import {
   buildPlanResolution,
   buildQuestionResolution,
   buildRepeatedToolResolution,
+  canImportDurableSession,
   canEditDraft,
   canSubmitTurn,
   descriptors,
@@ -312,6 +313,29 @@ test('late interaction requests cannot recreate forms after resolution', () => {
   assert.equal(state.sessions.s1.resolvingRequestID, '');
 });
 
+test('waiting input remains resumable by its matching interaction resolution', () => {
+  let state = reducer(initialState(), {
+    type: 'EVENT', event: event(1, 'turn.accepted', { turn_id: 'turn-1' }),
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(2, 'interaction_requested', {
+      interaction: { request_id: 'question-1', kind: 'question' },
+    }),
+  });
+  state = reducer(state, {
+    type: 'EVENT', event: event(3, 'turn.finished', { reason: 'waiting_input' }),
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(4, 'interaction_resolved', { request_id: 'question-1' }),
+  });
+
+  assert.deepEqual(state.sessions.s1.interactions, []);
+  assert.equal(state.sessions.s1.attention, false);
+  assert.equal(state.sessions.s1.settledTurnIDs.includes('turn-1'), false);
+});
+
 test('plan review state accepts only the exact bounded server revision and digest', () => {
   const digest = `sha256:${'a'.repeat(64)}`;
   let state = reducer(initialState(), { type: 'EVENT', event: event(1,
@@ -612,6 +636,7 @@ test('live discovery does not invent durable state after renderer reload', () =>
     draft: '',
     durable: false,
     resumable: false,
+    import_required: false,
     live: true,
     activation: 'live',
   });
@@ -636,6 +661,7 @@ test('persisted descriptors cannot authorize resume before catalog verification'
     workspace_label: '/tmp/project',
     durable: true,
     resumable: false,
+    import_required: false,
     status: 'offline',
     active_turn_id: '',
     live: false,
@@ -669,6 +695,7 @@ test('closing durable state never promotes a non-resumable session', () => {
     id: 'child',
     durable: true,
     resumable: false,
+    import_required: false,
     live: false,
     status: 'archived',
     active_turn_id: '',
@@ -701,6 +728,7 @@ test('session descriptors retain durable discovery metadata', () => {
     title: 'Project',
     durable: true,
     resumable: true,
+    import_required: false,
     git_branch: 'feat/desktop',
     created_at: '',
     updated_at: '2026-07-27T01:00:00Z',
@@ -822,6 +850,84 @@ test('non-resumable catalog rows remain read-only', () => {
   assert.equal(state.sessions['child-session'].status, 'archived');
   assert.equal(state.sessions['child-session'].resumable, false);
   assert.equal(canSubmitTurn(state.sessions['child-session']), false);
+});
+
+test('legacy catalog rows require explicit import before attach authority', () => {
+  let state = reducer(initialState(), {
+    type: 'DURABLE_SESSION_PAGE',
+    sessions: [{
+      id: 'legacy-session', status: 'saved', resumable: false,
+      import_required: true,
+    }],
+  });
+  assert.equal(state.sessions['legacy-session'].status, 'import required');
+  assert.equal(state.sessions['legacy-session'].resumable, false);
+  assert.equal(canEditDraft(state.sessions['legacy-session']), true);
+  assert.equal(canSubmitTurn(state.sessions['legacy-session']), false);
+  assert.equal(canImportDurableSession(state.sessions['legacy-session']), true);
+
+  state = reducer(state, { type: 'DURABLE_IMPORT_STARTED', id: 'legacy-session' });
+  assert.equal(state.sessions['legacy-session'].activation, 'importing');
+  assert.equal(canImportDurableSession(state.sessions['legacy-session']), false);
+  state = reducer(state, {
+    type: 'DURABLE_IMPORT_FAILED', id: 'legacy-session', error: 'catalog unavailable',
+  });
+  assert.equal(state.sessions['legacy-session'].import_required, true);
+  assert.equal(canImportDurableSession(state.sessions['legacy-session']), true);
+
+  state = reducer(state, { type: 'DURABLE_IMPORT_STARTED', id: 'legacy-session' });
+  state = reducer(state, { type: 'DURABLE_IMPORT_COMPLETED', id: 'legacy-session' });
+  assert.equal(state.sessions['legacy-session'].import_required, false);
+  assert.equal(canSubmitTurn(state.sessions['legacy-session']), false);
+
+  state = reducer(state, {
+    type: 'DURABLE_SESSION_PAGE',
+    sessions: [{
+      id: 'legacy-session', status: 'saved', resumable: true,
+      import_required: false,
+    }],
+  });
+  assert.equal(canSubmitTurn(state.sessions['legacy-session']), true);
+});
+
+test('late events from a settled turn cannot corrupt a newer active turn', () => {
+  let state = reducer(initialState(), {
+    type: 'EVENT', event: event(1, 'turn.accepted', { turn_id: 'turn-a' }, 's1', 'turn-a'),
+  });
+  state = reducer(state, {
+    type: 'EVENT', event: event(2, 'turn.finished', { reason: 'aborted_streaming' }, 's1', 'turn-a'),
+  });
+  const active = reducer(state, {
+    type: 'EVENT', event: event(3, 'turn.accepted', { turn_id: 'turn-b' }, 's1', 'turn-b'),
+  });
+  state = reducer(active, {
+    type: 'EVENT', event: event(4, 'turn.finished', { reason: 'completed' }, 's1', 'turn-a'),
+  });
+  assert.equal(state.sessions.s1.active_turn_id, 'turn-b');
+  assert.equal(state.sessions.s1.status, 'running');
+
+  const lateEvents = [
+    ['assistant', { message: { content: 'late-a' } }],
+    ['stream_event', { message: { content: 'late-stream-a' } }],
+    ['tool_result', { message: { content: 'late-tool-a' } }],
+    ['user_message', { message: { content: 'late-user-a' } }],
+    ['turn.cancel.requested', {}],
+    ['interaction_requested', {
+      interaction: { request_id: 'late-interaction-a', kind: 'permission' },
+    }],
+    ['interaction_resolved', { request_id: 'late-interaction-a' }],
+    ['turn.accepted', { turn_id: 'turn-a' }],
+  ];
+  for (const [type, data] of lateEvents) {
+    const projected = reducer(active, {
+      type: 'EVENT', event: event(4, type, data, 's1', 'turn-a'),
+    });
+    assert.equal(projected.sessions.s1.active_turn_id, 'turn-b', type);
+    assert.equal(projected.sessions.s1.status, 'running', type);
+    assert.equal(projected.sessions.s1.attention, false, type);
+    assert.deepEqual(projected.sessions.s1.messages, active.sessions.s1.messages, type);
+    assert.deepEqual(projected.sessions.s1.interactions, [], type);
+  }
 });
 
 test('catalog resumability overrides stale non-live persistence', () => {

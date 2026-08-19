@@ -168,12 +168,13 @@ func (b *permissionBroker) repeatedPrompt(
 	toolContext *engine.ToolUseContext,
 ) (bool, string) {
 	request := engine.PermissionPromptRequest{
-		Kind:      engine.PermissionInteractionKindRepeatedTool,
-		Attempt:   attempt,
-		Source:    "repeated_tool_guard",
-		ToolName:  toolName,
-		ToolUseID: toolUseID,
-		Message:   engine.RepeatedToolInteractionPromptMessage,
+		Kind:              engine.PermissionInteractionKindRepeatedTool,
+		Attempt:           attempt,
+		Source:            "repeated_tool_guard",
+		ToolName:          toolName,
+		CanonicalToolName: toolName,
+		ToolUseID:         toolUseID,
+		Message:           engine.RepeatedToolInteractionPromptMessage,
 	}
 	if toolContext != nil {
 		request.SessionID = strings.TrimSpace(toolContext.SessionID)

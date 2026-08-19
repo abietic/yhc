@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-13
+**Last verified:** 2026-08-19
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > renderer/server trust boundaries, and user-visible interaction projections.
@@ -21,6 +21,8 @@ own model turns, durable session semantics, permissions, and tool execution.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Desktop session activation boundary
+    accDescr: A saved session remains read-only until a prompt explicitly attaches it to QueryEngine through the loopback app-server.
     participant User
     participant Renderer as "Web UI renderer"
     participant Host as "Electron main process"
@@ -54,6 +56,15 @@ resume, tool effect, or transcript mutation. A user send is the explicit
 activation boundary. Pending recovered ProjectGraph interactions remain typed
 server state and are reprojected instead of inventing a user message.
 
+A discovered legacy-only row is a separate pre-activation state. Desktop may
+show its history and retain a draft, but it cannot attach, lease, or write that
+session. **Import and continue** requires an explicit stopped-producer
+confirmation and sends no source path. A successful import leaves legacy bytes
+unchanged, refreshes durable discovery, and grants first-send attach authority
+only after the server returns one exact canonical resumable row. Cancelled or
+failed import never constructs a live engine; a catalog-verification failure
+keeps the explicit import retry available.
+
 ## Trust and privacy boundary
 
 The host's native picker registers a workspace path once. The server stores a
@@ -82,6 +93,16 @@ four actionable classes: permission, question, Plan approval, and repeated
 tool call. Resolution uses a typed request tied to server-side identity. An
 unknown or unprojectable interaction is non-actionable and tells the user to
 reload, rather than guessing a broad permission response.
+
+Repeated-tool cards are bound to the exact guarded attempt and canonical tool
+identity. Their controls can continue that call once or stop it; they do not
+create cross-request or always-allow authority.
+
+Terminal events settle only their own Turn ID. Once a turn is settled, late
+assistant, stream, tool, input, cancellation, or interaction events from that
+turn cannot clear or replace a newer active turn. Read-only semantic Activity
+may still arrive for history, while the next snapshot remains the state
+reconciliation owner.
 
 [`activityPresentation`](../../internal/webui/assets/activity.mjs) maps valid
 server activity entries to stable lifecycle language such as turn started,

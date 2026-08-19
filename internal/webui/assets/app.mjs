@@ -5,6 +5,7 @@ import {
   buildPlanResolution,
   buildQuestionResolution,
   buildRepeatedToolResolution,
+  canImportDurableSession,
   canEditDraft,
   canSubmitTurn,
   descriptors,
@@ -225,6 +226,7 @@ function render() {
   renderActivity(current);
   renderReview(current);
   renderInteraction(current);
+  renderLegacyImport(current);
 
   const loadEarlier = $('load-earlier');
   loadEarlier.hidden = !current?.transcriptHasMore;
@@ -280,6 +282,22 @@ function render() {
   } else {
     timeline.replaceChildren(...current.messages.map(renderMessage));
   }
+}
+
+function renderLegacyImport(session) {
+  const panel = $('legacy-import-remediation');
+  const button = $('legacy-import');
+  const visible = Boolean(
+    session?.import_required && !session.live &&
+    !['offline', 'restoring'].includes(session.status),
+  );
+  const importing = session?.activation === 'importing';
+  panel.hidden = !visible;
+  button.disabled = !canImportDurableSession(session);
+  button.textContent = importing ? 'Importing…' : 'Import and continue';
+  $('legacy-import-copy').textContent = importing
+    ? 'Copying the legacy history into canonical YHC storage.'
+    : 'This legacy history is read-only until you confirm its previous producer is stopped.';
 }
 
 function renderSessionCreationControls() {
@@ -1498,6 +1516,7 @@ async function closeSession(session) {
         : (session.durable
           ? 'The durable transcript will remain read-only in Desktop.'
           : 'This empty session has no durable transcript yet.')),
+    'Close',
   );
   if (!confirmed) return;
   if (session.live) {
@@ -1585,6 +1604,66 @@ async function send(event) {
   } catch (error) {
     dispatch({ type: 'ATTACH_FAILED', id: current.id, error: error.message });
     throw sessionScopedError(error, current.id);
+  }
+}
+
+async function refreshImportedDurableSession(sessionID) {
+  const catalogRefresh = catalog.reset(catalog.snapshot().search);
+  const page = await api('listDurableSessions', {
+    search: sessionID,
+    limit: 100,
+  });
+  const rows = Array.isArray(page?.sessions)
+    ? page.sessions.filter((row) => row?.id === sessionID)
+    : [];
+  if (rows.length !== 1 || rows[0].import_required || !rows[0].resumable) {
+    throw new Error('Imported session did not pass canonical catalog admission.');
+  }
+  dispatch({ type: 'DURABLE_IMPORT_COMPLETED', id: sessionID });
+  dispatch({ type: 'DURABLE_SESSION_PAGE', sessions: rows });
+  await catalogRefresh;
+}
+
+async function importDurableSession() {
+  const current = activeSession(state);
+  if (!canImportDurableSession(current)) return;
+  const sessionID = current.id;
+  const confirmed = await requestConfirmation(
+    'Import legacy session?',
+    'Continue only after every older agent process that could write this session has stopped. Import copies the history into canonical YHC storage and leaves the legacy bytes unchanged.',
+    'Import and continue',
+  );
+  if (!confirmed) return;
+
+  dispatch({ type: 'DURABLE_IMPORT_STARTED', id: sessionID });
+  try {
+    try {
+      await api('importDurableSession', {
+        sessionID,
+        confirmLegacyStopped: true,
+      });
+    } catch (error) {
+      if (error.code !== 'legacy_import_not_required') throw error;
+    }
+    await refreshImportedDurableSession(sessionID);
+    if (state.activeID === sessionID) await loadTranscript(sessionID, true);
+  } catch (error) {
+    const session = state.sessions[sessionID];
+    if (session?.activation === 'importing') {
+      dispatch({
+        type: 'DURABLE_IMPORT_FAILED',
+        id: sessionID,
+        error: error.message,
+      });
+    } else {
+      dispatch({
+        type: 'SESSION_NOTICE',
+        id: sessionID,
+        status: 'archived',
+        notice: `${error.message} Reload Desktop to refresh imported history.`,
+      });
+    }
+    throw sessionScopedError(error, sessionID);
   }
 }
 
@@ -1856,12 +1935,13 @@ function completeConfirmation(value) {
   resolve?.(value);
 }
 
-function requestConfirmation(title, copy) {
+function requestConfirmation(title, copy, actionLabel = 'Continue') {
   if (confirmationResolve) {
     return Promise.reject(new Error('A confirmation is already open.'));
   }
   $('confirm-title').textContent = title;
   $('confirm-copy').textContent = copy;
+  $('confirm-accept').textContent = actionLabel;
   return new Promise((resolve) => {
     confirmationResolve = resolve;
     $('confirm-dialog').showModal();
@@ -2114,6 +2194,7 @@ $('model-rebind').onclick = () => {
     field: 'model', value: selector,
   });
 };
+$('legacy-import').onclick = () => importDurableSession().catch(showError);
 $('reasoning-select').onchange = () => {
   const current = activeSession(state);
   if (current) {

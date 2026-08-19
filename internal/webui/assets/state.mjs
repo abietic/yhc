@@ -24,6 +24,7 @@ const privatePathKeys = new Set([
   'repository_' + 'root',
   'workspace_' + 'path',
 ]);
+const MAX_SETTLED_TURNS = 64;
 
 function withoutPrivatePaths(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -76,6 +77,12 @@ export function reducer(state, action) {
       return settleAttach(state, action, 'interaction_required');
     case 'ATTACH_FAILED':
       return settleAttach(state, action, 'failed');
+    case 'DURABLE_IMPORT_STARTED':
+      return beginDurableImport(state, action);
+    case 'DURABLE_IMPORT_COMPLETED':
+      return settleDurableImport(state, action, false);
+    case 'DURABLE_IMPORT_FAILED':
+      return settleDurableImport(state, action, true);
     case 'SESSION_DRAFT':
       return updateSession(state, action.id, (session) => ({
         ...session,
@@ -168,6 +175,7 @@ function sessionDefaults(session) {
     workspace_label: '',
     status: 'idle',
     active_turn_id: '',
+    settledTurnIDs: [],
     messages: [],
     interactions: [],
     interactionForms: {},
@@ -180,6 +188,7 @@ function sessionDefaults(session) {
     draft: '',
     durable: false,
     resumable: false,
+    import_required: false,
     live: false,
     activation: 'detached',
     git_branch: '',
@@ -189,7 +198,16 @@ function sessionDefaults(session) {
     review,
     execution: executionDefaults(publicSession.execution),
   };
-  return { ...normalized, activation: sessionActivation(normalized) };
+  const settledTurnIDs = [...new Set(
+    (Array.isArray(normalized.settledTurnIDs) ? normalized.settledTurnIDs : [])
+      .filter((id) => typeof id === 'string' && id.length > 0 && id.length <= 512),
+  )].slice(-MAX_SETTLED_TURNS);
+  return {
+    ...normalized,
+    import_required: Boolean(normalized.import_required),
+    settledTurnIDs,
+    activation: sessionActivation(normalized),
+  };
 }
 
 function sessionActivation(session = {}) {
@@ -198,7 +216,9 @@ function sessionActivation(session = {}) {
       ? 'interaction_required'
       : 'live';
   }
-  if (['attaching', 'failed'].includes(session?.activation)) return session.activation;
+  if (['attaching', 'failed', 'importing'].includes(session?.activation)) {
+    return session.activation;
+  }
   return 'detached';
 }
 
@@ -255,9 +275,51 @@ function settleExecutionSettings(state, action, failed) {
 }
 
 function detachedAttachEligible(session) {
-  return Boolean(session?.durable && session.resumable && !session.live) &&
+  return Boolean(
+    session?.durable && session.resumable && !session.import_required && !session.live,
+  ) &&
     ['detached', 'failed'].includes(sessionActivation(session)) &&
     !['offline', 'restoring', 'archived'].includes(session.status);
+}
+
+export function canImportDurableSession(session) {
+  return Boolean(
+    session?.durable && session.import_required && !session.live &&
+    sessionActivation(session) === 'detached' &&
+    !['offline', 'restoring'].includes(session.status),
+  );
+}
+
+function beginDurableImport(state, action) {
+  const current = state.sessions[action.id];
+  if (!canImportDurableSession(current)) return state;
+  return updateSession(state, action.id, (session) => ({
+    ...session,
+    activation: 'importing',
+    status: 'importing',
+    notice: 'Importing legacy session…',
+  }));
+}
+
+function settleDurableImport(state, action, failed) {
+  const current = state.sessions[action.id];
+  if (!current || sessionActivation(current) !== 'importing') return state;
+  if (failed) {
+    return updateSession(state, action.id, (session) => ({
+      ...session,
+      activation: 'detached',
+      status: 'import required',
+      notice: String(action.error || 'Legacy session import failed.'),
+    }));
+  }
+  return updateSession(state, action.id, (session) => ({
+    ...session,
+    activation: 'detached',
+    status: 'archived',
+    resumable: false,
+    import_required: false,
+    notice: 'Import completed. Refreshing canonical session metadata…',
+  }));
 }
 
 function beginAttach(state, action) {
@@ -334,14 +396,16 @@ function applyDurableSessionPage(state, rows) {
     const current = sessionDefaults(existing || {
       id: incoming.id,
     });
+    const importRequired = current.live ? false : Boolean(incoming.import_required);
     const resumable = current.live
       ? Boolean(current.resumable || incoming.resumable)
-      : Boolean(incoming.resumable);
+      : Boolean(incoming.resumable && !importRequired);
     const merged = sessionDefaults({
       ...current,
       ...incoming,
       durable: true,
       resumable,
+      import_required: importRequired,
       live: current.live,
     });
     if (current.live) {
@@ -363,15 +427,23 @@ function applyDurableSessionPage(state, rows) {
         merged[field] = current[field];
       }
     } else {
-      merged.status = resumable ? 'saved' : 'archived';
+      merged.status = importRequired
+        ? 'import required'
+        : (resumable ? 'saved' : 'archived');
       merged.active_turn_id = '';
       merged.attention = false;
       merged.live = false;
-      merged.activation = 'detached';
+      merged.activation = current.activation === 'importing' && importRequired
+        ? 'importing'
+        : 'detached';
       merged.execution = executionDefaults();
-      merged.notice = resumable
-        ? 'Saved session. Select it to view history.'
-        : 'This catalog entry is available as read-only history.';
+      merged.notice = merged.activation === 'importing'
+        ? current.notice
+        : (importRequired
+          ? 'Import this legacy session before continuing.'
+          : (resumable
+            ? 'Saved session. Select it to view history.'
+            : 'This catalog entry is available as read-only history.'));
     }
     sessions[incoming.id] = merged;
   }
@@ -562,6 +634,15 @@ function applySnapshot(state, id, snapshot) {
   const snapshotMessages = Array.isArray(snapshot.messages)
     ? snapshot.messages.map(snapshotMessage)
     : [];
+  const activeTurnID = String(snapshot.session.active_turn_id || '');
+  const settledTurnIDs = [...new Set([
+    ...current.settledTurnIDs,
+    ...snapshotMessages
+      .filter((message) => (
+        message.completed && message.turnID && message.turnID !== activeTurnID
+      ))
+      .map((message) => message.turnID),
+  ])].slice(-MAX_SETTLED_TURNS);
   const retained = current.messages.filter(retainLiveProjection);
   return {
     ...state,
@@ -575,6 +656,7 @@ function applySnapshot(state, id, snapshot) {
         interactions,
         interactionForms,
         activity,
+        settledTurnIDs,
         attention: interactions.length > 0,
         activation: interactions.length > 0 ? 'interaction_required' : 'live',
         replaying: false,
@@ -697,21 +779,34 @@ function appendAssistant(messages, data, turnID, sequence) {
   return [...messages, next];
 }
 
+function markTurnSettled(next, turnID) {
+  if (!turnID) return;
+  next.settledTurnIDs = [...new Set([
+    ...next.settledTurnIDs,
+    turnID,
+  ])].slice(-MAX_SETTLED_TURNS);
+}
+
 function applyTerminal(next, data, turnID) {
   const completedTurnID = turnID || next.active_turn_id;
+  const waitingForInput = data.reason === 'waiting_input';
   if (completedTurnID) {
     next.messages = next.messages.map((message) => (
       message.role === 'assistant' && message.turnID === completedTurnID
         ? { ...message, completed: true }
         : message
     ));
+    if (!waitingForInput) markTurnSettled(next, completedTurnID);
+  }
+  if (turnID && next.active_turn_id && turnID !== next.active_turn_id) {
+    return;
   }
   next.active_turn_id = '';
-  next.status = data.reason === 'waiting_input'
+  next.status = waitingForInput
     ? 'waiting'
     : (data.error ? 'error' : 'idle');
   next.last_error = data.error || '';
-  next.notice = data.error || (data.reason === 'waiting_input'
+  next.notice = data.error || (waitingForInput
     ? 'Waiting for input.'
     : 'Ready');
 }
@@ -731,6 +826,17 @@ function applyEvent(state, event) {
 
   const data = event.data || {};
   const next = { ...current, cursor: event.id, replaying: false };
+  if (
+    event.turn_id &&
+    current.settledTurnIDs.includes(event.turn_id) &&
+    !['terminal', 'turn.finished', 'activity'].includes(event.type)
+  ) {
+    return {
+      ...state,
+      activeID: state.activeID || event.session_id,
+      sessions: { ...state.sessions, [event.session_id]: next },
+    };
+  }
   switch (event.type) {
     case 'session.created':
       next.workspace_label = data.workspace_label || next.workspace_label;
@@ -769,6 +875,9 @@ function applyEvent(state, event) {
     case 'turn.accepted':
       next.status = 'running';
       next.active_turn_id = data.turn_id || event.turn_id;
+      next.settledTurnIDs = current.settledTurnIDs.filter(
+        (turnID) => turnID !== next.active_turn_id,
+      );
       next.notice = 'Agent is working.';
       break;
     case 'turn.cancel.requested':
@@ -956,6 +1065,7 @@ export function liveDescriptor(existing = {}, summary = {}) {
     draft: existing.draft || '',
     durable,
     resumable,
+    import_required: false,
     live: true,
     activation: 'live',
   };
@@ -967,6 +1077,7 @@ export function unverifiedPersistedDescriptor(descriptor = {}) {
     status: 'offline',
     active_turn_id: '',
     resumable: false,
+    import_required: false,
     live: false,
     activation: 'detached',
     notice: 'Checking durable session metadata…',
@@ -974,21 +1085,25 @@ export function unverifiedPersistedDescriptor(descriptor = {}) {
 }
 
 export function retainedClosedDescriptor(session = {}) {
-  const resumable = Boolean(session.resumable);
-  const durable = Boolean(session.durable || resumable);
+  const importRequired = Boolean(session.import_required && !session.live);
+  const resumable = Boolean(session.resumable && !importRequired);
+  const durable = Boolean(session.durable || resumable || importRequired);
   if (!durable) return null;
   return {
     ...session,
-    status: resumable ? 'saved' : 'archived',
+    status: importRequired ? 'import required' : (resumable ? 'saved' : 'archived'),
     active_turn_id: '',
     attention: false,
     resumable,
+    import_required: importRequired,
     durable: true,
     live: false,
     activation: 'detached',
-    notice: resumable
-      ? 'Saved session. Select it to view history.'
-      : 'This durable session is available as read-only history.',
+    notice: importRequired
+      ? 'Import this legacy session before continuing.'
+      : (resumable
+        ? 'Saved session. Select it to view history.'
+        : 'This durable session is available as read-only history.'),
   };
 }
 
@@ -1005,7 +1120,12 @@ export function canSubmitTurn(session) {
 }
 
 export function canEditDraft(session) {
-  if (!session?.live) return detachedAttachEligible(session);
+  if (!session?.live) {
+    return detachedAttachEligible(session) || Boolean(
+      session?.durable && session.import_required &&
+      !['offline', 'restoring'].includes(session.status),
+    );
+  }
   return !['offline', 'restoring', 'saved'].includes(session.status);
 }
 
@@ -1045,6 +1165,7 @@ export const descriptors = (state) => Object.values(state.sessions).map(
     title,
     durable,
     resumable,
+    import_required: importRequired,
     git_branch: gitBranch,
     created_at: createdAt,
     updated_at: updatedAt,
@@ -1054,6 +1175,7 @@ export const descriptors = (state) => Object.values(state.sessions).map(
     title,
     durable: Boolean(durable),
     resumable: Boolean(resumable),
+    import_required: Boolean(importRequired),
     git_branch: gitBranch || '',
     created_at: createdAt || '',
     updated_at: updatedAt || '',

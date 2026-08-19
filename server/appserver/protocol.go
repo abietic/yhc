@@ -223,6 +223,7 @@ type DurableSessionSummary struct {
 	GitBranch       string    `json:"git_branch,omitempty"`
 	ParentSessionID string    `json:"parent_session_id,omitempty"`
 	Resumable       bool      `json:"resumable"`
+	ImportRequired  bool      `json:"import_required"`
 
 	// Deprecated: in-process compatibility fields. They are never serialized.
 	CWD   string `json:"-"`

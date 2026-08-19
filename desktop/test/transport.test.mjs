@@ -49,6 +49,13 @@ test('durable transcript and attach turn use the exact durable session contract'
     'POST',
     { prompt: 'hello', client_turn_id: clientTurnID },
   ]);
+  assert.deepEqual(operationPath('importDurableSession', {
+    sessionID, confirmLegacyStopped: true,
+  }), [
+    `/v1/durable-sessions/${sessionID}/import`,
+    'POST',
+    { confirm_legacy_stopped: true },
+  ]);
 });
 
 test('durable attach turn rejects invalid ids, prompts, and extra fields', () => {
@@ -82,6 +89,15 @@ test('durable attach turn rejects invalid ids, prompts, and extra fields', () =>
     clientTurnID,
     workspace_handle: 'not-accepted-here',
   }), /unsupported attach turn field/);
+  assert.throws(() => operationPath('importDurableSession', {
+    sessionID: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    confirmLegacyStopped: false,
+  }), /stopped producer attestation required/);
+  assert.throws(() => operationPath('importDurableSession', {
+    sessionID: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    confirmLegacyStopped: true,
+    source: '/not-accepted',
+  }), /unsupported durable import field/);
 });
 
 test('Web transport cannot create a workspace session or accept a path payload', () => {

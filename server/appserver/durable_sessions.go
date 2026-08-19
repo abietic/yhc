@@ -91,7 +91,12 @@ func (s *Server) handleListDurableSessions(w http.ResponseWriter, r *http.Reques
 			UpdatedAt:       info.LastModified.UTC(),
 			GitBranch:       truncateSnapshotText(info.GitBranch, 160),
 			ParentSessionID: info.ParentSessionID,
-			Resumable: isSupportedSessionID(info.SessionID) && cwd != "" &&
+			Resumable: !info.ReadOnly && !info.NeedsImport &&
+				isSupportedSessionID(info.SessionID) && cwd != "" &&
+				strings.TrimSpace(info.ParentSessionID) == "" &&
+				strings.TrimSpace(info.AgentID) == "",
+			ImportRequired: info.ReadOnly && info.NeedsImport &&
+				isSupportedSessionID(info.SessionID) && cwd != "" &&
 				strings.TrimSpace(info.ParentSessionID) == "" &&
 				strings.TrimSpace(info.AgentID) == "",
 		})

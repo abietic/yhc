@@ -134,6 +134,12 @@
             rows="3"
             placeholder="Ask YHC to help with your code…"
           ></textarea>
+          <div id="legacy-import-remediation" class="model-remediation legacy-import-remediation" hidden>
+            <p id="legacy-import-copy" role="status">
+              This legacy history must be imported before it can continue.
+            </p>
+            <button id="legacy-import" class="quiet" type="button">Import and continue</button>
+          </div>
           <div id="model-remediation" class="model-remediation" hidden>
             <p id="model-block" role="status"></p>
             <button id="model-rebind" class="quiet" type="button" hidden>Rebind current model</button>
@@ -324,7 +330,7 @@
         <p id="confirm-copy"></p>
         <div class="dialog-actions">
           <button id="confirm-cancel" class="quiet" type="button">Cancel</button>
-          <button id="confirm-accept" class="primary" type="submit">Close</button>
+          <button id="confirm-accept" class="primary" type="submit">Continue</button>
         </div>
       </form>
     </dialog>

@@ -174,6 +174,39 @@ func TestDurableSessionsRejectInvalidBoundsAndMissingCatalogIsEmpty(t *testing.T
 	_ = invalid.Body.Close()
 }
 
+func TestDurableSessionsProjectLegacyImportWithoutResumeAuthority(t *testing.T) {
+	fixture := newDurableImportFixture(t)
+	server, err := New(Config{
+		Token:              "test-token",
+		SessionCatalogPath: fixture.canonicalCatalog,
+		DiscoveryCWD:       fixture.project,
+		Factory: func(_ context.Context, input EngineOptions) (SessionEngine, error) {
+			return newFakeSessionEngine(input, false), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+	t.Cleanup(func() { shutdownTestServer(t, server) })
+
+	response := getBearer(t, httpServer.URL+"/v1/durable-sessions", "test-token")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("legacy list = %d: %s", response.StatusCode, readBody(t, response))
+	}
+	var page DurableSessionListResponse
+	decodeResponse(t, response, &page)
+	if len(page.Sessions) != 1 {
+		t.Fatalf("legacy sessions = %+v", page.Sessions)
+	}
+	row := page.Sessions[0]
+	if row.ID != fixture.sessionID || row.Resumable || !row.ImportRequired ||
+		row.CWD != "" || row.Title != "" {
+		t.Fatalf("legacy row = %+v", row)
+	}
+}
+
 func TestDurableTranscriptReadsTrustedDescriptorWithoutLiveSession(t *testing.T) {
 	catalogDir := t.TempDir()
 	catalogPath := filepath.Join(catalogDir, "session-roots.json")
