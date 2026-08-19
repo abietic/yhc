@@ -1,3 +1,7 @@
+const APP_SERVER_SHUTDOWN_BUDGET_MS = 15_000;
+const BACKEND_GRACEFUL_STOP_TIMEOUT_MS = APP_SERVER_SHUTDOWN_BUDGET_MS + 2_000;
+const BACKEND_FORCE_EXIT_TIMEOUT_MS = 3_000;
+
 function activeTurnSessions(response) {
   if (!response || !Array.isArray(response.sessions)) {
     throw new TypeError('bounded session summaries array required');
@@ -31,8 +35,114 @@ function quitInspectionFailurePrompt() {
   };
 }
 
+function backendStopFailurePrompt() {
+  return {
+    type: 'error',
+    buttons: ['Keep working'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    message: 'Unable to stop the local backend',
+    detail: 'YHC is still open. Try quitting again after the backend finishes stopping.',
+  };
+}
+
+function stopBackendProcess(child, {
+  setTimeout: setTimer = globalThis.setTimeout,
+  clearTimeout: clearTimer = globalThis.clearTimeout,
+} = {}) {
+  if (!child || child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let forceTimer;
+    let giveUpTimer;
+
+    const cleanup = () => {
+      if (forceTimer) clearTimer(forceTimer);
+      if (giveUpTimer) clearTimer(giveUpTimer);
+      child.removeListener('exit', onExit);
+      child.removeListener('error', onError);
+    };
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onExit = () => finish();
+    const onError = (error) => finish(
+      error instanceof Error ? error : new Error('backend process failed while stopping'),
+    );
+    const sendSignal = (signal) => {
+      try {
+        const sent = child.kill(signal);
+        if (!sent && child.exitCode === null) {
+          finish(new Error(`backend did not accept ${signal}`));
+        }
+      } catch (error) {
+        finish(error);
+      }
+    };
+
+    child.once('exit', onExit);
+    child.once('error', onError);
+    forceTimer = setTimer(() => {
+      if (settled || child.exitCode !== null) return;
+      sendSignal('SIGKILL');
+      if (settled || child.exitCode !== null) return;
+      giveUpTimer = setTimer(() => {
+        finish(new Error('backend did not stop in time'));
+      }, BACKEND_FORCE_EXIT_TIMEOUT_MS);
+      giveUpTimer.unref?.();
+    }, BACKEND_GRACEFUL_STOP_TIMEOUT_MS);
+    forceTimer.unref?.();
+    sendSignal('SIGINT');
+  });
+}
+
+function createBackendStopCoordinator({
+  markStopping = () => {},
+  unmarkStopping = () => {},
+  stopEventStreams = () => {},
+  setTimeout,
+  clearTimeout,
+} = {}) {
+  const inFlight = new WeakMap();
+  return Object.freeze({
+    stop(child) {
+      if (!child || child.exitCode !== null) return Promise.resolve();
+      const existing = inFlight.get(child);
+      if (existing) return existing;
+      let marked = false;
+      let stopping;
+      try {
+        markStopping(child);
+        marked = true;
+        stopEventStreams();
+        stopping = stopBackendProcess(child, { setTimeout, clearTimeout });
+      } catch (error) {
+        stopping = Promise.reject(error);
+      }
+      const tracked = stopping.catch((error) => {
+        if (marked) unmarkStopping(child);
+        throw error;
+      }).finally(() => {
+        if (inFlight.get(child) === tracked) inFlight.delete(child);
+      });
+      inFlight.set(child, tracked);
+      return tracked;
+    },
+  });
+}
+
 module.exports = {
+  APP_SERVER_SHUTDOWN_BUDGET_MS,
+  BACKEND_FORCE_EXIT_TIMEOUT_MS,
+  BACKEND_GRACEFUL_STOP_TIMEOUT_MS,
   activeTurnSessions,
   activeTurnQuitPrompt,
+  backendStopFailurePrompt,
+  createBackendStopCoordinator,
   quitInspectionFailurePrompt,
 };

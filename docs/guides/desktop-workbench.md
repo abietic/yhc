@@ -102,6 +102,14 @@ yhc serve app --web
    questions, Plan approval, and repeated-tool calls each have their own typed
    controls. Do not answer one kind of card by pasting JSON into chat.
 
+When you quit while turns are active, choose **Quit and stop turns** only when
+you are ready to interrupt them. Normal shutdown is usually immediate, but YHC
+allows a running local backend 17 seconds to finish bounded cleanup and, if
+necessary, another three seconds after forced termination. Electron exits only
+after it observes that backend exit. If that cannot be confirmed, the app stays
+open and asks you to try quitting again. This protects the latest durable write;
+it does not turn an interrupted model response into a completed turn.
+
 ## Reopen saved work safely
 
 Selecting a saved session first loads its durable transcript and renders chat

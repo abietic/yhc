@@ -182,6 +182,20 @@ Closing the renderer must end Electron normally and retire that exact backend
 PID. The renderer exposes only a `data-yhc-bootstrap` ready/error state for
 this read-only completion oracle.
 
+Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
+[`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L104) stops event
+streams, sends `SIGINT`, and waits 17 seconds before escalating once to
+`SIGKILL`. That graceful window covers the app-server's 15-second bounded
+session, engine, transcript, and HTTP cleanup with a two-second scheduling
+margin. After actually sending `SIGKILL`, the Host starts a separate three-second
+window for the child `exit` event. For a normally bootstrapped backend, provider
+replacement and Electron quit proceed only after that exact exit is observed;
+otherwise [`requestQuit`](../../desktop/main.cjs#L227) keeps the app open with
+fixed retry guidance. Startup-failure cleanup is a separate lifecycle. This
+ordering protects cleanup time but does not promise that an interrupted model
+turn completes, that every provider responds during shutdown, or that a
+force-killed process persisted work beyond its last durable write.
+
 A separate native packaging matrix runs the same unpacked `afterPack` contract
 on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
 Those jobs prove that each native electron-builder path can assemble the exact

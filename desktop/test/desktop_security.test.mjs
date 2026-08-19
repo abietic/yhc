@@ -195,6 +195,18 @@ test('main process owns encrypted launch profile and keeps backend argv secret-f
   assert.doesNotMatch(source, /detail:\s*error\.message/);
 });
 
+test('main process waits for observed backend exit before quitting or restarting', async () => {
+  const source = await readFile(mainPath, 'utf8');
+  assert.match(source, /createBackendStopCoordinator\(\{/);
+  assert.match(source, /unmarkStopping:\s*\(child\)\s*=>\s*stoppingBackends\.delete\(child\)/);
+  assert.match(source, /stopBackend:\s*\(\)\s*=>\s*stopBackend\(\)/);
+  assert.match(
+    source,
+    /try \{\s*await stopBackend\(\);\s*\} catch \{[\s\S]*?backendStopFailurePrompt\(\)[\s\S]*?return;[\s\S]*?quitAllowed = true;/,
+  );
+  assert.doesNotMatch(source, /STOP_TIMEOUT_MS/);
+});
+
 test('renderer uses supported CSP while Electron denies external navigation', async () => {
   const [main, renderer] = await Promise.all([
     readFile(mainPath, 'utf8'),
