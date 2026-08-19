@@ -1,9 +1,15 @@
 import { replayTranscriptFenceMatches } from './replay.mjs';
 
+export const BACKEND_UNAVAILABLE_NOTICE =
+  'Backend stopped unexpectedly. Restart YHC to reconnect.';
+
 export const initialState = () => ({
+  backendAvailable: true,
   sessions: {},
   activeID: null,
 });
+
+export const backendAvailable = (state) => state?.backendAvailable !== false;
 
 const executionDefaults = (execution = {}) => ({
   status: 'idle',
@@ -34,7 +40,15 @@ function withoutPrivatePaths(value) {
 }
 
 export function reducer(state, action) {
+  if (!backendAvailable(state) && ![
+    'SESSION_SELECT',
+    'SESSION_DRAFT',
+  ].includes(action.type)) {
+    return state;
+  }
   switch (action.type) {
+    case 'BACKEND_UNAVAILABLE':
+      return containBackendFailure(state);
     case 'SESSION_UPSERT':
       return upsertSession(state, action.session);
     case 'SESSION_SELECT':
@@ -164,6 +178,45 @@ export function reducer(state, action) {
     default:
       return state;
   }
+}
+
+function containBackendFailure(state) {
+  return {
+    ...state,
+    backendAvailable: false,
+    sessions: Object.fromEntries(Object.entries(state.sessions).map(([id, session]) => [
+      id,
+      projectBackendUnavailableSession(session),
+    ])),
+  };
+}
+
+function projectBackendUnavailableSession(session) {
+  return sessionDefaults({
+    ...session,
+    status: 'offline',
+    active_turn_id: '',
+    interactions: [],
+    interactionForms: {},
+    attention: false,
+    replaying: false,
+    live: false,
+    activation: 'detached',
+    resolvingRequestID: '',
+    notice: BACKEND_UNAVAILABLE_NOTICE,
+    review: {
+      ...session.review,
+      status: 'idle',
+      requestID: 0,
+      error: '',
+    },
+    execution: executionDefaults({
+      ...session.execution,
+      status: 'idle',
+      requestID: 0,
+      error: '',
+    }),
+  });
 }
 
 function sessionDefaults(session) {

@@ -110,6 +110,25 @@ after it observes that backend exit. If that cannot be confirmed, the app stays
 open and asks you to try quitting again. This protects the latest durable write;
 it does not turn an interrupted model response into a completed turn.
 
+## Recover from an unexpected backend stop
+
+If the local backend stops unexpectedly, Desktop remains open and shows
+**Backend stopped unexpectedly. Restart YHC to reconnect.** Existing messages,
+Activity history, and drafts remain visible, but every backend-dependent action
+is disabled. A pending permission, question, Plan approval, repeated-tool
+decision, or Cancel control cannot be reused against a replacement process.
+
+Close YHC and open it again. Do not use Provider setup, Open Web, or a page
+reload as a backend restart mechanism; this release intentionally exposes no
+in-app restart control. On the next launch, the app validates a fresh backend
+and rediscovers durable sessions. Select the saved session to inspect its
+transcript, then submit a new prompt only when you want to attach it again.
+
+The old active turn is not resumed automatically. Text that was visible only as
+an unfinished stream may differ from the last durable transcript checkpoint,
+and Desktop does not relabel that partial projection as a completed, cancelled,
+or failed turn.
+
 ## Reopen saved work safely
 
 Selecting a saved session first loads its durable transcript and renders chat
@@ -136,6 +155,7 @@ configuration is no longer valid.
 | A saved session fails when first sent | Read the safe turn error, then choose a compatible provider/model or create a new session. The app cannot infer that one provider's credential or HTTP dialect is safe for another. |
 | Legacy history cannot continue | Stop every older producer, then use **Import and continue**. A failed import keeps history and the draft available for retry and does not modify the legacy bytes. |
 | A decision card has no actionable control | Reload session state. The server fails closed when it cannot project a safe typed interaction. |
+| Desktop reports that the backend stopped unexpectedly | Close and reopen the complete YHC app. Existing projected history and drafts remain read-only until a fresh backend passes bootstrap; the interrupted turn and its old decisions are not resumed. |
 | Desktop app will not start | Run `make desktop-check`, then rebuild and stage the paired backend with `make desktop-dev`. A `YHC_BIN` override or stale staged binary whose version does not match the Electron shell is intentionally rejected. |
 
 The app-server uses loopback authentication and does not make a remote provider

@@ -30,8 +30,14 @@ test('composer keeps draft admission separate and exposes explicit rebind', asyn
     'import completion must follow canonical catalog admission',
   );
   assert.match(app, /modelRebindSelector/);
-  assert.match(app, /\$\('prompt'\)\.disabled = !canEditDraft\(current\)/);
-  assert.match(app, /\$\('send'\)\.disabled = !canSubmitTurn\(current\)/);
+  assert.match(
+    app,
+    /\$\('prompt'\)\.disabled = !backendReady \|\| !canEditDraft\(current\)/,
+  );
+  assert.match(
+    app,
+    /\$\('send'\)\.disabled = !backendReady \|\| !canSubmitTurn\(current\)/,
+  );
   assert.doesNotMatch(app, /\$\('prompt'\)\.disabled = !canSubmitTurn/);
   assert.match(
     app,

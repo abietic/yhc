@@ -152,6 +152,40 @@ command running, or question waiting. It rejects invalid category/state pairs;
 the Activity panel therefore remains an operator summary, while raw stream
 debugging stays outside the normal UI.
 
+### Unexpected backend exit containment
+
+An unexpected backend exit changes Host availability; it is not a runtime
+terminal event. Electron sends the bounded `app:backend-exit` notification only
+for a normally bootstrapped child that was not intentionally stopped for quit
+or provider replacement. The renderer ignores child diagnostics and dispatches
+one fixed `BACKEND_UNAVAILABLE` transition with the local message **Backend
+stopped unexpectedly. Restart YHC to reconnect.**
+
+That transition stops renderer event streams and atomically retires every
+process-owned capability. It clears active Turn IDs, pending interactions and
+their form state, attention and resolution ownership, replay-in-progress state,
+and outstanding review or execution-setting request generations. It preserves
+the messages already projected, semantic Activity history, drafts, event
+cursors, and durable/resumable descriptors. In particular, a partial assistant
+projection is not marked completed, cancelled, or failed: only engine-owned
+terminal data may make that claim.
+
+The Host availability flag also rejects late events, snapshots, catalog pages,
+session upserts, and asynchronous request results. Persisted descriptors and
+drafts are loaded synchronously before the first bootstrap request, so a stale
+backend payload cannot replace that local recovery data or regain an active
+Turn or interaction capability. New workspace creation, provider configuration,
+Open Web, catalog and transcript paging, review, execution settings, Send,
+Cancel, and interaction controls all remain unavailable.
+
+Recovery requires closing and reopening the complete YHC app. There is no
+renderer restart IPC, automatic child restart, automatic turn continuation, or
+permission replay. A new app process must bootstrap and validate a fresh
+backend, rediscover durable sessions, and wait for a later explicit prompt to
+attach saved work. In-process restart remains a separate Host-lifecycle design
+problem because safe replacement requires start ownership, generation fencing,
+and quit/provider-transition arbitration.
+
 ## Provider compatibility seam
 
 The provider runtime, not Desktop, owns wire dialects. The Claude adapter keeps
@@ -209,6 +243,18 @@ neither uploads nor promotes the unsigned output. These artifacts remain
 ignored QA output. This architecture document does not claim signature,
 notarization, distribution readiness, remote CI success, or compatibility with
 an arbitrary endpoint that implements a different provider/tool dialect.
+
+## Code references
+
+- [`startBackend` and `notifyBackendExit`](../../desktop/main.cjs) own child
+  bootstrap identity and the unexpected-exit notification boundary.
+- [`reducer` and `BACKEND_UNAVAILABLE`](../../internal/webui/assets/state.mjs)
+  own the atomic renderer containment and late-result fence.
+- [`handleBackendExit` and `bootstrapApp`](../../internal/webui/assets/app.mjs)
+  register the crash listener before asynchronous bootstrap and apply global
+  control admission.
+- [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs) owns intentional
+  provider-replacement and quit shutdown; it does not provide crash restart.
 
 Related owners: [entrypoints and transports](platform/entrypoints-and-transports.md),
 [sessions](state/sessions.md), [model providers](platform/model-providers.md),

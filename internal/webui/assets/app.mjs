@@ -1,6 +1,8 @@
 import {
+  BACKEND_UNAVAILABLE_NOTICE,
   activeInteraction,
   activeSession,
+  backendAvailable,
   buildPermissionResolution,
   buildPlanResolution,
   buildQuestionResolution,
@@ -131,6 +133,9 @@ function persist() {
 }
 
 function api(operation, payload) {
+  if (!backendAvailable(state)) {
+    return Promise.reject(new Error(BACKEND_UNAVAILABLE_NOTICE));
+  }
   return transport.api(operation, payload);
 }
 
@@ -227,6 +232,8 @@ function handleViewportResize() {
 
 function render() {
   const current = activeSession(state);
+  const backendReady = backendAvailable(state);
+  $('open-web').disabled = !backendReady;
   renderSheets();
   renderProviderSetup();
   renderSessionCreationControls();
@@ -238,7 +245,7 @@ function render() {
 
   const loadEarlier = $('load-earlier');
   loadEarlier.hidden = !current?.transcriptHasMore;
-  loadEarlier.disabled = !current?.transcriptHasMore ||
+  loadEarlier.disabled = !backendReady || !current?.transcriptHasMore ||
     transcriptLoads.has(current?.id);
   loadEarlier.textContent = transcriptLoads.has(current?.id)
     ? 'Loading…'
@@ -251,7 +258,9 @@ function render() {
     $('session-path').textContent = 'Choose a workspace';
     $('status').textContent = 'Offline';
     $('status').className = 'status';
-    $('turn-state').textContent = 'Create a session to begin.';
+    $('turn-state').textContent = backendReady
+      ? 'Create a session to begin.'
+      : BACKEND_UNAVAILABLE_NOTICE;
     $('prompt').value = '';
     $('prompt').disabled = true;
     $('send').disabled = true;
@@ -263,9 +272,9 @@ function render() {
   const busy = ['running', 'stopping'].includes(current.status);
   $('session-title').textContent = current.title || 'Untitled';
   $('session-path').textContent = current.workspace_label || 'Workspace unavailable';
-  $('status').textContent = current.status || 'idle';
+  $('status').textContent = backendReady ? (current.status || 'idle') : 'Offline';
   $('status').className = `status ${busy ? 'busy' : ''}`;
-  $('turn-state').textContent = current.notice ||
+  $('turn-state').textContent = (!backendReady ? BACKEND_UNAVAILABLE_NOTICE : current.notice) ||
     (!current.live
       ? (current.resumable
         ? 'Select this saved session to resume it.'
@@ -274,16 +283,18 @@ function render() {
   if ($('prompt').value !== (current.draft || '')) {
     $('prompt').value = current.draft || '';
   }
-  $('prompt').disabled = !canEditDraft(current);
-  $('send').disabled = !canSubmitTurn(current);
-  $('cancel').disabled = !current.active_turn_id;
+  $('prompt').disabled = !backendReady || !canEditDraft(current);
+  $('send').disabled = !backendReady || !canSubmitTurn(current);
+  $('cancel').disabled = !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
 
   if (current.messages.length === 0) {
     timeline.replaceChildren(element(
       'div',
       'session-empty',
-      current.live
+      !backendReady
+        ? BACKEND_UNAVAILABLE_NOTICE
+        : current.live
         ? 'This session is ready. Describe the change you want to make.'
         : 'Select a resumable session or create a new workspace session.',
     ));
@@ -312,7 +323,7 @@ function renderSessionCreationControls() {
   const creating = sessionCreation.busy();
   const button = $('new-session');
   const label = button.querySelector('span');
-  button.disabled = creating;
+  button.disabled = creating || !backendAvailable(state);
   button.setAttribute('aria-busy', String(creating));
   if (label) label.textContent = creating ? 'Creating session…' : 'New session';
 }
@@ -341,7 +352,8 @@ function renderExecutionControls(session) {
   const rebind = $('model-rebind');
   const execution = executionForDisplay(session);
   $('execution-controls').hidden = !session;
-  const controlled = Boolean(session?.live) && !session.active_turn_id &&
+  const controlled = backendAvailable(state) && Boolean(session?.live) &&
+    !session.active_turn_id &&
     !['running', 'stopping', 'offline', 'restoring', 'saved'].includes(session.status) &&
     !['loading', 'updating'].includes(execution?.status);
   model.disabled = !controlled;
@@ -389,8 +401,9 @@ function providerDisplayName(provider) {
 function renderProviderSetup() {
   const settings = $('provider-settings');
   const hostGuidance = $('provider-host-guidance');
+  const backendReady = backendAvailable(state);
   settings.hidden = !providerSetup.setupAvailable;
-  settings.disabled = providerSetupBusy;
+  settings.disabled = providerSetupBusy || !backendAvailable(state);
   const settingsLabel = providerSetup.configured
     ? 'Change provider'
     : 'Configure provider';
@@ -402,7 +415,14 @@ function renderProviderSetup() {
     Boolean(providerSetup.configured || providerSetup.launchReady),
   );
 
-  if (providerSetup.hostGuidance) {
+  if (!backendReady) {
+    $('provider-status').textContent = 'Backend offline';
+    $('provider-detail').textContent = BACKEND_UNAVAILABLE_NOTICE;
+    if ($('provider-dialog').open) {
+      $('provider-dialog-status').textContent = BACKEND_UNAVAILABLE_NOTICE;
+      $('provider-dialog-status').classList.add('error');
+    }
+  } else if (providerSetup.hostGuidance) {
     $('provider-status').textContent = 'Host managed';
     $('provider-detail').textContent =
       'Use the Desktop App or host process to change credentials.';
@@ -428,11 +448,13 @@ function renderProviderSetup() {
       : 'Secure operating-system storage is unavailable.';
   }
 
-  $('provider-save').disabled = providerSetupBusy || providerSetup.submitDisabled;
+  $('provider-save').disabled = !backendReady || providerSetupBusy ||
+    providerSetup.submitDisabled;
   $('provider-cancel').disabled = providerSetupBusy;
   for (const control of $('provider-form').elements) {
     if (!['provider-save', 'provider-cancel'].includes(control.id)) {
-      control.disabled = providerSetupBusy || providerSetup.submitDisabled;
+      control.disabled = !backendReady || providerSetupBusy ||
+        providerSetup.submitDisabled;
     }
   }
 }
@@ -443,13 +465,15 @@ function renderEmptyState() {
   const copy = timeline.querySelector('#empty-copy');
   if (!providerButton || !workspaceButton || !copy) return;
 
+  const backendReady = backendAvailable(state);
   providerButton.hidden = !providerSetup.setupAvailable;
+  providerButton.disabled = !backendReady;
   providerButton.textContent = providerSetup.configured
     ? 'Review provider setup'
     : 'Configure provider';
   providerButton.className = providerSetup.launchReady ? 'quiet' : 'primary';
   workspaceButton.hidden = surface === 'web';
-  workspaceButton.disabled = sessionCreation.busy();
+  workspaceButton.disabled = !backendReady || sessionCreation.busy();
   workspaceButton.setAttribute('aria-busy', String(sessionCreation.busy()));
   workspaceButton.textContent = sessionCreation.busy()
     ? 'Creating session…'
@@ -457,7 +481,9 @@ function renderEmptyState() {
   workspaceButton.className = providerSetup.launchReady || providerSetup.hostGuidance
     ? 'primary'
     : 'quiet';
-  copy.textContent = surface === 'web'
+  copy.textContent = !backendReady
+    ? BACKEND_UNAVAILABLE_NOTICE
+    : surface === 'web'
     ? 'Select a saved session to read its history or attach your next request.'
     : (providerSetup.hostGuidance
       ? 'Open a workspace on this host to start a coding session.'
@@ -532,11 +558,14 @@ function renderSessionList() {
   const catalogState = catalog?.snapshot();
   const loadMore = $('load-more-sessions');
   loadMore.hidden = !catalogState?.hasMore;
-  loadMore.disabled = !catalogState?.hasMore || Boolean(catalogState?.loading);
+  loadMore.disabled = !backendAvailable(state) || !catalogState?.hasMore ||
+    Boolean(catalogState?.loading);
   loadMore.textContent = catalogState?.loading ? 'Loading…' : 'Load more sessions';
   const catalogStatus = $('session-catalog-status');
-  catalogStatus.textContent = catalogState?.error ||
-    (catalogState?.loading ? 'Loading saved sessions…' : '');
+  catalogStatus.textContent = !backendAvailable(state)
+    ? BACKEND_UNAVAILABLE_NOTICE
+    : (catalogState?.error ||
+      (catalogState?.loading ? 'Loading saved sessions…' : ''));
 }
 
 function toolCallName(call) {
@@ -596,7 +625,7 @@ function renderActivity(current) {
 
 function renderReview(current) {
   const review = current?.review || {};
-  const inactive = !current?.live ||
+  const inactive = !backendAvailable(state) || !current?.live ||
     ['offline', 'restoring', 'saved'].includes(current.status);
   $('refresh-review').disabled = inactive || review.status === 'loading';
   $('ignore-whitespace').disabled = inactive || review.status === 'loading';
@@ -611,6 +640,11 @@ function renderReview(current) {
   if (!current) {
     $('review-status').textContent =
       'Open a live session to inspect tracked worktree changes.';
+    diff.textContent = '';
+    return;
+  }
+  if (!backendAvailable(state)) {
+    $('review-status').textContent = BACKEND_UNAVAILABLE_NOTICE;
     diff.textContent = '';
     return;
   }
@@ -680,6 +714,7 @@ function showInspectorView(view) {
   const current = activeSession(state);
   if (
     reviewSelected &&
+    backendAvailable(state) &&
     current?.live &&
     !['offline', 'restoring', 'saved'].includes(current.status)
   ) {
@@ -690,6 +725,7 @@ function showInspectorView(view) {
 async function loadReview() {
   const current = activeSession(state);
   if (
+    !backendAvailable(state) ||
     !current?.live ||
     ['offline', 'restoring', 'saved'].includes(current.status)
   ) {
@@ -1325,7 +1361,7 @@ function renderRepeatedToolInteraction(session, interaction, draft, pending) {
 }
 
 function selectWorkspace() {
-  if (surface === 'web') return Promise.resolve(null);
+  if (surface === 'web' || !backendAvailable(state)) return Promise.resolve(null);
   return transport.selectWorkspace();
 }
 
@@ -1343,6 +1379,10 @@ function providerSetupMessage(reason = '') {
 }
 
 function openProviderDialog(reason = '') {
+  if (!backendAvailable(state)) {
+    $('turn-state').textContent = BACKEND_UNAVAILABLE_NOTICE;
+    return;
+  }
   if (!providerSetup.setupAvailable) {
     $('turn-state').textContent =
       'Provider setup is managed by the Desktop App or host process.';
@@ -1386,14 +1426,15 @@ function providerConfigurationFailure(error) {
 }
 
 async function retryAfterProviderSetup() {
-  if (pendingWorkspace.pending()) {
+  if (backendAvailable(state) && pendingWorkspace.pending()) {
     await sessionCreation.begin(() => pendingWorkspace.retry());
   }
 }
 
 async function configureProvider(event) {
   event.preventDefault();
-  if (providerSetupBusy || !providerSetup.setupAvailable) return;
+  if (!backendAvailable(state) || providerSetupBusy ||
+    !providerSetup.setupAvailable) return;
   const apiKeyInput = $('provider-api-key');
   let apiKey = apiKeyInput.value;
   const submission = {
@@ -1432,6 +1473,9 @@ async function configureProvider(event) {
 }
 
 async function createSessionForWorkspace(workspace) {
+  if (!backendAvailable(state)) {
+    throw new Error(BACKEND_UNAVAILABLE_NOTICE);
+  }
   if (!workspace?.workspace_handle || !workspace?.workspace_label) {
     throw new Error('Workspace selection is required.');
   }
@@ -1453,6 +1497,7 @@ async function createSessionForWorkspace(workspace) {
 }
 
 async function createSession() {
+  if (!backendAvailable(state)) return null;
   const workspace = await selectWorkspace();
   if (!workspace) return;
   if (shouldDeferWorkspaceForProvider(surface, providerSetup)) {
@@ -1473,7 +1518,8 @@ async function createSession() {
 
 async function loadExecutionSettings(sessionID, mutation = null) {
   const session = state.sessions[sessionID];
-  if (!session?.live || session.status === 'restoring') return;
+  if (!backendAvailable(state) || !session?.live ||
+    session.status === 'restoring') return;
   const requestID = ++executionRequestID;
   dispatch({
     type: 'EXECUTION_SETTINGS_LOADING',
@@ -1505,6 +1551,7 @@ async function selectSession(id) {
   dispatch({ type: 'SESSION_SELECT', id }, 'bottom');
   const session = state.sessions[id];
   if (!session) return;
+  if (!backendAvailable(state)) return;
   if (!session.live) {
     await loadTranscript(id, true);
     return;
@@ -1772,6 +1819,7 @@ async function loadTranscript(
   replace = false,
   eventCursorFence = null,
 ) {
+  if (!backendAvailable(state)) return;
   const current = state.sessions[sessionID];
   if (!current) return;
   if (!current.live) {
@@ -1916,6 +1964,15 @@ async function restore() {
   const descriptorsByID = new Map(
     saved.sessions.map((descriptor) => [descriptor.id, descriptor]),
   );
+  for (const descriptor of saved.sessions) {
+    dispatch({
+      type: 'SESSION_UPSERT',
+      session: unverifiedPersistedDescriptor(descriptor),
+    });
+  }
+  if (saved.activeID && state.sessions[saved.activeID]) {
+    dispatch({ type: 'SESSION_SELECT', id: saved.activeID }, 'bottom');
+  }
   let liveByID = new Map();
   try {
     const response = await api('listSessions');
@@ -1934,29 +1991,26 @@ async function restore() {
   }
   for (const session of liveByID.values()) {
     const existing = descriptorsByID.get(session.id) || {};
-    descriptorsByID.set(session.id, liveDescriptor(existing, session));
-  }
-  const restored = [...descriptorsByID.values()];
-  for (const descriptor of restored) {
-    const liveSession = liveByID.get(descriptor.id);
+    const descriptor = liveDescriptor(existing, session);
+    descriptorsByID.set(session.id, descriptor);
     dispatch({
       type: 'SESSION_UPSERT',
-      session: liveSession
-        ? { ...descriptor, ...liveSession, status: 'restoring', live: true }
-        : unverifiedPersistedDescriptor(descriptor),
+      session: { ...descriptor, ...session, status: 'restoring', live: true },
     });
   }
-  if (saved.activeID && state.sessions[saved.activeID]) {
-    dispatch({ type: 'SESSION_SELECT', id: saved.activeID }, 'bottom');
+  const restored = [...descriptorsByID.values()];
+  if (backendAvailable(state)) {
+    await Promise.all(restored
+      .filter((descriptor) => liveByID.has(descriptor.id))
+      .map((descriptor) => synchronizeSession(
+        liveByID.get(descriptor.id),
+        descriptor.draft,
+        Boolean(descriptor.durable || descriptor.resumable),
+      )));
   }
-  await Promise.all(restored
-    .filter((descriptor) => liveByID.has(descriptor.id))
-    .map((descriptor) => synchronizeSession(
-      liveByID.get(descriptor.id),
-      descriptor.draft,
-      Boolean(descriptor.durable || descriptor.resumable),
-    )));
-  const catalogReady = await catalog.reset('');
+  const catalogReady = backendAvailable(state)
+    ? await catalog.reset('')
+    : false;
   const current = activeSession(state);
   if (catalogReady && current?.durable && !current.live) {
     await loadTranscript(current.id, true);
@@ -1985,7 +2039,7 @@ function requestConfirmation(title, copy, actionLabel = 'Continue') {
 }
 
 function startStream(sessionID) {
-  if (streams.has(sessionID)) return;
+  if (!backendAvailable(state) || streams.has(sessionID)) return;
   const stream = {
     opening: false,
     retries: 0,
@@ -1998,6 +2052,7 @@ function startStream(sessionID) {
 
 async function openStream(sessionID, stream) {
   if (
+    !backendAvailable(state) ||
     streams.get(sessionID) !== stream ||
     stream.stopped ||
     stream.opening
@@ -2034,7 +2089,8 @@ async function openStream(sessionID, stream) {
 }
 
 function scheduleReconnect(sessionID, stream, immediate = false) {
-  if (streams.get(sessionID) !== stream || stream.stopped || stream.timer) {
+  if (!backendAvailable(state) || streams.get(sessionID) !== stream ||
+    stream.stopped || stream.timer) {
     return;
   }
   const delay = immediate ? 0 : Math.min(500 * (2 ** stream.retries), 10_000);
@@ -2136,8 +2192,15 @@ function sessionScopedError(error, sessionID) {
   return scoped;
 }
 
+function handleBackendExit() {
+  for (const id of [...streams.keys()]) stopStream(id);
+  completeConfirmation(false);
+  dispatch({ type: 'BACKEND_UNAVAILABLE' });
+}
+
 async function bootstrapApp() {
   transport = createTransport();
+  transport.onBackendExit(handleBackendExit);
   const info = await transport.getInfo();
   if (!info || info.protocolVersion !== 2) {
     throw new Error('Backend protocol mismatch');
@@ -2160,22 +2223,10 @@ async function bootstrapApp() {
   }
   const openWeb = $('open-web');
   openWeb.hidden = info.surface !== 'desktop' || !info.webAvailable;
-  openWeb.onclick = () => transport.openWeb().catch(showError);
+  openWeb.onclick = () => {
+    if (backendAvailable(state)) transport.openWeb().catch(showError);
+  };
   transport.onEventStream(handleEventStream);
-  transport.onBackendExit((payload) => {
-    for (const id of [...streams.keys()]) stopStream(id);
-    for (const session of Object.values(state.sessions)) {
-      dispatch({
-        type: 'SESSION_UPSERT',
-        session: {
-          ...session,
-          live: false,
-          status: 'offline',
-          notice: payload.error || 'Backend stopped.',
-        },
-      });
-    }
-  });
   catalog = createDurableCatalog({
     fetchPage: (input) => api('listDurableSessions', input),
     applyPage: (sessions, replace) => dispatch({
@@ -2191,7 +2242,7 @@ async function bootstrapApp() {
 }
 
 function beginSessionCreation() {
-  if (surface === 'web') return;
+  if (surface === 'web' || !backendAvailable(state)) return;
   const creation = sessionCreation.begin();
   if (openSheetKind === 'navigation') closeSheet();
   creation.catch(showError);
@@ -2207,10 +2258,14 @@ $('session-filter').oninput = () => {
   renderSessionList();
   clearTimeout(catalogSearchTimer);
   catalogSearchTimer = setTimeout(() => {
-    void catalog?.reset($('session-filter').value);
+    if (backendAvailable(state)) {
+      void catalog?.reset($('session-filter').value);
+    }
   }, 200);
 };
-$('load-more-sessions').onclick = () => void catalog?.loadMore();
+$('load-more-sessions').onclick = () => {
+  if (backendAvailable(state)) void catalog?.loadMore();
+};
 $('navigation-toggle').onclick = (event) => {
   openSheet('navigation', event.currentTarget);
 };

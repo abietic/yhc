@@ -30,7 +30,10 @@ test('renderer keeps provider key DOM-local and clears it after submit', async (
   assert.match(app, /createSessionCreationGate\(createSession/);
   assert.match(app, /sessionCreation\.begin\(\)/);
   assert.match(app, /button\.disabled = creating/);
-  assert.match(app, /workspaceButton\.disabled = sessionCreation\.busy\(\)/);
+  assert.match(
+    app,
+    /workspaceButton\.disabled = !backendReady \|\| sessionCreation\.busy\(\)/,
+  );
   assert.match(app, /createDurableHistoryLoader/);
   assert.match(app, /shouldDeferWorkspaceForProvider/);
   assert.match(app, /pendingWorkspace\.defer\(workspace\)/);
@@ -123,7 +126,11 @@ test('saved session selection is history-only and Send uniquely activates it', a
   );
   assert.match(
     restore,
-    /catalogReady = await catalog\.reset\(''\)[\s\S]*?catalogReady && current\?\.durable && !current\.live[\s\S]*?await loadTranscript\(current\.id, true\)/,
+    /for \(const descriptor of saved\.sessions\)[\s\S]*?unverifiedPersistedDescriptor\(descriptor\)[\s\S]*?await api\('listSessions'\)/,
+  );
+  assert.match(
+    restore,
+    /catalogReady = backendAvailable\(state\)[\s\S]*?await catalog\.reset\(''\)[\s\S]*?catalogReady && current\?\.durable && !current\.live[\s\S]*?await loadTranscript\(current\.id, true\)/,
   );
   assert.doesNotMatch(app, /pendingResumeID|resumeDescriptor|createDurableSessionRestorer/);
 });
