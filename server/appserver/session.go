@@ -91,11 +91,12 @@ type EngineOptions struct {
 type EngineFactory func(context.Context, EngineOptions) (SessionEngine, error)
 
 type session struct {
-	mu        sync.Mutex
-	closeOnce sync.Once
-	wg        sync.WaitGroup
-	closeDone chan struct{}
-	closeErr  error
+	mu              sync.Mutex
+	cancelRequestMu sync.Mutex
+	closeOnce       sync.Once
+	wg              sync.WaitGroup
+	closeDone       chan struct{}
+	closeErr        error
 
 	id             string
 	threadID       string
@@ -116,10 +117,11 @@ type session struct {
 	rootCtx     context.Context
 	rootCancel  context.CancelFunc
 
-	activeTurnID string
-	activePrompt string
-	activeCancel context.CancelFunc
-	closed       bool
+	activeTurnID          string
+	activePrompt          string
+	activeCancel          context.CancelFunc
+	immediateCancelTurnID string
+	closed                bool
 }
 
 func newSession(
@@ -430,6 +432,7 @@ func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
 	s.activeTurnID = turnID
 	s.activePrompt = prompt
 	s.activeCancel = cancel
+	s.immediateCancelTurnID = ""
 	s.status = "running"
 	s.updatedAt = time.Now().UTC()
 	s.lastError = ""
@@ -470,6 +473,7 @@ func (s *session) restorePendingProjectGraph() (*InteractionSnapshot, error) {
 	s.activeTurnID = turnID
 	s.activePrompt = ""
 	s.activeCancel = cancel
+	s.immediateCancelTurnID = ""
 	s.status = "waiting"
 	s.updatedAt = time.Now().UTC()
 	s.wg.Add(1)
@@ -650,10 +654,10 @@ func (s *session) finishTurn(
 	reason engine.TerminalReason,
 	err error,
 ) {
+	ownedImmediateCancel := s.ownsImmediateCancel(turnID)
 	status := "idle"
-	errText := ""
-	if err != nil {
-		errText = err.Error()
+	errText := terminalErrorText(reason, err, ownedImmediateCancel)
+	if errText != "" {
 		status = "error"
 	}
 	if reason == engine.TerminalWaitingInput {
@@ -664,6 +668,9 @@ func (s *session) finishTurn(
 		s.activeTurnID = ""
 		s.activePrompt = ""
 		s.activeCancel = nil
+	}
+	if s.immediateCancelTurnID == turnID {
+		s.immediateCancelTurnID = ""
 	}
 	if !s.closed {
 		s.status = status
@@ -678,20 +685,9 @@ func (s *session) finishTurn(
 }
 
 func (s *session) cancelTurn(input CancelTurnRequest) error {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return errSessionClosed
-	}
-	activeTurnID := s.activeTurnID
-	cancel := s.activeCancel
-	s.mu.Unlock()
-	if activeTurnID == "" {
-		return fmt.Errorf("session has no active turn")
-	}
-	if input.TurnID != "" && input.TurnID != activeTurnID {
-		return fmt.Errorf("turn %s is not active", input.TurnID)
-	}
+	s.cancelRequestMu.Lock()
+	defer s.cancelRequestMu.Unlock()
+
 	mode := engine.RuntimeStopImmediate
 	if strings.EqualFold(strings.TrimSpace(input.Mode), string(engine.RuntimeStopGraceful)) {
 		mode = engine.RuntimeStopGraceful
@@ -700,7 +696,39 @@ func (s *session) cancelTurn(input CancelTurnRequest) error {
 	if reason == "" {
 		reason = "desktop user requested cancellation"
 	}
-	if err := s.engine.RequestStop(mode, reason); err != nil {
+
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return errSessionClosed
+	}
+	activeTurnID := s.activeTurnID
+	cancel := s.activeCancel
+	if activeTurnID == "" {
+		s.mu.Unlock()
+		return fmt.Errorf("session has no active turn")
+	}
+	if input.TurnID != "" && input.TurnID != activeTurnID {
+		s.mu.Unlock()
+		return fmt.Errorf("turn %s is not active", input.TurnID)
+	}
+	recordedImmediateCancel := false
+	if mode == engine.RuntimeStopImmediate &&
+		s.immediateCancelTurnID != activeTurnID {
+		s.immediateCancelTurnID = activeTurnID
+		recordedImmediateCancel = true
+	}
+	s.mu.Unlock()
+
+	err := s.engine.RequestStop(mode, reason)
+	if err != nil {
+		if recordedImmediateCancel {
+			s.mu.Lock()
+			if s.immediateCancelTurnID == activeTurnID {
+				s.immediateCancelTurnID = ""
+			}
+			s.mu.Unlock()
+		}
 		return err
 	}
 	if mode == engine.RuntimeStopImmediate && cancel != nil {
@@ -711,6 +739,12 @@ func (s *session) cancelTurn(input CancelTurnRequest) error {
 		"reason": reason,
 	})
 	return nil
+}
+
+func (s *session) ownsImmediateCancel(turnID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.immediateCancelTurnID == turnID
 }
 
 func (s *session) resolveInteraction(
@@ -868,7 +902,11 @@ func (s *session) publishEngine(event engine.QueryEvent, fallbackTurnID string) 
 	event.TurnID = turnID
 	event.Timestamp = timestamp
 	wireType := string(event.Type)
-	data := queryEventData(event)
+	ownedImmediateCancel := false
+	if event.Type == engine.EventTerminal {
+		ownedImmediateCancel = s.ownsImmediateCancel(turnID)
+	}
+	data := queryEventData(event, ownedImmediateCancel)
 	if event.Type == engine.EventPermissionRequest && event.PermissionRequest != nil {
 		interaction, ok := s.permissions.interaction(event.PermissionRequest.ToolUseID)
 		if !ok {
@@ -943,7 +981,7 @@ func messageData(message *schema.Message) *wireMessage {
 	}
 }
 
-func queryEventData(event engine.QueryEvent) json.RawMessage {
+func queryEventData(event engine.QueryEvent, ownedImmediateCancel bool) json.RawMessage {
 	switch event.Type {
 	case engine.EventAssistant:
 		message := event.AssistantMessage
@@ -973,15 +1011,15 @@ func queryEventData(event engine.QueryEvent) json.RawMessage {
 		if event.TerminalInfo == nil {
 			return marshalEventData(map[string]any{})
 		}
-		errText := ""
-		if event.TerminalInfo.Err != nil {
-			errText = event.TerminalInfo.Err.Error()
-		}
 		return marshalEventData(map[string]any{
 			"reason":     event.TerminalInfo.Reason,
 			"turn_count": event.TerminalInfo.TurnCount,
 			"max_turns":  event.TerminalInfo.MaxTurns,
-			"error":      errText,
+			"error": terminalErrorText(
+				event.TerminalInfo.Reason,
+				event.TerminalInfo.Err,
+				ownedImmediateCancel,
+			),
 		})
 	case engine.EventToolUseSummary:
 		return marshalEventData(event.ToolUseSummary)
@@ -1012,6 +1050,18 @@ func queryEventData(event engine.QueryEvent) json.RawMessage {
 			"transcript_entry_id": event.TranscriptEntryID,
 		})
 	}
+}
+
+func terminalErrorText(
+	reason engine.TerminalReason,
+	err error,
+	ownedImmediateCancel bool,
+) string {
+	if err == nil || ownedImmediateCancel &&
+		reason == engine.TerminalAbortedStreaming && errors.Is(err, context.Canceled) {
+		return ""
+	}
+	return err.Error()
 }
 
 func marshalEventData(value any) json.RawMessage {

@@ -266,6 +266,49 @@ test('successful terminal events clear the working notice', () => {
   assert.equal(state.sessions.s1.notice, 'Ready');
 });
 
+test('user cancellation settles partial output and restores the idle composer', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_UPSERT',
+    session: { id: 's1', live: true, activation: 'live' },
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(1, 'turn.accepted', { turn_id: 'turn-a' }, 's1', 'turn-a'),
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(2, 'stream_event', {
+      message: { content: 'partial response' },
+    }, 's1', 'turn-a'),
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(3, 'turn.cancel.requested', {
+      mode: 'immediate',
+      reason: 'desktop user requested cancellation',
+    }, 's1', 'turn-a'),
+  });
+  assert.equal(state.sessions.s1.status, 'stopping');
+  assert.equal(state.sessions.s1.notice, 'Stopping the active turn…');
+
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(4, 'turn.finished', {
+      reason: 'aborted_streaming',
+      error: '',
+    }, 's1', 'turn-a'),
+  });
+  const session = state.sessions.s1;
+  assert.equal(session.active_turn_id, '');
+  assert.equal(session.status, 'idle');
+  assert.equal(session.notice, 'Ready');
+  assert.deepEqual(session.settledTurnIDs, ['turn-a']);
+  assert.equal(session.messages.at(-1).content, 'partial response');
+  assert.equal(session.messages.at(-1).completed, true);
+  assert.equal(canEditDraft(session), true);
+  assert.equal(canSubmitTurn(session), true);
+});
+
 test('typed interactions retain request order, drafts, and failed resolutions', () => {
   let state = reducer(initialState(), { type: 'EVENT', event: event(1,
     'interaction_requested', { interaction: { request_id: 'one', kind: 'permission' } }) });

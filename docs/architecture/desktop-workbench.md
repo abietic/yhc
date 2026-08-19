@@ -124,6 +124,13 @@ turn cannot clear or replace a newer active turn. Read-only semantic Activity
 may still arrive for history, while the next snapshot remains the state
 reconciliation owner.
 
+An immediate user cancellation for the active turn retains the typed
+`aborted_streaming` terminal reason but treats its causally owned `context
+canceled` error as a successful control outcome. Both the terminal event and
+final snapshot therefore clear that error, settle any partial assistant output,
+and return the active composer to idle. An unowned cancellation or a stop
+request rejected before it produces a terminal remains an error.
+
 When a reconnect cursor falls behind the bounded event log,
 [`recoverReplayGap`](../../internal/webui/assets/app.mjs#L2054) uses
 [`synchronizeReplayGap`](../../internal/webui/assets/replay.mjs#L1) to apply
