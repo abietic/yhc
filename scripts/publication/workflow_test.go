@@ -83,6 +83,73 @@ func TestCodeQLAnalyzesGoAndDesktopJavaScript(t *testing.T) {
 	}
 }
 
+func TestDesktopNativePackageMatrixUsesExactUnpackedTargets(t *testing.T) {
+	ci := readWorkflowFiles(t)[".github/workflows/ci.yml"]
+	start := strings.Index(ci, "  desktop-native-packages:\n")
+	requiredStart := strings.Index(ci, "  required:\n")
+	if start < 0 || requiredStart <= start {
+		t.Fatal("CI lacks a bounded native Desktop package job")
+	}
+	job := ci[start:requiredStart]
+	for _, contract := range []string{
+		"name: Native Desktop package (${{ matrix.platform }})",
+		"fail-fast: false",
+		"- platform: macos-intel\n            runner: macos-15-intel\n            target: desktop-package-smoke-darwin-amd64",
+		"- platform: macos-arm64\n            runner: macos-15\n            target: desktop-package-smoke-darwin-arm64",
+		"- platform: windows-x64\n            runner: windows-2025\n            target: desktop-package-smoke-windows-amd64",
+		"runs-on: ${{ matrix.runner }}",
+		"CSC_IDENTITY_AUTO_DISCOVERY: 'false'",
+		"if: runner.os == 'Windows'",
+		"choco install make --version=4.4.1 --yes --no-progress",
+		"run: make SHELL=bash ${{ matrix.target }}",
+	} {
+		if !strings.Contains(job, contract) {
+			t.Fatalf("native Desktop package job lacks %q", contract)
+		}
+	}
+	if strings.Contains(job, "upload-artifact") || strings.Contains(job, "--publish") {
+		t.Fatal("native Desktop package smoke must not upload or publish unsigned output")
+	}
+	if strings.Contains(job, "npm ci --ignore-scripts") || strings.Contains(job, "npm --prefix desktop rebuild electron") {
+		t.Fatal("native Desktop package job must let the canonical Make target install its locked runtime once")
+	}
+
+	root := filepath.Join("..", "..")
+	makefileBytes, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatalf("read Makefile: %v", err)
+	}
+	makefile := string(makefileBytes)
+	for _, contract := range []string{
+		"desktop-package-smoke-darwin-amd64: desktop-stage-darwin-amd64 desktop-install\n\tnpm --prefix desktop run package -- --mac --x64",
+		"desktop-package-smoke-darwin-arm64: desktop-stage-darwin-arm64 desktop-install\n\tnpm --prefix desktop run package -- --mac --arm64",
+		"desktop-package-smoke-windows-amd64: desktop-stage-windows-amd64 desktop-install\n\tnpm --prefix desktop run package -- --win --x64",
+	} {
+		if !strings.Contains(makefile, contract) {
+			t.Fatalf("native Desktop package target lacks unpacked contract %q", contract)
+		}
+	}
+	packageBytes, err := os.ReadFile(filepath.Join(root, "desktop", "package.json"))
+	if err != nil {
+		t.Fatalf("read Desktop package manifest: %v", err)
+	}
+	if !strings.Contains(string(packageBytes), `"package": "electron-builder --dir"`) {
+		t.Fatal("native Desktop package smokes must resolve through electron-builder --dir")
+	}
+
+	required := ci[requiredStart:]
+	for _, contract := range []string{
+		"- desktop-native-packages",
+		"DESKTOP_NATIVE_PACKAGES_RESULT: ${{ needs.desktop-native-packages.result }}",
+		`"$DESKTOP_NATIVE_PACKAGES_RESULT" != "skipped"`,
+		`"$DESKTOP_NATIVE_PACKAGES_RESULT" != "success"`,
+	} {
+		if !strings.Contains(required, contract) {
+			t.Fatalf("required gate lacks native Desktop package contract %q", contract)
+		}
+	}
+}
+
 func readWorkflowFiles(t *testing.T) map[string]string {
 	t.Helper()
 	directory := filepath.Join("..", "..", ".github", "workflows")

@@ -175,6 +175,12 @@ Closing the renderer must end Electron normally and retire that exact backend
 PID. The renderer exposes only a `data-yhc-bootstrap` ready/error state for
 this read-only completion oracle.
 
+A separate native packaging matrix runs the same unpacked `afterPack` contract
+on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
+Those jobs prove that each native electron-builder path can assemble the exact
+ASAR, WebUI, backend, and license payload; they do not launch the macOS or
+Windows app, produce installer media, sign code, or upload artifacts.
+
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS
 sandbox, a physical display, native user interaction, or another platform. CI

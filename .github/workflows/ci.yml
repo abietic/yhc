@@ -415,6 +415,53 @@ jobs:
           npm --prefix desktop rebuild electron --no-audit --no-fund
           make desktop-unpacked-lifecycle-smoke-linux-amd64-ci
 
+  desktop-native-packages:
+    name: Native Desktop package (${{ matrix.platform }})
+    if: needs.changes.outputs.docs_only != 'true'
+    needs: changes
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-intel
+            runner: macos-15-intel
+            target: desktop-package-smoke-darwin-amd64
+          - platform: macos-arm64
+            runner: macos-15
+            target: desktop-package-smoke-darwin-arm64
+          - platform: windows-x64
+            runner: windows-2025
+            target: desktop-package-smoke-windows-amd64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22.22.0'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install pinned GNU Make on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install make --version=4.4.1 --yes --no-progress
+
+      - name: Build and verify native unpacked package
+        shell: bash
+        run: make SHELL=bash ${{ matrix.target }}
+
   required:
     name: Required gates
     if: always()
@@ -425,6 +472,7 @@ jobs:
       - build
       - publication-safety
       - desktop
+      - desktop-native-packages
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -436,6 +484,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           PUBLICATION_SAFETY_RESULT: ${{ needs.publication-safety.result }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
+          DESKTOP_NATIVE_PACKAGES_RESULT: ${{ needs.desktop-native-packages.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         run: |
           if [[ "$CHANGES_RESULT" != "success" || "$QUALITY_RESULT" != "success" || "$PUBLICATION_SAFETY_RESULT" != "success" ]]; then
@@ -443,13 +492,13 @@ jobs:
             exit 1
           fi
           if [[ "$DOCS_ONLY" == "true" ]]; then
-            if [[ "$TEST_RESULT" != "skipped" || "$BUILD_RESULT" != "skipped" || "$DESKTOP_RESULT" != "skipped" ]]; then
-              echo "docs-only run unexpectedly executed code gates: test=$TEST_RESULT build=$BUILD_RESULT desktop=$DESKTOP_RESULT" >&2
+            if [[ "$TEST_RESULT" != "skipped" || "$BUILD_RESULT" != "skipped" || "$DESKTOP_RESULT" != "skipped" || "$DESKTOP_NATIVE_PACKAGES_RESULT" != "skipped" ]]; then
+              echo "docs-only run unexpectedly executed code gates: test=$TEST_RESULT build=$BUILD_RESULT desktop=$DESKTOP_RESULT desktop-native-packages=$DESKTOP_NATIVE_PACKAGES_RESULT" >&2
               exit 1
             fi
             exit 0
           fi
-          if [[ "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "success" || "$DESKTOP_RESULT" != "success" ]]; then
-            echo "test=$TEST_RESULT build=$BUILD_RESULT desktop=$DESKTOP_RESULT" >&2
+          if [[ "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "success" || "$DESKTOP_RESULT" != "success" || "$DESKTOP_NATIVE_PACKAGES_RESULT" != "success" ]]; then
+            echo "test=$TEST_RESULT build=$BUILD_RESULT desktop=$DESKTOP_RESULT desktop-native-packages=$DESKTOP_NATIVE_PACKAGES_RESULT" >&2
             exit 1
           fi

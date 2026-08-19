@@ -51,6 +51,11 @@ assembly for Linux x64 without uploading it as a release artifact. The output
 is still ignored QA evidence, not proof of code signing, notarization, or
 release readiness.
 
+CI also assembles and verifies native unpacked outputs on macOS Intel, macOS
+Apple Silicon, and Windows x64 runners. These jobs run the exact package
+verifier but do not launch those apps or create, sign, upload, or validate final
+installer media.
+
 `desktop/package.json` is the Desktop version source. Its canonical version has
 no `v` prefix. The supported Desktop Make targets depend on that manifest and
 inject its version into the staged Go backend; on startup, Electron rejects a
