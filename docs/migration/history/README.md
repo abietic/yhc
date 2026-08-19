@@ -1,7 +1,7 @@
 # Runtime Migration History
 
 **Status:** historical
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-19
 
 > **Ownership:** this file indexes completed migration stages and their closeout
 > evidence. It does not own current status, active order, or backlog. Current
@@ -560,8 +560,18 @@ records the completed `project-native` Darwin Guest subset: the fixed Seatbelt
 adapter, immutable process-class bindings, user-only selection, fail-closed
 unavailability, ShellManager lifecycle, restore/child re-probe, and real
 escape/product evidence land without changing permission outcomes. G28 remains
-open for ambient credentials, hooks/MCP, and hard resource limits; P51.2 is not
-admitted.
+open for ambient credentials, hooks/MCP, and hard resource limits. P51.2 Core
+later consumed the exact proof without changing this containment baseline.
+
+## P51.2 Proof-Bound Auto Bash Core
+
+[`p51-2-auto-containment-admission.md`](runtime/p51-2-auto-containment-admission.md)
+records the completed master-native Core boundary: ordinary canonical Auto Bash
+uses the exact complete Guest proof, exact local/user rules remain separate
+explicit authority, critical literal `rm`/`rmdir` requires fresh `AllowOnce`,
+ProjectGraph and supported Core clients preserve the constraint, and final
+dispatch/submission drift fails closed. AppServer, Desktop, and Web UI
+projection remains deferred, and G28 stays open.
 
 ## P36 ACP Provider-Rich Assistant Replay
 

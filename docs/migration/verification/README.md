@@ -1,7 +1,7 @@
 # Migration Verification Index
 
 **Status:** verification
-**Last verified:** 2026-08-08
+**Last verified:** 2026-08-19
 
 > **Ownership:** this file indexes reproducible verification procedures and
 > gates. It does not own current status, active order, or backlog. Verified
@@ -52,6 +52,7 @@
 | [`p50-2-reviewer-latency-denominator.md`](p50-2-reviewer-latency-denominator.md) | P50.2 attempt-terminal sample admission, terminal-only outcome preservation, unavailable zero-pair JSON, unsorted nearest-rank percentiles, CLI store compatibility, and race evidence. |
 | [`p50-3-review-audit-dispatcher.md`](p50-3-review-audit-dispatcher.md) | P50.3 non-blocking bounded single-writer admission, sink failure/panic isolation, typed evidence-loss diagnostics, concurrent close, bounded QueryEngine shutdown, permission/prompt/cancellation invariance, report, CLI, and race evidence. |
 | [`p51-1-darwin-guest-seatbelt.md`](p51-1-darwin-guest-seatbelt.md) | P51.1 real Darwin fixed-binary capability probe, escape matrix, process-class binding, root/restore/child identity, ShellManager lifecycle, user-only selection, Go/Make/Git product, control-plane write, permission-invariance, race, and repository-gate evidence. |
+| [`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md) | P51.2 Core exact Guest identity, proof-bound ordinary Auto prompt reduction, separate exact-user authority, critical fresh-AllowOnce constraint, ProjectGraph/client propagation, hook-rewrite restart, dispatch/submission drift rejection, child derivation, real Darwin containment, race, and repository-gate evidence. |
 
 ## Docs-only gates
 

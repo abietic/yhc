@@ -369,33 +369,35 @@ func permissionRequestDigest(r engine.PermissionPromptRequest) (string, bool) {
 	}
 	inputHash := sha256.Sum256(input)
 	payload := struct {
-		ID            string
-		Session       string
-		Thread        string
-		Agent         string
-		Kind          string
-		Source        string
-		Tool          string
-		CanonicalTool string
-		Message       string
-		InputHash     string
-		Attempt       int
-		Plan          *engine.PlanApprovalRequest
-		Presentation  *engine.PermissionPresentation
+		ID                 string
+		Session            string
+		Thread             string
+		Agent              string
+		Kind               string
+		Source             string
+		Tool               string
+		CanonicalTool      string
+		Message            string
+		InputHash          string
+		Attempt            int
+		Plan               *engine.PlanApprovalRequest
+		Presentation       *engine.PermissionPresentation
+		DecisionConstraint engine.PermissionDecisionConstraint
 	}{
-		ID:            strings.TrimSpace(r.ToolUseID),
-		Session:       strings.TrimSpace(r.SessionID),
-		Thread:        strings.TrimSpace(r.ThreadID),
-		Agent:         strings.TrimSpace(r.AgentID),
-		Kind:          strings.TrimSpace(r.Kind),
-		Source:        strings.TrimSpace(r.Source),
-		Tool:          strings.TrimSpace(r.ToolName),
-		CanonicalTool: strings.TrimSpace(r.CanonicalToolName),
-		Message:       r.Message,
-		InputHash:     hex.EncodeToString(inputHash[:]),
-		Attempt:       r.Attempt,
-		Plan:          r.PlanApproval,
-		Presentation:  r.Presentation,
+		ID:                 strings.TrimSpace(r.ToolUseID),
+		Session:            strings.TrimSpace(r.SessionID),
+		Thread:             strings.TrimSpace(r.ThreadID),
+		Agent:              strings.TrimSpace(r.AgentID),
+		Kind:               strings.TrimSpace(r.Kind),
+		Source:             strings.TrimSpace(r.Source),
+		Tool:               strings.TrimSpace(r.ToolName),
+		CanonicalTool:      strings.TrimSpace(r.CanonicalToolName),
+		Message:            r.Message,
+		InputHash:          hex.EncodeToString(inputHash[:]),
+		Attempt:            r.Attempt,
+		Plan:               r.PlanApproval,
+		Presentation:       r.Presentation,
+		DecisionConstraint: r.DecisionConstraint,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -412,7 +414,8 @@ func permissionRequestDigest(r engine.PermissionPromptRequest) (string, bool) {
 func validBrokerPermissionRequest(request engine.PermissionPromptRequest) bool {
 	if strings.TrimSpace(request.ToolUseID) == "" ||
 		strings.TrimSpace(request.Kind) == "" ||
-		strings.TrimSpace(request.Source) == "" {
+		strings.TrimSpace(request.Source) == "" ||
+		!validBrokerDecisionConstraint(request.Kind, request.DecisionConstraint) {
 		return false
 	}
 	switch request.Kind {
@@ -429,6 +432,17 @@ func validBrokerPermissionRequest(request engine.PermissionPromptRequest) bool {
 	case engine.PermissionInteractionKindRepeatedTool:
 		return request.Attempt == 3 && request.Source == "repeated_tool_guard" &&
 			request.PlanApproval == nil && request.Presentation == nil
+	default:
+		return false
+	}
+}
+
+func validBrokerDecisionConstraint(kind string, constraint engine.PermissionDecisionConstraint) bool {
+	switch constraint {
+	case engine.PermissionDecisionUnconstrained:
+		return true
+	case engine.PermissionAllowOnceOnly:
+		return kind == engine.PermissionInteractionKindPermission
 	default:
 		return false
 	}
@@ -492,13 +506,14 @@ func (b *permissionBroker) interactions() []InteractionSnapshot {
 func projectInteraction(request engine.PermissionPromptRequest, turnID string) (InteractionSnapshot, bool) {
 	requestID := strings.TrimSpace(request.ToolUseID)
 	turnID = strings.TrimSpace(turnID)
-	if requestID == "" || turnID == "" {
+	if requestID == "" || turnID == "" ||
+		!validBrokerDecisionConstraint(request.Kind, request.DecisionConstraint) {
 		return InteractionSnapshot{}, false
 	}
 	interaction := InteractionSnapshot{RequestID: requestID, TurnID: turnID, Kind: request.Kind}
 	switch request.Kind {
 	case engine.PermissionInteractionKindPermission:
-		interaction.Permission = projectPermissionInteraction(request.Presentation)
+		interaction.Permission = projectPermissionInteraction(request.Presentation, request.DecisionConstraint)
 	case engine.PermissionInteractionKindQuestion:
 		questions, ok := frozenQuestions(request)
 		if !ok {
@@ -533,7 +548,10 @@ func projectInteraction(request engine.PermissionPromptRequest, turnID string) (
 	return interaction, true
 }
 
-func projectPermissionInteraction(presentation *engine.PermissionPresentation) *PermissionInteractionSnapshot {
+func projectPermissionInteraction(
+	presentation *engine.PermissionPresentation,
+	constraint engine.PermissionDecisionConstraint,
+) *PermissionInteractionSnapshot {
 	unavailable := &PermissionInteractionSnapshot{
 		Available: false, Evidence: []PermissionEvidenceSnapshot{}, GrantScopes: []string{string(engine.PermissionAllowOnce)},
 	}
@@ -544,9 +562,12 @@ func projectPermissionInteraction(presentation *engine.PermissionPresentation) *
 	for index, item := range presentation.Evidence {
 		evidence[index] = PermissionEvidenceSnapshot{Label: item.Label, Value: item.Value}
 	}
-	scopes := make([]string, len(presentation.GrantScopes))
-	for index, scope := range presentation.GrantScopes {
-		scopes[index] = string(scope)
+	scopes := []string{string(engine.PermissionAllowOnce)}
+	if constraint != engine.PermissionAllowOnceOnly {
+		scopes = make([]string, len(presentation.GrantScopes))
+		for index, scope := range presentation.GrantScopes {
+			scopes[index] = string(scope)
+		}
 	}
 	return &PermissionInteractionSnapshot{
 		Available: true, ToolLabel: presentation.ToolLabel, Summary: presentation.Summary,
@@ -683,7 +704,11 @@ func permissionInteractionResult(
 	}
 	switch decision {
 	case engine.PermissionAllowOnce, engine.PermissionAllowSession, engine.PermissionAllowAlways:
-		if message != "" || !permissionPresentationAdvertises(request.Presentation, decision) {
+		if message != "" || !permissionPresentationAdvertises(
+			request.Presentation,
+			request.DecisionConstraint,
+			decision,
+		) {
 			return engine.PermissionInteractionResult{}, false
 		}
 	case engine.PermissionDeny, engine.PermissionCancelled:
@@ -868,9 +893,10 @@ func boundedBytes(value string, maximum int) bool {
 
 func permissionPresentationAdvertises(
 	presentation *engine.PermissionPresentation,
+	constraint engine.PermissionDecisionConstraint,
 	decision engine.PermissionInteractionDecision,
 ) bool {
-	projected := projectPermissionInteraction(presentation)
+	projected := projectPermissionInteraction(presentation, constraint)
 	for _, scope := range projected.GrantScopes {
 		if scope == string(decision) {
 			return true

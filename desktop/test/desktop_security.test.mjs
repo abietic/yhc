@@ -66,6 +66,26 @@ test('platform package resources match each staged desktop backend name', async 
   assert.match(makefile, /\$\(DESKTOP_STAGE_DIR\)\/yhc\.exe/);
 });
 
+test('desktop backend builds inject reproducible source identity', async () => {
+  const makefile = await readFile(makefilePath, 'utf8');
+  assert.match(makefile, /ifneq \(\$\(wildcard \.git\),\)/);
+  assert.match(makefile, /BUILD_COMMIT \?= \$\(shell git rev-parse --verify HEAD/);
+  assert.match(makefile, /BUILD_TIME \?= \$\(shell git show -s --format=%cI HEAD/);
+  assert.match(makefile, /BUILD_MODIFIED \?= \$\(if \$\(shell git status --porcelain/);
+  assert.doesNotMatch(makefile, /BUILD_MODIFIED[^\n]*--untracked-files=no/);
+  assert.match(makefile, /else\nBUILD_COMMIT \?= unknown\nBUILD_TIME \?= unknown\nBUILD_MODIFIED \?= false\nendif/);
+  for (const [symbol, variable] of [
+    ['Commit', 'BUILD_COMMIT'],
+    ['BuildTime', 'BUILD_TIME'],
+    ['Modified', 'BUILD_MODIFIED'],
+  ]) {
+    assert.match(
+      makefile,
+      new RegExp(`-X github\\.com/abietic/yhc/internal/buildinfo\\.${symbol}=\\$\\(${variable}\\)`),
+    );
+  }
+});
+
 test('packaged artifact retains project, Marked, Electron, and Chromium license material', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-package-notices-'));
   try {

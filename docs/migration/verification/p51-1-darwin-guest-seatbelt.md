@@ -93,5 +93,6 @@ file-descriptor, and process-count limits are absent. Shell hooks and configured
 stdio MCP remain ambient; HTTP hooks and standalone MCP are outside this
 process envelope. Linux and Windows do not gain a simulated sandbox. The
 aggregate Darwin Guest state remains `degraded`, G28 remains open, and this
-evidence proves no Auto Permission prompt reduction. P51.2 requires a separate
-intake, implementation, and permission matrix.
+P51.1 evidence by itself proves no Auto Permission prompt reduction. P51.2 Core
+later added that separate permission matrix; its evidence is recorded in
+[`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md).

@@ -94,6 +94,11 @@ tool call. Resolution uses a typed request tied to server-side identity. An
 unknown or unprojectable interaction is non-actionable and tells the user to
 reload, rather than guessing a broad permission response.
 
+Permission cards consume the engine-owned decision constraint described by the
+[permissions architecture](capabilities/permissions.md). A critical Bash
+request therefore exposes only `allow_once`; AppServer also rejects forged
+session/always resolutions before engine settlement rechecks the same bound.
+
 Repeated-tool cards are bound to the exact guarded attempt and canonical tool
 identity. Their controls can continue that call once or stop it; they do not
 create cross-request or always-allow authority.

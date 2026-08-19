@@ -113,11 +113,14 @@ function validPermission(value, normalized) {
       normalized.evidence.length === 0 &&
       scopes.length === 1 && scopes[0] === 'allow_once';
   }
+  const validGrantScopes =
+    (scopes.length === 1 && scopes[0] === 'allow_once') ||
+    (scopes.length === permissionScopes.length &&
+      permissionScopes.every((scope, index) => scopes[index] === scope));
   return boundedString(normalized.toolLabel, 96, true) &&
     normalized.summary === 'Allow this tool action?' &&
     evidenceLabels.filter((label) => label === 'Access').length === 1 &&
-    scopes.length === permissionScopes.length &&
-    permissionScopes.every((scope, index) => scopes[index] === scope);
+    validGrantScopes;
 }
 
 function normalizeQuestions(value) {

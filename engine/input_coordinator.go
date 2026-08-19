@@ -127,12 +127,13 @@ type RuntimeAsyncRewake struct {
 // ProjectGraph interrupt. The decision is never approval authority by itself:
 // resume re-evaluates the current invocation and policy before committing it.
 type RuntimePermissionDecision struct {
-	Version          int                         `json:"version"`
-	RequestID        string                      `json:"request_id"`
-	InterruptID      string                      `json:"interrupt_id"`
-	InvocationDigest string                      `json:"invocation_digest"`
-	PolicyRevision   string                      `json:"policy_revision"`
-	Result           PermissionInteractionResult `json:"result"`
+	Version            int                          `json:"version"`
+	RequestID          string                       `json:"request_id"`
+	InterruptID        string                       `json:"interrupt_id"`
+	InvocationDigest   string                       `json:"invocation_digest"`
+	PolicyRevision     string                       `json:"policy_revision"`
+	DecisionConstraint PermissionDecisionConstraint `json:"decision_constraint,omitempty"`
+	Result             PermissionInteractionResult  `json:"result"`
 }
 
 // RuntimeGoalContinuation is the immutable delivery claim for one exact
@@ -1506,7 +1507,8 @@ func (c *RuntimeInputCoordinator) validateItem(item RuntimeItem) error {
 			strings.TrimSpace(item.PermissionDecision.RequestID) == "" ||
 			strings.TrimSpace(item.PermissionDecision.InterruptID) == "" ||
 			strings.TrimSpace(item.PermissionDecision.InvocationDigest) == "" ||
-			strings.TrimSpace(item.PermissionDecision.PolicyRevision) == "" {
+			strings.TrimSpace(item.PermissionDecision.PolicyRevision) == "" ||
+			!item.PermissionDecision.DecisionConstraint.valid() {
 			return fmt.Errorf(
 				"runtime input coordinator: item %q has invalid permission decision",
 				item.ID,

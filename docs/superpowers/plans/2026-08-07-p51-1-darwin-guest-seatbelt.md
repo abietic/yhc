@@ -5,7 +5,7 @@
 
 **Status:** historical
 **Completed:** 2026-08-08
-**Queue state:** completed and removed; P51.2 remains pending intake
+**Queue state:** completed and removed; P51.2 Core later completed
 **Created:** 2026-08-07
 **Source snapshot:** `origin/master` at
 `6ae2573aa3854a514fe550248b316921fa9a2984`

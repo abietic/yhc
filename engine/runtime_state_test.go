@@ -409,6 +409,19 @@ func TestRuntimeStateStoreBoundsThreadsAndUnresolvedInteractions(t *testing.T) {
 	}
 }
 
+func TestP512RuntimeInteractionRetainsDecisionConstraint(t *testing.T) {
+	store := NewRuntimeStateStore(RuntimeStoreLimits{})
+	event := runtimeTestEvent(1, "turn-1", EventPermissionRequest, func(evt *QueryEvent) {
+		evt.PermissionRequest = &PermissionRequestEvent{ToolName: "Bash", ToolUseID: "constraint-call", DecisionConstraint: PermissionAllowOnceOnly}
+	})
+	if err := store.Apply(event); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Snapshot("thread-1").Threads["thread-1"].PendingInteractions["constraint-call"].DecisionConstraint; got != PermissionAllowOnceOnly {
+		t.Fatalf("decision constraint = %q", got)
+	}
+}
+
 func TestRuntimeStateStoreReducesAndBoundsLocalTasks(t *testing.T) {
 	store := NewRuntimeStateStore(RuntimeStoreLimits{Tasks: 1})
 	completed := runtimeTestEvent(1, "turn-1", EventTaskLifecycle, func(evt *QueryEvent) {

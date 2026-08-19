@@ -60,21 +60,22 @@ func init() {
 // checkpoint and are verified through InvocationDigest before a decision can
 // be committed.
 type projectGraphHITLRequest struct {
-	Version           int                     `json:"version"`
-	RequestID         string                  `json:"request_id"`
-	InterruptID       string                  `json:"interrupt_id,omitempty"`
-	InvocationDigest  string                  `json:"invocation_digest"`
-	PolicyRevision    string                  `json:"policy_revision"`
-	ToolName          string                  `json:"tool_name"`
-	CanonicalToolName string                  `json:"canonical_tool_name,omitempty"`
-	Input             map[string]any          `json:"input,omitempty"`
-	Message           string                  `json:"message,omitempty"`
-	SessionScope      string                  `json:"session_scope,omitempty"`
-	Scope             RuntimeInputScope       `json:"scope"`
-	Kind              string                  `json:"kind"`
-	Attempt           int                     `json:"attempt,omitempty"`
-	PlanApproval      *PlanApprovalRequest    `json:"plan_approval,omitempty"`
-	Presentation      *PermissionPresentation `json:"presentation,omitempty"`
+	Version            int                          `json:"version"`
+	RequestID          string                       `json:"request_id"`
+	InterruptID        string                       `json:"interrupt_id,omitempty"`
+	InvocationDigest   string                       `json:"invocation_digest"`
+	PolicyRevision     string                       `json:"policy_revision"`
+	ToolName           string                       `json:"tool_name"`
+	CanonicalToolName  string                       `json:"canonical_tool_name,omitempty"`
+	Input              map[string]any               `json:"input,omitempty"`
+	Message            string                       `json:"message,omitempty"`
+	SessionScope       string                       `json:"session_scope,omitempty"`
+	Scope              RuntimeInputScope            `json:"scope"`
+	Kind               string                       `json:"kind"`
+	Attempt            int                          `json:"attempt,omitempty"`
+	PlanApproval       *PlanApprovalRequest         `json:"plan_approval,omitempty"`
+	Presentation       *PermissionPresentation      `json:"presentation,omitempty"`
+	DecisionConstraint PermissionDecisionConstraint `json:"decision_constraint,omitempty"`
 }
 
 type projectGraphHITLInterruptInfo struct {
@@ -557,6 +558,13 @@ func validateProjectGraphHITLRequest(
 	if request.Kind == "" {
 		return fmt.Errorf("project graph HITL request has no interaction kind")
 	}
+	if !request.DecisionConstraint.valid() {
+		return fmt.Errorf("project graph HITL request has invalid decision constraint")
+	}
+	if request.Kind != PermissionInteractionKindPermission &&
+		request.DecisionConstraint != PermissionDecisionUnconstrained {
+		return fmt.Errorf("project graph HITL decision constraint is invalid for interaction kind")
+	}
 	if request.PlanApproval != nil &&
 		(request.PlanApproval.RequestID != request.RequestID ||
 			request.PlanApproval.PlanRevision == 0 ||
@@ -577,13 +585,17 @@ func validateProjectGraphResumeDecision(
 		decision.RequestID != request.RequestID ||
 		decision.InterruptID != request.InterruptID ||
 		decision.InvocationDigest != request.InvocationDigest ||
-		decision.PolicyRevision != request.PolicyRevision {
+		decision.PolicyRevision != request.PolicyRevision ||
+		decision.DecisionConstraint != request.DecisionConstraint {
 		return fmt.Errorf("project graph resume decision identity mismatch")
 	}
 	switch decision.Result.Decision {
 	case PermissionAllowOnce, PermissionAllowSession, PermissionAllowAlways,
 		PermissionDeny, PermissionCancelled, PermissionTimedOut:
-		return nil
+		if request.DecisionConstraint.permits(decision.Result.Decision) {
+			return nil
+		}
+		return fmt.Errorf("project graph resume decision violates request constraint")
 	default:
 		return fmt.Errorf("project graph resume decision is invalid")
 	}
@@ -724,7 +736,8 @@ func withProjectGraphHITLExecution(
 		execution.basePolicyRevision = cloned[0].PolicyRevision
 		execution.currentPolicyRevision = execution.basePolicyRevision
 		for _, decision := range cloned {
-			if decision.PolicyRevision != execution.basePolicyRevision {
+			if decision.PolicyRevision != execution.basePolicyRevision ||
+				!decision.DecisionConstraint.valid() {
 				execution.invalid = true
 				break
 			}
@@ -765,7 +778,8 @@ func projectGraphHITLDecisionForRequest(
 	for _, decision := range decisions {
 		if decision.RequestID == request.RequestID &&
 			decision.InvocationDigest == request.InvocationDigest &&
-			decision.PolicyRevision == request.PolicyRevision {
+			decision.PolicyRevision == request.PolicyRevision &&
+			decision.DecisionConstraint == request.DecisionConstraint {
 			return decision, true
 		}
 	}
@@ -782,7 +796,8 @@ func projectGraphHITLExecutionDecisionForRequest(
 ) (RuntimePermissionDecision, bool) {
 	for _, decision := range decisions {
 		if decision.RequestID == request.RequestID &&
-			decision.InvocationDigest == request.InvocationDigest {
+			decision.InvocationDigest == request.InvocationDigest &&
+			decision.DecisionConstraint == request.DecisionConstraint {
 			return decision, true
 		}
 	}
@@ -834,13 +849,14 @@ func (e *QueryEngine) resolveProjectGraphHITLPermission(
 			request.ToolName,
 			request.Input,
 		),
-		Message:      strings.TrimSpace(request.Message),
-		SessionScope: strings.TrimSpace(request.SessionScope),
-		Scope:        scope,
-		Kind:         permissionInteractionKind(request),
-		Attempt:      request.Attempt,
-		PlanApproval: request.PlanApproval,
-		Presentation: clonePermissionPresentation(request.Presentation),
+		Message:            strings.TrimSpace(request.Message),
+		SessionScope:       strings.TrimSpace(request.SessionScope),
+		Scope:              scope,
+		Kind:               permissionInteractionKind(request),
+		Attempt:            request.Attempt,
+		PlanApproval:       request.PlanApproval,
+		Presentation:       clonePermissionPresentation(request.Presentation),
+		DecisionConstraint: request.DecisionConstraint,
 	}
 	if err := validateProjectGraphHITLRequest(durable, false); err != nil {
 		return false, err.Error()
@@ -901,6 +917,7 @@ func (e *QueryEngine) resolveProjectGraphHITLPermission(
 		actualRevision := e.projectGraphPolicyRevision(request.ToolContext)
 		if execution.invalid ||
 			decision.PolicyRevision != execution.basePolicyRevision ||
+			decision.DecisionConstraint != durable.DecisionConstraint ||
 			actualRevision != execution.currentPolicyRevision {
 			execution.invalid = execution.invalid ||
 				actualRevision != execution.currentPolicyRevision
@@ -1023,16 +1040,17 @@ func (e *QueryEngine) reprojectProjectGraphInterrupt(
 	e.decorateRuntimeEvent(turnID, QueryEvent{
 		Type: EventPermissionRequest,
 		PermissionRequest: &PermissionRequestEvent{
-			ToolName:          request.ToolName,
-			CanonicalToolName: request.CanonicalToolName,
-			ToolUseID:         request.RequestID,
-			Input:             cloneInputMap(request.Input),
-			Message:           request.Message,
-			Source:            "project_graph",
-			Kind:              request.Kind,
-			Attempt:           request.Attempt,
-			PlanApproval:      request.PlanApproval,
-			Presentation:      clonePermissionPresentation(request.Presentation),
+			ToolName:           request.ToolName,
+			CanonicalToolName:  request.CanonicalToolName,
+			ToolUseID:          request.RequestID,
+			Input:              cloneInputMap(request.Input),
+			Message:            request.Message,
+			Source:             "project_graph",
+			Kind:               request.Kind,
+			Attempt:            request.Attempt,
+			PlanApproval:       request.PlanApproval,
+			Presentation:       clonePermissionPresentation(request.Presentation),
+			DecisionConstraint: request.DecisionConstraint,
 		},
 	})
 	terminal := Terminal{Reason: TerminalWaitingInput}
@@ -1068,16 +1086,17 @@ func (e *QueryEngine) PendingProjectGraphPermissionRequest() (
 		request.Presentation,
 	)
 	return PermissionRequestEvent{
-		ToolName:          request.ToolName,
-		CanonicalToolName: request.CanonicalToolName,
-		ToolUseID:         request.RequestID,
-		Input:             cloneInputMap(request.Input),
-		Message:           request.Message,
-		Source:            "project_graph",
-		Kind:              request.Kind,
-		Attempt:           request.Attempt,
-		PlanApproval:      request.PlanApproval,
-		Presentation:      clonePermissionPresentation(request.Presentation),
+		ToolName:           request.ToolName,
+		CanonicalToolName:  request.CanonicalToolName,
+		ToolUseID:          request.RequestID,
+		Input:              cloneInputMap(request.Input),
+		Message:            request.Message,
+		Source:             "project_graph",
+		Kind:               request.Kind,
+		Attempt:            request.Attempt,
+		PlanApproval:       request.PlanApproval,
+		Presentation:       clonePermissionPresentation(request.Presentation),
+		DecisionConstraint: request.DecisionConstraint,
 	}, true
 }
 
@@ -1087,19 +1106,21 @@ func projectGraphInvocationDigest(
 	toolSchemaDigest string,
 ) string {
 	encoded, _ := json.Marshal(struct {
-		ToolName         string               `json:"tool_name"`
-		ToolUseID        string               `json:"tool_use_id"`
-		Input            map[string]any       `json:"input"`
-		Scope            RuntimeInputScope    `json:"scope"`
-		ToolSchemaDigest string               `json:"tool_schema_digest"`
-		PlanApproval     *PlanApprovalRequest `json:"plan_approval,omitempty"`
+		ToolName           string                       `json:"tool_name"`
+		ToolUseID          string                       `json:"tool_use_id"`
+		Input              map[string]any               `json:"input"`
+		Scope              RuntimeInputScope            `json:"scope"`
+		ToolSchemaDigest   string                       `json:"tool_schema_digest"`
+		PlanApproval       *PlanApprovalRequest         `json:"plan_approval,omitempty"`
+		DecisionConstraint PermissionDecisionConstraint `json:"decision_constraint,omitempty"`
 	}{
-		ToolName:         strings.TrimSpace(request.ToolName),
-		ToolUseID:        strings.TrimSpace(request.ToolUseID),
-		Input:            cloneInputMap(request.Input),
-		Scope:            scope,
-		ToolSchemaDigest: toolSchemaDigest,
-		PlanApproval:     request.PlanApproval,
+		ToolName:           strings.TrimSpace(request.ToolName),
+		ToolUseID:          strings.TrimSpace(request.ToolUseID),
+		Input:              cloneInputMap(request.Input),
+		Scope:              scope,
+		ToolSchemaDigest:   toolSchemaDigest,
+		PlanApproval:       request.PlanApproval,
+		DecisionConstraint: request.DecisionConstraint,
 	})
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:])
@@ -1254,7 +1275,8 @@ func projectGraphHITLStateForNode(
 	if decision.Version != projectGraphHITLDecisionVersion ||
 		decision.RequestID != state.Request.RequestID ||
 		decision.InvocationDigest != state.Request.InvocationDigest ||
-		decision.PolicyRevision != state.Request.PolicyRevision {
+		decision.PolicyRevision != state.Request.PolicyRevision ||
+		decision.DecisionConstraint != state.Request.DecisionConstraint {
 		return nil, nil, fmt.Errorf(
 			"project graph HITL resume decision identity mismatch",
 		)
@@ -1262,6 +1284,11 @@ func projectGraphHITLStateForNode(
 	switch decision.Result.Decision {
 	case PermissionAllowOnce, PermissionAllowSession, PermissionAllowAlways,
 		PermissionDeny, PermissionCancelled, PermissionTimedOut:
+		if !state.Request.DecisionConstraint.permits(decision.Result.Decision) {
+			return nil, nil, fmt.Errorf(
+				"project graph HITL resume decision violates request constraint",
+			)
+		}
 	default:
 		return nil, nil, fmt.Errorf(
 			"project graph HITL resume decision is invalid",
@@ -1274,6 +1301,7 @@ func projectGraphHITLStateForNode(
 		}
 		if existing.InvocationDigest != decision.InvocationDigest ||
 			existing.PolicyRevision != decision.PolicyRevision ||
+			existing.DecisionConstraint != decision.DecisionConstraint ||
 			!permissionInteractionResultsEqual(
 				existing.Result,
 				decision.Result,

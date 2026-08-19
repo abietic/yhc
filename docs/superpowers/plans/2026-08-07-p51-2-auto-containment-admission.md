@@ -1,19 +1,21 @@
 # Auto Permission Containment Admission Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `$migration-slice` only after
-> the root queue admits P51.2, then use `$iteration-workflow` for test-first
-> execution, diff-bound verification, and closeout.
+> **Historical use:** Retained as the original implementation sketch; do not
+> execute this checklist as current queue state. The master-native
+> [`P51.2 Core contract`](../../migration/plans/p51-2-auto-containment-admission.md)
+> supersedes its critical-command and entrypoint details.
 
-**Status:** active-plan
-**Queue state:** pending independent intake; not present in the root queue
+**Status:** historical
+**Queue state:** Core completed and removed; Desktop projection deferred
+**Completed:** 2026-08-19
 **Created:** 2026-08-07
 **Source snapshot:** `origin/master` at
 `de74294b29f40d19bfd0e37f09889bd6f8037d90`
 **Adoption:** `project-native`
 
-> **Ownership:** candidate test-first delivery plan for P51.2, the Auto
-> Permission stage accepted in design but not yet promoted by the root queue;
-> see the [Darwin Sandbox And Auto Permission Design](../specs/2026-08-07-darwin-sandbox-auto-permission-design.md)
+> **Ownership:** original test-first delivery plan for P51.2; current behavior
+> belongs to architecture and the master-native Core contract; see the
+> [Darwin Sandbox And Auto Permission Design](../specs/2026-08-07-darwin-sandbox-auto-permission-design.md)
 
 **Goal:** Remove routine Auto-mode Bash permission requests only when the exact
 canonical action is bound to the exact Darwin Guest containment proof, while
@@ -22,8 +24,10 @@ rewrite re-evaluation, and pre-dispatch binding validation.
 
 **Architecture:** QueryEngine projects immutable local containment facts into
 `PermissionActionDescriptor`; those facts never enter the semantic reviewer.
-After explicit deny/ask and exact user authority, a narrow deterministic gate
-may allow canonical Bash in `ModeAuto`. The settled action binds the Guest
+After Plan and explicit deny, the delivered Core recognizes narrow critical
+Bash before positive authority. Non-critical exact local/user rules remain
+separate explicit authority, and a later deterministic gate may allow
+canonical Bash in `ModeAuto` from complete Guest proof. The settled action binds the Guest
 policy/proof generation, and `toolExecutor` plus `ShellManager` revalidate it
 immediately before execution. Containment stays active in every permission mode.
 
@@ -33,15 +37,16 @@ ShellManager, entrypoint fixtures, race detector, and Makefile gates.
 
 ## Global Constraints
 
-- Execute only after P51.1 is merged and root `docs/migration/queue.yaml`
-  admits P51.2 as its sole `Ready` slice.
+- Historical prerequisite: execute only after P51.1 is merged and the root
+  queue admits P51.2. Both conditions were satisfied before Core completion.
 - Only `ModeAuto` plus canonical built-in `Bash` may use the shortcut. Do not
   change Default, Plan, AcceptEdits, DontAsk, Bypass, or Bubble semantics.
 - Bypass may skip permission but never bypasses Seatbelt.
-- Explicit deny and ask rules, Plan containment, tool selection, schema/custom
-  validation, and exact user authority retain their current ordering.
-- Deterministically destructive Bash prompts unless exact user authority covers
-  the same canonical command/input.
+- Plan containment, tool selection, schema/custom validation, and explicit deny
+  retain authority. The narrow critical literal corpus is recognized before
+  explicit ask/allow and other positive authority.
+- Critical literal `rm`/`rmdir` always requires a fresh live `AllowOnce`;
+  exact user authority does not cover it.
 - Require filesystem read/write, network denial, root identity, descendant
   confinement, descendant cleanup, wall time, and output axes. Deliberately do
   not require memory, file descriptors, or process count.
@@ -189,19 +194,17 @@ non-empty policy/binding digest and generation, availability, the accepted
 adapter/runtime source masks, and the complete combined mask. Explicitly ignore
 memory/FD/process-count axes rather than requiring or fabricating them.
 
-- [ ] **Step 2: Keep exact user authority ahead of risk prompting**
+- [ ] **Step 2: Keep exact user authority separate from critical prompting**
 
-Retain `approvalAuthorizesAction` and exact user/local rule authority before the
-new gate. Then classify canonical Bash with the existing deterministic
-`ToolRiskClassifier`:
+Retain exact user/local rule authority for non-critical actions, but recognize
+the narrow literal critical corpus first. The delivered Core uses
+`ClassifyBashCriticalPath` and an `allow_once_only` constraint rather than the
+broader historical `ToolRiskClassifier` sketch:
 
 ```go
-risk := permission.NewToolRiskClassifier().Classify(
-    actionDescriptor.CanonicalToolName,
-    actionDescriptor.Input,
-)
-if risk.Level == permission.RiskDestructive {
-    allowed, reason := e.promptForTool(
+risk := permission.ClassifyBashCriticalPath(command, root, home)
+if risk.Match {
+    allowed, reason := e.promptForCriticalBash(
         ctx,
         inner,
         toolName,
@@ -222,8 +225,10 @@ if autoContainmentAdmits(actionDescriptor) {
 }
 ```
 
-Use the existing prompt/settlement owner rather than adding a second prompt
-API. Read-only, write, and unknown Bash risks may take the shortcut.
+Use the existing coordinator and settlement owner rather than adding a second
+authority. Non-critical and unknown syntax may take the proof-bound or existing
+fallback path. Exact local/user rules remain independent explicit authority
+and never receive the proof-bound admission marker.
 
 - [ ] **Step 3: Preserve all preceding authorities**
 

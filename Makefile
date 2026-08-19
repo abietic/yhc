@@ -70,7 +70,20 @@ PROV_MODEL ?= deepseek-v4-flash
 
 # Release flags
 VERSION ?= 0.1.0
-LDFLAGS := -s -w -X github.com/abietic/yhc/internal/buildinfo.Version=$(VERSION)
+ifneq ($(wildcard .git),)
+BUILD_COMMIT ?= $(shell git rev-parse --verify HEAD 2>/dev/null || printf '%s' unknown)
+BUILD_TIME ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || printf '%s' unknown)
+BUILD_MODIFIED ?= $(if $(shell git status --porcelain 2>/dev/null),true,false)
+else
+BUILD_COMMIT ?= unknown
+BUILD_TIME ?= unknown
+BUILD_MODIFIED ?= false
+endif
+LDFLAGS := -s -w \
+	-X github.com/abietic/yhc/internal/buildinfo.Version=$(VERSION) \
+	-X github.com/abietic/yhc/internal/buildinfo.Commit=$(BUILD_COMMIT) \
+	-X github.com/abietic/yhc/internal/buildinfo.BuildTime=$(BUILD_TIME) \
+	-X github.com/abietic/yhc/internal/buildinfo.Modified=$(BUILD_MODIFIED)
 
 # Debug flags: disable inlining and optimizations so breakpoints work correctly
 GC_FLAGS_DEBUG := all=-N -l

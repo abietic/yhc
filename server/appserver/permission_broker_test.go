@@ -67,6 +67,9 @@ func TestPermissionBrokerRejectsUntypedOrMismatchedProducerIdentity(t *testing.T
 		"permission carries plan": func(request *engine.PermissionPromptRequest) {
 			request.PlanApproval = &engine.PlanApprovalRequest{RequestID: request.ToolUseID}
 		},
+		"invalid decision constraint": func(request *engine.PermissionPromptRequest) {
+			request.DecisionConstraint = engine.PermissionDecisionConstraint("invalid")
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := clonePromptRequest(valid)
@@ -87,6 +90,11 @@ func TestPermissionBrokerRejectsUntypedOrMismatchedProducerIdentity(t *testing.T
 	repeated.Attempt = 2
 	if _, ok := permissionRequestDigest(repeated); ok {
 		t.Fatal("repeated request with mismatched attempt was admitted")
+	}
+	repeated.Attempt = 3
+	repeated.DecisionConstraint = engine.PermissionAllowOnceOnly
+	if _, ok := permissionRequestDigest(repeated); ok {
+		t.Fatal("non-permission request with decision constraint was admitted")
 	}
 }
 
@@ -238,10 +246,12 @@ func TestPermissionPromptRequestClonesPresentation(t *testing.T) {
 	event := engine.PermissionRequestEvent{
 		Kind: engine.PermissionInteractionKindPermission, Source: "coordinator",
 		ToolName: "write_alias", CanonicalToolName: "Write", ToolUseID: "permission-1",
-		Presentation: presentation,
+		Presentation:       presentation,
+		DecisionConstraint: engine.PermissionAllowOnceOnly,
 	}
 	request := permissionPromptRequest("session-1", "thread-1", "agent-1", event)
-	if request.Presentation == nil || request.Presentation == presentation {
+	if request.Presentation == nil || request.Presentation == presentation ||
+		request.DecisionConstraint != engine.PermissionAllowOnceOnly {
 		t.Fatalf("presentation clone = %#v", request.Presentation)
 	}
 	request.Presentation.Evidence[0].Value = "mutated"
@@ -315,6 +325,23 @@ func TestPermissionBrokerConflict(t *testing.T) {
 	}
 	broker.observeEvent(request, "turn-conflict")
 	broker.prepare(request)
+	assertPermissionRetired(t, broker, request.ToolUseID)
+}
+
+func TestPermissionBrokerDecisionConstraintIsPartOfRequestIdentity(t *testing.T) {
+	broker := newPermissionBroker()
+	request := permissionBrokerTestRequest("constraint-conflict")
+	resultCh := waitForBrokerResult(context.Background(), broker, request)
+	waitForPermissionWaiter(t, broker, request.ToolUseID, func(waiter *permissionWaiter) bool {
+		return waiter.callbackObserved
+	})
+
+	conflict := clonePromptRequest(request)
+	conflict.DecisionConstraint = engine.PermissionAllowOnceOnly
+	broker.observeEvent(conflict, "turn-constraint-conflict")
+	if result := receiveBrokerResult(t, resultCh); result.Decision != engine.PermissionCancelled {
+		t.Fatalf("constraint conflict result = %#v", result)
+	}
 	assertPermissionRetired(t, broker, request.ToolUseID)
 }
 
@@ -465,6 +492,38 @@ func TestPermissionBrokerUnavailablePresentationAllowsOnceOnly(t *testing.T) {
 	})
 	if broker.resolve(request.ToolUseID, permissionResolution(engine.PermissionAllowOnce)) != interactionResolveAccepted {
 		t.Fatal("unavailable presentation rejected allow_once")
+	}
+	if result := receiveBrokerResult(t, resultCh); result.Decision != engine.PermissionAllowOnce {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestPermissionBrokerDecisionConstraintProjectsAndAcceptsAllowOnceOnly(t *testing.T) {
+	broker := newPermissionBroker()
+	request := permissionBrokerTestRequest("constrained-scope")
+	request.DecisionConstraint = engine.PermissionAllowOnceOnly
+	broker.observeEvent(request, "turn-constrained")
+	resultCh := waitForBrokerResult(context.Background(), broker, request)
+	waitForPermissionWaiter(t, broker, request.ToolUseID, func(waiter *permissionWaiter) bool {
+		return waiter.eventObserved && waiter.callbackObserved
+	})
+
+	interaction, ok := broker.interaction(request.ToolUseID)
+	if !ok || interaction.Permission == nil || !interaction.Permission.Available ||
+		len(interaction.Permission.GrantScopes) != 1 ||
+		interaction.Permission.GrantScopes[0] != string(engine.PermissionAllowOnce) {
+		t.Fatalf("constrained interaction = %#v", interaction)
+	}
+	for _, forbidden := range []engine.PermissionInteractionDecision{
+		engine.PermissionAllowSession,
+		engine.PermissionAllowAlways,
+	} {
+		if broker.resolve(request.ToolUseID, permissionResolution(forbidden)) != interactionResolveInvalid {
+			t.Fatalf("constrained presentation accepted %q", forbidden)
+		}
+	}
+	if broker.resolve(request.ToolUseID, permissionResolution(engine.PermissionAllowOnce)) != interactionResolveAccepted {
+		t.Fatal("constrained presentation rejected allow_once")
 	}
 	if result := receiveBrokerResult(t, resultCh); result.Decision != engine.PermissionAllowOnce {
 		t.Fatalf("result = %#v", result)
