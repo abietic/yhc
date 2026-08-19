@@ -24,6 +24,7 @@
     "icon": "assets/icon.png",
     "files": [
       "main.cjs",
+      "bootstrap.cjs",
       "lifecycle.cjs",
       "provider_setup.cjs",
       "request.cjs",

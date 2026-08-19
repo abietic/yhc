@@ -41,7 +41,7 @@ make desktop-package
 ```
 
 The package command creates a local artifact under `desktop/dist/`.
-`app.asar` contains only the six declared Desktop host files, while the WebUI
+`app.asar` contains only the seven declared Desktop host files, while the WebUI
 tree and platform backend under `resources/` must match the staged source bytes
 exactly. Unix backends must remain executable. `resources/licenses/` retains
 the YHC and Marked material plus the license and Chromium third-party
@@ -50,6 +50,14 @@ these contracts is incomplete, unsafe, or divergent. CI repeats the unpacked
 assembly for Linux x64 without uploading it as a release artifact. The output
 is still ignored QA evidence, not proof of code signing, notarization, or
 release readiness.
+
+`desktop/package.json` is the Desktop version source. Its canonical version has
+no `v` prefix. The supported Desktop Make targets depend on that manifest and
+inject its version into the staged Go backend; on startup, Electron rejects a
+backend that reports a different or malformed identity. Once connected, the
+sidebar footer shows the accepted version, short commit, and `dirty` marker
+when applicable. This is an accidental-mismatch guard, not proof that a binary
+is authentic or signed.
 
 On a Linux x64 host with `xvfb-run`, the same full unpacked lifecycle gate is:
 
@@ -115,7 +123,7 @@ configuration is no longer valid.
 | A saved session fails when first sent | Read the safe turn error, then choose a compatible provider/model or create a new session. The app cannot infer that one provider's credential or HTTP dialect is safe for another. |
 | Legacy history cannot continue | Stop every older producer, then use **Import and continue**. A failed import keeps history and the draft available for retry and does not modify the legacy bytes. |
 | A decision card has no actionable control | Reload session state. The server fails closed when it cannot project a safe typed interaction. |
-| Desktop app will not start | Run `make desktop-check`, then use `make desktop-dev` to see local backend/Electron diagnostics. |
+| Desktop app will not start | Run `make desktop-check`, then rebuild and stage the paired backend with `make desktop-dev`. A `YHC_BIN` override or stale staged binary whose version does not match the Electron shell is intentionally rejected. |
 
 The app-server uses loopback authentication and does not make a remote provider
 compatible by itself. Endpoint-specific tool schemas, provider credentials,

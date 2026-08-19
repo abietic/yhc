@@ -8,6 +8,7 @@ const {
 } = require('./verify_packaged_notices.cjs');
 
 const REQUIRED_ARCHIVE_FILES = Object.freeze([
+  'bootstrap.cjs',
   'lifecycle.cjs',
   'main.cjs',
   'package.json',

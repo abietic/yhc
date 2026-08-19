@@ -1,7 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { interactionViewModel } from '../../internal/webui/assets/view_models.mjs';
+import {
+  buildIdentityViewModel,
+  interactionViewModel,
+} from '../../internal/webui/assets/view_models.mjs';
+
+test('Desktop build identity is bounded text and browser surfaces hide it', () => {
+  assert.deepEqual(buildIdentityViewModel({
+    surface: 'desktop',
+    build: { version: '0.1.0', commit: '0123456789ab', modified: true },
+  }), {
+    visible: true,
+    text: 'v0.1.0 · 0123456789ab · dirty',
+  });
+  assert.deepEqual(buildIdentityViewModel({
+    surface: 'desktop',
+    build: { version: '0.1.0', commit: 'unknown', modified: false },
+  }), {
+    visible: true,
+    text: 'v0.1.0 · unknown',
+  });
+  for (const info of [
+    { surface: 'web', build: { version: '0.1.0', commit: '0123456789ab', modified: false } },
+    { surface: 'desktop' },
+    { surface: 'desktop', build: { version: '<img src=x>', commit: '0123456789ab', modified: false } },
+  ]) {
+    assert.deepEqual(buildIdentityViewModel(info), { visible: false, text: '' });
+  }
+});
 
 test('interaction view models expose only the tagged v2 renderer fields', () => {
   const view = interactionViewModel({ request_id: 'q1', turn_id: 'turn-1', kind: 'question', input: { command: 'secret' }, message: 'raw',

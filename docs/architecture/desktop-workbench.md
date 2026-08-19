@@ -80,6 +80,21 @@ clears the submitted API key and receives status rather than the credential.
 These measures do not validate an arbitrary provider's credential, endpoint,
 or tool schema.
 
+The backend bootstrap also projects one bounded build identity: a canonical
+Desktop version (numeric prefix, no `v`, at most 64 ASCII characters), a
+twelve-character lowercase commit or `unknown`, and the modified flag. The
+Electron host accepts the bootstrap only when the backend version exactly
+matches `app.getVersion()`. A timeout, malformed identity, or mismatch
+marks the child as intentionally stopping before it is killed, so that
+rejection cannot later be projected as an unexpected backend crash. The
+renderer receives only this bounded build object through `app:get-info` and
+shows it as plain text in the Desktop footer; the browser surface does not.
+
+This identity check detects accidental shell/backend combinations. It is not
+binary authentication, signature verification, or tamper resistance: an
+arbitrary replacement binary can still claim the expected version and build
+fields.
+
 ## Renderer projections
 
 The renderer keeps a bounded session state and reconciles snapshots with SSE.
@@ -141,9 +156,13 @@ credentials to another endpoint or silently switch provider protocols.
 
 ## Entry points and verification boundary
 
-`make desktop-dev` stages the host backend then starts Electron. `make
-desktop-check` runs the renderer/host tests and Node syntax checks; `make
-desktop-package` builds a local unpacked Electron artifact. Its
+`desktop/package.json` owns the Desktop version used by both Electron and the
+backend staged by the supported Desktop Make targets. Electron accepts the
+backend bootstrap only when that version and its bounded build identity are
+well formed and match the shell. `make desktop-dev` stages the host backend
+then starts Electron. `make desktop-check` runs the renderer/host tests and
+Node syntax checks; `make desktop-package` builds a local unpacked Electron
+artifact. Its
 [`afterPack` verifier](../../desktop/scripts/verify_packaged_artifact.cjs)
 requires the exact application archive entry set, a byte-identical WebUI tree,
 the byte-identical staged platform backend, an executable Unix backend, and the

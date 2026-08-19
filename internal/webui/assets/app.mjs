@@ -46,7 +46,10 @@ import {
   synchronizeReplayGap,
 } from './replay.mjs';
 import { createTransport } from './transport.mjs';
-import { interactionViewModel } from './view_models.mjs';
+import {
+  buildIdentityViewModel,
+  interactionViewModel,
+} from './view_models.mjs';
 
 const DESCRIPTOR_KEY = 'yhc.desktop.sessions.v1';
 const DRAFT_KEY = 'yhc.desktop.drafts.v1';
@@ -2140,6 +2143,10 @@ async function bootstrapApp() {
     throw new Error('Backend protocol mismatch');
   }
   surface = info.surface;
+  const buildIdentity = buildIdentityViewModel(info);
+  const buildIdentityNode = $('build-identity');
+  buildIdentityNode.hidden = !buildIdentity.visible;
+  buildIdentityNode.textContent = buildIdentity.text;
   try {
     providerSetup = providerSetupProjection(
       surface,

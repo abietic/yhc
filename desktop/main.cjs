@@ -3,6 +3,10 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  parseBackendBootstrap,
+  rejectBackendBootstrap,
+} = require('./bootstrap.cjs');
+const {
   activeTurnQuitPrompt,
   activeTurnSessions,
   quitInspectionFailurePrompt,
@@ -130,8 +134,12 @@ async function startBackend() {
       else resolve(value);
     };
     const timeout = setTimeout(() => {
-      child.kill('SIGKILL');
-      settle(new Error('backend bootstrap timed out'));
+      rejectBackendBootstrap(
+        child,
+        stoppingBackends,
+        settle,
+        new Error('backend bootstrap timed out'),
+      );
     }, BOOTSTRAP_TIMEOUT_MS);
 
     child.on('error', () => {
@@ -162,35 +170,22 @@ async function startBackend() {
       if (settled) return;
       output += chunk.toString('utf8');
       if (output.length > MAX_BOOTSTRAP_BYTES) {
-        child.kill('SIGKILL');
-        settle(new Error('backend bootstrap exceeded the size limit'));
+        rejectBackendBootstrap(
+          child,
+          stoppingBackends,
+          settle,
+          new Error('backend bootstrap exceeded the size limit'),
+        );
         return;
       }
       const newline = output.indexOf('\n');
       if (newline < 0) return;
       try {
         const value = JSON.parse(output.slice(0, newline));
-        if (
-          !value ||
-          typeof value.url !== 'string' ||
-          typeof value.token !== 'string' ||
-          value.protocol_version !== 2
-        ) {
-          throw new Error('invalid backend bootstrap');
-        }
-        bootstrap = Object.freeze({
-          url: value.url,
-          token: value.token,
-          webURL: typeof value.web_url === 'string'
-            ? value.web_url
-            : (typeof value.webURL === 'string' ? value.webURL : ''),
-          protocolVersion: value.protocol_version,
-          pid: value.pid,
-        });
+        bootstrap = parseBackendBootstrap(value, app.getVersion());
         settle(null, bootstrap);
       } catch (error) {
-        child.kill('SIGKILL');
-        settle(error);
+        rejectBackendBootstrap(child, stoppingBackends, settle, error);
       }
     });
   });
@@ -467,6 +462,7 @@ ipcMain.handle('app:get-info', (event) => {
       pid: bootstrap.pid,
       surface: 'desktop',
       webAvailable: Boolean(bootstrap.webURL),
+      build: bootstrap.build,
     }
     : null;
 });

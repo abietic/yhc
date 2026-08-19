@@ -8,18 +8,24 @@ const asset = (name) => new URL(
 );
 
 test('desktop and browser bootstrap require protocol v2 end to end', async () => {
-  const [main, app, transport] = await Promise.all([
+  const [main, bootstrapParser, app, transport] = await Promise.all([
     readFile(new URL('../main.cjs', import.meta.url), 'utf8'),
+    readFile(new URL('../bootstrap.cjs', import.meta.url), 'utf8'),
     readFile(asset('app.mjs'), 'utf8'),
     readFile(asset('transport.mjs'), 'utf8'),
   ]);
 
-  assert.match(main, /value\.protocol_version !== 2/);
+  assert.match(bootstrapParser, /value\.protocol_version !== 2/);
   assert.match(app, /info\.protocolVersion !== 2/);
   assert.match(transport, /session\.protocol_version !== 2/);
-  assert.doesNotMatch(main, /value\.protocol_version !== 1/);
+  assert.doesNotMatch(bootstrapParser, /value\.protocol_version !== 1/);
   assert.doesNotMatch(app, /info\.protocolVersion !== 1/);
   assert.doesNotMatch(transport, /session\.protocol_version !== 1/);
+  assert.match(main, /parseBackendBootstrap\(value, app\.getVersion\(\)\)/);
+  assert.match(main, /build:\s*bootstrap\.build/);
+  assert.match(app, /buildIdentityViewModel\(info\)/);
+  assert.match(app, /buildIdentityNode\.textContent = buildIdentity\.text/);
+  assert.match(transport, /return \{ protocolVersion: session\.protocol_version, surface: 'web' \}/);
 });
 
 test('the active interaction host is semantic and remains above the composer', async () => {

@@ -1,17 +1,23 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { promisify } from 'node:util';
 
 const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
 const {
   REQUIRED_LICENSE_FILES,
   resourcesDirectory,
   verifyPackagedNotices,
 } = require('../scripts/verify_packaged_notices.cjs');
+const {
+  REQUIRED_ARCHIVE_FILES,
+} = require('../scripts/verify_packaged_artifact.cjs');
 
 const mainPath = new URL('../main.cjs', import.meta.url);
 const packagePath = new URL('../package.json', import.meta.url);
@@ -19,6 +25,7 @@ const packageLockPath = new URL('../package-lock.json', import.meta.url);
 const preloadPath = new URL('../preload.cjs', import.meta.url);
 const rendererPath = new URL('../../internal/webui/assets/index.html', import.meta.url);
 const makefilePath = new URL('../../Makefile', import.meta.url);
+const repositoryPath = new URL('../..', import.meta.url);
 
 test('packaged Electron stays above the known sandbox-bypass floor', async () => {
   const [manifest, lock] = await Promise.all([
@@ -44,6 +51,19 @@ test('platform package resources match each staged desktop backend name', async 
   const build = manifest.build;
 
   assert.equal(manifest.devDependencies?.['@electron/asar'], '3.4.1');
+  assert.match(manifest.version, /^[0-9][0-9A-Za-z.+-]{0,63}$/);
+
+  assert.deepEqual(build.files, [
+    'main.cjs',
+    'bootstrap.cjs',
+    'lifecycle.cjs',
+    'provider_setup.cjs',
+    'request.cjs',
+    'preload.cjs',
+    'package.json',
+  ]);
+  assert.deepEqual([...build.files].sort(), REQUIRED_ARCHIVE_FILES);
+
   assert.deepEqual(build.extraResources, [
     { from: '../internal/webui/assets', to: 'webui' },
     { from: '../LICENSE', to: 'licenses/YHC.LICENSE' },
@@ -65,10 +85,24 @@ test('platform package resources match each staged desktop backend name', async 
   ]);
   assert.match(makefile, /desktop-stage-windows-amd64:[^\n]*yhc\.exe/);
   assert.match(makefile, /\$\(DESKTOP_STAGE_DIR\)\/yhc\.exe/);
+  for (const target of [
+    'build/desktop/darwin-amd64/yhc',
+    'build/desktop/darwin-arm64/yhc',
+    'build/desktop/linux-amd64/yhc',
+    'build/desktop/windows-amd64/yhc\\.exe',
+  ]) {
+    assert.match(
+      makefile,
+      new RegExp(`${target}:[^\\n]*desktop/package\\.json`),
+    );
+  }
 });
 
 test('desktop backend builds inject reproducible source identity', async () => {
-  const makefile = await readFile(makefilePath, 'utf8');
+  const [makefile, manifest] = await Promise.all([
+    readFile(makefilePath, 'utf8'),
+    readFile(packagePath, 'utf8').then(JSON.parse),
+  ]);
   assert.match(makefile, /ifneq \(\$\(wildcard \.git\),\)/);
   assert.match(makefile, /BUILD_COMMIT \?= \$\(shell git rev-parse --verify HEAD/);
   assert.match(makefile, /BUILD_TIME \?= \$\(shell git show -s --format=%cI HEAD/);
@@ -85,6 +119,15 @@ test('desktop backend builds inject reproducible source identity', async () => {
       new RegExp(`-X github\\.com/abietic/yhc/internal/buildinfo\\.${symbol}=\\$\\(${variable}\\)`),
     );
   }
+
+  const { stdout } = await execFileAsync('make', [
+    '-B', '-n', 'build/desktop/linux-amd64/yhc', 'VERSION=9.9.9',
+  ], { cwd: repositoryPath });
+  assert.match(
+    stdout,
+    new RegExp(`buildinfo\\.Version=${manifest.version.replaceAll('.', '\\.')}(?:\\s|$)`),
+  );
+  assert.doesNotMatch(stdout, /buildinfo\.Version=9\.9\.9(?:\s|$)/);
 });
 
 test('packaged artifact retains project, Marked, Electron, and Chromium license material', () => {

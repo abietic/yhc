@@ -5,6 +5,7 @@ SHELL := /bin/bash
 
 BUILD_DIR := build
 GO ?= go
+NODE ?= node
 GOFM := $(shell $(GO) env GOPATH)/bin/gofumpt
 GOLINT := $(shell $(GO) env GOPATH)/bin/golangci-lint
 GOTEST := $(shell $(GO) env GOPATH)/bin/gotestsum
@@ -70,6 +71,7 @@ PROV_MODEL ?= deepseek-v4-flash
 
 # Release flags
 VERSION ?= 0.1.0
+DESKTOP_VERSION = $(shell $(NODE) -p "require('./desktop/package.json').version")
 ifneq ($(wildcard .git),)
 BUILD_COMMIT ?= $(shell git rev-parse --verify HEAD 2>/dev/null || printf '%s' unknown)
 BUILD_TIME ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || printf '%s' unknown)
@@ -79,11 +81,16 @@ BUILD_COMMIT ?= unknown
 BUILD_TIME ?= unknown
 BUILD_MODIFIED ?= false
 endif
-LDFLAGS := -s -w \
-	-X github.com/abietic/yhc/internal/buildinfo.Version=$(VERSION) \
+BUILD_IDENTITY_LDFLAGS := \
 	-X github.com/abietic/yhc/internal/buildinfo.Commit=$(BUILD_COMMIT) \
 	-X github.com/abietic/yhc/internal/buildinfo.BuildTime=$(BUILD_TIME) \
 	-X github.com/abietic/yhc/internal/buildinfo.Modified=$(BUILD_MODIFIED)
+LDFLAGS := -s -w \
+	-X github.com/abietic/yhc/internal/buildinfo.Version=$(VERSION) \
+	$(BUILD_IDENTITY_LDFLAGS)
+DESKTOP_LDFLAGS = -s -w \
+	-X github.com/abietic/yhc/internal/buildinfo.Version=$(DESKTOP_VERSION) \
+	$(BUILD_IDENTITY_LDFLAGS)
 
 # Debug flags: disable inlining and optimizations so breakpoints work correctly
 GC_FLAGS_DEBUG := all=-N -l
@@ -112,21 +119,21 @@ build/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
 # ── Clear ──────────────────────────────────────────────
 desktop-backend: desktop-stage-host
 
-build/desktop/darwin-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+build/desktop/darwin-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/desktop/darwin-arm64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+build/desktop/darwin-arm64/yhc: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/desktop/linux-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+build/desktop/linux-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/desktop/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
+build/desktop/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/yhc/
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
 desktop-backend-darwin-amd64: build/desktop/darwin-amd64/yhc
 
@@ -166,6 +173,7 @@ desktop-test:
 	node --test desktop/test/*.test.mjs
 
 desktop-check: desktop-test
+	node --check desktop/bootstrap.cjs
 	node --check desktop/lifecycle.cjs
 	node --check desktop/provider_setup.cjs
 	node --check desktop/request.cjs

@@ -18,11 +18,20 @@ const (
 
 // Bootstrap is the single machine-readable line printed by `serve app`.
 type Bootstrap struct {
-	ProtocolVersion int    `json:"protocol_version"`
-	URL             string `json:"url"`
-	Token           string `json:"token"`
-	PID             int    `json:"pid"`
-	WebURL          string `json:"web_url,omitempty"`
+	ProtocolVersion int           `json:"protocol_version"`
+	URL             string        `json:"url"`
+	Token           string        `json:"token"`
+	PID             int           `json:"pid"`
+	WebURL          string        `json:"web_url,omitempty"`
+	Build           BuildIdentity `json:"build"`
+}
+
+// BuildIdentity is the bounded process provenance projected to the Desktop
+// host. It deliberately excludes dependencies and runtime environment detail.
+type BuildIdentity struct {
+	Version  string `json:"version"`
+	Commit   string `json:"commit"`
+	Modified bool   `json:"modified"`
 }
 
 // ErrorEnvelope is the stable error response shape.

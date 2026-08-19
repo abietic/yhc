@@ -32,6 +32,8 @@ const planTargetModes = new Set([
 ]);
 
 const repeatedToolExplanation = 'This repeated tool call needs your decision.';
+const buildVersionPattern = /^[0-9][0-9A-Za-z.+-]{0,63}$/;
+const buildCommitPattern = /^(?:unknown|[0-9a-f]{12})$/;
 
 function record(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -49,6 +51,24 @@ function boundedString(value, maximum, required = false) {
   return typeof value === 'string' &&
     runeLength(value) <= maximum &&
     (!required || value.trim().length > 0);
+}
+
+export function buildIdentityViewModel(info = {}) {
+  const build = info?.build;
+  if (
+    info?.surface !== 'desktop' ||
+    !record(build) ||
+    Object.keys(build).length !== 3 ||
+    !buildVersionPattern.test(build.version) ||
+    !buildCommitPattern.test(build.commit) ||
+    typeof build.modified !== 'boolean'
+  ) {
+    return { visible: false, text: '' };
+  }
+  return {
+    visible: true,
+    text: `v${build.version} · ${build.commit}${build.modified ? ' · dirty' : ''}`,
+  };
 }
 
 function exactVariant(interaction, expected) {

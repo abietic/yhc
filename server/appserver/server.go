@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,7 +28,10 @@ import (
 	"github.com/google/uuid"
 
 	enginesession "github.com/abietic/yhc/engine/session"
+	"github.com/abietic/yhc/internal/buildinfo"
 )
+
+var bootstrapBuildVersionPattern = regexp.MustCompile(`^[0-9][0-9A-Za-z.+-]{0,63}$`)
 
 // Config defines the bounded local app-server runtime.
 type Config struct {
@@ -194,6 +198,7 @@ func (s *Server) BootstrapFor(listener net.Listener) (Bootstrap, error) {
 		URL:             baseURL,
 		Token:           s.token,
 		PID:             os.Getpid(),
+		Build:           bootstrapBuildIdentity(buildinfo.Current()),
 	}
 	if s.webEnabled {
 		pairingToken, _, err := s.browserAuth.newPairing()
@@ -203,6 +208,38 @@ func (s *Server) BootstrapFor(listener net.Listener) (Bootstrap, error) {
 		bootstrap.WebURL = baseURL + "/#pair=" + url.QueryEscape(pairingToken)
 	}
 	return bootstrap, nil
+}
+
+func bootstrapBuildIdentity(info buildinfo.Info) BuildIdentity {
+	version := strings.TrimSpace(info.Version)
+	if !bootstrapBuildVersionPattern.MatchString(version) {
+		version = "unknown"
+	}
+	commit := strings.TrimSpace(info.Commit)
+	if !strings.EqualFold(commit, "unknown") {
+		if len(commit) < 12 || len(commit) > 64 {
+			commit = "unknown"
+		} else {
+			for _, character := range commit {
+				if (character < '0' || character > '9') &&
+					(character < 'a' || character > 'f') &&
+					(character < 'A' || character > 'F') {
+					commit = "unknown"
+					break
+				}
+			}
+		}
+	}
+	if !strings.EqualFold(commit, "unknown") {
+		commit = strings.ToLower(commit[:12])
+	} else {
+		commit = "unknown"
+	}
+	return BuildIdentity{
+		Version:  version,
+		Commit:   commit,
+		Modified: info.Modified,
+	}
 }
 
 func loopbackURL(listener net.Listener) (string, error) {

@@ -562,6 +562,10 @@ summary:focus-visible {
 }
 
 .sidebar-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  justify-content: space-between;
   padding: 8px 8px 2px;
   border-top: 1px solid var(--border-subtle);
   color: var(--text-faint);
