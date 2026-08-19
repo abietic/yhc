@@ -1,3 +1,5 @@
+import { replayTranscriptFenceMatches } from './replay.mjs';
+
 export const initialState = () => ({
   sessions: {},
   activeID: null,
@@ -54,7 +56,13 @@ export function reducer(state, action) {
     case 'SESSION_SNAPSHOT':
       return applySnapshot(state, action.id, action.snapshot);
     case 'SESSION_TRANSCRIPT_PAGE':
-      return applyTranscriptPage(state, action.id, action.page, action.replace);
+      return applyTranscriptPage(
+        state,
+        action.id,
+        action.page,
+        action.replace,
+        action.eventCursorFence,
+      );
     case 'DURABLE_SESSION_PAGE':
       return applyDurableSessionPage(state, action.sessions);
     case 'SESSION_REVIEW_LOADING':
@@ -699,8 +707,24 @@ function mergeMessages(...groups) {
   });
 }
 
-function applyTranscriptPage(state, id, page, replace = false) {
+function applyTranscriptPage(
+  state,
+  id,
+  page,
+  replace = false,
+  eventCursorFence = null,
+) {
   const current = sessionDefaults(state.sessions[id] || { id });
+  const fencedReplacement = replace && eventCursorFence !== null;
+  if (
+    fencedReplacement &&
+    (
+      !state.sessions[id] ||
+      !replayTranscriptFenceMatches(eventCursorFence, current.cursor)
+    )
+  ) {
+    return state;
+  }
   const entries = Array.isArray(page?.entries)
     ? page.entries
     : (page?.messages || []);

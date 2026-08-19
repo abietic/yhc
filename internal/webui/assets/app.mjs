@@ -40,6 +40,11 @@ import {
   activateCreatedSession,
   createSessionCreationGate,
 } from './session_creation.mjs';
+import {
+  replayTranscriptFenceMatches,
+  shouldReconnectReplayGapImmediately,
+  synchronizeReplayGap,
+} from './replay.mjs';
 import { createTransport } from './transport.mjs';
 import { interactionViewModel } from './view_models.mjs';
 
@@ -1759,7 +1764,11 @@ function readPersisted() {
   }
 }
 
-async function loadTranscript(sessionID, replace = false) {
+async function loadTranscript(
+  sessionID,
+  replace = false,
+  eventCursorFence = null,
+) {
   const current = state.sessions[sessionID];
   if (!current) return;
   if (!current.live) {
@@ -1825,12 +1834,35 @@ async function loadTranscript(sessionID, replace = false) {
       cursor: replace ? '' : current?.transcriptNextCursor,
       limit: TRANSCRIPT_LIMIT,
     });
+    if (
+      replace &&
+      eventCursorFence !== null &&
+      !replayTranscriptFenceMatches(
+        eventCursorFence,
+        state.sessions[sessionID]?.cursor,
+      )
+    ) {
+      dispatch({
+        type: 'SESSION_NOTICE',
+        id: sessionID,
+        notice: 'Live events advanced while saved history was refreshing. ' +
+          'The stale history response was ignored; reload to retry history.',
+      });
+      return false;
+    }
     dispatch(
-      { type: 'SESSION_TRANSCRIPT_PAGE', id: sessionID, page, replace },
+      {
+        type: 'SESSION_TRANSCRIPT_PAGE',
+        id: sessionID,
+        page,
+        replace,
+        eventCursorFence,
+      },
       sessionID === state.activeID
         ? (replace ? 'bottom' : 'prepend')
         : 'preserve',
     );
+    return true;
   } finally {
     transcriptLoads.delete(sessionID);
     if (state.activeID === sessionID) rerenderPreservingTimeline();
@@ -1978,7 +2010,11 @@ async function openStream(sessionID, stream) {
     if (result.status === 'gap') {
       const recovered = await recoverReplayGap(sessionID);
       if (!recovered) throw new Error('event replay recovery failed');
-      scheduleReconnect(sessionID, stream, true);
+      scheduleReconnect(
+        sessionID,
+        stream,
+        shouldReconnectReplayGapImmediately(stream.retries),
+      );
       return;
     }
     stream.retries = 0;
@@ -2018,9 +2054,25 @@ function stopStream(sessionID) {
 async function recoverReplayGap(sessionID) {
   dispatch({ type: 'SESSION_REPLAY_GAP', id: sessionID });
   try {
-    await loadTranscript(sessionID, true);
-    const snapshot = await api('snapshot', { sessionID });
-    dispatch({ type: 'SESSION_SNAPSHOT', id: sessionID, snapshot });
+    await synchronizeReplayGap({
+      loadTranscript: (snapshot) => loadTranscript(
+        sessionID,
+        true,
+        Number(snapshot.event_cursor || 0),
+      ),
+      loadSnapshot: () => api('snapshot', { sessionID }),
+      applySnapshot: (snapshot) => dispatch({
+        type: 'SESSION_SNAPSHOT',
+        id: sessionID,
+        snapshot,
+      }),
+      reportTranscriptFailure: (error) => dispatch({
+        type: 'SESSION_NOTICE',
+        id: sessionID,
+        notice: 'Live state synchronized, but saved history could not be ' +
+          `refreshed: ${error.message}. Reload to retry history.`,
+      }),
+    });
     return true;
   } catch (error) {
     dispatch({

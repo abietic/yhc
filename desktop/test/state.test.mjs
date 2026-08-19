@@ -562,6 +562,69 @@ test('transcript replacement removes fallback copies but keeps live tail', () =>
   );
 });
 
+test('stale replay transcript replacement cannot erase a newer stream message', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_SNAPSHOT',
+    id: 's1',
+    snapshot: {
+      session: { id: 's1', workspace_label: '/tmp/project', live: true },
+      event_cursor: 41,
+      messages: [],
+      interactions: [],
+    },
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(42, 'user_message', { content: 'arrived after snapshot' }),
+  });
+
+  const afterStreamEvent = state;
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT_PAGE',
+    id: 's1',
+    replace: true,
+    eventCursorFence: 41,
+    page: {
+      messages: [{ id: 'durable-before-gap', role: 'user', content: 'older' }],
+    },
+  });
+
+  assert.equal(state, afterStreamEvent);
+  assert.equal(state.sessions.s1.cursor, 42);
+  assert.deepEqual(
+    state.sessions.s1.messages.map((message) => message.content),
+    ['arrived after snapshot'],
+  );
+});
+
+test('replay transcript replacement applies while the snapshot cursor is current', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_SNAPSHOT',
+    id: 's1',
+    snapshot: {
+      session: { id: 's1', workspace_label: '/tmp/project', live: true },
+      event_cursor: 41,
+      messages: [],
+      interactions: [],
+    },
+  });
+  state = reducer(state, {
+    type: 'SESSION_TRANSCRIPT_PAGE',
+    id: 's1',
+    replace: true,
+    eventCursorFence: 41,
+    page: {
+      messages: [{ id: 'durable-before-gap', role: 'user', content: 'older' }],
+    },
+  });
+
+  assert.equal(state.sessions.s1.cursor, 41);
+  assert.deepEqual(
+    state.sessions.s1.messages.map((message) => message.id),
+    ['durable-before-gap'],
+  );
+});
+
 test('resume replacement discards completed canonical assistant projections', () => {
   let state = reducer(initialState(), {
     type: 'EVENT',

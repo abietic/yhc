@@ -109,6 +109,21 @@ turn cannot clear or replace a newer active turn. Read-only semantic Activity
 may still arrive for history, while the next snapshot remains the state
 reconciliation owner.
 
+When a reconnect cursor falls behind the bounded event log,
+[`recoverReplayGap`](../../internal/webui/assets/app.mjs#L2054) uses
+[`synchronizeReplayGap`](../../internal/webui/assets/replay.mjs#L1) to apply
+the server snapshot before refreshing durable transcript history. The snapshot
+advances the event cursor and restores live interactions, Activity, and turn
+state, then stream reconnection proceeds without waiting for the best-effort
+transcript refresh. Transcript replacement is fenced to that snapshot cursor:
+if a newly reconnected stream advances the cursor first, the renderer discards
+the stale history response instead of replacing newer runtime messages. Only
+the first consecutive replay gap bypasses reconnect backoff. A temporary,
+failed, or stale transcript refresh therefore leaves the synchronized live
+session and local draft usable with a visible retry notice; a snapshot failure
+still fails recovery. The bounded snapshot complements rather than replaces
+the durable transcript.
+
 [`activityPresentation`](../../internal/webui/assets/activity.mjs) maps valid
 server activity entries to stable lifecycle language such as turn started,
 command running, or question waiting. It rejects invalid category/state pairs;
