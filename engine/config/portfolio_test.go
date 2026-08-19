@@ -77,6 +77,65 @@ func TestCompilePortfolioNamedProfile(t *testing.T) {
 	}
 }
 
+func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T) {
+	sources := validPortfolioSources()
+	account := sources.User.ProviderAccounts["openai-main"]
+	account.Provider = "deepseek"
+	sources.User.ProviderAccounts["openai-main"] = account
+	profile := sources.User.ModelProfiles["primary"]
+	profile.APIModel = "deepseek-v4-flash"
+	profile.Reasoning.DefaultEffort = "max"
+	sources.User.ModelProfiles["primary"] = profile
+
+	snapshot, err := CompilePortfolio(PortfolioCompileInput{
+		Sources: sources,
+		Getenv:  func(string) string { return "" },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := snapshot.Profiles["primary"]
+	if got := strings.Join(
+		resolved.Metadata.SupportedReasoningEfforts.Value,
+		",",
+	); got != "none,high,max" || resolved.Reasoning.DefaultEffort != "max" {
+		t.Fatalf("compiled DeepSeek reasoning = %#v", resolved)
+	}
+
+	profile.Reasoning.DefaultEffort = "low"
+	sources.User.ModelProfiles["primary"] = profile
+	if _, err := CompilePortfolio(PortfolioCompileInput{
+		Sources: sources,
+		Getenv:  func(string) string { return "" },
+	}); err == nil || !strings.Contains(err.Error(), `default reasoning effort "low"`) {
+		t.Fatalf("DeepSeek compatibility alias was admitted: %v", err)
+	}
+
+	disabled := false
+	profile.Reasoning.DefaultEffort = ""
+	profile.Metadata.Capabilities.Thinking = &disabled
+	sources.User.ModelProfiles["primary"] = profile
+	snapshot, err = CompilePortfolio(PortfolioCompileInput{
+		Sources: sources,
+		Getenv:  func(string) string { return "" },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if efforts := snapshot.Profiles["primary"].Metadata.SupportedReasoningEfforts; efforts.Source != "profile-override" || len(efforts.Value) != 0 {
+		t.Fatalf("thinking=false retained efforts: %#v", efforts)
+	}
+
+	profile.Metadata.SupportedReasoningEfforts = []string{"high"}
+	sources.User.ModelProfiles["primary"] = profile
+	if _, err := CompilePortfolio(PortfolioCompileInput{
+		Sources: sources,
+		Getenv:  func(string) string { return "" },
+	}); err == nil || !strings.Contains(err.Error(), "thinking=false") {
+		t.Fatalf("thinking=false accepted explicit efforts: %v", err)
+	}
+}
+
 func TestLoadConfigSourcesRejectsProjectPortfolioAsWholeBeforeDecode(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

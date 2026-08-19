@@ -577,7 +577,11 @@ func compileLegacyPortfolio(
 	}
 	mainAccountID := engineconfig.AccountID("legacy.main.account")
 	mainProfileID := engineconfig.ProfileID("legacy.main")
-	mainMetadata, err := enginemodel.ResolvePortfolioMetadata(main.Model, enginemodel.MetadataOverrides{})
+	mainMetadata, err := enginemodel.ResolvePortfolioMetadataForProvider(
+		string(main.Provider),
+		main.Model,
+		enginemodel.MetadataOverrides{},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +629,11 @@ func compileLegacyPortfolio(
 		snapshot.Accounts[fallbackAccountID] = legacyResolvedAccount(fallbackAccountID, fallbackIdentity)
 	}
 	fallbackProfileID := engineconfig.ProfileID("legacy.fallback")
-	fallbackMetadata, err := enginemodel.ResolvePortfolioMetadata(fallback.Model, enginemodel.MetadataOverrides{})
+	fallbackMetadata, err := enginemodel.ResolvePortfolioMetadataForProvider(
+		string(fallback.Provider),
+		fallback.Model,
+		enginemodel.MetadataOverrides{},
+	)
 	if err != nil {
 		return nil, err
 	}

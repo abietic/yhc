@@ -1,7 +1,7 @@
 # Configuration and Providers
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-20
 
 > **Ownership:** production configuration sources, precedence, provider selection, and runtime settings
 
@@ -168,11 +168,18 @@ to request a route change. The active provider runtime resolves the route
 before mutation; an invalid provider/model leaves the current model and effort
 unchanged. Client construction for a newly selected valid route remains lazy.
 
-`/effort [default|low|medium|high|max]` is shown only when the resolved active
-route is Agentic Claude and the selected model supports thinking. It controls
-the provider request's reasoning-effort field, not the local continuation token
-budget. The value is process-local, is cleared by an incompatible model switch,
-and is omitted on an incompatible fallback attempt.
+`/effort [level]` is shown only when the resolved active model metadata and its
+adapter share at least one exact reasoning value. Run `/effort` to see the
+current model's choices; the list is not a global enum. For example, DeepSeek
+V4 Pro/Flash currently expose `default`, `none`, `high`, and `max`. `none`
+disables thinking, while `high` and `max` enable thinking and send that exact
+effort.
+
+This controls provider request reasoning, not the local continuation token
+budget. The selected value is checkpointed with the active model binding. An
+incompatible manual model switch or Session resume clears it visibly; an
+in-flight failover instead skips a candidate that cannot preserve the exact
+value. YHC does not silently clamp one effort to another.
 
 ## Restrict model-visible built-ins
 

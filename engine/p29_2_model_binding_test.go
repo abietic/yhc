@@ -474,6 +474,66 @@ func TestP292ExplicitReasoningMetadataRejectsUnsupportedChoice(t *testing.T) {
 	}
 }
 
+func TestDeepSeekV4ReasoningOptionsUseExactModelAdapterIntersection(t *testing.T) {
+	resolver := newP292InventoryResolver(1000000)
+	primary := &resolver.snapshot.Entries[0]
+	primary.Provider = string(provider.ProviderAgenticDeepSeek)
+	primary.APIModel = "deepseek-v4-flash"
+	primary.Metadata.SupportedReasoningEfforts = p292MetadataField(
+		[]string{"none", "high", "max"},
+	)
+	engine := newP292BindingEngine(t, resolver)
+
+	options, err := engine.ReasoningEffortOptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(options, ","); got != "none,high,max" {
+		t.Fatalf("DeepSeek V4 effort options = %q", got)
+	}
+	if effort, err := engine.ChangeReasoningEffort(
+		context.Background(),
+		"max",
+	); err != nil || effort != "max" {
+		t.Fatalf("DeepSeek V4 max effort = %q, %v", effort, err)
+	}
+	if _, err := engine.ChangeReasoningEffort(
+		context.Background(),
+		"low",
+	); err == nil || !strings.Contains(err.Error(), `reasoning effort "low"`) {
+		t.Fatalf("DeepSeek V4 compatibility alias was not rejected: %v", err)
+	}
+	if engine.ReasoningEffort() != "max" {
+		t.Fatalf("rejected effort mutated state to %q", engine.ReasoningEffort())
+	}
+}
+
+func TestReasoningControlsRejectInconsistentThinkingDisabledMetadata(t *testing.T) {
+	resolver := newP292InventoryResolver(1000000)
+	primary := &resolver.snapshot.Entries[0]
+	primary.Provider = string(provider.ProviderAgenticDeepSeek)
+	primary.APIModel = "deepseek-v4-flash"
+	primary.Metadata.Thinking = p292MetadataField(false)
+	primary.Metadata.SupportedReasoningEfforts = p292MetadataField(
+		[]string{"none", "high", "max"},
+	)
+	engine := newP292BindingEngine(t, resolver)
+
+	options, err := engine.ReasoningEffortOptions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(options) != 0 {
+		t.Fatalf("thinking=false exposed effort options: %#v", options)
+	}
+	if _, err := engine.ChangeReasoningEffort(
+		context.Background(),
+		"high",
+	); err == nil {
+		t.Fatal("thinking=false admitted a reasoning effort")
+	}
+}
+
 func TestP292ConcurrentReasoningChangeInvalidatesPreparedModelCandidate(
 	t *testing.T,
 ) {

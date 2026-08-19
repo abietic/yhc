@@ -2,8 +2,10 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // MetadataOverrides is the user-owned, field-presence-aware metadata surface
@@ -54,13 +56,27 @@ type EffectiveModelMetadata struct {
 	Successor                 MetadataField[string]   `json:"successor"`
 }
 
-var portfolioReasoningEfforts = map[string]struct{}{
-	"none": {}, "minimal": {}, "low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {},
-}
+var reasoningEffortIDPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
 
 // ResolvePortfolioMetadata validates explicit overrides and applies them
 // field-by-field over a known built-in exact, alias, or pattern match.
 func ResolvePortfolioMetadata(modelID string, overrides MetadataOverrides) (EffectiveModelMetadata, error) {
+	return ResolvePortfolioMetadataForProvider(
+		string(DetectProvider(modelID)),
+		modelID,
+		overrides,
+	)
+}
+
+// ResolvePortfolioMetadataForProvider validates explicit overrides and merges
+// them over exact-model catalog facts that the selected adapter can implement.
+// Provider-aware resolution avoids advertising a model capability that a
+// mismatched adapter cannot lower onto its wire protocol.
+func ResolvePortfolioMetadataForProvider(
+	provider string,
+	modelID string,
+	overrides MetadataOverrides,
+) (EffectiveModelMetadata, error) {
 	metadata := unknownPortfolioMetadata()
 	if capabilities, ok := knownPortfolioCapabilities(modelID); ok {
 		source := "built-in"
@@ -76,6 +92,12 @@ func ResolvePortfolioMetadata(modelID string, overrides MetadataOverrides) (Effe
 		metadata.CostTier = MetadataField[string]{Value: string(deriveCostTier(capabilities)), Source: source}
 		metadata.Deprecated = MetadataField[bool]{Value: capabilities.IsDeprecated(), Source: source}
 		metadata.Successor = MetadataField[string]{Value: capabilities.Successor, Source: source}
+		if efforts, known := DefaultReasoningEfforts(provider, modelID); known {
+			metadata.SupportedReasoningEfforts = MetadataField[[]string]{
+				Value:  efforts,
+				Source: source,
+			}
+		}
 	}
 
 	const explicit = "profile-override"
@@ -98,14 +120,30 @@ func ResolvePortfolioMetadata(modelID string, overrides MetadataOverrides) (Effe
 	applyBoolOverride(&metadata.Images, overrides.Capabilities.Images)
 	applyBoolOverride(&metadata.PDFs, overrides.Capabilities.PDFs)
 	applyBoolOverride(&metadata.Thinking, overrides.Capabilities.Thinking)
+	if overrides.Capabilities.Thinking != nil && !*overrides.Capabilities.Thinking {
+		if len(overrides.SupportedReasoningEfforts) > 0 {
+			return EffectiveModelMetadata{}, fmt.Errorf(
+				"supported_reasoning_efforts conflicts with capabilities.thinking=false",
+			)
+		}
+		if overrides.SupportedReasoningEfforts == nil {
+			metadata.SupportedReasoningEfforts = MetadataField[[]string]{
+				Value:  []string{},
+				Source: explicit,
+			}
+		}
+	}
 
 	if overrides.SupportedReasoningEfforts != nil {
 		seen := make(map[string]struct{}, len(overrides.SupportedReasoningEfforts))
 		efforts := make([]string, 0, len(overrides.SupportedReasoningEfforts))
 		for _, raw := range overrides.SupportedReasoningEfforts {
-			effort := strings.ToLower(strings.TrimSpace(raw))
-			if _, ok := portfolioReasoningEfforts[effort]; !ok {
-				return EffectiveModelMetadata{}, fmt.Errorf("unsupported reasoning effort %q", raw)
+			effort, err := ValidateReasoningEffort(raw)
+			if err != nil || effort == "" {
+				return EffectiveModelMetadata{}, fmt.Errorf(
+					"unsupported reasoning effort %q",
+					raw,
+				)
 			}
 			if _, duplicate := seen[effort]; duplicate {
 				return EffectiveModelMetadata{}, fmt.Errorf("duplicate reasoning effort %q", effort)
@@ -134,14 +172,18 @@ func ResolvePortfolioMetadata(modelID string, overrides MetadataOverrides) (Effe
 	return metadata, nil
 }
 
-// ValidateReasoningEffort checks one configured default against the shared
-// portfolio reasoning vocabulary.
+// ValidateReasoningEffort normalizes one model-neutral request ID. It validates
+// only the durable identifier shape; exact model metadata and the selected
+// adapter independently decide whether that identifier is supported.
 func ValidateReasoningEffort(raw string) (string, error) {
+	if strings.IndexFunc(raw, unicode.IsControl) >= 0 {
+		return "", fmt.Errorf("unsupported reasoning effort %q", raw)
+	}
 	effort := strings.ToLower(strings.TrimSpace(raw))
 	if effort == "" {
 		return "", nil
 	}
-	if _, ok := portfolioReasoningEfforts[effort]; !ok {
+	if effort == "default" || !reasoningEffortIDPattern.MatchString(effort) {
 		return "", fmt.Errorf("unsupported reasoning effort %q", raw)
 	}
 	return effort, nil
@@ -194,4 +236,21 @@ func knownPortfolioCapabilities(modelID string) (*ModelCapabilities, bool) {
 		return nil, false
 	}
 	return withExplicitContextWindow(best, explicitWindow), true
+}
+
+func knownExactPortfolioCapabilities(modelID string) (*ModelCapabilities, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(modelID))
+	normalized, explicitWindow := splitContextSuffix(normalized)
+	if capability, ok := modelTable[normalized]; ok {
+		return withExplicitContextWindow(capability, explicitWindow), true
+	}
+	canonical, ok := aliases[normalized]
+	if !ok {
+		return nil, false
+	}
+	capability, ok := modelTable[canonical]
+	if !ok {
+		return nil, false
+	}
+	return withExplicitContextWindow(capability, explicitWindow), true
 }

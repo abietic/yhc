@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/abietic/yhc/engine/commands"
 	modelcaps "github.com/abietic/yhc/engine/model"
@@ -127,13 +128,14 @@ func (f ModelResolverFunc) ResolveModel(modelSpec string) (provider.ResolvedConf
 // ModelControlState is the effective provider/model capability returned after
 // validation or mutation.
 type ModelControlState struct {
-	Requested               string
-	Provider                provider.Provider
-	Model                   string
-	SupportsReasoningEffort bool
-	ReasoningEffort         string
-	Durable                 bool
-	Warnings                []string
+	Requested                 string
+	Provider                  provider.Provider
+	Model                     string
+	SupportsReasoningEffort   bool
+	SupportedReasoningEfforts []string
+	ReasoningEffort           string
+	Durable                   bool
+	Warnings                  []string
 }
 
 func (e *QueryEngine) resolveModelControl(
@@ -174,14 +176,17 @@ func (e *QueryEngine) resolveModelControl(
 	if err := ctx.Err(); err != nil {
 		return ModelControlState{}, fmt.Errorf("model resolution canceled: %w", err)
 	}
-	capabilities := modelcaps.GetCapabilities(resolved.Model)
+	efforts, _ := modelcaps.DefaultReasoningEfforts(
+		string(resolved.Provider),
+		resolved.Model,
+	)
 	return ModelControlState{
-		Requested: requested,
-		Provider:  resolved.Provider,
-		Model:     resolved.Model,
-		SupportsReasoningEffort: resolved.Provider == provider.ProviderAgenticClaude &&
-			capabilities.SupportsThinking,
-		ReasoningEffort: e.ReasoningEffort(),
+		Requested:                 requested,
+		Provider:                  resolved.Provider,
+		Model:                     resolved.Model,
+		SupportsReasoningEffort:   len(efforts) > 0,
+		SupportedReasoningEfforts: efforts,
+		ReasoningEffort:           e.ReasoningEffort(),
 	}, nil
 }
 
@@ -327,6 +332,23 @@ func (e *QueryEngine) ReasoningEffortCapability(
 	return true, "", nil
 }
 
+// ReasoningEffortOptions returns the exact, ordered values admitted by both
+// the active model metadata and its selected adapter. Provider default is a
+// control-plane reset and is therefore added by each presentation surface.
+func (e *QueryEngine) ReasoningEffortOptions(
+	ctx context.Context,
+) ([]string, error) {
+	state, _, err := e.resolveModelBindingCandidate(
+		ctx,
+		e.GetModelName(),
+		e.ReasoningEffort(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return append([]string(nil), state.SupportedReasoningEfforts...), nil
+}
+
 // ReasoningEffort returns the effective provider reasoning effort. Empty means
 // provider default.
 func (e *QueryEngine) ReasoningEffort() string {
@@ -360,15 +382,19 @@ func (e *QueryEngine) changeReasoningEffort(
 	level string,
 	ownerTurnID string,
 ) (string, error) {
-	level = strings.ToLower(strings.TrimSpace(level))
-	switch level {
-	case "default", "none", "minimal", "low", "medium", "high", "xhigh", "max":
-	default:
+	if strings.IndexFunc(level, unicode.IsControl) >= 0 {
 		return "", fmt.Errorf("unsupported reasoning effort %q", level)
 	}
-	requested := level
-	if requested == "default" {
+	normalized := strings.ToLower(strings.TrimSpace(level))
+	var requested string
+	if normalized == "default" {
 		requested = ""
+	} else {
+		var err error
+		requested, err = modelcaps.ValidateReasoningEffort(level)
+		if err != nil || requested == "" {
+			return "", fmt.Errorf("unsupported reasoning effort %q", level)
+		}
 	}
 	e.mu.Lock()
 	modelSpec := e.config.Model

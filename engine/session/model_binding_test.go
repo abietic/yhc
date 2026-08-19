@@ -49,6 +49,27 @@ func TestP292PersistedModelBindingValidProjectionAndClone(t *testing.T) {
 	}
 }
 
+func TestPersistedModelBindingAcceptsSafeAdapterOwnedReasoningID(t *testing.T) {
+	binding := &PersistedModelBinding{
+		Version:             PersistedModelBindingVersion,
+		Kind:                ModelBindingKindProfile,
+		Value:               "primary",
+		Provider:            "future-provider",
+		APIModel:            "future-model",
+		PortfolioRevision:   bindingTestDigest('a'),
+		RouteIdentityDigest: bindingTestDigest('b'),
+		MetadataDigest:      bindingTestDigest('c'),
+		ReasoningEffort:     "ultra-2",
+	}
+	if err := binding.ValidateV1(); err != nil {
+		t.Fatalf("safe adapter-owned effort rejected: %v", err)
+	}
+	binding.ReasoningEffort = "has space"
+	if err := binding.ValidateV1(); err == nil {
+		t.Fatal("unsafe reasoning ID was accepted")
+	}
+}
+
 func TestP292PersistedModelBindingPreservesOpaqueNestedJSON(t *testing.T) {
 	t.Parallel()
 
