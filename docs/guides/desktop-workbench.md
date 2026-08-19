@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-08-13
+**Last verified:** 2026-08-20
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -49,8 +49,25 @@ collection from the exact pinned Electron runtime. Packaging fails when any of
 these contracts is incomplete, unsafe, or divergent. CI repeats the unpacked
 assembly for Linux x64 without uploading it as a release artifact. The output
 is still ignored QA evidence, not proof of code signing, notarization, or
-release readiness. Run `make desktop-check` for deterministic Node/unit and
-syntax checks. The browser-only transport can also be started explicitly with:
+release readiness.
+
+On a Linux x64 host with `xvfb-run`, the same full unpacked lifecycle gate is:
+
+```bash
+make desktop-unpacked-lifecycle-smoke-linux-amd64
+```
+
+It uses a fresh HOME/XDG profile with no inherited provider credentials,
+launches the packaged renderer, crosses preload IPC to identify the bundled
+backend, closes the window, and requires both the app and that backend process
+to exit. This local target keeps Chromium's sandbox enabled. The hosted CI job
+uses the dedicated `desktop-unpacked-lifecycle-smoke-linux-amd64-ci` target,
+which opts into `--no-sandbox`; that CI run therefore does not validate the
+production OS sandbox or replace physical UI acceptance on Linux, macOS, or
+Windows.
+
+Run `make desktop-check` for deterministic Node/unit and syntax checks. The
+browser-only transport can also be started explicitly with:
 
 ```bash
 yhc serve app --web

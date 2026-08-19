@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-19
+**Last verified:** 2026-08-20
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > renderer/server trust boundaries, and user-visible interaction projections.
@@ -133,11 +133,21 @@ desktop-package` builds a local unpacked Electron artifact. Its
 requires the exact application archive entry set, a byte-identical WebUI tree,
 the byte-identical staged platform backend, an executable Unix backend, and the
 required license material. The Desktop CI job assembles the same unpacked
-layout for Linux x64 after the Node audit, SBOM, and license checks; it neither
-uploads nor promotes that unsigned output. These artifacts remain ignored QA
-output. This architecture document does not claim signature, notarization,
-distribution readiness, remote CI success, or compatibility with an arbitrary
-endpoint that implements a different provider/tool dialect.
+layout for Linux x64 after the Node audit, SBOM, and license checks. It then
+starts that exact executable in an isolated Xvfb profile and uses a temporary
+loopback DevTools connection to verify the packaged renderer, frozen preload
+bridge, trusted `app:get-info` IPC, and the packaged backend process identity.
+Closing the renderer must end Electron normally and retire that exact backend
+PID. The renderer exposes only a `data-yhc-bootstrap` ready/error state for
+this read-only completion oracle.
+
+The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
+test environment. That evidence therefore does not validate Chromium's OS
+sandbox, a physical display, native user interaction, or another platform. CI
+neither uploads nor promotes the unsigned output. These artifacts remain
+ignored QA output. This architecture document does not claim signature,
+notarization, distribution readiness, remote CI success, or compatibility with
+an arbitrary endpoint that implements a different provider/tool dialect.
 
 Related owners: [entrypoints and transports](platform/entrypoints-and-transports.md),
 [sessions](state/sessions.md), [model providers](platform/model-providers.md),

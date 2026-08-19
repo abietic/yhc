@@ -1,4 +1,4 @@
-.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit desktop-backend desktop-backend-darwin-amd64 desktop-backend-darwin-arm64 desktop-backend-linux-amd64 desktop-backend-windows-amd64 desktop-stage-host desktop-stage-darwin-amd64 desktop-stage-darwin-arm64 desktop-stage-linux-amd64 desktop-stage-windows-amd64 desktop-install desktop-test desktop-check desktop-dev desktop-package desktop-package-darwin-amd64 desktop-package-darwin-arm64 desktop-package-linux-amd64 desktop-package-windows-amd64 desktop-package-smoke-linux-amd64 publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom node-sbom node-license-check desktop-audit verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
+.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit desktop-backend desktop-backend-darwin-amd64 desktop-backend-darwin-arm64 desktop-backend-linux-amd64 desktop-backend-windows-amd64 desktop-stage-host desktop-stage-darwin-amd64 desktop-stage-darwin-arm64 desktop-stage-linux-amd64 desktop-stage-windows-amd64 desktop-install desktop-test desktop-check desktop-dev desktop-package desktop-package-darwin-amd64 desktop-package-darwin-arm64 desktop-package-linux-amd64 desktop-package-windows-amd64 desktop-package-smoke-linux-amd64 desktop-unpacked-lifecycle-smoke-linux-amd64 desktop-unpacked-lifecycle-smoke-linux-amd64-ci publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom node-sbom node-license-check desktop-audit verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -171,6 +171,7 @@ desktop-check: desktop-test
 	node --check desktop/request.cjs
 	node --check desktop/main.cjs
 	node --check desktop/preload.cjs
+	node --check desktop/scripts/unpacked_lifecycle_smoke.cjs
 	node --check desktop/scripts/verify_packaged_notices.cjs
 	node --check internal/webui/assets/activity.mjs
 	node --check internal/webui/assets/app.mjs
@@ -586,3 +587,9 @@ cutover-recovery-verify:
 # CI smoke: assemble the Linux x64 unpacked app without producing release media.
 desktop-package-smoke-linux-amd64: desktop-stage-linux-amd64
 	npm --prefix desktop run package -- --linux --x64
+
+desktop-unpacked-lifecycle-smoke-linux-amd64: desktop-package-smoke-linux-amd64
+	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/linux-unpacked/yhc-desktop
+
+desktop-unpacked-lifecycle-smoke-linux-amd64-ci: desktop-package-smoke-linux-amd64
+	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/linux-unpacked/yhc-desktop --no-sandbox

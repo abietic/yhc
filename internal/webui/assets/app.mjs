@@ -2128,6 +2128,7 @@ async function bootstrapApp() {
   persistenceEnabled = true;
   persist();
   render();
+  document.documentElement.dataset.yhcBootstrap = 'ready';
 }
 
 function beginSessionCreation() {
@@ -2241,6 +2242,7 @@ window.addEventListener('resize', handleViewportResize);
 
 render();
 bootstrapApp().catch((error) => {
+  document.documentElement.dataset.yhcBootstrap = 'error';
   $('turn-state').textContent = error.message;
   $('status').textContent = 'Error';
 });
