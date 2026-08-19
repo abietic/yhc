@@ -61,6 +61,28 @@ func TestPublicWorkflowRejectsPullRequestTargetAndForkSecrets(t *testing.T) {
 	}
 }
 
+func TestCodeQLAnalyzesGoAndDesktopJavaScript(t *testing.T) {
+	codeQL := readWorkflowFiles(t)[".github/workflows/codeql.yml"]
+	for _, contract := range []string{
+		"name: Analyze ${{ matrix.language }}",
+		"fail-fast: false",
+		"- language: go\n            build-mode: autobuild",
+		"- language: javascript-typescript\n            build-mode: none",
+		"languages: ${{ matrix.language }}",
+		"build-mode: ${{ matrix.build-mode }}",
+		"category: '/language:${{ matrix.language }}'",
+		"github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6",
+		"github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6",
+	} {
+		if !strings.Contains(codeQL, contract) {
+			t.Fatalf("CodeQL workflow lacks multi-language contract %q", contract)
+		}
+	}
+	if strings.Contains(codeQL, "github/codeql-action/autobuild@") {
+		t.Fatal("CodeQL build modes must be owned by the init matrix")
+	}
+}
+
 func readWorkflowFiles(t *testing.T) map[string]string {
 	t.Helper()
 	directory := filepath.Join("..", "..", ".github", "workflows")
