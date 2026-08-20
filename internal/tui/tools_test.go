@@ -164,6 +164,23 @@ func TestEnginePlanModeInitializesAndDrivesHeader(t *testing.T) {
 	}
 }
 
+func TestEngineAutoModeInitializesAndDrivesVisibleModeLabels(t *testing.T) {
+	eng := engine.NewQueryEngine(engine.QueryEngineConfig{
+		CWD:            t.TempDir(),
+		PermissionMode: permission.ModeAuto,
+	})
+	app := New(Config{Engine: eng, Model: "test-model", Resumed: true})
+	if app.permissionMode() != permission.ModeAuto {
+		t.Fatalf("initial TUI mode = %q, want auto", app.permissionMode())
+	}
+	if got := app.welcomeMode(); got != "auto permissions" {
+		t.Fatalf("welcome mode = %q, want auto permissions", got)
+	}
+	if status := stripANSIForTest(app.renderStatus()); !strings.Contains(status, "● auto") {
+		t.Fatalf("auto mode missing from status: %q", status)
+	}
+}
+
 func TestP170PlanStateEventProjectsWithoutSecondEngineMutation(t *testing.T) {
 	app := New(Config{Model: "test-model", Resumed: true})
 	app.permMode = permission.ModeDefault

@@ -3083,6 +3083,8 @@ func (a *App) renderStatus() string {
 			parts = append(parts, a.styles.ToolRunning.Render("⏸")+" plan")
 		case permission.ModeBypassPermissions:
 			parts = append(parts, a.styles.Error.Render("⏵⏵")+" yolo")
+		case permission.ModeAuto:
+			parts = append(parts, a.styles.AssistantPrefix.Render("●")+" auto")
 		default:
 			// Show default mode indicator only when not running
 			parts = append(parts, a.styles.Subtle.Render("●")+" default")
