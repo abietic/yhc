@@ -203,10 +203,10 @@ test('unpacked layouts select direct macOS launch and preserve Linux layout', ()
   assert.equal(linux.rendererURL, 'file:///tmp/yhc/linux-unpacked/resources/webui/index.html');
   assert.equal(linux.launcher, 'xvfb');
   assert.equal(linux.closeStrategy, 'renderer');
-  assert.throws(
-    () => resolveUnpackedLayout(macApp, { platform: 'darwin', arch: 'x64' }),
-    /requires macOS arm64/,
-  );
+  const macIntelPath = '/tmp/yhc/mac/YHC.app/Contents/MacOS/YHC';
+  const macIntel = resolveUnpackedLayout(macIntelPath, { platform: 'darwin', arch: 'x64' });
+  assert.equal(macIntel.appPath, macIntelPath);
+  assert.equal(macIntel.arch, 'x64');
 });
 
 test('platform options keep crash injection and no-sandbox confined to Linux', () => {
@@ -633,5 +633,24 @@ test('repository wiring runs the Darwin window-reopen smoke after package verifi
   assert.match(
     makefile,
     /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac-arm64\/YHC\.app\/Contents\/MacOS\/YHC --reopen-window/,
+  );
+});
+
+test('repository wiring launches the Darwin Intel unpacked app after package verification', async () => {
+  const [makefile, workflow] = await Promise.all([
+    readFile(new URL('../../Makefile', import.meta.url), 'utf8'),
+    readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+  ]);
+  assert.match(
+    makefile,
+    /desktop-unpacked-lifecycle-smoke-darwin-amd64: desktop-package-smoke-darwin-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac\/YHC\.app\/Contents\/MacOS\/YHC/,
+  );
+  assert.match(
+    workflow,
+    /platform: macos-intel[\s\S]*?runner: macos-15-intel[\s\S]*?target: desktop-unpacked-lifecycle-smoke-darwin-amd64/,
   );
 });

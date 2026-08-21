@@ -426,7 +426,7 @@ jobs:
         include:
           - platform: macos-intel
             runner: macos-15-intel
-            target: desktop-package-smoke-darwin-amd64
+            target: desktop-unpacked-lifecycle-smoke-darwin-amd64
           - platform: macos-arm64
             runner: macos-15
             target: desktop-unpacked-window-reopen-smoke-darwin-arm64

@@ -645,7 +645,7 @@ function resolveUnpackedLayout(
       resourcesPath,
     };
   }
-  if (platform === 'darwin' && arch === 'arm64') {
+  if (platform === 'darwin' && (arch === 'arm64' || arch === 'x64')) {
     const macOSPath = path.dirname(appPath);
     const contentsPath = path.dirname(macOSPath);
     const bundlePath = path.dirname(contentsPath);
@@ -669,7 +669,9 @@ function resolveUnpackedLayout(
       resourcesPath,
     };
   }
-  if (platform === 'darwin') throw new Error('unpacked lifecycle smoke requires macOS arm64');
+  if (platform === 'darwin') {
+    throw new Error('unpacked lifecycle smoke requires macOS arm64 or x64');
+  }
   throw new Error(`unsupported unpacked lifecycle platform ${platform}/${arch}`);
 }
 

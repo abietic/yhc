@@ -265,6 +265,14 @@ restoration row does not perform backend crash injection, prove Finder/Dock
 foreground focus, or validate signing, notarization, Keychain prompts, or a
 physical display.
 
+The macOS Intel native row launches the corresponding unsigned x64 unpacked
+app on an Intel runner and applies the same initial renderer, preload,
+`app:get-info`, bundled-backend identity, process-group, browser-close, and
+backend-retirement contract. It does not run the last-window restoration
+extension assigned to the Apple Silicon row. Keeping both native rows executable catches
+architecture-specific launch or packaging drift that a byte-level package
+inspection cannot observe; neither row is distribution evidence.
+
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
 [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L143) stops event
 streams, sends `SIGINT`, and waits 17 seconds before escalating once to
@@ -282,16 +290,16 @@ force-killed process persisted work beyond its last durable write.
 A separate native packaging matrix runs the same unpacked `afterPack` contract
 on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
 Those jobs prove that each native electron-builder path can assemble the exact
-ASAR, WebUI, backend, and license payload. The Apple Silicon row adds the
-automated normal-lifecycle launch above; Intel and Windows remain assembly-only
-evidence. The matrix does not produce installer media, sign code, or upload
-artifacts.
+ASAR, WebUI, backend, and license payload. Both macOS rows add the automated
+normal-lifecycle launch above, and the Apple Silicon row additionally exercises
+last-window restoration; only Windows remains assembly-only evidence. The
+matrix does not produce installer media, sign code, or upload artifacts.
 
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS
-sandbox or another platform. The Apple Silicon lifecycle row keeps the normal
-sandbox but is still automation, not evidence of Finder launch, foreground
-focus, native picker or secure-storage interaction, or physical UI behavior.
+sandbox or another platform. Both macOS lifecycle rows keep the normal sandbox
+but are still automation, not evidence of Finder launch, foreground focus,
+native picker or secure-storage interaction, or physical UI behavior.
 CI also does not construct an active provider turn for the crash oracle, so
 active-turn preservation remains covered by deterministic state tests and
 physical acceptance rather than this Xvfb scenario. CI neither uploads nor

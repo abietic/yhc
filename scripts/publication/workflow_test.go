@@ -83,7 +83,7 @@ func TestCodeQLAnalyzesGoAndDesktopJavaScript(t *testing.T) {
 	}
 }
 
-func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndArmLifecycle(t *testing.T) {
+func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndMacLifecycles(t *testing.T) {
 	ci := readWorkflowFiles(t)[".github/workflows/ci.yml"]
 	start := strings.Index(ci, "  desktop-native-packages:\n")
 	requiredStart := strings.Index(ci, "  required:\n")
@@ -94,7 +94,7 @@ func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndArmLifecycle(t *te
 	for _, contract := range []string{
 		"name: Native Desktop package (${{ matrix.platform }})",
 		"fail-fast: false",
-		"- platform: macos-intel\n            runner: macos-15-intel\n            target: desktop-package-smoke-darwin-amd64",
+		"- platform: macos-intel\n            runner: macos-15-intel\n            target: desktop-unpacked-lifecycle-smoke-darwin-amd64",
 		"- platform: macos-arm64\n            runner: macos-15\n            target: desktop-unpacked-window-reopen-smoke-darwin-arm64",
 		"- platform: windows-x64\n            runner: windows-2025\n            target: desktop-package-smoke-windows-amd64",
 		"runs-on: ${{ matrix.runner }}",
@@ -122,6 +122,7 @@ func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndArmLifecycle(t *te
 	makefile := string(makefileBytes)
 	for _, contract := range []string{
 		"desktop-package-smoke-darwin-amd64: desktop-stage-darwin-amd64 desktop-install\n\tnpm --prefix desktop run package -- --mac --x64",
+		"desktop-unpacked-lifecycle-smoke-darwin-amd64: desktop-package-smoke-darwin-amd64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac/YHC.app/Contents/MacOS/YHC",
 		"desktop-package-smoke-darwin-arm64: desktop-stage-darwin-arm64 desktop-install\n\tnpm --prefix desktop run package -- --mac --arm64",
 		"desktop-unpacked-lifecycle-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC",
 		"desktop-unpacked-window-reopen-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --reopen-window",

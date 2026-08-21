@@ -58,11 +58,11 @@ is still ignored QA evidence, not proof of code signing, notarization, or
 release readiness.
 
 CI also assembles and verifies native unpacked outputs on macOS Intel, macOS
-Apple Silicon, and Windows x64 runners. The Apple Silicon row additionally
-launches its unsigned unpacked app and verifies the bounded bootstrap, preload,
-backend, last-window restoration, and graceful-shutdown lifecycle described
-below. Intel and Windows remain package-verifier coverage only. None of these
-rows creates, signs, uploads, or validates final installer media.
+Apple Silicon, and Windows x64 runners. Both macOS rows launch their unsigned
+unpacked apps and verify bounded bootstrap, preload, bundled-backend identity,
+and graceful shutdown; Apple Silicon additionally verifies last-window
+restoration. Windows remains package-verifier coverage only. None of these rows
+creates, signs, uploads, or validates final installer media.
 
 `desktop/package.json` is the Desktop version source. Its canonical version has
 no `v` prefix. The supported Desktop Make targets depend on that manifest and
@@ -100,8 +100,14 @@ Linux CI job uses their dedicated `-ci` variants, which opt into
 `--no-sandbox`; those runs therefore do not validate the production OS
 sandbox, an active provider turn, or physical UI behavior.
 
-On an Apple Silicon macOS host with an unlocked GUI session, the corresponding
-unsigned unpacked-app gate is:
+On an Intel macOS host with an unlocked GUI session, run:
+
+```bash
+make desktop-unpacked-lifecycle-smoke-darwin-amd64
+```
+
+On an Apple Silicon macOS host, the corresponding unsigned unpacked-app gate
+is:
 
 ```bash
 make desktop-unpacked-lifecycle-smoke-darwin-arm64
