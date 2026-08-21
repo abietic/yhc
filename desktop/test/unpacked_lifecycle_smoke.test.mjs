@@ -636,21 +636,21 @@ test('repository wiring runs the Darwin window-reopen smoke after package verifi
   );
 });
 
-test('repository wiring launches the Darwin Intel unpacked app after package verification', async () => {
+test('repository wiring restores the Darwin Intel window after package verification', async () => {
   const [makefile, workflow] = await Promise.all([
     readFile(new URL('../../Makefile', import.meta.url), 'utf8'),
     readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'),
   ]);
   assert.match(
     makefile,
-    /desktop-unpacked-lifecycle-smoke-darwin-amd64: desktop-package-smoke-darwin-amd64/,
+    /desktop-unpacked-window-reopen-smoke-darwin-amd64: desktop-package-smoke-darwin-amd64/,
   );
   assert.match(
     makefile,
-    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac\/YHC\.app\/Contents\/MacOS\/YHC/,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac\/YHC\.app\/Contents\/MacOS\/YHC --reopen-window/,
   );
   assert.match(
     workflow,
-    /platform: macos-intel[\s\S]*?runner: macos-15-intel[\s\S]*?target: desktop-unpacked-lifecycle-smoke-darwin-amd64/,
+    /platform: macos-intel[\s\S]*?runner: macos-15-intel[\s\S]*?target: desktop-unpacked-window-reopen-smoke-darwin-amd64/,
   );
 });

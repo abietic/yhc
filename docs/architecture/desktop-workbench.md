@@ -235,17 +235,17 @@ seconds—longer than the Host's 10-second bootstrap budget—before Electron
 closes normally. The renderer exposes only a `data-yhc-bootstrap` ready/error
 state for these read-only completion oracles.
 
-The Apple Silicon native row also launches the exact unsigned unpacked
-`YHC.app/Contents/MacOS/YHC` executable with an isolated user-data directory.
-It verifies the same packaged renderer, frozen preload bridge, trusted
-`app:get-info` IPC, and bundled backend path. It then closes the last renderer
-window without quitting the primary app, proves that exact renderer target has
-disappeared, and starts the same app again. The second process must exit with
-status zero through Electron's single-instance path, while the original app and
-backend identities remain unchanged. The primary process must create one new
-renderer target with a different identity and complete the same bootstrap
-contract before a browser-level graceful close ends Electron and retires the
-original backend.
+Both macOS native rows also launch the exact unsigned unpacked
+`YHC.app/Contents/MacOS/YHC` executable for their architecture with an isolated
+user-data directory. Each verifies the same packaged renderer, frozen preload
+bridge, trusted `app:get-info` IPC, and bundled backend path, then closes the
+last renderer window without quitting the primary app, proves that exact
+renderer target has disappeared, and starts the same app again. The second
+process must exit with status zero through Electron's single-instance path,
+while the original app and backend identities remain unchanged. The primary
+process must create one new renderer target with a different identity and
+complete the same bootstrap contract before a browser-level graceful close
+ends Electron and retires the original backend.
 
 [`createWindowRestoreCoordinator`](../../desktop/lifecycle.cjs) is the shared
 owner for both macOS `activate` and `second-instance` restoration. One attempt
@@ -265,12 +265,9 @@ restoration row does not perform backend crash injection, prove Finder/Dock
 foreground focus, or validate signing, notarization, Keychain prompts, or a
 physical display.
 
-The macOS Intel native row launches the corresponding unsigned x64 unpacked
-app on an Intel runner and applies the same initial renderer, preload,
-`app:get-info`, bundled-backend identity, process-group, browser-close, and
-backend-retirement contract. It does not run the last-window restoration
-extension assigned to the Apple Silicon row. Keeping both native rows executable catches
-architecture-specific launch or packaging drift that a byte-level package
+The macOS Intel row applies that same renderer-restoration contract to the
+unsigned x64 app on its native runner. Keeping both macOS rows executable
+catches architecture-specific launch or packaging drift that byte-level package
 inspection cannot observe; neither row is distribution evidence.
 
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
@@ -291,9 +288,9 @@ A separate native packaging matrix runs the same unpacked `afterPack` contract
 on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
 Those jobs prove that each native electron-builder path can assemble the exact
 ASAR, WebUI, backend, and license payload. Both macOS rows add the automated
-normal-lifecycle launch above, and the Apple Silicon row additionally exercises
-last-window restoration; only Windows remains assembly-only evidence. The
-matrix does not produce installer media, sign code, or upload artifacts.
+normal lifecycle and last-window restoration above; only Windows remains
+assembly-only evidence. The matrix does not produce installer media, sign code,
+or upload artifacts.
 
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS

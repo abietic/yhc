@@ -60,9 +60,9 @@ release readiness.
 CI also assembles and verifies native unpacked outputs on macOS Intel, macOS
 Apple Silicon, and Windows x64 runners. Both macOS rows launch their unsigned
 unpacked apps and verify bounded bootstrap, preload, bundled-backend identity,
-and graceful shutdown; Apple Silicon additionally verifies last-window
-restoration. Windows remains package-verifier coverage only. None of these rows
-creates, signs, uploads, or validates final installer media.
+last-window restoration, and graceful shutdown. Windows remains
+package-verifier coverage only. None of these rows creates, signs, uploads, or
+validates final installer media.
 
 `desktop/package.json` is the Desktop version source. Its canonical version has
 no `v` prefix. The supported Desktop Make targets depend on that manifest and
@@ -122,10 +122,10 @@ best-effort `ps` observation of PID, process group, start time, state, and
 resolved command path; it is not an atomic kernel ownership guarantee. A locked
 or unavailable GUI session cannot satisfy this gate.
 
-The stronger macOS window-restoration gate, and the target used by Apple
-Silicon CI, is:
+The stronger macOS window-restoration gates used by both native CI rows are:
 
 ```bash
+make desktop-unpacked-window-reopen-smoke-darwin-amd64
 make desktop-unpacked-window-reopen-smoke-darwin-arm64
 ```
 
