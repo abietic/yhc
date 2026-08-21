@@ -83,7 +83,7 @@ func TestCodeQLAnalyzesGoAndDesktopJavaScript(t *testing.T) {
 	}
 }
 
-func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndMacLifecycles(t *testing.T) {
+func TestDesktopNativePackageMatrixUsesExactUnpackedLifecycleTargets(t *testing.T) {
 	ci := readWorkflowFiles(t)[".github/workflows/ci.yml"]
 	start := strings.Index(ci, "  desktop-native-packages:\n")
 	requiredStart := strings.Index(ci, "  required:\n")
@@ -96,7 +96,7 @@ func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndMacLifecycles(t *t
 		"fail-fast: false",
 		"- platform: macos-intel\n            runner: macos-15-intel\n            target: desktop-unpacked-window-reopen-smoke-darwin-amd64",
 		"- platform: macos-arm64\n            runner: macos-15\n            target: desktop-unpacked-window-reopen-smoke-darwin-arm64",
-		"- platform: windows-x64\n            runner: windows-2025\n            target: desktop-package-smoke-windows-amd64",
+		"- platform: windows-x64\n            runner: windows-2025\n            target: desktop-unpacked-lifecycle-smoke-windows-amd64",
 		"runs-on: ${{ matrix.runner }}",
 		"CSC_IDENTITY_AUTO_DISCOVERY: 'false'",
 		"if: runner.os == 'Windows'",
@@ -128,6 +128,7 @@ func TestDesktopNativePackageMatrixUsesExactUnpackedTargetsAndMacLifecycles(t *t
 		"desktop-unpacked-lifecycle-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC",
 		"desktop-unpacked-window-reopen-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --reopen-window",
 		"desktop-package-smoke-windows-amd64: desktop-stage-windows-amd64 desktop-install\n\tnpm --prefix desktop run package -- --win --x64",
+		"desktop-unpacked-lifecycle-smoke-windows-amd64: desktop-package-smoke-windows-amd64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/win-unpacked/YHC.exe",
 	} {
 		if !strings.Contains(makefile, contract) {
 			t.Fatalf("native Desktop package target lacks unpacked contract %q", contract)

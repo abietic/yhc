@@ -654,3 +654,251 @@ test('repository wiring restores the Darwin Intel window after package verificat
     /platform: macos-intel[\s\S]*?runner: macos-15-intel[\s\S]*?target: desktop-unpacked-window-reopen-smoke-darwin-amd64/,
   );
 });
+
+const {
+  normalizeWindowsExecutable,
+  parseWindowsProcessIdentity,
+  parseWindowsProcessSnapshot,
+  readWindowsProcessIdentity,
+  requireExecutable,
+  terminateWindowsProcessTree,
+} = require('../scripts/unpacked_lifecycle_smoke.cjs');
+
+test('Windows unpacked layout selects the packaged executable and backend', () => {
+  const app = 'D:\\a\\yhc\\desktop\\dist\\win-unpacked\\YHC.exe';
+  const layout = resolveUnpackedLayout(app, { platform: 'win32', arch: 'x64' });
+  assert.equal(layout.appPath, app);
+  assert.equal(layout.backendPath, 'D:\\a\\yhc\\desktop\\dist\\win-unpacked\\resources\\bin\\yhc.exe');
+  assert.equal(layout.rendererURL, 'file:///D:/a/yhc/desktop/dist/win-unpacked/resources/webui/index.html');
+  assert.equal(layout.launcher, 'direct');
+  assert.equal(layout.closeStrategy, 'browser');
+  assert.equal(layout.cleanupStrategy, 'windows-tree');
+  assert.throws(
+    () => resolveUnpackedLayout('D:\\a\\yhc\\desktop\\dist\\YHC.exe', {
+      platform: 'win32',
+      arch: 'x64',
+    }),
+    /invalid Windows unpacked Desktop application path/,
+  );
+  assert.throws(
+    () => resolveUnpackedLayout(app, { platform: 'win32', arch: 'arm64' }),
+    /requires Windows x64/,
+  );
+});
+
+test('Windows identity parsing requires PID, creation time, and absolute executable', () => {
+  const record = {
+    ProcessId: 4321,
+    ParentProcessId: 1234,
+    CreationTimeUtc: '2026-08-21T04:00:00.1234567Z',
+    ExecutablePath: 'D:\\A\\YHC\\YHC.exe',
+  };
+  assert.deepEqual(parseWindowsProcessIdentity(JSON.stringify(record), 4321), {
+    pid: 4321,
+    parentPid: 1234,
+    startTime: record.CreationTimeUtc,
+    executable: 'd:\\a\\yhc\\yhc.exe',
+  });
+  assert.equal(normalizeWindowsExecutable('D:\\A\\YHC\\..\\YHC\\YHC.exe'), 'd:\\a\\yhc\\yhc.exe');
+  for (const invalid of [
+    { ...record, ProcessId: 4322 },
+    { ...record, CreationTimeUtc: '' },
+    { ...record, CreationTimeUtc: 'yesterday' },
+    { ...record, ExecutablePath: null },
+    { ...record, ExecutablePath: 'YHC.exe' },
+  ]) {
+    assert.throws(
+      () => parseWindowsProcessIdentity(JSON.stringify(invalid), 4321),
+      /invalid Windows process identity/,
+    );
+  }
+  assert.throws(
+    () => parseWindowsProcessIdentity(JSON.stringify([record]), 4321),
+    /invalid Windows process identity/,
+  );
+});
+
+test('Windows process snapshots retain incomplete unrelated rows for fail-closed traversal', () => {
+  const snapshot = parseWindowsProcessSnapshot(JSON.stringify([
+    {
+      ProcessId: 4321,
+      ParentProcessId: 1234,
+      CreationTimeUtc: '2026-08-21T04:00:00.1234567Z',
+      ExecutablePath: 'D:\\A\\YHC\\YHC.exe',
+    },
+    {
+      ProcessId: 7,
+      ParentProcessId: 4,
+      CreationTimeUtc: null,
+      ExecutablePath: null,
+    },
+  ]));
+  assert.deepEqual(snapshot[0], {
+    pid: 4321,
+    parentPid: 1234,
+    startTime: '2026-08-21T04:00:00.1234567Z',
+    executable: 'd:\\a\\yhc\\yhc.exe',
+  });
+  assert.deepEqual(snapshot[1], {
+    pid: 7,
+    parentPid: 4,
+    startTime: null,
+    executable: null,
+  });
+  assert.throws(
+    () => parseWindowsProcessSnapshot('{"ProcessId":4321}'),
+    /invalid Windows process snapshot/,
+  );
+});
+
+test('Windows identity reader uses a bounded no-profile CIM query', () => {
+  const calls = [];
+  const identity = readWindowsProcessIdentity(4321, {
+    runPowerShell(command, args, options) {
+      calls.push({ command, args, options });
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          ProcessId: 4321,
+          ParentProcessId: 1234,
+          CreationTimeUtc: '2026-08-21T04:00:00.1234567Z',
+          ExecutablePath: 'D:\\A\\YHC\\YHC.exe',
+        }),
+        stderr: '',
+      };
+    },
+  });
+  assert.equal(identity.pid, 4321);
+  assert.equal(calls[0].command, 'powershell.exe');
+  assert.deepEqual(calls[0].args.slice(0, 3), ['-NoLogo', '-NoProfile', '-NonInteractive']);
+  assert.match(calls[0].args.at(-1), /ProcessId = 4321/);
+  assert.equal(calls[0].options.shell, false);
+  assert.equal(calls[0].options.windowsHide, true);
+  assert.equal(readWindowsProcessIdentity(4321, {
+    runPowerShell: () => ({ status: 3, stdout: '', stderr: '' }),
+  }), null);
+  assert.throws(
+    () => readWindowsProcessIdentity(4321, {
+      runPowerShell: () => ({ status: 1, stdout: '', stderr: 'denied' }),
+    }),
+    /Windows process inspection failed/,
+  );
+});
+
+test('Windows executable admission does not rely on POSIX mode bits', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-windows-executable-'));
+  const executable = path.join(root, 'YHC.exe');
+  try {
+    fs.writeFileSync(executable, 'fixture', { mode: 0o600 });
+    assert.equal(
+      requireExecutable(executable, 'Windows fixture', { platform: 'win32' }),
+      fs.realpathSync(executable),
+    );
+    assert.throws(
+      () => requireExecutable(executable, 'Unix fixture', { platform: 'linux' }),
+      /not an executable regular file/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Windows cleanup validates the visible tree and fresh root identity before taskkill', async () => {
+  const root = {
+    pid: 4321,
+    parentPid: 111,
+    startTime: '2026-08-21T04:00:00.1234567Z',
+    executable: 'd:\\a\\yhc\\yhc.exe',
+  };
+  const backend = {
+    pid: 4322,
+    parentPid: 4321,
+    startTime: '2026-08-21T04:00:01.1234567Z',
+    executable: 'd:\\a\\yhc\\resources\\bin\\yhc.exe',
+  };
+  const helper = {
+    pid: 4323,
+    parentPid: 4321,
+    startTime: '2026-08-21T04:00:01.2234567Z',
+    executable: root.executable,
+  };
+  let killed = false;
+  const calls = [];
+  await terminateWindowsProcessTree(root, {
+    expectedBackend: backend,
+    readIdentity: (pid) => killed ? null : (pid === root.pid ? root : backend),
+    readSnapshot: () => [root, backend, helper],
+    runTaskkill(command, args, options) {
+      calls.push({ command, args, options });
+      killed = true;
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    waitFor: async (probe) => assert.equal(probe(), true),
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, 'taskkill.exe');
+  assert.deepEqual(calls[0].args, ['/PID', '4321', '/T', '/F']);
+  assert.equal(calls[0].options.shell, false);
+  assert.equal(calls[0].options.windowsHide, true);
+});
+
+test('Windows cleanup refuses unknown descendants and PID reuse', async () => {
+  const root = {
+    pid: 4321,
+    parentPid: 111,
+    startTime: '2026-08-21T04:00:00.1234567Z',
+    executable: 'd:\\a\\yhc\\yhc.exe',
+  };
+  let signals = 0;
+  await assert.rejects(
+    terminateWindowsProcessTree(root, {
+      readIdentity: () => root,
+      readSnapshot: () => [
+        root,
+        {
+          pid: 4322,
+          parentPid: root.pid,
+          startTime: '2026-08-21T04:00:01.1234567Z',
+          executable: 'c:\\windows\\system32\\cmd.exe',
+        },
+      ],
+      runTaskkill: () => {
+        signals += 1;
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    }),
+    /Windows process tree contained an unowned executable/,
+  );
+  let reads = 0;
+  await assert.rejects(
+    terminateWindowsProcessTree(root, {
+      readIdentity: () => (++reads === 1 ? root : { ...root, startTime: '2026-08-21T04:01:00Z' }),
+      readSnapshot: () => [root],
+      runTaskkill: () => {
+        signals += 1;
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    }),
+    /Windows cleanup ownership could not be confirmed/,
+  );
+  assert.equal(signals, 0);
+});
+
+test('repository wiring launches the Windows unpacked app after package verification', async () => {
+  const [makefile, workflow] = await Promise.all([
+    readFile(new URL('../../Makefile', import.meta.url), 'utf8'),
+    readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+  ]);
+  assert.match(
+    makefile,
+    /desktop-unpacked-lifecycle-smoke-windows-amd64: desktop-package-smoke-windows-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/win-unpacked\/YHC\.exe/,
+  );
+  assert.match(
+    workflow,
+    /platform: windows-x64[\s\S]*?runner: windows-2025[\s\S]*?target: desktop-unpacked-lifecycle-smoke-windows-amd64/,
+  );
+});

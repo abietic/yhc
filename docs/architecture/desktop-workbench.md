@@ -270,6 +270,18 @@ unsigned x64 app on its native runner. Keeping both macOS rows executable
 catches architecture-specific launch or packaging drift that byte-level package
 inspection cannot observe; neither row is distribution evidence.
 
+The Windows Server 2025 x64 row launches the exact unpacked `YHC.exe` with an
+isolated user profile and verifies the same renderer, frozen preload bridge,
+trusted `app:get-info` IPC, bundled `resources\bin\yhc.exe` identity, and
+browser-level graceful shutdown. Windows process identity combines PID, UTC
+creation time, and normalized executable path. Failure cleanup takes a fresh
+`Win32_Process` snapshot, accepts only the observed app/backend executable tree,
+rechecks the root identity, and then applies `taskkill /PID ... /T /F`; unknown
+or incomplete lineage fails closed. Because the final identity observation and
+tree termination are separate OS operations, this is a best-effort PID-reuse
+defense rather than atomic process-handle or Job Object ownership. Crash
+injection and last-window restoration remain outside this Windows row.
+
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
 [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L143) stops event
 streams, sends `SIGINT`, and waits 17 seconds before escalating once to
@@ -287,16 +299,16 @@ force-killed process persisted work beyond its last durable write.
 A separate native packaging matrix runs the same unpacked `afterPack` contract
 on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
 Those jobs prove that each native electron-builder path can assemble the exact
-ASAR, WebUI, backend, and license payload. Both macOS rows add the automated
-normal lifecycle and last-window restoration above; only Windows remains
-assembly-only evidence. The matrix does not produce installer media, sign code,
-or upload artifacts.
+ASAR, WebUI, backend, and license payload. All three rows add the automated
+normal lifecycle above; both macOS rows also add last-window restoration. The
+matrix does not produce installer media, sign code, or upload artifacts.
 
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS
-sandbox or another platform. Both macOS lifecycle rows keep the normal sandbox
-but are still automation, not evidence of Finder launch, foreground focus,
-native picker or secure-storage interaction, or physical UI behavior.
+sandbox or another platform. Both macOS lifecycle rows and the Windows row keep
+the normal sandbox but are still automation, not evidence of Finder, Dock, or
+Start-menu launch, foreground focus, native picker or secure-storage
+interaction, installer behavior, or physical UI behavior.
 CI also does not construct an active provider turn for the crash oracle, so
 active-turn preservation remains covered by deterministic state tests and
 physical acceptance rather than this Xvfb scenario. CI neither uploads nor

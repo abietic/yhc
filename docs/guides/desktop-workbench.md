@@ -57,12 +57,11 @@ assembly for Linux x64 without uploading it as a release artifact. The output
 is still ignored QA evidence, not proof of code signing, notarization, or
 release readiness.
 
-CI also assembles and verifies native unpacked outputs on macOS Intel, macOS
-Apple Silicon, and Windows x64 runners. Both macOS rows launch their unsigned
-unpacked apps and verify bounded bootstrap, preload, bundled-backend identity,
-last-window restoration, and graceful shutdown. Windows remains
-package-verifier coverage only. None of these rows creates, signs, uploads, or
-validates final installer media.
+CI also assembles, verifies, and launches native unpacked outputs on macOS
+Intel, macOS Apple Silicon, and Windows x64 runners. All three rows verify
+bounded bootstrap, preload, bundled-backend identity, and graceful shutdown;
+both macOS rows additionally verify last-window restoration. None of these rows
+creates, signs, uploads, or validates final installer media.
 
 `desktop/package.json` is the Desktop version source. Its canonical version has
 no `v` prefix. The supported Desktop Make targets depend on that manifest and
@@ -139,6 +138,28 @@ original app and backend normally.
 Both macOS rows remain automation evidence: they do not exercise Finder/Dock
 launch, foreground focus, native picker interaction, secure-storage prompts,
 signing, notarization, or a physical display acceptance scenario.
+
+On a Windows x64 host, the native unpacked lifecycle gate is:
+
+```powershell
+make desktop-unpacked-lifecycle-smoke-windows-amd64
+```
+
+It starts the exact `desktop/dist/win-unpacked/YHC.exe` with an isolated user
+profile, verifies the packaged renderer, frozen preload bridge, and bundled
+`resources\bin\yhc.exe` process identity, then uses the browser-level graceful
+close and requires both original process identities to retire. Failure cleanup
+queries fresh `Win32_Process` PID, UTC creation time, executable path, and the
+visible parent-child tree before invoking `taskkill /PID ... /T /F`. Missing or
+changed identity, an unknown descendant executable, or an unowned backend fails
+closed. The final recheck and `taskkill` remain separate operations, so this is
+a best-effort PID-reuse guard rather than an atomic Windows process-handle or
+Job Object ownership guarantee.
+
+The Windows row is native automation evidence, not proof of Start-menu launch,
+foreground focus, file-picker interaction, installer behavior, Authenticode,
+SmartScreen reputation, or physical UI acceptance. It does not inject a backend
+crash or exercise macOS window restoration.
 
 Run `make desktop-check` for deterministic Node/unit and syntax checks. The
 browser-only transport can also be started explicitly with:

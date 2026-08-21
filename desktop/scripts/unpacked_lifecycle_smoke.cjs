@@ -15,6 +15,8 @@ const CDP_COMMAND_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 100;
 const PROCESS_QUERY_TIMEOUT_MS = 1_000;
 const PROCESS_QUERY_MAX_BUFFER = 4 << 10;
+const WINDOWS_PROCESS_QUERY_TIMEOUT_MS = 10_000;
+const WINDOWS_PROCESS_QUERY_MAX_BUFFER = 1 << 20;
 const DARWIN_IOREG_MAX_BUFFER = 256 << 10;
 const BACKEND_UNAVAILABLE_NOTICE =
   'Backend stopped unexpectedly. Restart YHC to reconnect.';
@@ -210,6 +212,155 @@ function parseDarwinProcessIdentity(contents) {
     throw new Error('invalid Darwin process identity');
   }
   return { pid, pgid, state, startTime, executable };
+}
+
+function normalizeWindowsExecutable(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new Error('invalid Windows process identity');
+  }
+  const normalized = path.win32.normalize(value);
+  if (!/^[A-Za-z]:\\/.test(normalized) || path.win32.basename(normalized).length === 0) {
+    throw new Error('invalid Windows process identity');
+  }
+  return normalized.toLowerCase();
+}
+
+function normalizeWindowsStartTime(value) {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{7}Z$/.test(value) ||
+    !Number.isFinite(Date.parse(value))
+  ) {
+    throw new Error('invalid Windows process identity');
+  }
+  return value;
+}
+
+function normalizeWindowsProcessRecord(record, { identityRequired = true } = {}) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    throw new Error('invalid Windows process identity');
+  }
+  const pid = Number(record.ProcessId);
+  const parentPid = Number(record.ParentProcessId);
+  if (
+    !Number.isSafeInteger(pid) || pid <= 1 ||
+    !Number.isSafeInteger(parentPid) || parentPid < 0
+  ) {
+    throw new Error('invalid Windows process identity');
+  }
+  let startTime = null;
+  let executable = null;
+  if (record.CreationTimeUtc !== null && record.CreationTimeUtc !== undefined) {
+    startTime = normalizeWindowsStartTime(record.CreationTimeUtc);
+  }
+  if (record.ExecutablePath !== null && record.ExecutablePath !== undefined) {
+    executable = normalizeWindowsExecutable(record.ExecutablePath);
+  }
+  if (identityRequired && (!startTime || !executable)) {
+    throw new Error('invalid Windows process identity');
+  }
+  return { pid, parentPid, startTime, executable };
+}
+
+function parseWindowsProcessIdentity(contents, expectedPID) {
+  if (!Number.isSafeInteger(expectedPID) || expectedPID <= 1) {
+    throw new Error('invalid backend process ID');
+  }
+  try {
+    const identity = normalizeWindowsProcessRecord(JSON.parse(String(contents)));
+    if (identity.pid !== expectedPID) throw new Error('Windows process ID changed');
+    return identity;
+  } catch (error) {
+    if (error?.message === 'invalid backend process ID') throw error;
+    throw new Error('invalid Windows process identity', { cause: error });
+  }
+}
+
+function parseWindowsProcessSnapshot(contents) {
+  try {
+    const records = JSON.parse(String(contents));
+    if (!Array.isArray(records) || records.length > 65_536) {
+      throw new Error('bounded Windows process array required');
+    }
+    const snapshot = records.map((record) => (
+      normalizeWindowsProcessRecord(record, { identityRequired: false })
+    ));
+    if (new Set(snapshot.map((record) => record.pid)).size !== snapshot.length) {
+      throw new Error('duplicate Windows process ID');
+    }
+    return snapshot;
+  } catch (error) {
+    throw new Error('invalid Windows process snapshot', { cause: error });
+  }
+}
+
+function windowsPowerShellOptions(maxBuffer) {
+  return {
+    encoding: 'utf8',
+    maxBuffer,
+    shell: false,
+    timeout: WINDOWS_PROCESS_QUERY_TIMEOUT_MS,
+    windowsHide: true,
+  };
+}
+
+function readWindowsProcessIdentity(
+  pid,
+  { runPowerShell = spawnSync } = {},
+) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) {
+    throw new Error('invalid backend process ID');
+  }
+  const projection = "Select-Object ProcessId,ParentProcessId,@{Name='CreationTimeUtc';Expression={$_.CreationDate.ToUniversalTime().ToString('O')}},ExecutablePath";
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    `$process = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'`,
+    'if ($null -eq $process) { exit 3 }',
+    'if (@($process).Count -ne 1) { exit 4 }',
+    `$selected = $process | ${projection}`,
+    'ConvertTo-Json -InputObject $selected -Compress',
+  ].join('; ');
+  const result = runPowerShell('powershell.exe', [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    script,
+  ], windowsPowerShellOptions(PROCESS_QUERY_MAX_BUFFER));
+  if (result?.error) {
+    throw new Error('Windows process inspection failed', { cause: result.error });
+  }
+  const stdout = Buffer.from(result?.stdout || '').toString('utf8');
+  const stderr = Buffer.from(result?.stderr || '').toString('utf8');
+  if (result?.status === 3 && stdout.trim() === '' && stderr.trim() === '') return null;
+  if (result?.status !== 0) throw new Error('Windows process inspection failed');
+  return parseWindowsProcessIdentity(stdout, pid);
+}
+
+function readWindowsProcessSnapshot({ runPowerShell = spawnSync } = {}) {
+  const projection = "Select-Object ProcessId,ParentProcessId,@{Name='CreationTimeUtc';Expression={$_.CreationDate.ToUniversalTime().ToString('O')}},ExecutablePath";
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    `$selected = @(Get-CimInstance Win32_Process | ${projection})`,
+    'ConvertTo-Json -InputObject $selected -Compress',
+  ].join('; ');
+  const result = runPowerShell('powershell.exe', [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    script,
+  ], windowsPowerShellOptions(WINDOWS_PROCESS_QUERY_MAX_BUFFER));
+  if (result?.error || result?.status !== 0) {
+    throw new Error('Windows process tree inspection failed', {
+      ...(result?.error ? { cause: result.error } : {}),
+    });
+  }
+  return parseWindowsProcessSnapshot(result.stdout || '');
 }
 
 function readDarwinProcessIdentity(
@@ -487,9 +638,13 @@ function rendererContractMatches(probe, expectedRendererURL) {
     probe.requiredDOM === true;
 }
 
-function requireExecutable(candidate, label) {
+function requireExecutable(candidate, label, { platform = process.platform } = {}) {
   const info = fs.lstatSync(candidate);
-  if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o111) === 0) {
+  if (
+    !info.isFile() ||
+    info.isSymbolicLink() ||
+    (platform !== 'win32' && (info.mode & 0o111) === 0)
+  ) {
     throw new Error(`${label} is not an executable regular file`);
   }
   return fs.realpathSync(candidate);
@@ -510,15 +665,34 @@ function findCommand(name, searchPath) {
   throw new Error(`${name} is required`);
 }
 
-function makeIsolatedEnvironment(root, sourceEnvironment = process.env) {
+function sourceEnvironmentValue(sourceEnvironment, name) {
+  const direct = sourceEnvironment[name];
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+  const matching = Object.keys(sourceEnvironment).find((candidate) => (
+    candidate.toLowerCase() === name.toLowerCase()
+  ));
+  const value = matching ? sourceEnvironment[matching] : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function makeIsolatedEnvironment(
+  root,
+  sourceEnvironment = process.env,
+  { platform = process.platform } = {},
+) {
   const environment = {};
-  for (const name of ['PATH', 'LANG', 'LC_ALL', 'TZ']) {
-    if (
-      typeof sourceEnvironment[name] === 'string' &&
-      sourceEnvironment[name].length > 0
-    ) {
-      environment[name] = sourceEnvironment[name];
-    }
+  for (const name of [
+    'PATH',
+    'LANG',
+    'LC_ALL',
+    'TZ',
+    'SystemRoot',
+    'WINDIR',
+    'ComSpec',
+    'PATHEXT',
+  ]) {
+    const value = sourceEnvironmentValue(sourceEnvironment, name);
+    if (value) environment[name] = value;
   }
   if (!environment.PATH) throw new Error('PATH is required');
   for (const directory of ['home', 'tmp', 'config', 'cache', 'data', 'runtime']) {
@@ -526,7 +700,7 @@ function makeIsolatedEnvironment(root, sourceEnvironment = process.env) {
     fs.mkdirSync(target, { recursive: true, mode: 0o700 });
     fs.chmodSync(target, 0o700);
   }
-  return {
+  const isolated = {
     ...environment,
     HOME: path.join(root, 'home'),
     TMPDIR: path.join(root, 'tmp'),
@@ -536,6 +710,14 @@ function makeIsolatedEnvironment(root, sourceEnvironment = process.env) {
     XDG_RUNTIME_DIR: path.join(root, 'runtime'),
     NO_AT_BRIDGE: '1',
   };
+  if (platform === 'win32') {
+    isolated.USERPROFILE = path.join(root, 'home');
+    isolated.APPDATA = path.join(root, 'config');
+    isolated.LOCALAPPDATA = path.join(root, 'data');
+    isolated.TEMP = path.join(root, 'tmp');
+    isolated.TMP = path.join(root, 'tmp');
+  }
+  return isolated;
 }
 
 function waitForChildExit(child) {
@@ -545,13 +727,22 @@ function waitForChildExit(child) {
   });
 }
 
-function observeSpawnedChild(child) {
+function safeProcessID(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error('unsafe process');
+  return pid;
+}
+
+function observeSpawnedChild(child, { requireProcessGroup = true } = {}) {
   const exit = waitForChildExit(child);
   // A spawn failure is emitted asynchronously. Attach a rejection handler before
   // validating the PID so an invalid or missing PID cannot leave an unhandled
   // child error behind while the caller unwinds.
   void exit.catch(() => {});
-  safeProcessGroupID(child.pid);
+  if (requireProcessGroup) {
+    safeProcessGroupID(child.pid);
+  } else {
+    safeProcessID(child.pid);
+  }
   return exit;
 }
 
@@ -624,6 +815,115 @@ async function terminateProcessGroup(pid, options = {}) {
   await waitFor(() => !groupAlive(pid), CLEANUP_TIMEOUT_MS, 'process group kill');
 }
 
+function windowsProcessTreeMembers(snapshot, expectedRoot, expectedBackend) {
+  if (!Array.isArray(snapshot)) throw new Error('Windows process tree inspection failed');
+  const rootMatches = snapshot.filter((record) => record?.pid === expectedRoot.pid);
+  if (rootMatches.length !== 1 || !sameProcessIdentity(expectedRoot, rootMatches[0])) {
+    throw new Error('Windows cleanup ownership could not be confirmed');
+  }
+  const allowedExecutables = new Set([expectedRoot.executable]);
+  if (expectedBackend?.executable) allowedExecutables.add(expectedBackend.executable);
+  const members = [rootMatches[0]];
+  const visited = new Set([expectedRoot.pid]);
+  for (let index = 0; index < members.length; index += 1) {
+    const parent = members[index];
+    for (const candidate of snapshot) {
+      if (candidate?.parentPid !== parent.pid || visited.has(candidate.pid)) continue;
+      if (
+        !candidate.startTime ||
+        !candidate.executable ||
+        Date.parse(candidate.startTime) < Date.parse(parent.startTime)
+      ) {
+        throw new Error('Windows process tree lineage could not be confirmed');
+      }
+      if (!allowedExecutables.has(candidate.executable)) {
+        throw new Error('Windows process tree contained an unowned executable');
+      }
+      visited.add(candidate.pid);
+      members.push(candidate);
+    }
+  }
+  if (expectedBackend && !members.some((record) => (
+    sameProcessIdentity(expectedBackend, record)
+  ))) {
+    throw new Error('Windows backend ownership could not be confirmed');
+  }
+  return members;
+}
+
+async function terminateWindowsProcessTree(
+  expectedRoot,
+  {
+    expectedBackend,
+    readIdentity = readWindowsProcessIdentity,
+    readSnapshot = readWindowsProcessSnapshot,
+    runTaskkill = spawnSync,
+    waitFor = poll,
+  } = {},
+) {
+  safeProcessID(expectedRoot?.pid);
+  if (!expectedRoot.startTime || !expectedRoot.executable) {
+    throw new Error('Windows cleanup ownership could not be confirmed');
+  }
+  const currentRoot = readIdentity(expectedRoot.pid);
+  if (!currentRoot) {
+    if (expectedBackend && originalProcessAlive(expectedBackend, readIdentity)) {
+      throw new Error('Windows root exited while its backend remained');
+    }
+    return;
+  }
+  if (!sameProcessIdentity(expectedRoot, currentRoot)) {
+    throw new Error('Windows cleanup ownership could not be confirmed');
+  }
+  let currentBackend = null;
+  if (expectedBackend) {
+    currentBackend = readIdentity(expectedBackend.pid);
+    if (currentBackend && !sameProcessIdentity(expectedBackend, currentBackend)) {
+      throw new Error('Windows backend ownership could not be confirmed');
+    }
+  }
+  windowsProcessTreeMembers(
+    readSnapshot(),
+    expectedRoot,
+    currentBackend ? expectedBackend : undefined,
+  );
+  const freshRoot = readIdentity(expectedRoot.pid);
+  if (!sameProcessIdentity(expectedRoot, freshRoot)) {
+    throw new Error('Windows cleanup ownership could not be confirmed');
+  }
+  const result = runTaskkill('taskkill.exe', [
+    '/PID',
+    String(expectedRoot.pid),
+    '/T',
+    '/F',
+  ], {
+    encoding: 'utf8',
+    maxBuffer: PROCESS_QUERY_MAX_BUFFER,
+    shell: false,
+    timeout: WINDOWS_PROCESS_QUERY_TIMEOUT_MS,
+    windowsHide: true,
+  });
+  if (result?.error || result?.status !== 0) {
+    throw new Error('Windows process tree cleanup failed', {
+      ...(result?.error ? { cause: result.error } : {}),
+    });
+  }
+  await waitFor(() => (
+    !originalProcessAlive(expectedRoot, readIdentity) &&
+    (!expectedBackend || !originalProcessAlive(expectedBackend, readIdentity))
+  ), CLEANUP_TIMEOUT_MS, 'Windows process tree cleanup');
+}
+
+function windowsFileURL(candidate) {
+  const normalized = path.win32.resolve(candidate);
+  if (!/^[A-Za-z]:\\/.test(normalized)) {
+    throw new Error('invalid Windows unpacked Desktop application path');
+  }
+  const drive = normalized.slice(0, 2);
+  const segments = normalized.slice(3).split('\\').map(encodeURIComponent);
+  return `file:///${drive}/${segments.join('/')}`;
+}
+
 function resolveUnpackedLayout(
   appCandidate,
   { platform = process.platform, arch = process.arch } = {},
@@ -631,7 +931,8 @@ function resolveUnpackedLayout(
   if (typeof appCandidate !== 'string' || appCandidate.length === 0) {
     throw new TypeError('unpacked Desktop application path required');
   }
-  const appPath = path.resolve(appCandidate);
+  const pathAPI = platform === 'win32' ? path.win32 : path;
+  const appPath = pathAPI.resolve(appCandidate);
   if (platform === 'linux' && arch === 'x64') {
     const resourcesPath = path.join(path.dirname(appPath), 'resources');
     return {
@@ -671,6 +972,30 @@ function resolveUnpackedLayout(
   }
   if (platform === 'darwin') {
     throw new Error('unpacked lifecycle smoke requires macOS arm64 or x64');
+  }
+  if (platform === 'win32' && arch === 'x64') {
+    const applicationPath = pathAPI.dirname(appPath);
+    if (
+      pathAPI.basename(appPath).toLowerCase() !== 'yhc.exe' ||
+      pathAPI.basename(applicationPath).toLowerCase() !== 'win-unpacked'
+    ) {
+      throw new Error('invalid Windows unpacked Desktop application path');
+    }
+    const resourcesPath = pathAPI.join(applicationPath, 'resources');
+    return {
+      appPath,
+      arch,
+      backendPath: pathAPI.join(resourcesPath, 'bin', 'yhc.exe'),
+      cleanupStrategy: 'windows-tree',
+      closeStrategy: 'browser',
+      launcher: 'direct',
+      platform,
+      rendererURL: windowsFileURL(pathAPI.join(resourcesPath, 'webui', 'index.html')),
+      resourcesPath,
+    };
+  }
+  if (platform === 'win32') {
+    throw new Error('unpacked lifecycle smoke requires Windows x64');
   }
   throw new Error(`unsupported unpacked lifecycle platform ${platform}/${arch}`);
 }
@@ -751,19 +1076,35 @@ async function runSmoke(
     disableSandbox,
     reopenWindow,
   });
-  const appPath = requireExecutable(layout.appPath, 'unpacked Desktop application');
-  layout = resolveUnpackedLayout(appPath);
+  const appPath = requireExecutable(layout.appPath, 'unpacked Desktop application', {
+    platform: layout.platform,
+  });
+  layout = resolveUnpackedLayout(appPath, {
+    arch: layout.arch,
+    platform: layout.platform,
+  });
   const expectedRendererURL = layout.rendererURL;
   const expectedBackend = requireExecutable(
     layout.backendPath,
     'packaged backend',
+    { platform: layout.platform },
   );
+  const expectedAppIdentityPath = layout.platform === 'win32'
+    ? normalizeWindowsExecutable(appPath)
+    : appPath;
+  const expectedBackendIdentityPath = layout.platform === 'win32'
+    ? normalizeWindowsExecutable(expectedBackend)
+    : expectedBackend;
   const readBackendIdentity = layout.platform === 'linux'
     ? readLinuxProcessIdentity
-    : readDarwinProcessIdentity;
+    : layout.platform === 'darwin'
+      ? readDarwinProcessIdentity
+      : readWindowsProcessIdentity;
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-desktop-smoke-'));
   fs.chmodSync(temporaryRoot, 0o700);
-  const environment = makeIsolatedEnvironment(temporaryRoot);
+  const environment = makeIsolatedEnvironment(temporaryRoot, process.env, {
+    platform: layout.platform,
+  });
   const xvfbRun = layout.launcher === 'xvfb'
     ? findCommand('xvfb-run', environment.PATH)
     : null;
@@ -771,6 +1112,7 @@ async function runSmoke(
   let connection;
   let child;
   let rootIdentity;
+  let backendIdentity;
   let secondChild;
   let secondRootIdentity;
   let failure;
@@ -794,11 +1136,14 @@ async function runSmoke(
       ]
       : appArguments;
     child = spawn(launchCommand, launchArguments, {
-      detached: true,
+      detached: layout.platform !== 'win32',
       env: environment,
       stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: layout.platform === 'win32',
     });
-    const exit = observeSpawnedChild(child);
+    const exit = observeSpawnedChild(child, {
+      requireProcessGroup: layout.platform !== 'win32',
+    });
     if (layout.platform === 'darwin') {
       rootIdentity = await poll(
         () => readDarwinProcessIdentity(child.pid),
@@ -811,6 +1156,15 @@ async function runSmoke(
         rootIdentity.state.startsWith('Z')
       ) {
         throw new Error('Darwin Desktop process identity did not match');
+      }
+    } else if (layout.platform === 'win32') {
+      rootIdentity = await poll(
+        () => readWindowsProcessIdentity(child.pid),
+        RENDERER_TIMEOUT_MS,
+        'Windows Desktop process identity',
+      );
+      if (rootIdentity.executable !== expectedAppIdentityPath) {
+        throw new Error('Windows Desktop process identity did not match');
       }
     }
     const endpoint = await deadline(new Promise((resolve, reject) => {
@@ -840,10 +1194,11 @@ async function runSmoke(
     }
 
     const backend = readBackendIdentity(probe.backendPID);
+    backendIdentity = backend;
     if (
       !backend ||
-      backend.state.startsWith('Z') ||
-      backend.executable !== expectedBackend ||
+      String(backend.state || '').startsWith('Z') ||
+      backend.executable !== expectedBackendIdentityPath ||
       (layout.platform === 'darwin' && backend.pgid !== child.pid)
     ) {
       throw new Error('packaged backend process identity did not match');
@@ -1054,12 +1409,18 @@ async function runSmoke(
     }
     if (!passed && child?.pid) {
       try {
-        await terminateProcessGroup(child.pid, layout.platform === 'darwin'
-          ? {
-            expectedIdentity: rootIdentity,
-            readIdentity: readDarwinProcessIdentity,
-          }
-          : undefined);
+        if (layout.cleanupStrategy === 'windows-tree') {
+          await terminateWindowsProcessTree(rootIdentity, {
+            expectedBackend: backendIdentity,
+          });
+        } else {
+          await terminateProcessGroup(child.pid, layout.platform === 'darwin'
+            ? {
+              expectedIdentity: rootIdentity,
+              readIdentity: readDarwinProcessIdentity,
+            }
+            : undefined);
+        }
       } catch (cleanupError) {
         failure = combineSmokeFailure(failure, cleanupError);
       }
@@ -1092,6 +1453,7 @@ module.exports = {
   crashContainmentMatches,
   killVerifiedBackend,
   makeIsolatedEnvironment,
+  normalizeWindowsExecutable,
   observeStable,
   observeSpawnedChild,
   originalPageTargetClosed,
@@ -1100,14 +1462,22 @@ module.exports = {
   parseDarwinScreenLockState,
   parseDevToolsEndpoint,
   parseProcStat,
+  parseWindowsProcessIdentity,
+  parseWindowsProcessSnapshot,
   readDarwinProcessIdentity,
   readDarwinScreenLockState,
+  readWindowsProcessIdentity,
+  readWindowsProcessSnapshot,
+  requireExecutable,
   resolveUnpackedLayout,
+  safeProcessID,
   safeProcessGroupID,
   sameProcessIdentity,
   selectPageTarget,
   selectReplacementPageTarget,
   targetID,
   terminateProcessGroup,
+  terminateWindowsProcessTree,
   validatePlatformOptions,
+  windowsProcessTreeMembers,
 };
