@@ -11,6 +11,7 @@ const {
   activeTurnSessions,
   backendStopFailurePrompt,
   createBackendStopCoordinator,
+  createWindowRestoreCoordinator,
   quitInspectionFailurePrompt,
   startDesktopHost,
 } = require('./lifecycle.cjs');
@@ -34,6 +35,7 @@ let bootstrap = null;
 let mainWindow = null;
 let managedProviderStatus = Object.freeze({ configured: false });
 let providerRestartCoordinator = null;
+let windowRestoreCoordinator = null;
 let quitAllowed = false;
 let quitDecision = null;
 const eventStreams = new Map();
@@ -274,7 +276,7 @@ async function requestQuit() {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const targetWindow = new BrowserWindow({
     title: 'YHC',
     width: 1440,
     height: 920,
@@ -291,22 +293,41 @@ function createWindow() {
       devTools: !app.isPackaged,
     },
   });
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  mainWindow = targetWindow;
+  targetWindow.once('closed', () => {
+    if (mainWindow === targetWindow) mainWindow = null;
+  });
+  targetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  targetWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  return targetWindow;
 }
 
-function loadRenderer() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+function loadRenderer(targetWindow) {
+  if (!targetWindow || mainWindow !== targetWindow || targetWindow.isDestroyed()) {
     throw new Error('Desktop window is unavailable');
   }
-  const targetWindow = mainWindow;
   const renderer = app.isPackaged
     ? path.join(process.resourcesPath, 'webui', 'index.html')
     : path.join(__dirname, '..', 'internal', 'webui', 'assets', 'index.html');
   targetWindow.once('ready-to-show', () => {
-    if (!targetWindow.isDestroyed()) targetWindow.show();
+    if (mainWindow === targetWindow && !targetWindow.isDestroyed()) targetWindow.show();
   });
   return targetWindow.loadFile(renderer);
+}
+
+function getWindowRestoreCoordinator() {
+  if (windowRestoreCoordinator) return windowRestoreCoordinator;
+  windowRestoreCoordinator = createWindowRestoreCoordinator({
+    currentWindow: () => mainWindow,
+    backendAvailable: () => Boolean(bootstrap),
+    createWindow,
+    loadRenderer,
+  });
+  return windowRestoreCoordinator;
+}
+
+function restoreMainWindow() {
+  return getWindowRestoreCoordinator().restore();
 }
 
 function assertTrustedSender(event) {
@@ -537,9 +558,7 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    void restoreMainWindow().catch(() => {});
   });
   app.whenReady().then(() => startDesktopHost({
     prepareWindow: createWindow,
@@ -561,13 +580,7 @@ if (!hasSingleInstanceLock) {
       app.quit();
   });
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && bootstrap) {
-      createWindow();
-      void loadRenderer().catch(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
-        mainWindow = null;
-      });
-    }
+    void restoreMainWindow().catch(() => {});
   });
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();

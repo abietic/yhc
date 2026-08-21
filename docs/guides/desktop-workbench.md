@@ -60,9 +60,9 @@ release readiness.
 CI also assembles and verifies native unpacked outputs on macOS Intel, macOS
 Apple Silicon, and Windows x64 runners. The Apple Silicon row additionally
 launches its unsigned unpacked app and verifies the bounded bootstrap, preload,
-backend, and graceful-shutdown lifecycle described below. Intel and Windows
-remain package-verifier coverage only. None of these rows creates, signs,
-uploads, or validates final installer media.
+backend, last-window restoration, and graceful-shutdown lifecycle described
+below. Intel and Windows remain package-verifier coverage only. None of these
+rows creates, signs, uploads, or validates final installer media.
 
 `desktop/package.json` is the Desktop version source. Its canonical version has
 no `v` prefix. The supported Desktop Make targets depend on that manifest and
@@ -116,9 +116,23 @@ best-effort `ps` observation of PID, process group, start time, state, and
 resolved command path; it is not an atomic kernel ownership guarantee. A locked
 or unavailable GUI session cannot satisfy this gate.
 
-The macOS lifecycle row also remains automation evidence: it does not exercise
-Finder launch, foreground focus, native picker interaction, secure-storage
-prompts, or a physical display acceptance scenario.
+The stronger macOS window-restoration gate, and the target used by Apple
+Silicon CI, is:
+
+```bash
+make desktop-unpacked-window-reopen-smoke-darwin-arm64
+```
+
+It first closes only the last renderer window and confirms that renderer target
+is gone while the original app and backend stay alive. It then launches the
+same app again, requires the short-lived second process to exit normally, and
+requires the primary process to expose one newly bootstrapped renderer with a
+different target identity. A final browser-level close must still end the
+original app and backend normally.
+
+Both macOS rows remain automation evidence: they do not exercise Finder/Dock
+launch, foreground focus, native picker interaction, secure-storage prompts,
+signing, notarization, or a physical display acceptance scenario.
 
 Run `make desktop-check` for deterministic Node/unit and syntax checks. The
 browser-only transport can also be started explicitly with:
@@ -169,6 +183,19 @@ The old active turn is not resumed automatically. Text that was visible only as
 an unfinished stream may differ from the last durable transcript checkpoint,
 and Desktop does not relabel that partial projection as a completed, cancelled,
 or failed turn.
+
+## Close and restore the macOS window
+
+On macOS, closing the last YHC window does not quit the app or stop its local
+backend. Activate YHC from the Dock or launch the same app again to restore one
+window. An existing minimized window is restored and focused; when the old
+window has closed, the primary app creates and loads a new one against the same
+accepted backend.
+
+Use **Quit YHC** when you intend to stop the backend. Window restoration is not
+backend recovery: if the backend has already stopped unexpectedly, relaunch the
+complete app as described above rather than expecting a new window to replace
+the failed process.
 
 ## Reopen saved work safely
 

@@ -217,6 +217,33 @@ test('main process waits for observed backend exit before quitting or restarting
   assert.doesNotMatch(source, /STOP_TIMEOUT_MS/);
 });
 
+test('macOS window restoration has one target-owned composition path', async () => {
+  const source = await readFile(mainPath, 'utf8');
+  assert.match(source, /createWindowRestoreCoordinator/);
+  assert.match(
+    source,
+    /const targetWindow = new BrowserWindow\([\s\S]*?mainWindow = targetWindow;[\s\S]*?targetWindow\.once\('closed', \(\) => \{\s*if \(mainWindow === targetWindow\) mainWindow = null;/,
+  );
+  assert.match(source, /function loadRenderer\(targetWindow\)/);
+  assert.match(
+    source,
+    /if \(mainWindow === targetWindow && !targetWindow\.isDestroyed\(\)\) targetWindow\.show\(\);/,
+  );
+  assert.match(
+    source,
+    /createWindowRestoreCoordinator\(\{\s*currentWindow: \(\) => mainWindow,\s*backendAvailable: \(\) => Boolean\(bootstrap\),\s*createWindow,\s*loadRenderer,/,
+  );
+  assert.match(
+    source,
+    /app\.on\('second-instance', \(\) => \{\s*void restoreMainWindow\(\)\.catch\(\(\) => \{\}\);\s*\}\);/,
+  );
+  assert.match(
+    source,
+    /app\.on\('activate', \(\) => \{\s*void restoreMainWindow\(\)\.catch\(\(\) => \{\}\);\s*\}\);/,
+  );
+  assert.doesNotMatch(source, /BrowserWindow\.getAllWindows\(\)/);
+});
+
 test('renderer uses supported CSP while Electron denies external navigation', async () => {
   const [main, renderer] = await Promise.all([
     readFile(mainPath, 'utf8'),

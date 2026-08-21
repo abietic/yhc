@@ -12,6 +12,7 @@ const {
   activeTurnSessions,
   backendStopFailurePrompt,
   createBackendStopCoordinator,
+  createWindowRestoreCoordinator,
   quitInspectionFailurePrompt,
   startDesktopHost,
 } = require('../lifecycle.cjs');
@@ -49,6 +50,38 @@ function fakeChild(order) {
     return true;
   };
   return child;
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+function fakeWindow(order, { destroyed = false, minimized = false } = {}) {
+  return {
+    destroy() {
+      order.push('destroy');
+      destroyed = true;
+    },
+    focus() {
+      order.push('focus');
+    },
+    isDestroyed() {
+      return destroyed;
+    },
+    isMinimized() {
+      return minimized;
+    },
+    restore() {
+      order.push('restore');
+      minimized = false;
+    },
+  };
 }
 
 test('active turn detection uses bounded live summaries', () => {
@@ -102,14 +135,21 @@ test('inspection failure prompt keeps working by default', () => {
 
 test('Desktop startup prepares the hidden host before backend secure-storage work', async () => {
   const order = [];
+  const targetWindow = {};
   await startDesktopHost({
-    prepareWindow: () => order.push('prepare-window'),
+    prepareWindow: () => {
+      order.push('prepare-window');
+      return targetWindow;
+    },
     startBackend: async () => order.push('start-backend'),
     backendAvailable: () => {
       order.push('verify-backend');
       return true;
     },
-    loadRenderer: async () => order.push('load-renderer'),
+    loadRenderer: async (target) => {
+      assert.strictEqual(target, targetWindow);
+      order.push('load-renderer');
+    },
     stopBackend: async () => order.push('stop-backend'),
   });
   assert.deepEqual(order, [
@@ -118,6 +158,146 @@ test('Desktop startup prepares the hidden host before backend secure-storage wor
     'verify-backend',
     'load-renderer',
   ]);
+});
+
+test('window restoration focuses a live window without requiring the backend', async () => {
+  const order = [];
+  const current = fakeWindow(order, { minimized: true });
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => current,
+    backendAvailable: () => false,
+    createWindow: () => assert.fail('live window must not be replaced'),
+    loadRenderer: () => assert.fail('live window must not be reloaded'),
+  });
+
+  assert.strictEqual(await coordinator.restore(), current);
+  assert.deepEqual(order, ['restore', 'focus']);
+});
+
+test('window restoration replaces a destroyed owner when the backend is available', async () => {
+  const order = [];
+  let current = fakeWindow(order, { destroyed: true });
+  const replacement = fakeWindow(order);
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => current,
+    backendAvailable: () => true,
+    createWindow: () => {
+      order.push('create');
+      current = replacement;
+      return replacement;
+    },
+    loadRenderer: async (target) => {
+      assert.strictEqual(target, replacement);
+      order.push('load');
+    },
+  });
+
+  assert.strictEqual(await coordinator.restore(), replacement);
+  assert.deepEqual(order, ['create', 'load']);
+});
+
+test('overlapping window restoration requests share one create-load attempt', async () => {
+  const order = [];
+  const loading = deferred();
+  let current = null;
+  const replacement = fakeWindow(order);
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => current,
+    backendAvailable: () => true,
+    createWindow: () => {
+      order.push('create');
+      current = replacement;
+      return replacement;
+    },
+    loadRenderer: (target) => {
+      assert.strictEqual(target, replacement);
+      order.push('load');
+      return loading.promise;
+    },
+  });
+
+  const first = coordinator.restore();
+  const second = coordinator.restore();
+  assert.strictEqual(second, first);
+  await Promise.resolve();
+  assert.deepEqual(order, ['create', 'load']);
+  loading.resolve();
+  assert.strictEqual(await first, replacement);
+});
+
+test('failed restoration destroys only its owned target and permits a retry', async () => {
+  const order = [];
+  const loadFailure = new Error('renderer failed');
+  let current = null;
+  let attempts = 0;
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => current,
+    backendAvailable: () => true,
+    createWindow: () => {
+      attempts += 1;
+      order.push(`create:${attempts}`);
+      current = fakeWindow(order);
+      return current;
+    },
+    loadRenderer: async () => {
+      order.push(`load:${attempts}`);
+      if (attempts === 1) throw loadFailure;
+    },
+  });
+
+  await assert.rejects(coordinator.restore(), (error) => error === loadFailure);
+  assert.deepEqual(order, ['create:1', 'load:1', 'destroy']);
+  assert.strictEqual(await coordinator.restore(), current);
+  assert.deepEqual(order, ['create:1', 'load:1', 'destroy', 'create:2', 'load:2']);
+});
+
+test('failed restoration cannot destroy a newer window owner', async () => {
+  const order = [];
+  const loading = deferred();
+  let current = null;
+  const attempted = fakeWindow(order);
+  const newer = fakeWindow(order);
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => current,
+    backendAvailable: () => true,
+    createWindow: () => {
+      current = attempted;
+      return attempted;
+    },
+    loadRenderer: () => loading.promise,
+  });
+
+  const restoring = coordinator.restore();
+  await Promise.resolve();
+  current = newer;
+  loading.reject(new Error('renderer failed'));
+  await assert.rejects(restoring, /renderer failed/);
+  assert.deepEqual(order, []);
+});
+
+test('window restoration stays idle when both window and backend are unavailable', async () => {
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => null,
+    backendAvailable: () => false,
+    createWindow: () => assert.fail('missing backend must prevent window creation'),
+    loadRenderer: () => assert.fail('missing backend must prevent renderer loading'),
+  });
+
+  assert.equal(await coordinator.restore(), null);
+});
+
+test('window restoration never reloads an existing hidden startup window', async () => {
+  const order = [];
+  const current = fakeWindow(order);
+  const coordinator = createWindowRestoreCoordinator({
+    currentWindow: () => current,
+    backendAvailable: () => false,
+    createWindow: () => assert.fail('startup window must remain the owner'),
+    loadRenderer: () => assert.fail('startup renderer load has a separate owner'),
+  });
+
+  assert.strictEqual(await coordinator.restore(), current);
+  assert.deepEqual(order, ['focus']);
 });
 
 test('Desktop startup never loads the renderer without an accepted backend', async () => {

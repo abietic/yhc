@@ -65,13 +65,13 @@ async function startDesktopHost({
       throw new TypeError('Desktop startup dependencies required');
     }
   }
-  prepareWindow();
+  const targetWindow = prepareWindow();
   try {
     await startBackend();
     if (backendAvailable() !== true) {
       throw new Error('backend stopped during startup');
     }
-    await loadRenderer();
+    await loadRenderer(targetWindow);
   } catch (startupError) {
     try {
       await stopBackend();
@@ -84,6 +84,77 @@ async function startDesktopHost({
     }
     throw startupError;
   }
+}
+
+function createWindowRestoreCoordinator({
+  currentWindow,
+  backendAvailable,
+  createWindow,
+  loadRenderer,
+} = {}) {
+  for (const dependency of [
+    currentWindow,
+    backendAvailable,
+    createWindow,
+    loadRenderer,
+  ]) {
+    if (typeof dependency !== 'function') {
+      throw new TypeError('Desktop window restoration dependencies required');
+    }
+  }
+  let inFlight = null;
+
+  const focusExistingWindow = (targetWindow) => {
+    if (!targetWindow || targetWindow.isDestroyed()) return null;
+    try {
+      if (targetWindow.isMinimized()) targetWindow.restore();
+      targetWindow.focus();
+      return targetWindow;
+    } catch (error) {
+      if (targetWindow.isDestroyed()) return null;
+      throw error;
+    }
+  };
+
+  const restoreWindow = async () => {
+    const existingWindow = focusExistingWindow(currentWindow());
+    if (existingWindow) return existingWindow;
+    if (backendAvailable() !== true) return null;
+
+    const targetWindow = createWindow();
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      throw new Error('Desktop window is unavailable');
+    }
+    try {
+      await loadRenderer(targetWindow);
+    } catch (loadError) {
+      try {
+        if (currentWindow() === targetWindow && !targetWindow.isDestroyed()) {
+          targetWindow.destroy();
+        }
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [loadError, cleanupError],
+          'Desktop window restoration failed and cleanup failed',
+          { cause: loadError },
+        );
+      }
+      throw loadError;
+    }
+    return targetWindow;
+  };
+
+  return Object.freeze({
+    restore() {
+      if (inFlight) return inFlight;
+      const restoring = Promise.resolve().then(restoreWindow);
+      const tracked = restoring.finally(() => {
+        if (inFlight === tracked) inFlight = null;
+      });
+      inFlight = tracked;
+      return tracked;
+    },
+  });
 }
 
 function stopBackendProcess(child, {
@@ -183,6 +254,7 @@ module.exports = {
   activeTurnQuitPrompt,
   backendStopFailurePrompt,
   createBackendStopCoordinator,
+  createWindowRestoreCoordinator,
   quitInspectionFailurePrompt,
   startDesktopHost,
 };

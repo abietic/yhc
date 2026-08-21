@@ -707,11 +707,6 @@ privacy:
       rule_id: high-entropy-token
       match_sha256: 4fa34f0ebeccb0b16dccb24d2fbe510ffc0b2babed711fd73a191d2c53d517ac
       purpose: build-metadata
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 564
-      rule_id: high-entropy-token
-      match_sha256: f5085960e1595cfe74ceeba8d1ce9409e64f541fa380459917e6a982452fe814
-      purpose: build-metadata
     - path: docs/architecture/desktop-workbench.md
       line: 14
       rule_id: bearer-token

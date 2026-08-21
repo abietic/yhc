@@ -238,13 +238,32 @@ state for these read-only completion oracles.
 The Apple Silicon native row also launches the exact unsigned unpacked
 `YHC.app/Contents/MacOS/YHC` executable with an isolated user-data directory.
 It verifies the same packaged renderer, frozen preload bridge, trusted
-`app:get-info` IPC, and bundled backend path. The backend must remain in the
-detached Electron process group, and a browser-level graceful close must end
-Electron with status zero and retire the original backend. Darwin ownership is
-observed with locale-pinned `ps` fields for PID, process group, state, start
-time, and resolved command path. That observation is best effort rather than an
-atomic kernel identity or signal guarantee; this normal-lifecycle row does not
-perform crash injection.
+`app:get-info` IPC, and bundled backend path. It then closes the last renderer
+window without quitting the primary app, proves that exact renderer target has
+disappeared, and starts the same app again. The second process must exit with
+status zero through Electron's single-instance path, while the original app and
+backend identities remain unchanged. The primary process must create one new
+renderer target with a different identity and complete the same bootstrap
+contract before a browser-level graceful close ends Electron and retires the
+original backend.
+
+[`createWindowRestoreCoordinator`](../../desktop/lifecycle.cjs) is the shared
+owner for both macOS `activate` and `second-instance` restoration. One attempt
+covers the complete check, create, and renderer-load interval. A usable window
+is restored and focused even when the backend is unavailable so it can retain
+offline guidance; creating a replacement window requires an accepted backend.
+Window creation, `ready-to-show`, load-failure cleanup, and the `closed`
+callback are bound to the same `BrowserWindow` target so an older attempt cannot
+show, destroy, or clear a newer owner. Initial startup remains a separate hidden
+window → backend → renderer sequence and cannot be double-loaded by a concurrent
+activation event.
+
+Darwin ownership is observed with locale-pinned `ps` fields for PID, process
+group, state, start time, and resolved command path. That observation is best
+effort rather than an atomic kernel identity or signal guarantee. The window
+restoration row does not perform backend crash injection, prove Finder/Dock
+foreground focus, or validate signing, notarization, Keychain prompts, or a
+physical display.
 
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
 [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L143) stops event

@@ -66,6 +66,36 @@ function selectPageTarget(targets, expectedURL) {
   return matches[0] || null;
 }
 
+function targetID(target) {
+  const identity = target?.targetId || target?.id;
+  if (typeof identity !== 'string' || identity.length === 0) {
+    throw new Error('packaged renderer target lacks identity');
+  }
+  return identity;
+}
+
+function originalPageTargetClosed(targets, expectedURL, originalTargetID) {
+  if (!Array.isArray(targets) || typeof originalTargetID !== 'string') {
+    throw new TypeError('bounded target list and original target identity required');
+  }
+  if (targets.some((target) => (target?.targetId || target?.id) === originalTargetID)) {
+    return false;
+  }
+  if (selectPageTarget(targets, expectedURL)) {
+    throw new Error('packaged renderer was replaced before the second instance launched');
+  }
+  return true;
+}
+
+function selectReplacementPageTarget(targets, expectedURL, originalTargetID) {
+  const replacement = selectPageTarget(targets, expectedURL);
+  if (!replacement) return null;
+  if (targetID(replacement) === originalTargetID) {
+    throw new Error('packaged renderer target identity was reused');
+  }
+  return replacement;
+}
+
 function parseProcStat(contents) {
   const text = String(contents).trim();
   const open = text.indexOf(' (');
@@ -397,6 +427,66 @@ async function evaluate(connection, sessionId, expression) {
   return response.result?.value;
 }
 
+async function attachRendererTarget(connection, target) {
+  const identity = targetID(target);
+  const attached = await connection.send('Target.attachToTarget', {
+    targetId: identity,
+    flatten: true,
+  });
+  if (typeof attached.sessionId !== 'string' || attached.sessionId.length === 0) {
+    throw new Error('packaged renderer attachment failed');
+  }
+  await connection.send('Runtime.enable', {}, attached.sessionId);
+  return { sessionId: attached.sessionId, targetId: identity };
+}
+
+async function waitForRendererBootstrap(connection, sessionId) {
+  return poll(async () => {
+    const result = await evaluate(connection, sessionId, `(async () => {
+      const marker = document.documentElement.dataset.yhcBootstrap || '';
+      if (marker === 'error') {
+        return { error: document.querySelector('#turn-state')?.textContent || 'bootstrap failed' };
+      }
+      const bridge = globalThis.yhcDesktop;
+      if (marker !== 'ready' || typeof bridge?.getInfo !== 'function') return null;
+      const info = await bridge.getInfo();
+      return {
+        bridgeFrozen: Object.isFrozen(bridge),
+        noNodeEscape: typeof globalThis.require === 'undefined' &&
+          typeof globalThis.process === 'undefined',
+        protocolVersion: info?.protocolVersion,
+        surface: info?.surface,
+        backendPID: info?.pid,
+        webAvailable: info?.webAvailable,
+        rendererURL: location.href,
+        title: document.title,
+        newSessionEnabled: document.querySelector('#new-session')?.disabled === false,
+        requiredDOM: Boolean(
+          document.querySelector('#session-title') &&
+          document.querySelector('#composer') &&
+          document.querySelector('#turn-state')
+        ),
+      };
+    })()`);
+    if (result?.error) throw new Error(`renderer bootstrap failed: ${result.error}`);
+    return result;
+  }, RENDERER_TIMEOUT_MS, 'renderer bootstrap');
+}
+
+function rendererContractMatches(probe, expectedRendererURL) {
+  return probe?.bridgeFrozen === true &&
+    probe.noNodeEscape === true &&
+    probe.protocolVersion === 2 &&
+    probe.surface === 'desktop' &&
+    Number.isSafeInteger(probe.backendPID) &&
+    probe.backendPID > 1 &&
+    probe.webAvailable === true &&
+    probe.rendererURL === expectedRendererURL &&
+    probe.title === 'YHC' &&
+    probe.newSessionEnabled === true &&
+    probe.requiredDOM === true;
+}
+
 function requireExecutable(candidate, label) {
   const info = fs.lstatSync(candidate);
   if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o111) === 0) {
@@ -585,15 +675,25 @@ function resolveUnpackedLayout(
 
 function validatePlatformOptions(
   platform,
-  { crashBackend = false, disableSandbox = false } = {},
+  { crashBackend = false, disableSandbox = false, reopenWindow = false } = {},
 ) {
   const normalized = {
     crashBackend: crashBackend === true,
     disableSandbox: disableSandbox === true,
+    reopenWindow: reopenWindow === true,
   };
-  if (platform === 'linux') return normalized;
+  if (normalized.crashBackend && normalized.reopenWindow) {
+    throw new Error('backend crash and window restoration smokes are mutually exclusive');
+  }
+  if (platform === 'linux') {
+    if (normalized.reopenWindow) throw new Error('--reopen-window is macOS-only');
+    return normalized;
+  }
   if (normalized.crashBackend || normalized.disableSandbox) {
     throw new Error('crash injection and --no-sandbox are Linux-only');
+  }
+  if (platform !== 'darwin' && normalized.reopenWindow) {
+    throw new Error('--reopen-window is macOS-only');
   }
   return normalized;
 }
@@ -602,6 +702,7 @@ function parseArguments(argv) {
   let appPath;
   let crashBackend = false;
   let disableSandbox = false;
+  let reopenWindow = false;
   let invalid = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -617,31 +718,36 @@ function parseArguments(argv) {
       crashBackend = true;
     } else if (argument === '--no-sandbox' && !disableSandbox) {
       disableSandbox = true;
+    } else if (argument === '--reopen-window' && !reopenWindow) {
+      reopenWindow = true;
     } else {
       invalid = true;
       break;
     }
   }
-  if (invalid || !appPath) {
+  if (invalid || !appPath || (crashBackend && reopenWindow)) {
     throw new Error(
-      'usage: unpacked_lifecycle_smoke.cjs --app PATH [--crash-backend] [--no-sandbox]',
+      'usage: unpacked_lifecycle_smoke.cjs --app PATH [--crash-backend] ' +
+        '[--no-sandbox] [--reopen-window]',
     );
   }
   return {
     appPath: path.resolve(appPath),
     crashBackend,
     disableSandbox,
+    reopenWindow,
   };
 }
 
 async function runSmoke(
   appCandidate,
-  { crashBackend = false, disableSandbox = false } = {},
+  { crashBackend = false, disableSandbox = false, reopenWindow = false } = {},
 ) {
   let layout = resolveUnpackedLayout(appCandidate);
   const options = validatePlatformOptions(layout.platform, {
     crashBackend,
     disableSandbox,
+    reopenWindow,
   });
   const appPath = requireExecutable(layout.appPath, 'unpacked Desktop application');
   layout = resolveUnpackedLayout(appPath);
@@ -663,6 +769,8 @@ async function runSmoke(
   let connection;
   let child;
   let rootIdentity;
+  let secondChild;
+  let secondRootIdentity;
   let failure;
   let passed = false;
   try {
@@ -723,61 +831,9 @@ async function runSmoke(
       const result = await connection.send('Target.getTargets');
       return selectPageTarget(result.targetInfos, expectedRendererURL);
     }, RENDERER_TIMEOUT_MS, 'packaged renderer discovery');
-    const targetId = target.targetId || target.id;
-    if (typeof targetId !== 'string' || targetId.length === 0) {
-      throw new Error('packaged renderer target lacks identity');
-    }
-    const attached = await connection.send('Target.attachToTarget', {
-      targetId,
-      flatten: true,
-    });
-    if (typeof attached.sessionId !== 'string' || attached.sessionId.length === 0) {
-      throw new Error('packaged renderer attachment failed');
-    }
-    await connection.send('Runtime.enable', {}, attached.sessionId);
-    const probe = await poll(async () => {
-      const result = await evaluate(connection, attached.sessionId, `(async () => {
-        const marker = document.documentElement.dataset.yhcBootstrap || '';
-        if (marker === 'error') {
-          return { error: document.querySelector('#turn-state')?.textContent || 'bootstrap failed' };
-        }
-        const bridge = globalThis.yhcDesktop;
-        if (marker !== 'ready' || typeof bridge?.getInfo !== 'function') return null;
-        const info = await bridge.getInfo();
-        return {
-          bridgeFrozen: Object.isFrozen(bridge),
-          noNodeEscape: typeof globalThis.require === 'undefined' &&
-            typeof globalThis.process === 'undefined',
-          protocolVersion: info?.protocolVersion,
-          surface: info?.surface,
-          backendPID: info?.pid,
-          webAvailable: info?.webAvailable,
-          rendererURL: location.href,
-          title: document.title,
-          newSessionEnabled: document.querySelector('#new-session')?.disabled === false,
-          requiredDOM: Boolean(
-            document.querySelector('#session-title') &&
-            document.querySelector('#composer') &&
-            document.querySelector('#turn-state')
-          ),
-        };
-      })()`);
-      if (result?.error) throw new Error(`renderer bootstrap failed: ${result.error}`);
-      return result;
-    }, RENDERER_TIMEOUT_MS, 'renderer bootstrap');
-    if (
-      probe.bridgeFrozen !== true ||
-      probe.noNodeEscape !== true ||
-      probe.protocolVersion !== 2 ||
-      probe.surface !== 'desktop' ||
-      !Number.isSafeInteger(probe.backendPID) ||
-      probe.backendPID <= 1 ||
-      probe.webAvailable !== true ||
-      probe.rendererURL !== expectedRendererURL ||
-      probe.title !== 'YHC' ||
-      probe.newSessionEnabled !== true ||
-      probe.requiredDOM !== true
-    ) {
+    let renderer = await attachRendererTarget(connection, target);
+    let probe = await waitForRendererBootstrap(connection, renderer.sessionId);
+    if (!rendererContractMatches(probe, expectedRendererURL)) {
       throw new Error('packaged renderer contract did not match');
     }
 
@@ -791,7 +847,7 @@ async function runSmoke(
       throw new Error('packaged backend process identity did not match');
     }
     if (options.crashBackend) {
-      const subscribed = await evaluate(connection, attached.sessionId, `(() => {
+      const subscribed = await evaluate(connection, renderer.sessionId, `(() => {
         const bridge = globalThis.yhcDesktop;
         if (typeof bridge?.onBackendExit !== 'function') return false;
         globalThis.__yhcCrashCount = 0;
@@ -810,7 +866,7 @@ async function runSmoke(
       );
       const readCrashContainment = () => evaluate(
         connection,
-        attached.sessionId,
+        renderer.sessionId,
         `(async () => {
           const bridge = globalThis.yhcDesktop;
           const info = typeof bridge?.getInfo === 'function'
@@ -845,11 +901,87 @@ async function runSmoke(
         NO_RESTART_OBSERVATION_MS,
         'backend crash containment',
       );
-      await evaluate(connection, attached.sessionId, `(() => {
+      await evaluate(connection, renderer.sessionId, `(() => {
         globalThis.__yhcCrashUnsubscribe?.();
         delete globalThis.__yhcCrashUnsubscribe;
         return true;
       })()`);
+    }
+    if (options.reopenWindow) {
+      const originalRendererTargetID = renderer.targetId;
+      await evaluate(connection, renderer.sessionId, 'globalThis.close(); true');
+      await poll(async () => {
+        const result = await connection.send('Target.getTargets');
+        return originalPageTargetClosed(
+          result.targetInfos,
+          expectedRendererURL,
+          originalRendererTargetID,
+        );
+      }, RENDERER_TIMEOUT_MS, 'original packaged renderer exit');
+      if (!originalProcessAlive(rootIdentity, readDarwinProcessIdentity)) {
+        throw new Error('Darwin Desktop process changed after its last window closed');
+      }
+      if (!originalProcessAlive(backend, readBackendIdentity)) {
+        throw new Error('packaged backend changed after the last window closed');
+      }
+
+      secondChild = spawn(appPath, appArguments, {
+        detached: true,
+        env: environment,
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      const secondExit = observeSpawnedChild(secondChild);
+      secondChild.stderr.on('data', (chunk) => {
+        stderr = appendBounded(stderr, chunk);
+      });
+      secondRootIdentity = readDarwinProcessIdentity(secondChild.pid);
+      if (secondRootIdentity && (
+        secondRootIdentity.pgid !== secondChild.pid ||
+        secondRootIdentity.executable !== appPath ||
+        secondRootIdentity.state.startsWith('Z')
+      )) {
+        throw new Error('second Darwin Desktop process identity did not match');
+      }
+      const secondAppExit = await deadline(
+        secondExit,
+        APP_EXIT_TIMEOUT_MS,
+        'second Desktop instance exit',
+      );
+      if (secondAppExit.code !== 0 || secondAppExit.signal !== null) {
+        throw new Error(
+          `second Desktop instance exited abnormally (${secondAppExit.code ?? secondAppExit.signal})`,
+        );
+      }
+      if (!originalProcessAlive(rootIdentity, readDarwinProcessIdentity)) {
+        throw new Error('Darwin Desktop process changed after the second instance exited');
+      }
+      if (!originalProcessAlive(backend, readBackendIdentity)) {
+        throw new Error('packaged backend changed after the second instance exited');
+      }
+
+      const replacement = await poll(async () => {
+        const result = await connection.send('Target.getTargets');
+        return selectReplacementPageTarget(
+          result.targetInfos,
+          expectedRendererURL,
+          originalRendererTargetID,
+        );
+      }, RENDERER_TIMEOUT_MS, 'replacement packaged renderer discovery');
+      renderer = await attachRendererTarget(connection, replacement);
+      const replacementProbe = await waitForRendererBootstrap(connection, renderer.sessionId);
+      if (
+        !rendererContractMatches(replacementProbe, expectedRendererURL) ||
+        replacementProbe.backendPID !== backend.pid
+      ) {
+        throw new Error('replacement packaged renderer contract did not match');
+      }
+      probe = replacementProbe;
+      if (!originalProcessAlive(rootIdentity, readDarwinProcessIdentity)) {
+        throw new Error('Darwin Desktop process changed during window restoration');
+      }
+      if (!originalProcessAlive(backend, readBackendIdentity)) {
+        throw new Error('packaged backend changed during window restoration');
+      }
     }
     if (layout.closeStrategy === 'browser') {
       try {
@@ -859,7 +991,7 @@ async function runSmoke(
       }
     } else {
       try {
-        await evaluate(connection, attached.sessionId, 'globalThis.close(); true');
+        await evaluate(connection, renderer.sessionId, 'globalThis.close(); true');
       } catch (error) {
         if (!/CDP connection (?:closed|is not open)/.test(error.message)) throw error;
       }
@@ -886,6 +1018,7 @@ async function runSmoke(
       backend_pid: probe.backendPID,
       platform: `${layout.platform}-${layout.arch}`,
       crash_containment: options.crashBackend ? 'pass' : 'not_run',
+      window_reopen: options.reopenWindow ? 'pass' : 'not_run',
       no_restart_observation_ms: options.crashBackend ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
   } catch (error) {
@@ -901,19 +1034,35 @@ async function runSmoke(
   } finally {
     try {
       connection?.close();
-      if (!passed && child?.pid) {
+    } catch (cleanupError) {
+      failure = combineSmokeFailure(failure, cleanupError);
+    }
+    if (!passed && secondChild?.pid) {
+      try {
+        if (processGroupAlive(secondChild.pid)) {
+          secondRootIdentity ||= readDarwinProcessIdentity(secondChild.pid);
+          await terminateProcessGroup(secondChild.pid, {
+            expectedIdentity: secondRootIdentity,
+            readIdentity: readDarwinProcessIdentity,
+          });
+        }
+      } catch (cleanupError) {
+        failure = combineSmokeFailure(failure, cleanupError);
+      }
+    }
+    if (!passed && child?.pid) {
+      try {
         await terminateProcessGroup(child.pid, layout.platform === 'darwin'
           ? {
             expectedIdentity: rootIdentity,
             readIdentity: readDarwinProcessIdentity,
           }
           : undefined);
+      } catch (cleanupError) {
+        failure = combineSmokeFailure(failure, cleanupError);
       }
-    } catch (cleanupError) {
-      failure = combineSmokeFailure(failure, cleanupError);
-    } finally {
-      fs.rmSync(temporaryRoot, { recursive: true, force: true });
     }
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }
   if (failure) throw failure;
 }
@@ -923,6 +1072,7 @@ async function main() {
   await runSmoke(input.appPath, {
     crashBackend: input.crashBackend,
     disableSandbox: input.disableSandbox,
+    reopenWindow: input.reopenWindow,
   });
 }
 
@@ -942,6 +1092,7 @@ module.exports = {
   makeIsolatedEnvironment,
   observeStable,
   observeSpawnedChild,
+  originalPageTargetClosed,
   parseArguments,
   parseDarwinProcessIdentity,
   parseDarwinScreenLockState,
@@ -953,6 +1104,8 @@ module.exports = {
   safeProcessGroupID,
   sameProcessIdentity,
   selectPageTarget,
+  selectReplacementPageTarget,
+  targetID,
   terminateProcessGroup,
   validatePlatformOptions,
 };

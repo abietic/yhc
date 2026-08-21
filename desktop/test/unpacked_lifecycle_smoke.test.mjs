@@ -16,7 +16,7 @@ const {
   killVerifiedBackend,
   makeIsolatedEnvironment,
   observeStable,
-  observeSpawnedChild,
+  observeSpawnedChild, originalPageTargetClosed,
   parseArguments,
   parseDarwinProcessIdentity,
   parseDarwinScreenLockState,
@@ -27,7 +27,7 @@ const {
   resolveUnpackedLayout,
   safeProcessGroupID,
   sameProcessIdentity,
-  selectPageTarget,
+  selectPageTarget, selectReplacementPageTarget, targetID,
   terminateProcessGroup,
   validatePlatformOptions,
 } = require('../scripts/unpacked_lifecycle_smoke.cjs');
@@ -212,11 +212,11 @@ test('unpacked layouts select direct macOS launch and preserve Linux layout', ()
 test('platform options keep crash injection and no-sandbox confined to Linux', () => {
   assert.deepEqual(
     validatePlatformOptions('linux', { crashBackend: true, disableSandbox: true }),
-    { crashBackend: true, disableSandbox: true },
+    { crashBackend: true, disableSandbox: true, reopenWindow: false },
   );
   assert.deepEqual(
     validatePlatformOptions('darwin', { crashBackend: false, disableSandbox: false }),
-    { crashBackend: false, disableSandbox: false },
+    { crashBackend: false, disableSandbox: false, reopenWindow: false },
   );
   for (const options of [
     { crashBackend: true, disableSandbox: false },
@@ -365,11 +365,11 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
   const app = path.resolve('/opt/yhc/yhc-desktop');
   assert.deepEqual(
     parseArguments(['--app', app]),
-    { appPath: app, crashBackend: false, disableSandbox: false },
+    { appPath: app, crashBackend: false, disableSandbox: false, reopenWindow: false },
   );
   assert.deepEqual(
     parseArguments(['--crash-backend', '--app', app, '--no-sandbox']),
-    { appPath: app, crashBackend: true, disableSandbox: true },
+    { appPath: app, crashBackend: true, disableSandbox: true, reopenWindow: false },
   );
   for (const invalid of [
     [],
@@ -561,7 +561,77 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
   );
   assert.doesNotMatch(workflow, /make desktop-package-smoke-linux-amd64/);
   assert.match(workflow, /macos-15/);
-  assert.match(workflow, /desktop-unpacked-lifecycle-smoke-darwin-arm64/);
+  assert.match(workflow, /desktop-unpacked-window-reopen-smoke-darwin-arm64/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'ready'/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'error'/);
+});
+
+test('window-reopen arguments and platform admission fail closed', () => {
+  const app = path.resolve('/opt/yhc/YHC.app/Contents/MacOS/YHC');
+  assert.deepEqual(parseArguments(['--app', app, '--reopen-window']), {
+    appPath: app,
+    crashBackend: false,
+    disableSandbox: false,
+    reopenWindow: true,
+  });
+  assert.deepEqual(validatePlatformOptions('darwin', { reopenWindow: true }), {
+    crashBackend: false,
+    disableSandbox: false,
+    reopenWindow: true,
+  });
+  for (const invalid of [
+    ['--app', app, '--reopen-window', '--reopen-window'],
+    ['--app', app, '--crash-backend', '--reopen-window'],
+  ]) {
+    assert.throws(() => parseArguments(invalid), /usage: unpacked_lifecycle_smoke/);
+  }
+  assert.throws(
+    () => validatePlatformOptions('linux', { reopenWindow: true }),
+    /macOS-only/,
+  );
+  assert.throws(
+    () => validatePlatformOptions('darwin', { crashBackend: true, reopenWindow: true }),
+    /mutually exclusive/,
+  );
+});
+
+test('window-reopen target selection proves the old renderer is gone and identity changes', () => {
+  const expectedURL = 'file:///Applications/YHC.app/Contents/Resources/webui/index.html';
+  const original = { targetId: 'renderer-old', type: 'page', url: expectedURL };
+  const replacement = { targetId: 'renderer-new', type: 'page', url: expectedURL };
+  assert.equal(targetID(original), 'renderer-old');
+  assert.equal(originalPageTargetClosed([original], expectedURL, 'renderer-old'), false);
+  assert.equal(originalPageTargetClosed([], expectedURL, 'renderer-old'), true);
+  assert.throws(
+    () => originalPageTargetClosed([replacement], expectedURL, 'renderer-old'),
+    /replaced before the second instance launched/,
+  );
+  assert.equal(selectReplacementPageTarget([], expectedURL, 'renderer-old'), null);
+  assert.strictEqual(
+    selectReplacementPageTarget([replacement], expectedURL, 'renderer-old'),
+    replacement,
+  );
+  assert.throws(
+    () => selectReplacementPageTarget([original], expectedURL, 'renderer-old'),
+    /target identity was reused/,
+  );
+  assert.throws(
+    () => selectReplacementPageTarget([
+      replacement,
+      { ...replacement, targetId: 'renderer-extra' },
+    ], expectedURL, 'renderer-old'),
+    /ambiguous packaged renderer target/,
+  );
+});
+
+test('repository wiring runs the Darwin window-reopen smoke after package verification', async () => {
+  const makefile = await readFile(new URL('../../Makefile', import.meta.url), 'utf8');
+  assert.match(
+    makefile,
+    /desktop-unpacked-window-reopen-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac-arm64\/YHC\.app\/Contents\/MacOS\/YHC --reopen-window/,
+  );
 });
