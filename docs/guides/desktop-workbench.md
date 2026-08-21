@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-08-20
+**Last verified:** 2026-08-21
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -25,6 +25,12 @@ the existing `QueryEngine` only after the user submits a prompt.
 The provider dialog intentionally refuses to change a profile while live
 Desktop sessions exist. Close them first so one process cannot silently mix
 provider credentials or routing inside an active conversation.
+
+On macOS, starting with no saved provider profile does not probe Keychain or
+request secure-storage approval. Saving the first profile or opening an
+existing encrypted profile may still require normal Keychain interaction and
+fails closed when encryption or decryption is unavailable. An unsigned QA build
+is not suitable evidence for that prompt or identity boundary.
 
 ## Build and start
 
@@ -52,9 +58,11 @@ is still ignored QA evidence, not proof of code signing, notarization, or
 release readiness.
 
 CI also assembles and verifies native unpacked outputs on macOS Intel, macOS
-Apple Silicon, and Windows x64 runners. These jobs run the exact package
-verifier but do not launch those apps or create, sign, upload, or validate final
-installer media.
+Apple Silicon, and Windows x64 runners. The Apple Silicon row additionally
+launches its unsigned unpacked app and verifies the bounded bootstrap, preload,
+backend, and graceful-shutdown lifecycle described below. Intel and Windows
+remain package-verifier coverage only. None of these rows creates, signs,
+uploads, or validates final installer media.
 
 `desktop/package.json` is the Desktop version source. Its canonical version has
 no `v` prefix. The supported Desktop Make targets depend on that manifest and
@@ -74,7 +82,7 @@ make desktop-unpacked-lifecycle-smoke-linux-amd64
 It uses a fresh HOME/XDG profile with no inherited provider credentials,
 launches the packaged renderer, crosses preload IPC to identify the bundled
 backend, closes the window, and requires both the app and that backend process
-to exit. To exercise the packaged unexpected-exit path separately, run:
+to exit. To exercise the packaged Linux unexpected-exit path separately, run:
 
 ```bash
 make desktop-unpacked-crash-containment-smoke-linux-amd64
@@ -87,10 +95,30 @@ requires Electron and the renderer to remain alive, the fixed restart guidance
 and checked entry controls to stay disabled, and `app:get-info` to return no
 accepted bootstrap throughout an 11-second observation window. The app must
 then close normally without accepting a replacement bootstrap during that
-window. Both local targets keep Chromium's sandbox enabled. The hosted CI job
-uses their dedicated `-ci` variants, which opt into `--no-sandbox`; those runs
-therefore do not validate the production OS sandbox, an active provider turn,
-or physical UI behavior on Linux, macOS, or Windows.
+window. Both local Linux targets keep Chromium's sandbox enabled. The hosted
+Linux CI job uses their dedicated `-ci` variants, which opt into
+`--no-sandbox`; those runs therefore do not validate the production OS
+sandbox, an active provider turn, or physical UI behavior.
+
+On an Apple Silicon macOS host with an unlocked GUI session, the corresponding
+unsigned unpacked-app gate is:
+
+```bash
+make desktop-unpacked-lifecycle-smoke-darwin-arm64
+```
+
+It starts the exact `YHC.app/Contents/MacOS/YHC` executable with a fresh
+`--user-data-dir`, verifies the packaged renderer and frozen preload bridge,
+and observes the bundled backend in the app's isolated process group. It then
+uses the browser-level graceful-close command and requires both the app and the
+original backend process to disappear normally. Darwin process identity is a
+best-effort `ps` observation of PID, process group, start time, state, and
+resolved command path; it is not an atomic kernel ownership guarantee. A locked
+or unavailable GUI session cannot satisfy this gate.
+
+The macOS lifecycle row also remains automation evidence: it does not exercise
+Finder launch, foreground focus, native picker interaction, secure-storage
+prompts, or a physical display acceptance scenario.
 
 Run `make desktop-check` for deterministic Node/unit and syntax checks. The
 browser-only transport can also be started explicitly with:
@@ -165,6 +193,7 @@ configuration is no longer valid.
 | Symptom | Action |
 |---|---|
 | Provider setup appears before a first session | Supply a supported provider profile, then retry the deferred workspace selection. |
+| An unsigned macOS build requests repeated Keychain approval | Use a consistently signed build for provider-profile acceptance. The unpacked lifecycle smoke intentionally uses an empty isolated profile and does not validate Keychain prompts. |
 | A saved session fails when first sent | Read the safe turn error, then choose a compatible provider/model or create a new session. The app cannot infer that one provider's credential or HTTP dialect is safe for another. |
 | Legacy history cannot continue | Stop every older producer, then use **Import and continue**. A failed import keeps history and the draft available for retry and does not modify the legacy bytes. |
 | A decision card has no actionable control | Reload session state. The server fails closed when it cannot project a safe typed interaction. |

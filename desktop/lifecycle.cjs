@@ -47,6 +47,45 @@ function backendStopFailurePrompt() {
   };
 }
 
+async function startDesktopHost({
+  prepareWindow,
+  startBackend,
+  backendAvailable,
+  loadRenderer,
+  stopBackend,
+} = {}) {
+  for (const dependency of [
+    prepareWindow,
+    startBackend,
+    backendAvailable,
+    loadRenderer,
+    stopBackend,
+  ]) {
+    if (typeof dependency !== 'function') {
+      throw new TypeError('Desktop startup dependencies required');
+    }
+  }
+  prepareWindow();
+  try {
+    await startBackend();
+    if (backendAvailable() !== true) {
+      throw new Error('backend stopped during startup');
+    }
+    await loadRenderer();
+  } catch (startupError) {
+    try {
+      await stopBackend();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [startupError, cleanupError],
+        'Desktop startup failed and backend cleanup failed',
+        { cause: startupError },
+      );
+    }
+    throw startupError;
+  }
+}
+
 function stopBackendProcess(child, {
   setTimeout: setTimer = globalThis.setTimeout,
   clearTimeout: clearTimer = globalThis.clearTimeout,
@@ -145,4 +184,5 @@ module.exports = {
   backendStopFailurePrompt,
   createBackendStopCoordinator,
   quitInspectionFailurePrompt,
+  startDesktopHost,
 };

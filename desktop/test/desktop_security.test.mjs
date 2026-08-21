@@ -197,6 +197,10 @@ test('main process owns encrypted launch profile and keeps backend argv secret-f
 
 test('main process waits for observed backend exit before quitting or restarting', async () => {
   const source = await readFile(mainPath, 'utf8');
+  const startup = source.slice(
+    source.indexOf('app.whenReady()'),
+    source.indexOf("app.on('activate'"),
+  );
   assert.match(source, /createBackendStopCoordinator\(\{/);
   assert.match(source, /unmarkStopping:\s*\(child\)\s*=>\s*stoppingBackends\.delete\(child\)/);
   assert.match(source, /stopBackend:\s*\(\)\s*=>\s*stopBackend\(\)/);
@@ -204,6 +208,12 @@ test('main process waits for observed backend exit before quitting or restarting
     source,
     /try \{\s*await stopBackend\(\);\s*\} catch \{[\s\S]*?backendStopFailurePrompt\(\)[\s\S]*?return;[\s\S]*?quitAllowed = true;/,
   );
+  assert.match(startup, /startDesktopHost\(\{[\s\S]*?loadRenderer,[\s\S]*?stopBackend,/);
+  assert.match(
+    startup,
+    /\.catch\(async \(\) => \{[\s\S]*?if \(backend\) \{[\s\S]*?backendStopFailurePrompt\(\)[\s\S]*?return;[\s\S]*?quitAllowed = true;/,
+  );
+  assert.doesNotMatch(source, /if \(!backend \|\| !bootstrap\)/);
   assert.doesNotMatch(source, /STOP_TIMEOUT_MS/);
 });
 

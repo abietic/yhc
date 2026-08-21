@@ -1,4 +1,4 @@
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -13,6 +13,9 @@ const NO_RESTART_OBSERVATION_MS = 11_000;
 const CLEANUP_TIMEOUT_MS = 3_000;
 const CDP_COMMAND_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 100;
+const PROCESS_QUERY_TIMEOUT_MS = 1_000;
+const PROCESS_QUERY_MAX_BUFFER = 4 << 10;
+const DARWIN_IOREG_MAX_BUFFER = 256 << 10;
 const BACKEND_UNAVAILABLE_NOTICE =
   'Backend stopped unexpectedly. Restart YHC to reconnect.';
 
@@ -150,14 +153,132 @@ function readLinuxProcessIdentity(pid) {
   return { ...parsed, executable };
 }
 
-function originalProcessAlive(identity) {
+function parseDarwinProcessIdentity(contents) {
+  const lines = String(contents)
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
+  if (lines.length !== 1) throw new Error('invalid Darwin process identity');
+  const line = lines[0];
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(line)) {
+    throw new Error('invalid Darwin process identity');
+  }
+  const match = line.match(
+    /^\s*([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+[0-9]{1,2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\s+[0-9]{4})\s+(.+?)\s*$/,
+  );
+  if (!match) throw new Error('invalid Darwin process identity');
+  const pid = Number(match[1]);
+  const pgid = Number(match[2]);
+  const state = match[3];
+  const startTime = match[4].replace(/\s+/g, ' ');
+  const executable = match[5];
+  if (
+    !Number.isSafeInteger(pid) || pid <= 1 ||
+    !Number.isSafeInteger(pgid) || pgid <= 1 ||
+    !/^[A-Za-z]/.test(state) ||
+    !path.isAbsolute(executable)
+  ) {
+    throw new Error('invalid Darwin process identity');
+  }
+  return { pid, pgid, state, startTime, executable };
+}
+
+function readDarwinProcessIdentity(
+  pid,
+  {
+    runPS = spawnSync,
+    realpath = fs.realpathSync,
+  } = {},
+) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) {
+    throw new Error('invalid backend process ID');
+  }
+  const result = runPS('/bin/ps', [
+    '-ww',
+    '-p', String(pid),
+    '-o', 'pid=',
+    '-o', 'pgid=',
+    '-o', 'state=',
+    '-o', 'lstart=',
+    '-o', 'comm=',
+  ], {
+    encoding: 'utf8',
+    env: {
+      PATH: '/usr/bin:/bin',
+      LANG: 'C',
+      LC_ALL: 'C',
+      TZ: 'UTC',
+    },
+    maxBuffer: PROCESS_QUERY_MAX_BUFFER,
+    timeout: PROCESS_QUERY_TIMEOUT_MS,
+  });
+  if (result?.error) {
+    throw new Error('Darwin process inspection failed', { cause: result.error });
+  }
+  const stdout = Buffer.from(result?.stdout || '').toString('utf8');
+  const stderr = Buffer.from(result?.stderr || '').toString('utf8');
+  if (result?.status === 1 && stdout.trim() === '' && stderr.trim() === '') return null;
+  if (result?.status !== 0) throw new Error('Darwin process inspection failed');
+  const identity = parseDarwinProcessIdentity(stdout);
+  if (identity.pid !== pid) throw new Error('Darwin process ID changed during observation');
+  return { ...identity, executable: realpath(identity.executable) };
+}
+
+function parseDarwinScreenLockState(contents) {
+  const states = new Set(
+    [...String(contents).matchAll(
+      /"(?:IOConsoleLocked|CGSSessionScreenIsLocked)"\s*=\s*(Yes|No)\b/g,
+    )].map((match) => match[1]),
+  );
+  if (states.size !== 1) return null;
+  return states.has('Yes');
+}
+
+function readDarwinScreenLockState({ runIOReg = spawnSync } = {}) {
   try {
-    const current = parseProcStat(fs.readFileSync(`/proc/${identity.pid}/stat`, 'utf8'));
-    return current.startTime === identity.startTime && current.state !== 'Z';
+    const result = runIOReg('/usr/sbin/ioreg', ['-n', 'Root', '-d1'], {
+      encoding: 'utf8',
+      env: {
+        PATH: '/usr/bin:/bin:/usr/sbin',
+        LANG: 'C',
+        LC_ALL: 'C',
+      },
+      maxBuffer: DARWIN_IOREG_MAX_BUFFER,
+      timeout: PROCESS_QUERY_TIMEOUT_MS,
+    });
+    if (result?.error || result?.status !== 0) return null;
+    return parseDarwinScreenLockState(result.stdout || '');
+  } catch {
+    return null;
+  }
+}
+
+function sameProcessIdentity(expected, current) {
+  return current !== null &&
+    current !== undefined &&
+    current.pid === expected?.pid &&
+    current.startTime === expected?.startTime &&
+    current.executable === expected?.executable &&
+    (expected?.pgid === undefined || current.pgid === expected.pgid) &&
+    !String(current.state || '').startsWith('Z');
+}
+
+function originalProcessAlive(identity, readIdentity = readLinuxProcessIdentity) {
+  try {
+    return sameProcessIdentity(identity, readIdentity(identity.pid));
   } catch (error) {
-    if (error?.code === 'ENOENT') return false;
+    if (error?.code === 'ENOENT' || error?.code === 'ESRCH') return false;
     throw error;
   }
+}
+
+function combineSmokeFailure(primary, cleanup) {
+  if (!(cleanup instanceof Error)) throw new TypeError('cleanup error required');
+  if (!(primary instanceof Error)) {
+    return new Error(`Cleanup failed: ${cleanup.message}`, { cause: cleanup });
+  }
+  return new Error(`${primary.message}\nCleanup failed: ${cleanup.message}`, {
+    cause: new AggregateError([primary, cleanup]),
+  });
 }
 
 function killVerifiedBackend(
@@ -354,26 +475,127 @@ function processGroupAlive(pid) {
   }
 }
 
-async function terminateProcessGroup(pid) {
-  const group = safeProcessGroupID(pid);
-  if (!processGroupAlive(pid)) return;
+function processGroupCleanupOwnershipConfirmed(pid, expectedIdentity, readIdentity) {
+  if (
+    !expectedIdentity ||
+    typeof readIdentity !== 'function' ||
+    expectedIdentity.pid !== pid ||
+    expectedIdentity.pgid !== pid
+  ) {
+    return false;
+  }
   try {
-    process.kill(group, 'SIGTERM');
+    const current = readIdentity(pid);
+    return current?.pid === pid &&
+      current.pgid === pid &&
+      sameProcessIdentity(expectedIdentity, current);
+  } catch {
+    return false;
+  }
+}
+
+async function terminateProcessGroup(pid, options = {}) {
+  const group = safeProcessGroupID(pid);
+  const {
+    expectedIdentity,
+    readIdentity,
+    groupAlive = processGroupAlive,
+    signalProcess = process.kill,
+    waitFor = poll,
+  } = options;
+  const guarded = Object.hasOwn(options, 'expectedIdentity') ||
+    Object.hasOwn(options, 'readIdentity');
+  const verifyOwnership = () => {
+    if (!guarded) return;
+    if (!processGroupCleanupOwnershipConfirmed(pid, expectedIdentity, readIdentity)) {
+      throw new Error('process group cleanup ownership could not be confirmed');
+    }
+  };
+  if (!groupAlive(pid)) return;
+  verifyOwnership();
+  try {
+    signalProcess(group, 'SIGTERM');
   } catch (error) {
     if (error?.code !== 'ESRCH') throw error;
   }
   try {
-    await poll(() => !processGroupAlive(pid), CLEANUP_TIMEOUT_MS, 'process group cleanup');
+    await waitFor(() => !groupAlive(pid), CLEANUP_TIMEOUT_MS, 'process group cleanup');
     return;
   } catch {
     // Escalate only the isolated process group created by this smoke.
   }
+  if (!groupAlive(pid)) return;
+  verifyOwnership();
   try {
-    process.kill(group, 'SIGKILL');
+    signalProcess(group, 'SIGKILL');
   } catch (error) {
     if (error?.code !== 'ESRCH') throw error;
   }
-  await poll(() => !processGroupAlive(pid), CLEANUP_TIMEOUT_MS, 'process group kill');
+  await waitFor(() => !groupAlive(pid), CLEANUP_TIMEOUT_MS, 'process group kill');
+}
+
+function resolveUnpackedLayout(
+  appCandidate,
+  { platform = process.platform, arch = process.arch } = {},
+) {
+  if (typeof appCandidate !== 'string' || appCandidate.length === 0) {
+    throw new TypeError('unpacked Desktop application path required');
+  }
+  const appPath = path.resolve(appCandidate);
+  if (platform === 'linux' && arch === 'x64') {
+    const resourcesPath = path.join(path.dirname(appPath), 'resources');
+    return {
+      appPath,
+      arch,
+      backendPath: path.join(resourcesPath, 'bin', 'yhc'),
+      closeStrategy: 'renderer',
+      launcher: 'xvfb',
+      platform,
+      rendererURL: pathToFileURL(path.join(resourcesPath, 'webui', 'index.html')).href,
+      resourcesPath,
+    };
+  }
+  if (platform === 'darwin' && arch === 'arm64') {
+    const macOSPath = path.dirname(appPath);
+    const contentsPath = path.dirname(macOSPath);
+    const bundlePath = path.dirname(contentsPath);
+    if (
+      path.basename(appPath) !== 'YHC' ||
+      path.basename(macOSPath) !== 'MacOS' ||
+      path.basename(contentsPath) !== 'Contents' ||
+      path.basename(bundlePath) !== 'YHC.app'
+    ) {
+      throw new Error('invalid macOS unpacked Desktop application path');
+    }
+    const resourcesPath = path.join(contentsPath, 'Resources');
+    return {
+      appPath,
+      arch,
+      backendPath: path.join(resourcesPath, 'bin', 'yhc'),
+      closeStrategy: 'browser',
+      launcher: 'direct',
+      platform,
+      rendererURL: pathToFileURL(path.join(resourcesPath, 'webui', 'index.html')).href,
+      resourcesPath,
+    };
+  }
+  if (platform === 'darwin') throw new Error('unpacked lifecycle smoke requires macOS arm64');
+  throw new Error(`unsupported unpacked lifecycle platform ${platform}/${arch}`);
+}
+
+function validatePlatformOptions(
+  platform,
+  { crashBackend = false, disableSandbox = false } = {},
+) {
+  const normalized = {
+    crashBackend: crashBackend === true,
+    disableSandbox: disableSandbox === true,
+  };
+  if (platform === 'linux') return normalized;
+  if (normalized.crashBackend || normalized.disableSandbox) {
+    throw new Error('crash injection and --no-sandbox are Linux-only');
+  }
+  return normalized;
 }
 
 function parseArguments(argv) {
@@ -416,46 +638,71 @@ async function runSmoke(
   appCandidate,
   { crashBackend = false, disableSandbox = false } = {},
 ) {
-  if (process.platform !== 'linux' || process.arch !== 'x64') {
-    throw new Error('unpacked lifecycle smoke requires Linux x64');
-  }
-  const appPath = requireExecutable(appCandidate, 'unpacked Desktop application');
-  const unpackedRoot = path.dirname(appPath);
-  const expectedRendererURL = pathToFileURL(
-    path.join(unpackedRoot, 'resources', 'webui', 'index.html'),
-  ).href;
+  let layout = resolveUnpackedLayout(appCandidate);
+  const options = validatePlatformOptions(layout.platform, {
+    crashBackend,
+    disableSandbox,
+  });
+  const appPath = requireExecutable(layout.appPath, 'unpacked Desktop application');
+  layout = resolveUnpackedLayout(appPath);
+  const expectedRendererURL = layout.rendererURL;
   const expectedBackend = requireExecutable(
-    path.join(unpackedRoot, 'resources', 'bin', 'yhc'),
+    layout.backendPath,
     'packaged backend',
   );
+  const readBackendIdentity = layout.platform === 'linux'
+    ? readLinuxProcessIdentity
+    : readDarwinProcessIdentity;
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-desktop-smoke-'));
   fs.chmodSync(temporaryRoot, 0o700);
   const environment = makeIsolatedEnvironment(temporaryRoot);
-  const xvfbRun = findCommand('xvfb-run', environment.PATH);
+  const xvfbRun = layout.launcher === 'xvfb'
+    ? findCommand('xvfb-run', environment.PATH)
+    : null;
   let stderr = '';
   let connection;
   let child;
+  let rootIdentity;
+  let failure;
   let passed = false;
   try {
     const appArguments = [
-      appPath,
-      ...(disableSandbox ? ['--no-sandbox'] : []),
+      ...(options.disableSandbox ? ['--no-sandbox'] : []),
       '--disable-gpu',
       '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0',
       `--user-data-dir=${path.join(temporaryRoot, 'profile')}`,
     ];
-    child = spawn(xvfbRun, [
-      '-a',
-      '-s',
-      '-screen 0 1440x920x24 -nolisten tcp',
-      ...appArguments,
-    ], {
+    const launchCommand = layout.launcher === 'xvfb' ? xvfbRun : appPath;
+    const launchArguments = layout.launcher === 'xvfb'
+      ? [
+        '-a',
+        '-s',
+        '-screen 0 1440x920x24 -nolisten tcp',
+        appPath,
+        ...appArguments,
+      ]
+      : appArguments;
+    child = spawn(launchCommand, launchArguments, {
       detached: true,
       env: environment,
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     const exit = observeSpawnedChild(child);
+    if (layout.platform === 'darwin') {
+      rootIdentity = await poll(
+        () => readDarwinProcessIdentity(child.pid),
+        RENDERER_TIMEOUT_MS,
+        'Darwin Desktop process identity',
+      );
+      if (
+        rootIdentity.pgid !== child.pid ||
+        rootIdentity.executable !== appPath ||
+        rootIdentity.state.startsWith('Z')
+      ) {
+        throw new Error('Darwin Desktop process identity did not match');
+      }
+    }
     const endpoint = await deadline(new Promise((resolve, reject) => {
       child.stderr.on('data', (chunk) => {
         stderr = appendBounded(stderr, chunk);
@@ -534,11 +781,16 @@ async function runSmoke(
       throw new Error('packaged renderer contract did not match');
     }
 
-    const backend = readLinuxProcessIdentity(probe.backendPID);
-    if (backend.state === 'Z' || backend.executable !== expectedBackend) {
+    const backend = readBackendIdentity(probe.backendPID);
+    if (
+      !backend ||
+      backend.state.startsWith('Z') ||
+      backend.executable !== expectedBackend ||
+      (layout.platform === 'darwin' && backend.pgid !== child.pid)
+    ) {
       throw new Error('packaged backend process identity did not match');
     }
-    if (crashBackend) {
+    if (options.crashBackend) {
       const subscribed = await evaluate(connection, attached.sessionId, `(() => {
         const bridge = globalThis.yhcDesktop;
         if (typeof bridge?.onBackendExit !== 'function') return false;
@@ -550,9 +802,9 @@ async function runSmoke(
       })()`);
       if (subscribed !== true) throw new Error('backend crash observer was not installed');
 
-      killVerifiedBackend(backend);
+      killVerifiedBackend(backend, { readIdentity: readBackendIdentity });
       await poll(
-        () => !originalProcessAlive(backend),
+        () => !originalProcessAlive(backend, readBackendIdentity),
         BACKEND_EXIT_TIMEOUT_MS,
         'crashed backend exit',
       );
@@ -599,10 +851,18 @@ async function runSmoke(
         return true;
       })()`);
     }
-    try {
-      await evaluate(connection, attached.sessionId, 'globalThis.close(); true');
-    } catch (error) {
-      if (!/CDP connection (?:closed|is not open)/.test(error.message)) throw error;
+    if (layout.closeStrategy === 'browser') {
+      try {
+        await connection.send('Browser.close');
+      } catch (error) {
+        if (!/CDP connection (?:closed|failed|is not open)/.test(error.message)) throw error;
+      }
+    } else {
+      try {
+        await evaluate(connection, attached.sessionId, 'globalThis.close(); true');
+      } catch (error) {
+        if (!/CDP connection (?:closed|is not open)/.test(error.message)) throw error;
+      }
     }
     connection.close();
     connection = null;
@@ -611,9 +871,9 @@ async function runSmoke(
     if (appExit.code !== 0 || appExit.signal !== null) {
       throw new Error(`Desktop exited abnormally (${appExit.code ?? appExit.signal})`);
     }
-    if (!crashBackend) {
+    if (!options.crashBackend) {
       await poll(
-        () => !originalProcessAlive(backend),
+        () => !originalProcessAlive(backend, readBackendIdentity),
         BACKEND_EXIT_TIMEOUT_MS,
         'packaged backend exit',
       );
@@ -624,22 +884,38 @@ async function runSmoke(
       protocol_version: probe.protocolVersion,
       surface: probe.surface,
       backend_pid: probe.backendPID,
-      crash_containment: crashBackend ? 'pass' : 'not_run',
-      no_restart_observation_ms: crashBackend ? NO_RESTART_OBSERVATION_MS : 0,
+      platform: `${layout.platform}-${layout.arch}`,
+      crash_containment: options.crashBackend ? 'pass' : 'not_run',
+      no_restart_observation_ms: options.crashBackend ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
   } catch (error) {
     const diagnostic = stderr.trim();
-    throw new Error(
-      `${error.message}${diagnostic ? `\nElectron stderr tail:\n${diagnostic}` : ''}`,
+    const lockedSessionDiagnostic = layout.platform === 'darwin' &&
+      readDarwinScreenLockState() === true
+      ? '\nDarwin GUI session is locked; unlock the host before rerunning the lifecycle smoke.'
+      : '';
+    failure = new Error(
+      `${error.message}${lockedSessionDiagnostic}` +
+      `${diagnostic ? `\nElectron stderr tail:\n${diagnostic}` : ''}`,
     );
   } finally {
-    connection?.close();
     try {
-      if (!passed && child?.pid) await terminateProcessGroup(child.pid);
+      connection?.close();
+      if (!passed && child?.pid) {
+        await terminateProcessGroup(child.pid, layout.platform === 'darwin'
+          ? {
+            expectedIdentity: rootIdentity,
+            readIdentity: readDarwinProcessIdentity,
+          }
+          : undefined);
+      }
+    } catch (cleanupError) {
+      failure = combineSmokeFailure(failure, cleanupError);
     } finally {
       fs.rmSync(temporaryRoot, { recursive: true, force: true });
     }
   }
+  if (failure) throw failure;
 }
 
 async function main() {
@@ -660,14 +936,23 @@ if (require.main === module) {
 module.exports = {
   NO_RESTART_OBSERVATION_MS,
   appendBounded,
+  combineSmokeFailure,
   crashContainmentMatches,
   killVerifiedBackend,
   makeIsolatedEnvironment,
   observeStable,
   observeSpawnedChild,
   parseArguments,
+  parseDarwinProcessIdentity,
+  parseDarwinScreenLockState,
   parseDevToolsEndpoint,
   parseProcStat,
+  readDarwinProcessIdentity,
+  readDarwinScreenLockState,
+  resolveUnpackedLayout,
   safeProcessGroupID,
+  sameProcessIdentity,
   selectPageTarget,
+  terminateProcessGroup,
+  validatePlatformOptions,
 };

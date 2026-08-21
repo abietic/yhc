@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-20
+**Last verified:** 2026-08-21
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > renderer/server trust boundaries, and user-visible interaction projections.
@@ -79,6 +79,17 @@ when safe storage is available it encrypts the stored profile; the renderer
 clears the submitted API key and receives status rather than the credential.
 These measures do not validate an arbitrary provider's credential, endpoint,
 or tool schema.
+
+On macOS the Host creates its hidden `BrowserWindow` before a configured
+provider profile can touch Electron safe storage, so Keychain service identity
+is established by the YHC application rather than a generic pre-window
+identity. An absent profile does not synchronously call
+`safeStorage.isEncryptionAvailable()` during bootstrap: that API may block the
+main thread for Keychain input. The provider dialog is admitted from the
+presence of the required safe-storage methods, while the first encryption and
+every configured-profile decryption still fail closed on an operation error.
+This keeps an empty-profile launch non-interactive; it does not turn unsigned
+QA packaging into secure-storage, signing, or Keychain-prompt acceptance.
 
 The backend bootstrap also projects one bounded build identity: a canonical
 Desktop version (numeric prefix, no `v`, at most 64 ASCII characters), a
@@ -224,15 +235,26 @@ seconds—longer than the Host's 10-second bootstrap budget—before Electron
 closes normally. The renderer exposes only a `data-yhc-bootstrap` ready/error
 state for these read-only completion oracles.
 
+The Apple Silicon native row also launches the exact unsigned unpacked
+`YHC.app/Contents/MacOS/YHC` executable with an isolated user-data directory.
+It verifies the same packaged renderer, frozen preload bridge, trusted
+`app:get-info` IPC, and bundled backend path. The backend must remain in the
+detached Electron process group, and a browser-level graceful close must end
+Electron with status zero and retire the original backend. Darwin ownership is
+observed with locale-pinned `ps` fields for PID, process group, state, start
+time, and resolved command path. That observation is best effort rather than an
+atomic kernel identity or signal guarantee; this normal-lifecycle row does not
+perform crash injection.
+
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
-[`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L104) stops event
+[`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L143) stops event
 streams, sends `SIGINT`, and waits 17 seconds before escalating once to
 `SIGKILL`. That graceful window covers the app-server's 15-second bounded
 session, engine, transcript, and HTTP cleanup with a two-second scheduling
 margin. After actually sending `SIGKILL`, the Host starts a separate three-second
 window for the child `exit` event. For a normally bootstrapped backend, provider
 replacement and Electron quit proceed only after that exact exit is observed;
-otherwise [`requestQuit`](../../desktop/main.cjs#L227) keeps the app open with
+otherwise [`requestQuit`](../../desktop/main.cjs#L228) keeps the app open with
 fixed retry guidance. Startup-failure cleanup is a separate lifecycle. This
 ordering protects cleanup time but does not promise that an interrupted model
 turn completes, that every provider responds during shutdown, or that a
@@ -241,13 +263,17 @@ force-killed process persisted work beyond its last durable write.
 A separate native packaging matrix runs the same unpacked `afterPack` contract
 on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
 Those jobs prove that each native electron-builder path can assemble the exact
-ASAR, WebUI, backend, and license payload; they do not launch the macOS or
-Windows app, produce installer media, sign code, or upload artifacts.
+ASAR, WebUI, backend, and license payload. The Apple Silicon row adds the
+automated normal-lifecycle launch above; Intel and Windows remain assembly-only
+evidence. The matrix does not produce installer media, sign code, or upload
+artifacts.
 
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS
-sandbox, a physical display, native user interaction, or another platform. CI
-also does not construct an active provider turn for the crash oracle, so
+sandbox or another platform. The Apple Silicon lifecycle row keeps the normal
+sandbox but is still automation, not evidence of Finder launch, foreground
+focus, native picker or secure-storage interaction, or physical UI behavior.
+CI also does not construct an active provider turn for the crash oracle, so
 active-turn preservation remains covered by deterministic state tests and
 physical acceptance rather than this Xvfb scenario. CI neither uploads nor
 promotes the unsigned output. These artifacts remain ignored QA output. This
@@ -257,6 +283,11 @@ implements a different provider/tool dialect.
 
 ## Code references
 
+- [`startDesktopHost`](../../desktop/lifecycle.cjs#L50) owns the prepare-window,
+  start-backend, verify-bootstrap, then load-renderer startup order.
+- [`providerSetupStorageAvailable`](../../desktop/provider_setup.cjs#L310)
+  admits macOS setup without a synchronous Keychain availability probe; the
+  adjacent read/write functions retain operation-level failure handling.
 - [`startBackend` and `notifyBackendExit`](../../desktop/main.cjs) own child
   bootstrap identity and the unexpected-exit notification boundary.
 - [`reducer` and `BACKEND_UNAVAILABLE`](../../internal/webui/assets/state.mjs)

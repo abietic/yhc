@@ -11,7 +11,7 @@ const {
   createProviderRestartCoordinator,
   encryptionUsable,
   providerLaunchEnvironment,
-  providerProfileStatus,
+  providerProfileStatus, providerSetupStorageAvailable,
   readProviderLaunchProfile,
   validateProviderSubmission,
   writeProviderProfile,
@@ -289,4 +289,22 @@ test('provider restart is single-flight and stops before a failed start', async 
     /bounded stop failed/,
   );
   assert.deepEqual(order, ['stop-streams', 'stop']);
+});
+
+test('macOS setup admission does not synchronously probe Keychain availability', () => {
+  let availabilityProbes = 0;
+  const safeStorage = fakeSafeStorage();
+  safeStorage.isEncryptionAvailable = () => {
+    availabilityProbes += 1;
+    throw new Error('Keychain interaction must stay user initiated');
+  };
+
+  assert.equal(providerSetupStorageAvailable(safeStorage, 'darwin'), true);
+  assert.equal(availabilityProbes, 0);
+  assert.equal(providerSetupStorageAvailable(null, 'darwin'), false);
+  assert.equal(providerSetupStorageAvailable({ encryptString() {} }, 'darwin'), false);
+  assert.equal(providerSetupStorageAvailable(
+    fakeSafeStorage({ available: false }),
+    'win32',
+  ), false);
 });

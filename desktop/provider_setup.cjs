@@ -307,12 +307,22 @@ function createProviderRestartCoordinator(deps) {
   });
 }
 
+function providerSetupStorageAvailable(safeStorage, platform) {
+  if (platform !== 'darwin') return encryptionUsable(safeStorage, platform);
+  return Boolean(
+    safeStorage &&
+    typeof safeStorage.encryptString === 'function' &&
+    typeof safeStorage.decryptString === 'function',
+  );
+}
+
 module.exports = {
   ambientProviderConfigured,
   createProviderRestartCoordinator,
   encryptionUsable,
   providerLaunchEnvironment,
   providerProfileStatus,
+  providerSetupStorageAvailable,
   readProviderLaunchProfile,
   validateProviderSubmission,
   writeProviderProfile,

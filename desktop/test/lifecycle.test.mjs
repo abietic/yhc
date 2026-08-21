@@ -13,6 +13,7 @@ const {
   backendStopFailurePrompt,
   createBackendStopCoordinator,
   quitInspectionFailurePrompt,
+  startDesktopHost,
 } = require('../lifecycle.cjs');
 
 function controlledTimers() {
@@ -96,6 +97,77 @@ test('inspection failure prompt keeps working by default', () => {
     cancelId: 0,
     noLink: true,
     message: 'Unable to verify active turns',
+  });
+});
+
+test('Desktop startup prepares the hidden host before backend secure-storage work', async () => {
+  const order = [];
+  await startDesktopHost({
+    prepareWindow: () => order.push('prepare-window'),
+    startBackend: async () => order.push('start-backend'),
+    backendAvailable: () => {
+      order.push('verify-backend');
+      return true;
+    },
+    loadRenderer: async () => order.push('load-renderer'),
+    stopBackend: async () => order.push('stop-backend'),
+  });
+  assert.deepEqual(order, [
+    'prepare-window',
+    'start-backend',
+    'verify-backend',
+    'load-renderer',
+  ]);
+});
+
+test('Desktop startup never loads the renderer without an accepted backend', async () => {
+  const order = [];
+  await assert.rejects(startDesktopHost({
+    prepareWindow: () => order.push('prepare-window'),
+    startBackend: async () => order.push('start-backend'),
+    backendAvailable: () => false,
+    loadRenderer: async () => order.push('load-renderer'),
+    stopBackend: async () => order.push('stop-backend'),
+  }), /backend stopped during startup/);
+  assert.deepEqual(order, ['prepare-window', 'start-backend', 'stop-backend']);
+});
+
+test('Desktop startup stops an accepted backend when renderer loading fails', async () => {
+  const order = [];
+  const rendererFailure = new Error('renderer failed');
+  await assert.rejects(startDesktopHost({
+    prepareWindow: () => order.push('prepare-window'),
+    startBackend: async () => order.push('start-backend'),
+    backendAvailable: () => true,
+    loadRenderer: async () => {
+      order.push('load-renderer');
+      throw rendererFailure;
+    },
+    stopBackend: async () => order.push('stop-backend'),
+  }), (error) => error === rendererFailure);
+  assert.deepEqual(order, [
+    'prepare-window',
+    'start-backend',
+    'load-renderer',
+    'stop-backend',
+  ]);
+});
+
+test('Desktop startup reports cleanup failure without losing the primary failure', async () => {
+  const rendererFailure = new Error('renderer failed');
+  const cleanupFailure = new Error('backend cleanup failed');
+  await assert.rejects(startDesktopHost({
+    prepareWindow: () => {},
+    startBackend: async () => {},
+    backendAvailable: () => true,
+    loadRenderer: async () => { throw rendererFailure; },
+    stopBackend: async () => { throw cleanupFailure; },
+  }), (error) => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.message, 'Desktop startup failed and backend cleanup failed');
+    assert.equal(error.cause, rendererFailure);
+    assert.deepEqual(error.errors, [rendererFailure, cleanupFailure]);
+    return true;
   });
 });
 

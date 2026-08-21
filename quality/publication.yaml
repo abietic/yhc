@@ -668,40 +668,50 @@ privacy:
       match_sha256: f5817aed0df15f0ff6491556384e001ef8501ff1b4937eced8926841bd46c537
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 27
+      line: 36
       rule_id: private-url
       match_sha256: b2791e18c089446a5a041721be059915c226f23da16166a6de6d1d5d0855c7d4
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 34
+      line: 43
       rule_id: private-url
       match_sha256: 49584357ad6ec3f79dfb1c461edfd04aed0d88882821e12bc9d001297fade042
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 35
+      line: 44
       rule_id: private-url
       match_sha256: 1cb5c39658a62b6418292705621341b6bbb5c66b0f09c8ad8bcbc6a156df29af
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 36
+      line: 45
       rule_id: private-url
       match_sha256: 080f99e7372b9350f5809021274823a55c6df7d81f01788bf60d8648e01c3716
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 37
+      line: 46
       rule_id: private-url
       match_sha256: 4866ba0e5f9d2a7cb93a8856ccbd6b4ac00438a34bd9ab1e6a721eeff6072d22
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 207
+      line: 491
       rule_id: credential-assignment
       match_sha256: 92819818173d453054080948e9076af601304d743dfc51ad8f45e7ac3b55e961
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 208
+      line: 492
       rule_id: credential-assignment
       match_sha256: ec9121032890bc1ecefba65ebc4d3221258029a89a10db63f8f5b628eb0c6076
       purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 549
+      rule_id: high-entropy-token
+      match_sha256: 4fa34f0ebeccb0b16dccb24d2fbe510ffc0b2babed711fd73a191d2c53d517ac
+      purpose: build-metadata
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 564
+      rule_id: high-entropy-token
+      match_sha256: f5085960e1595cfe74ceeba8d1ce9409e64f541fa380459917e6a982452fe814
+      purpose: build-metadata
     - path: docs/architecture/desktop-workbench.md
       line: 14
       rule_id: bearer-token

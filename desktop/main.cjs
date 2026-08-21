@@ -12,13 +12,14 @@ const {
   backendStopFailurePrompt,
   createBackendStopCoordinator,
   quitInspectionFailurePrompt,
+  startDesktopHost,
 } = require('./lifecycle.cjs');
 const {
   ambientProviderConfigured,
   createProviderRestartCoordinator,
-  encryptionUsable,
   providerLaunchEnvironment,
   providerProfileStatus,
+  providerSetupStorageAvailable,
   readProviderLaunchProfile,
   writeProviderProfile,
 } = require('./provider_setup.cjs');
@@ -85,7 +86,7 @@ function publicProviderStatus(status, errorCode, ambientReady = false) {
   return Object.freeze({
     configured,
     launchReady: configured || ambientReady,
-    secureStorageAvailable: encryptionUsable(safeStorage, process.platform),
+    secureStorageAvailable: providerSetupStorageAvailable(safeStorage, process.platform),
     ...(configured ? {
       provider: status.provider,
       model: status.model,
@@ -227,7 +228,18 @@ function showQuitMessageBox(options) {
 async function requestQuit() {
   if (quitAllowed || quitDecision) return;
   quitDecision = (async () => {
-    if (!backend || !bootstrap) {
+    if (!backend) {
+      quitAllowed = true;
+      app.quit();
+      return;
+    }
+    if (!bootstrap) {
+      try {
+        await stopBackend();
+      } catch {
+        await showQuitMessageBox(backendStopFailurePrompt());
+        return;
+      }
       quitAllowed = true;
       app.quit();
       return;
@@ -281,11 +293,20 @@ function createWindow() {
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+}
+
+function loadRenderer() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('Desktop window is unavailable');
+  }
+  const targetWindow = mainWindow;
   const renderer = app.isPackaged
     ? path.join(process.resourcesPath, 'webui', 'index.html')
     : path.join(__dirname, '..', 'internal', 'webui', 'assets', 'index.html');
-  mainWindow.loadFile(renderer);
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  targetWindow.once('ready-to-show', () => {
+    if (!targetWindow.isDestroyed()) targetWindow.show();
+  });
+  return targetWindow.loadFile(renderer);
 }
 
 function assertTrustedSender(event) {
@@ -520,12 +541,17 @@ if (!hasSingleInstanceLock) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
-  app.whenReady().then(async () => {
-    try {
-      await startBackend();
-      if (!bootstrap) throw new Error('backend stopped during startup');
-      createWindow();
-    } catch {
+  app.whenReady().then(() => startDesktopHost({
+    prepareWindow: createWindow,
+    startBackend,
+    backendAvailable: () => Boolean(bootstrap),
+    loadRenderer,
+    stopBackend,
+  })).catch(async () => {
+      if (backend) {
+        await showQuitMessageBox(backendStopFailurePrompt());
+        return;
+      }
       await dialog.showMessageBox({
         type: 'error',
         message: 'Unable to start YHC',
@@ -533,10 +559,15 @@ if (!hasSingleInstanceLock) {
       });
       quitAllowed = true;
       app.quit();
-    }
   });
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && bootstrap) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0 && bootstrap) {
+      createWindow();
+      void loadRenderer().catch(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+        mainWindow = null;
+      });
+    }
   });
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();

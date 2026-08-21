@@ -11,16 +11,25 @@ const require = createRequire(import.meta.url);
 const {
   NO_RESTART_OBSERVATION_MS,
   appendBounded,
+  combineSmokeFailure,
   crashContainmentMatches,
   killVerifiedBackend,
   makeIsolatedEnvironment,
   observeStable,
   observeSpawnedChild,
   parseArguments,
+  parseDarwinProcessIdentity,
+  parseDarwinScreenLockState,
   parseDevToolsEndpoint,
   parseProcStat,
+  readDarwinProcessIdentity,
+  readDarwinScreenLockState,
+  resolveUnpackedLayout,
   safeProcessGroupID,
+  sameProcessIdentity,
   selectPageTarget,
+  terminateProcessGroup,
+  validatePlatformOptions,
 } = require('../scripts/unpacked_lifecycle_smoke.cjs');
 
 test('DevTools discovery accepts one ephemeral loopback browser endpoint', () => {
@@ -68,6 +77,179 @@ test('Linux process identity parsing retains start time across complex names', (
   assert.throws(() => parseProcStat('malformed'), /invalid Linux process stat/);
 });
 
+test('Darwin process identity parser accepts one normalized ps row with a spaced executable', () => {
+  const parsed = parseDarwinProcessIdentity(
+    '4242 4000 S Wed Aug 20 12:34:56 2026 /Applications/YHC Preview.app/Contents/Resources/bin/yhc',
+  );
+  assert.deepEqual(parsed, {
+    pid: 4242,
+    pgid: 4000,
+    state: 'S',
+    startTime: 'Wed Aug 20 12:34:56 2026',
+    executable: '/Applications/YHC Preview.app/Contents/Resources/bin/yhc',
+  });
+  for (const invalid of [
+    '',
+    '4242 4242 S Wed Aug 20 12:34:56 2026 relative/yhc',
+    '4242 0 S Wed Aug 20 12:34:56 2026 /Applications/YHC.app/Contents/Resources/bin/yhc',
+    '4242 4242 S Wed Aug 20 12:34:56 2026 /Applications/YHC.app/Contents/Resources/bin/yhc\nextra',
+    '4242 4242 S Wed Aug 20 12:34:56 2026 /Applications/YHC.app/Contents/Resources/\u0000yhc',
+  ]) {
+    assert.throws(() => parseDarwinProcessIdentity(invalid), /invalid Darwin process identity/);
+  }
+});
+
+test('Darwin process identity reader runs one locale-pinned ps query and normalizes its executable', () => {
+  const calls = [];
+  const actual = readDarwinProcessIdentity(4242, {
+    runPS: (command, args, options) => {
+      calls.push({ command, args, options });
+      return {
+        status: 0,
+        stdout: '4242 4000 S Wed Aug 20 12:34:56 2026 /private/var/YHC.app/Contents/Resources/bin/yhc\n',
+        stderr: '',
+      };
+    },
+    realpath: (candidate) => `/resolved${candidate}`,
+  });
+  assert.deepEqual(actual, {
+    pid: 4242,
+    pgid: 4000,
+    state: 'S',
+    startTime: 'Wed Aug 20 12:34:56 2026',
+    executable: '/resolved/private/var/YHC.app/Contents/Resources/bin/yhc',
+  });
+  assert.deepEqual(calls, [{
+    command: '/bin/ps',
+    args: [
+      '-ww', '-p', '4242',
+      '-o', 'pid=', '-o', 'pgid=', '-o', 'state=', '-o', 'lstart=', '-o', 'comm=',
+    ],
+    options: {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', TZ: 'UTC' },
+      maxBuffer: 4096,
+      timeout: 1000,
+    },
+  }]);
+  assert.equal(readDarwinProcessIdentity(4242, {
+    runPS: () => ({ status: 1, stdout: '', stderr: '' }),
+    realpath: () => assert.fail('missing process must not resolve a path'),
+  }), null);
+  assert.throws(() => readDarwinProcessIdentity(4242, {
+    runPS: () => ({ status: 1, stdout: 'unexpected', stderr: '' }),
+    realpath: () => '',
+  }), /Darwin process inspection failed/);
+  assert.throws(() => readDarwinProcessIdentity(4242, {
+    runPS: () => ({ status: 2, stdout: '', stderr: 'ps failed' }),
+    realpath: () => '',
+  }), /Darwin process inspection failed/);
+});
+
+test('Darwin lock diagnostics are bounded, locale-pinned, and fail closed', () => {
+  assert.equal(parseDarwinScreenLockState('"IOConsoleLocked" = Yes'), true);
+  assert.equal(parseDarwinScreenLockState('"CGSSessionScreenIsLocked"=Yes'), true);
+  assert.equal(parseDarwinScreenLockState('"IOConsoleLocked" = No'), false);
+  assert.equal(parseDarwinScreenLockState([
+    '"IOConsoleLocked" = Yes',
+    '"CGSSessionScreenIsLocked" = No',
+  ].join('\n')), null);
+  assert.equal(parseDarwinScreenLockState('unrelated'), null);
+
+  const calls = [];
+  assert.equal(readDarwinScreenLockState({
+    runIOReg: (command, args, options) => {
+      calls.push({ command, args, options });
+      return { status: 0, stdout: '"IOConsoleLocked" = Yes', stderr: '' };
+    },
+  }), true);
+  assert.deepEqual(calls, [{
+    command: '/usr/sbin/ioreg',
+    args: ['-n', 'Root', '-d1'],
+    options: {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin:/usr/sbin', LANG: 'C', LC_ALL: 'C' },
+      maxBuffer: 262144,
+      timeout: 1000,
+    },
+  }]);
+  assert.equal(readDarwinScreenLockState({
+    runIOReg: () => ({ status: 1, stdout: '', stderr: 'unavailable' }),
+  }), null);
+  assert.equal(readDarwinScreenLockState({
+    runIOReg: () => ({ error: new Error('timeout') }),
+  }), null);
+  assert.equal(readDarwinScreenLockState({
+    runIOReg: () => {
+      throw new Error('unavailable');
+    },
+  }), null);
+});
+
+test('unpacked layouts select direct macOS launch and preserve Linux layout', () => {
+  const macApp = '/tmp/yhc/mac-arm64/YHC.app/Contents/MacOS/YHC';
+  const mac = resolveUnpackedLayout(macApp, { platform: 'darwin', arch: 'arm64' });
+  assert.equal(mac.appPath, macApp);
+  assert.equal(mac.resourcesPath, '/tmp/yhc/mac-arm64/YHC.app/Contents/Resources');
+  assert.equal(mac.backendPath, '/tmp/yhc/mac-arm64/YHC.app/Contents/Resources/bin/yhc');
+  assert.equal(mac.rendererURL, 'file:///tmp/yhc/mac-arm64/YHC.app/Contents/Resources/webui/index.html');
+  assert.equal(mac.launcher, 'direct');
+  assert.equal(mac.closeStrategy, 'browser');
+
+  const linuxApp = '/tmp/yhc/linux-unpacked/yhc-desktop';
+  const linux = resolveUnpackedLayout(linuxApp, { platform: 'linux', arch: 'x64' });
+  assert.equal(linux.resourcesPath, '/tmp/yhc/linux-unpacked/resources');
+  assert.equal(linux.backendPath, '/tmp/yhc/linux-unpacked/resources/bin/yhc');
+  assert.equal(linux.rendererURL, 'file:///tmp/yhc/linux-unpacked/resources/webui/index.html');
+  assert.equal(linux.launcher, 'xvfb');
+  assert.equal(linux.closeStrategy, 'renderer');
+  assert.throws(
+    () => resolveUnpackedLayout(macApp, { platform: 'darwin', arch: 'x64' }),
+    /requires macOS arm64/,
+  );
+});
+
+test('platform options keep crash injection and no-sandbox confined to Linux', () => {
+  assert.deepEqual(
+    validatePlatformOptions('linux', { crashBackend: true, disableSandbox: true }),
+    { crashBackend: true, disableSandbox: true },
+  );
+  assert.deepEqual(
+    validatePlatformOptions('darwin', { crashBackend: false, disableSandbox: false }),
+    { crashBackend: false, disableSandbox: false },
+  );
+  for (const options of [
+    { crashBackend: true, disableSandbox: false },
+    { crashBackend: false, disableSandbox: true },
+  ]) {
+    assert.throws(
+      () => validatePlatformOptions('darwin', options),
+      /Linux-only/,
+    );
+  }
+});
+
+test('Darwin process identity changes make the original process unavailable', () => {
+  const expected = {
+    pid: 4242,
+    pgid: 4242,
+    state: 'S',
+    startTime: 'Wed Aug 20 12:34:56 2026',
+    executable: '/Applications/YHC.app/Contents/Resources/bin/yhc',
+  };
+  assert.equal(sameProcessIdentity(expected, { ...expected }), true);
+  assert.equal(sameProcessIdentity(expected, { ...expected, state: 'R' }), true);
+  assert.equal(sameProcessIdentity(expected, { ...expected, state: 'Z' }), false);
+  assert.equal(sameProcessIdentity(expected, null), false);
+  for (const field of ['pid', 'pgid', 'startTime', 'executable']) {
+    const changed = {
+      ...expected,
+      [field]: field === 'pid' || field === 'pgid' ? 4243 : `${expected[field]} changed`,
+    };
+    assert.equal(sameProcessIdentity(expected, changed), false, field);
+  }
+});
+
 test('diagnostics and process-group cleanup remain bounded', () => {
   assert.equal(appendBounded('', Buffer.from('abc'), 5), 'abc');
   assert.equal(appendBounded('abc', Buffer.from('def'), 5), 'bcdef');
@@ -75,6 +257,108 @@ test('diagnostics and process-group cleanup remain bounded', () => {
   for (const pid of [-1, 0, 1, 1.5, Number.NaN]) {
     assert.throws(() => safeProcessGroupID(pid), /unsafe process group/);
   }
+});
+
+test('Darwin cleanup rechecks root ownership before every process-group signal', async () => {
+  const expected = {
+    pid: 4242,
+    pgid: 4242,
+    state: 'S',
+    startTime: 'Wed Aug 20 12:34:56 2026',
+    executable: '/Applications/YHC.app/Contents/MacOS/YHC',
+  };
+  const signals = [];
+  let alive = true;
+  await terminateProcessGroup(expected.pid, {
+    expectedIdentity: expected,
+    readIdentity: () => ({ ...expected }),
+    groupAlive: () => alive,
+    signalProcess: (target, signal) => {
+      signals.push([target, signal]);
+      alive = false;
+    },
+    waitFor: async (probe) => assert.equal(await probe(), true),
+  });
+  assert.deepEqual(signals, [[-expected.pid, 'SIGTERM']]);
+
+  for (const current of [
+    null,
+    { ...expected, pgid: 4243 },
+    { ...expected, state: 'Z' },
+    { ...expected, startTime: 'Wed Aug 20 12:34:57 2026' },
+    { ...expected, executable: '/tmp/reused' },
+  ]) {
+    await assert.rejects(
+      terminateProcessGroup(expected.pid, {
+        expectedIdentity: expected,
+        readIdentity: () => current,
+        groupAlive: () => true,
+        signalProcess: () => assert.fail('unowned process group must not be signalled'),
+        waitFor: async () => assert.fail('unowned process group must not be polled'),
+      }),
+      /cleanup ownership could not be confirmed/,
+    );
+  }
+
+  await assert.rejects(
+    terminateProcessGroup(expected.pid, {
+      expectedIdentity: undefined,
+      readIdentity: () => ({ ...expected }),
+      groupAlive: () => true,
+      signalProcess: () => assert.fail('missing snapshot must not be signalled'),
+      waitFor: async () => assert.fail('missing snapshot must not be polled'),
+    }),
+    /cleanup ownership could not be confirmed/,
+  );
+});
+
+test('Darwin cleanup refuses SIGKILL when ownership changes after SIGTERM', async () => {
+  const expected = {
+    pid: 4242,
+    pgid: 4242,
+    state: 'S',
+    startTime: 'Wed Aug 20 12:34:56 2026',
+    executable: '/Applications/YHC.app/Contents/MacOS/YHC',
+  };
+  const signals = [];
+  let reads = 0;
+  await assert.rejects(
+    terminateProcessGroup(expected.pid, {
+      expectedIdentity: expected,
+      readIdentity: () => {
+        reads += 1;
+        return reads === 1
+          ? { ...expected }
+          : { ...expected, startTime: 'Wed Aug 20 12:34:57 2026' };
+      },
+      groupAlive: () => true,
+      signalProcess: (target, signal) => signals.push([target, signal]),
+      waitFor: async () => { throw new Error('fixture timeout'); },
+    }),
+    /cleanup ownership could not be confirmed/,
+  );
+  assert.deepEqual(signals, [[-expected.pid, 'SIGTERM']]);
+});
+
+test('Linux cleanup remains unguarded and cleanup diagnostics preserve the primary failure', async () => {
+  const signals = [];
+  let alive = true;
+  await terminateProcessGroup(4242, {
+    groupAlive: () => alive,
+    signalProcess: (target, signal) => {
+      signals.push([target, signal]);
+      alive = false;
+    },
+    waitFor: async (probe) => assert.equal(await probe(), true),
+  });
+  assert.deepEqual(signals, [[-4242, 'SIGTERM']]);
+
+  const primary = new Error('renderer bootstrap failed');
+  const cleanup = new Error('cleanup ownership could not be confirmed');
+  const combined = combineSmokeFailure(primary, cleanup);
+  assert.match(combined.message, /^renderer bootstrap failed\nCleanup failed:/);
+  assert.ok(combined.cause instanceof AggregateError);
+  assert.deepEqual(combined.cause.errors, [primary, cleanup]);
 });
 
 test('smoke arguments admit one explicit crash mode and reject ambiguity', () => {
@@ -260,6 +544,14 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
     makefile,
     /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/linux-unpacked\/yhc-desktop --crash-backend --no-sandbox/,
   );
+  assert.match(
+    makefile,
+    /desktop-unpacked-lifecycle-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64/,
+  );
+  assert.match(
+    makefile,
+    /node desktop\/scripts\/unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac-arm64\/YHC\.app\/Contents\/MacOS\/YHC/,
+  );
   assert.match(workflow, /desktop-unpacked-lifecycle-smoke-linux-amd64-ci/);
   assert.match(workflow, /desktop-unpacked-crash-containment-smoke-linux-amd64-ci/);
   assert.doesNotMatch(workflow, /make desktop-unpacked-lifecycle-smoke-linux-amd64\s*(?:\n|$)/);
@@ -268,6 +560,8 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
     /make desktop-unpacked-crash-containment-smoke-linux-amd64\s*(?:\n|$)/,
   );
   assert.doesNotMatch(workflow, /make desktop-package-smoke-linux-amd64/);
+  assert.match(workflow, /macos-15/);
+  assert.match(workflow, /desktop-unpacked-lifecycle-smoke-darwin-arm64/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'ready'/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'error'/);
 });
