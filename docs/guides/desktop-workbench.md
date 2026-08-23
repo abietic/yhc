@@ -94,10 +94,33 @@ requires Electron and the renderer to remain alive, the fixed restart guidance
 and checked entry controls to stay disabled, and `app:get-info` to return no
 accepted bootstrap throughout an 11-second observation window. The app must
 then close normally without accepting a replacement bootstrap during that
-window. Both local Linux targets keep Chromium's sandbox enabled. The hosted
-Linux CI job uses their dedicated `-ci` variants, which opt into
+window. All local Linux lifecycle targets keep Chromium's sandbox enabled. The
+hosted Linux CI job uses their dedicated `-ci` variants, which opt into
 `--no-sandbox`; those runs therefore do not validate the production OS
-sandbox, an active provider turn, or physical UI behavior.
+sandbox or physical UI behavior.
+
+To exercise the same unexpected exit while a real attached turn has emitted
+unfinished assistant text, run:
+
+```bash
+make desktop-unpacked-active-turn-crash-smoke-linux-amd64
+```
+
+This gate starts a smoke-owned loopback Responses provider, uses the packaged
+backend to create one canonical completed session inside an isolated HOME and
+workspace, then launches Desktop with only that fixture provider environment.
+Desktop discovers the saved session through its normal catalog, and the first
+new prompt uses the production attach path. The gate waits until the provider
+has opened the second stream and the public app snapshot reports a non-empty
+AppServer active turn plus exactly one sentinel assistant message with its own
+non-empty runtime turn ID and `completed: false`. It then applies the same
+identity-checked backend kill and requires the partial assistant text,
+session labels, and submitted prompt to remain visible while interactions and
+backend-dependent controls stay unavailable. No `terminal` or `turn.finished`
+event may appear, the loopback provider must receive exactly one seed and one
+active request, and the 11-second no-restart observation still applies. The
+fixture does not read host provider credentials or claim compatibility with an
+arbitrary OpenAI-compatible endpoint.
 
 On an Intel macOS host with an unlocked GUI session, run:
 

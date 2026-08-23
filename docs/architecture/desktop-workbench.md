@@ -316,13 +316,28 @@ sandbox or another platform. Both macOS lifecycle rows and the Windows row keep
 the normal sandbox but are still automation, not evidence of Finder, Dock, or
 Start-menu launch, foreground focus, native picker or secure-storage
 interaction, installer behavior, or physical UI behavior.
-CI also does not construct an active provider turn for the crash oracle, so
-active-turn preservation remains covered by deterministic state tests and
-physical acceptance rather than this Xvfb scenario. CI neither uploads nor
-promotes the unsigned output. These artifacts remain ignored QA output. This
-architecture document does not claim signature, notarization, distribution
-readiness, remote CI success, or compatibility with an arbitrary endpoint that
-implements a different provider/tool dialect.
+The Linux Xvfb job adds a separate active-turn crash oracle. A smoke-owned
+loopback Responses provider first lets the exact packaged backend create one
+completed canonical session under the isolated HOME and workspace. The
+packaged Desktop then discovers that session through the normal catalog and
+uses the existing first-send attach path for a second request whose response
+emits one assistant delta but never completes. Before killing the backend, the
+smoke requires the public app snapshot to report one non-empty AppServer active
+turn plus exactly one sentinel assistant projection with its own non-empty
+runtime turn ID and `completed: false`. After the Host reports the exit, the
+smoke requires the partial text, submitted prompt, and session labels to remain
+projected; fixed Offline guidance, retired interactions and capabilities, zero
+session `terminal`/`turn.finished` events, exactly two fixture requests, and the
+11-second no-restart window must all hold. This exercises the packaged IPC/SSE ordering
+race without exposing a workspace-picker bypass or renderer-only state seam.
+
+The native macOS and Windows crash rows still use the idle crash oracle; the
+active-turn fixture is currently Linux Xvfb automation, not cross-platform or
+physical UI evidence. CI neither uploads nor promotes the unsigned output.
+These artifacts remain ignored QA output. This architecture document does not
+claim signature, notarization, distribution readiness, remote CI success, or
+compatibility with an arbitrary endpoint that implements a different
+provider/tool dialect.
 
 ## Code references
 
@@ -338,6 +353,9 @@ implements a different provider/tool dialect.
 - [`handleBackendExit` and `bootstrapApp`](../../internal/webui/assets/app.mjs)
   register the crash listener before asynchronous bootstrap and apply global
   control admission.
+- [`unpacked_lifecycle_smoke.cjs`](../../desktop/scripts/unpacked_lifecycle_smoke.cjs)
+  owns the isolated loopback fixture, canonical preseed, public snapshot
+  oracle, identity-checked crash, and no-restart automation boundary.
 - [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs) owns intentional
   provider-replacement and quit shutdown; it does not provide crash restart.
 

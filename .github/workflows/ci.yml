@@ -414,7 +414,8 @@ jobs:
         run: |
           npm --prefix desktop rebuild electron --no-audit --no-fund
           make desktop-unpacked-lifecycle-smoke-linux-amd64-ci \
-            desktop-unpacked-crash-containment-smoke-linux-amd64-ci
+            desktop-unpacked-crash-containment-smoke-linux-amd64-ci \
+            desktop-unpacked-active-turn-crash-smoke-linux-amd64-ci
 
   desktop-native-packages:
     name: Native Desktop package (${{ matrix.platform }})

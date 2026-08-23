@@ -5,14 +5,21 @@ import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
 const {
+  ACTIVE_TURN_PARTIAL,
+  ACTIVE_TURN_PROMPT,
+  ACTIVE_TURN_SEED_PROMPT,
   NO_RESTART_OBSERVATION_MS,
+  activeTurnCrashContainmentMatches,
+  activeTurnFixtureEnvironment,
   appendBounded,
   combineSmokeFailure,
   crashContainmentMatches,
+  decodeSeedSession,
   killVerifiedBackend,
   makeIsolatedEnvironment,
   observeStable,
@@ -26,8 +33,10 @@ const {
   readDarwinScreenLockState,
   resolveUnpackedLayout,
   safeProcessGroupID,
+  seedActiveTurnSession,
   sameProcessIdentity,
   selectPageTarget, selectReplacementPageTarget, targetID,
+  startActiveTurnProvider,
   terminateProcessGroup,
   validatePlatformOptions,
 } = require('../scripts/unpacked_lifecycle_smoke.cjs');
@@ -212,15 +221,39 @@ test('unpacked layouts select direct macOS launch and preserve Linux layout', ()
 test('platform options admit crash injection on supported native hosts and keep no-sandbox Linux-only', () => {
   assert.deepEqual(
     validatePlatformOptions('linux', { crashBackend: true, disableSandbox: true }),
-    { crashBackend: true, disableSandbox: true, reopenWindow: false },
+    {
+      crashActiveTurn: false,
+      crashBackend: true,
+      disableSandbox: true,
+      reopenWindow: false,
+    },
   );
   assert.deepEqual(
     validatePlatformOptions('darwin', { crashBackend: true, disableSandbox: false }),
-    { crashBackend: true, disableSandbox: false, reopenWindow: false },
+    {
+      crashActiveTurn: false,
+      crashBackend: true,
+      disableSandbox: false,
+      reopenWindow: false,
+    },
   );
   assert.deepEqual(
     validatePlatformOptions('win32', { crashBackend: true, disableSandbox: false }),
-    { crashBackend: true, disableSandbox: false, reopenWindow: false },
+    {
+      crashActiveTurn: false,
+      crashBackend: true,
+      disableSandbox: false,
+      reopenWindow: false,
+    },
+  );
+  assert.deepEqual(
+    validatePlatformOptions('linux', { crashActiveTurn: true }),
+    {
+      crashActiveTurn: true,
+      crashBackend: false,
+      disableSandbox: false,
+      reopenWindow: false,
+    },
   );
   assert.throws(
     () => validatePlatformOptions('darwin', { disableSandbox: true }),
@@ -368,21 +401,253 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
   const app = path.resolve('/opt/yhc/yhc-desktop');
   assert.deepEqual(
     parseArguments(['--app', app]),
-    { appPath: app, crashBackend: false, disableSandbox: false, reopenWindow: false },
+    {
+      appPath: app,
+      crashActiveTurn: false,
+      crashBackend: false,
+      disableSandbox: false,
+      reopenWindow: false,
+    },
   );
   assert.deepEqual(
     parseArguments(['--crash-backend', '--app', app, '--no-sandbox']),
-    { appPath: app, crashBackend: true, disableSandbox: true, reopenWindow: false },
+    {
+      appPath: app,
+      crashActiveTurn: false,
+      crashBackend: true,
+      disableSandbox: true,
+      reopenWindow: false,
+    },
+  );
+  assert.deepEqual(
+    parseArguments(['--app', app, '--crash-active-turn']),
+    {
+      appPath: app,
+      crashActiveTurn: true,
+      crashBackend: false,
+      disableSandbox: false,
+      reopenWindow: false,
+    },
   );
   for (const invalid of [
     [],
     ['--app'],
     ['--app', app, '--app', app],
     ['--app', app, '--crash-backend', '--crash-backend'],
+    ['--app', app, '--crash-active-turn', '--crash-active-turn'],
+    ['--app', app, '--crash-active-turn', '--crash-backend'],
+    ['--app', app, '--crash-active-turn', '--reopen-window'],
     ['--app', app, '--no-sandbox', '--no-sandbox'],
     ['--app', app, '--unknown'],
   ]) {
     assert.throws(() => parseArguments(invalid), /usage: unpacked_lifecycle_smoke/);
+  }
+});
+
+test('active-turn fixture environment injects only smoke-owned loopback provider values', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-active-turn-env-test-'));
+  try {
+    const isolated = makeIsolatedEnvironment(root, {
+      PATH: '/usr/bin',
+      PROV: 'private-provider',
+      PROV_MODEL: 'private-model',
+      PROV_API_KEY: 'private-provider-key',
+      PROV_BASE_URL: 'https://private.example.test',
+      OPENAI_API_KEY: 'private-openai-key',
+    });
+    const environment = activeTurnFixtureEnvironment(
+      isolated,
+      'http://127.0.0.1:43127',
+    );
+    assert.deepEqual({
+      PROV: environment.PROV,
+      PROV_MODEL: environment.PROV_MODEL,
+      PROV_API_KEY: environment.PROV_API_KEY,
+      PROV_BASE_URL: environment.PROV_BASE_URL,
+      NO_PROXY: environment.NO_PROXY,
+    }, {
+      PROV: 'openai',
+      PROV_MODEL: 'fixture-model',
+      PROV_API_KEY: 'desktop-active-turn-fixture-key',
+      PROV_BASE_URL: 'http://127.0.0.1:43127',
+      NO_PROXY: '127.0.0.1,localhost',
+    });
+    assert.equal(Object.hasOwn(environment, 'OPENAI_API_KEY'), false);
+    assert.equal(Object.hasOwn(isolated, 'PROV_API_KEY'), false);
+    for (const invalid of [
+      'https://127.0.0.1:43127',
+      'http://localhost:43127',
+      'http://127.0.0.1:43127/v1',
+    ]) {
+      assert.throws(
+        () => activeTurnFixtureEnvironment(isolated, invalid),
+        /loopback HTTP/,
+      );
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('packaged session seed uses bounded exec argv and accepts only a completed JSON envelope', async () => {
+  const calls = [];
+  const spawnChild = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.pid = 4242;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => assert.fail('completed seed must not be killed');
+    queueMicrotask(() => {
+      child.stdout.end(`${JSON.stringify({
+        schema_version: 1,
+        status: 'completed',
+        output: 'Desktop active-turn seed completed.',
+        session_id: 'session-fixture-1',
+        terminal_reason: 'completed',
+        exit_code: 0,
+      })}\n`);
+      child.stderr.end('Resume this session with a fixture command.\n');
+      child.emit('exit', 0, null);
+    });
+    return child;
+  };
+  const environment = activeTurnFixtureEnvironment(
+    { PATH: '/usr/bin', HOME: '/tmp/fixture-home' },
+    'http://127.0.0.1:43127',
+  );
+  const sessionID = await seedActiveTurnSession({
+    backendPath: '/opt/yhc/resources/bin/yhc',
+    baseURL: 'http://127.0.0.1:43127',
+    environment,
+    spawnChild,
+    workspace: '/tmp/fixture-workspace',
+  });
+  assert.equal(sessionID, 'session-fixture-1');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, '/opt/yhc/resources/bin/yhc');
+  assert.deepEqual(calls[0].args, [
+    'exec',
+    ACTIVE_TURN_SEED_PROMPT,
+    '--output-format', 'json',
+    '--max-turns', '1',
+    '--tools', '',
+  ]);
+  assert.equal(calls[0].args.includes('desktop-active-turn-fixture-key'), false);
+  assert.equal(calls[0].args.includes('http://127.0.0.1:43127'), false);
+  assert.equal(calls[0].args.includes('fixture-model'), false);
+  assert.equal(calls[0].options.cwd, '/tmp/fixture-workspace');
+  assert.strictEqual(calls[0].options.env, environment);
+  assert.equal(calls[0].options.shell, false);
+  await assert.rejects(
+    seedActiveTurnSession({
+      backendPath: '/opt/yhc/resources/bin/yhc',
+      baseURL: 'http://127.0.0.1:43127',
+      environment: { ...environment, PROV_MODEL: 'wrong-model' },
+      spawnChild,
+      workspace: '/tmp/fixture-workspace',
+    }),
+    /provider environment did not match/,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('packaged seed envelope rejects incomplete and ambiguous session identity', () => {
+  const completed = {
+    schema_version: 1,
+    status: 'completed',
+    output: 'Desktop active-turn seed completed.',
+    session_id: 'session-fixture-1',
+    terminal_reason: 'completed',
+    exit_code: 0,
+  };
+  assert.equal(decodeSeedSession(JSON.stringify(completed)), 'session-fixture-1');
+  for (const invalid of [
+    '',
+    JSON.stringify({ ...completed, status: 'failed' }),
+    JSON.stringify({ ...completed, output: 'unexpected' }),
+    JSON.stringify({ ...completed, session_id: '' }),
+    JSON.stringify({ ...completed, session_id: '../session' }),
+    `${JSON.stringify(completed)}\n${JSON.stringify(completed)}`,
+  ]) {
+    assert.throws(() => decodeSeedSession(invalid), /packaged session seed/);
+  }
+});
+
+test('active-turn provider completes only the seed and holds the active partial stream', async () => {
+  const provider = await startActiveTurnProvider();
+  try {
+    const endpoint = new URL(provider.baseURL);
+    assert.equal(endpoint.hostname, '127.0.0.1');
+    assert.notEqual(endpoint.port, '');
+
+    const unauthorized = await fetch(`${provider.baseURL}/responses`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer wrong', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'fixture-model', stream: true, input: [] }),
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const wrongModel = await fetch(`${provider.baseURL}/responses`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer desktop-active-turn-fixture-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ model: 'wrong-model', stream: true, input: [] }),
+    });
+    assert.equal(wrongModel.status, 422);
+
+    const seed = await fetch(`${provider.baseURL}/responses`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer desktop-active-turn-fixture-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'fixture-model',
+        stream: true,
+        input: [{ role: 'user', content: ACTIVE_TURN_SEED_PROMPT }],
+      }),
+    });
+    assert.equal(seed.status, 200);
+    const seedEvents = await seed.text();
+    assert.match(seedEvents, /response\.output_item\.added/);
+    assert.match(seedEvents, /response\.content_part\.added/);
+    assert.match(seedEvents, /response\.output_text\.delta/);
+    assert.match(seedEvents, /response\.output_item\.done/);
+    assert.match(seedEvents, /response\.completed/);
+
+    const activeResponsePromise = fetch(`${provider.baseURL}/responses`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer desktop-active-turn-fixture-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'fixture-model',
+        stream: true,
+        input: [{ role: 'user', content: ACTIVE_TURN_PROMPT }],
+      }),
+    });
+    await provider.waitForActiveRequest();
+    const activeResponse = await activeResponsePromise;
+    const reader = activeResponse.body.getReader();
+    let activeEvents = '';
+    for (let index = 0; index < 4 && !activeEvents.includes(ACTIVE_TURN_PARTIAL); index += 1) {
+      const chunk = await reader.read();
+      assert.equal(chunk.done, false);
+      activeEvents += Buffer.from(chunk.value).toString('utf8');
+    }
+    assert.match(activeEvents, /response\.output_item\.added/);
+    assert.match(activeEvents, /response\.content_part\.added/);
+    assert.match(activeEvents, /response\.output_text\.delta/);
+    assert.match(activeEvents, new RegExp(ACTIVE_TURN_PARTIAL));
+    assert.doesNotMatch(activeEvents, /response\.completed/);
+    await reader.cancel();
+    assert.deepEqual(provider.requestCounts(), { active: 1, seed: 1, total: 4 });
+  } finally {
+    await provider.close();
   }
 });
 
@@ -516,6 +781,44 @@ test('crash containment stays stable beyond the Host bootstrap budget', async ()
   );
 });
 
+test('active-turn crash oracle requires unfinished snapshot truth and preserved projection', () => {
+  const result = {
+    bootstrapReady: true,
+    notificationCount: 1,
+    backendUnavailable: true,
+    notice: 'Backend stopped unexpectedly. Restart YHC to reconnect.',
+    status: 'Offline',
+    checkedControlsDisabled: true,
+    activeSessionID: 'session-fixture-1',
+    activeTurnID: 'turn-fixture-1',
+    snapshotActiveTurnID: 'turn-fixture-1',
+    snapshotPartialTurnID: 'engine-turn-fixture-1',
+    snapshotPartialCount: 1,
+    snapshotPartialCompleted: false,
+    partialVisible: true,
+    activePromptVisible: true,
+    interactionHidden: true,
+    sessionIdentityVisible: true,
+    terminalEventCount: 0,
+  };
+  assert.equal(activeTurnCrashContainmentMatches(result), true);
+  for (const changed of [
+    { ...result, activeSessionID: '' },
+    { ...result, activeTurnID: '' },
+    { ...result, snapshotActiveTurnID: 'turn-other' },
+    { ...result, snapshotPartialTurnID: '' },
+    { ...result, snapshotPartialCount: 2 },
+    { ...result, snapshotPartialCompleted: true },
+    { ...result, partialVisible: false },
+    { ...result, activePromptVisible: false },
+    { ...result, interactionHidden: false },
+    { ...result, sessionIdentityVisible: false },
+    { ...result, terminalEventCount: 1 },
+  ]) {
+    assert.equal(activeTurnCrashContainmentMatches(changed), false);
+  }
+});
+
 test('spawn observation handles an asynchronous error before PID validation', async () => {
   const child = new EventEmitter();
   child.pid = undefined;
@@ -590,6 +893,22 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
   );
   assert.match(
     makefile,
+    /desktop-unpacked-active-turn-crash-smoke-linux-amd64: desktop-package-smoke-linux-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/linux-unpacked\/yhc-desktop --crash-active-turn\n/,
+  );
+  assert.match(
+    makefile,
+    /desktop-unpacked-active-turn-crash-smoke-linux-amd64-ci: desktop-package-smoke-linux-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/linux-unpacked\/yhc-desktop --crash-active-turn --no-sandbox/,
+  );
+  assert.match(
+    makefile,
     /desktop-unpacked-lifecycle-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64/,
   );
   assert.match(
@@ -598,6 +917,7 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
   );
   assert.match(workflow, /desktop-unpacked-lifecycle-smoke-linux-amd64-ci/);
   assert.match(workflow, /desktop-unpacked-crash-containment-smoke-linux-amd64-ci/);
+  assert.match(workflow, /desktop-unpacked-active-turn-crash-smoke-linux-amd64-ci/);
   assert.doesNotMatch(workflow, /make desktop-unpacked-lifecycle-smoke-linux-amd64\s*(?:\n|$)/);
   assert.doesNotMatch(
     workflow,
@@ -614,11 +934,13 @@ test('window-reopen arguments and platform admission fail closed', () => {
   const app = path.resolve('/opt/yhc/YHC.app/Contents/MacOS/YHC');
   assert.deepEqual(parseArguments(['--app', app, '--reopen-window']), {
     appPath: app,
+    crashActiveTurn: false,
     crashBackend: false,
     disableSandbox: false,
     reopenWindow: true,
   });
   assert.deepEqual(validatePlatformOptions('darwin', { reopenWindow: true }), {
+    crashActiveTurn: false,
     crashBackend: false,
     disableSandbox: false,
     reopenWindow: true,

@@ -1,5 +1,6 @@
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -18,6 +19,14 @@ const PROCESS_QUERY_MAX_BUFFER = 4 << 10;
 const WINDOWS_PROCESS_QUERY_TIMEOUT_MS = 10_000;
 const WINDOWS_PROCESS_QUERY_MAX_BUFFER = 1 << 20;
 const DARWIN_IOREG_MAX_BUFFER = 256 << 10;
+const ACTIVE_TURN_PROVIDER_MAX_BODY = 1 << 20;
+const ACTIVE_TURN_SEED_TIMEOUT_MS = 20_000;
+const ACTIVE_TURN_PROVIDER_KEY = 'desktop-active-turn-fixture-key';
+const ACTIVE_TURN_PROVIDER_MODEL = 'fixture-model';
+const ACTIVE_TURN_SEED_PROMPT = 'YHC_DESKTOP_ACTIVE_CRASH_SEED_7Q9';
+const ACTIVE_TURN_SEED_OUTPUT = 'Desktop active-turn seed completed.';
+const ACTIVE_TURN_PROMPT = 'YHC_DESKTOP_ACTIVE_CRASH_STREAM_7Q9';
+const ACTIVE_TURN_PARTIAL = 'Desktop active turn is still streaming.';
 const BACKEND_UNAVAILABLE_NOTICE =
   'Backend stopped unexpectedly. Restart YHC to reconnect.';
 
@@ -504,6 +513,351 @@ function crashContainmentMatches(result) {
     result.notice === BACKEND_UNAVAILABLE_NOTICE &&
     result.status === 'Offline' &&
     result.checkedControlsDisabled === true;
+}
+
+function activeTurnCrashContainmentMatches(result) {
+  return crashContainmentMatches(result) &&
+    typeof result.activeSessionID === 'string' &&
+    result.activeSessionID.length > 0 &&
+    typeof result.activeTurnID === 'string' &&
+    result.activeTurnID.length > 0 &&
+    result.snapshotActiveTurnID === result.activeTurnID &&
+    typeof result.snapshotPartialTurnID === 'string' &&
+    result.snapshotPartialTurnID.length > 0 &&
+    result.snapshotPartialCount === 1 &&
+    result.snapshotPartialCompleted === false &&
+    result.partialVisible === true &&
+    result.activePromptVisible === true &&
+    result.interactionHidden === true &&
+    result.sessionIdentityVisible === true &&
+    result.terminalEventCount === 0;
+}
+
+function requireLoopbackProviderURL(candidate) {
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error('active-turn provider URL must be loopback HTTP');
+  }
+  if (
+    parsed.protocol !== 'http:' ||
+    parsed.hostname !== '127.0.0.1' ||
+    !/^[0-9]+$/.test(parsed.port) ||
+    Number(parsed.port) < 1 ||
+    Number(parsed.port) > 65535 ||
+    parsed.pathname !== '/' ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error('active-turn provider URL must be loopback HTTP');
+  }
+  return parsed.origin;
+}
+
+function activeTurnFixtureEnvironment(base, baseURL) {
+  if (!base || typeof base !== 'object' || Array.isArray(base)) {
+    throw new TypeError('isolated environment required');
+  }
+  return {
+    ...base,
+    NO_PROXY: '127.0.0.1,localhost',
+    PROV: 'openai',
+    PROV_MODEL: ACTIVE_TURN_PROVIDER_MODEL,
+    PROV_API_KEY: ACTIVE_TURN_PROVIDER_KEY,
+    PROV_BASE_URL: requireLoopbackProviderURL(baseURL),
+  };
+}
+
+function latestUserInput(input) {
+  if (!Array.isArray(input)) return '';
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    if (input[index]?.role === 'user') return JSON.stringify(input[index]);
+  }
+  return '';
+}
+
+function writeProviderEvent(response, name, value) {
+  response.write(`event: ${name}\ndata: ${JSON.stringify(value)}\n\n`);
+}
+
+function providerTextPart(text) {
+  return { type: 'output_text', text, annotations: [], logprobs: [] };
+}
+
+function providerTextItem(identity, text, status = 'completed') {
+  return {
+    id: `msg-${identity}`,
+    type: 'message',
+    role: 'assistant',
+    status,
+    content: text ? [providerTextPart(text)] : [],
+  };
+}
+
+function writeProviderDelta(response, text, identity) {
+  const itemID = `msg-${identity}`;
+  writeProviderEvent(response, 'response.output_item.added', {
+    type: 'response.output_item.added',
+    sequence_number: 0,
+    output_index: 0,
+    item: providerTextItem(identity, '', 'in_progress'),
+  });
+  writeProviderEvent(response, 'response.content_part.added', {
+    type: 'response.content_part.added',
+    sequence_number: 1,
+    item_id: itemID,
+    output_index: 0,
+    content_index: 0,
+    part: providerTextPart(''),
+  });
+  writeProviderEvent(response, 'response.output_text.delta', {
+    type: 'response.output_text.delta',
+    sequence_number: 2,
+    item_id: itemID,
+    output_index: 0,
+    content_index: 0,
+    delta: text,
+    logprobs: [],
+  });
+}
+
+function completeProviderResponse(response, text) {
+  writeProviderDelta(response, text, 'seed');
+  const item = providerTextItem('seed', text);
+  writeProviderEvent(response, 'response.content_part.done', {
+    type: 'response.content_part.done',
+    sequence_number: 3,
+    item_id: item.id,
+    output_index: 0,
+    content_index: 0,
+    part: providerTextPart(text),
+  });
+  writeProviderEvent(response, 'response.output_item.done', {
+    type: 'response.output_item.done',
+    sequence_number: 4,
+    output_index: 0,
+    item,
+  });
+  writeProviderEvent(response, 'response.completed', {
+    type: 'response.completed',
+    sequence_number: 5,
+    response: {
+      id: 'resp-seed',
+      object: 'response',
+      status: 'completed',
+      model: ACTIVE_TURN_PROVIDER_MODEL,
+      output: [item],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    },
+  });
+  response.end();
+}
+
+async function startActiveTurnProvider({ createServer = http.createServer } = {}) {
+  let resolveActive;
+  const activeRequest = new Promise((resolve) => { resolveActive = resolve; });
+  const counts = { active: 0, seed: 0, total: 0 };
+  const sockets = new Set();
+  let closed = false;
+  const server = createServer((request, response) => {
+    counts.total += 1;
+    if (request.method !== 'POST' || request.url !== '/responses') {
+      response.writeHead(404).end();
+      return;
+    }
+    if (request.headers.authorization !== `Bearer ${ACTIVE_TURN_PROVIDER_KEY}`) {
+      response.writeHead(401).end();
+      return;
+    }
+    const contentType = String(request.headers['content-type'] || '').toLowerCase();
+    if (!contentType.startsWith('application/json')) {
+      response.writeHead(415).end();
+      return;
+    }
+
+    let body = '';
+    let bodyBytes = 0;
+    let rejected = false;
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => {
+      if (rejected) return;
+      body += chunk;
+      bodyBytes += Buffer.byteLength(chunk);
+      if (bodyBytes > ACTIVE_TURN_PROVIDER_MAX_BODY) {
+        rejected = true;
+        response.writeHead(413).end();
+        request.destroy();
+      }
+    });
+    request.on('end', () => {
+      if (rejected) return;
+      let input;
+      try {
+        input = JSON.parse(body);
+      } catch {
+        response.writeHead(400).end();
+        return;
+      }
+      if (input?.model !== ACTIVE_TURN_PROVIDER_MODEL || input?.stream !== true) {
+        response.writeHead(422).end();
+        return;
+      }
+      const prompt = latestUserInput(input.input);
+      response.writeHead(200, {
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Content-Type': 'text/event-stream',
+      });
+      if (prompt.includes(ACTIVE_TURN_SEED_PROMPT)) {
+        counts.seed += 1;
+        if (counts.seed !== 1) {
+          response.destroy();
+          return;
+        }
+        completeProviderResponse(response, ACTIVE_TURN_SEED_OUTPUT);
+        return;
+      }
+      if (!prompt.includes(ACTIVE_TURN_PROMPT)) {
+        response.destroy();
+        return;
+      }
+      counts.active += 1;
+      if (counts.active !== 1) {
+        response.destroy();
+        return;
+      }
+      writeProviderDelta(response, ACTIVE_TURN_PARTIAL, 'active');
+      const keepAlive = setInterval(() => response.write(': keepalive\n\n'), 500);
+      const settle = () => clearInterval(keepAlive);
+      request.once('aborted', settle);
+      response.once('close', settle);
+      resolveActive();
+    });
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  server.on('clientError', (_error, socket) => socket.destroy());
+  await deadline(new Promise((resolve, reject) => {
+    const onError = (error) => reject(error);
+    server.once('error', onError);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', onError);
+      resolve();
+    });
+  }), CLEANUP_TIMEOUT_MS, 'active-turn provider listen');
+  const address = server.address();
+  if (!address || typeof address === 'string' || address.address !== '127.0.0.1') {
+    for (const socket of sockets) socket.destroy();
+    server.close();
+    throw new Error('active-turn provider did not bind loopback');
+  }
+  const baseURL = requireLoopbackProviderURL(`http://127.0.0.1:${address.port}`);
+  return {
+    baseURL,
+    requestCounts: () => ({ ...counts }),
+    waitForActiveRequest: () => activeRequest,
+    async close() {
+      if (closed) return;
+      closed = true;
+      const closing = new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+      for (const socket of sockets) socket.destroy();
+      await deadline(closing, CLEANUP_TIMEOUT_MS, 'active-turn provider cleanup');
+    },
+  };
+}
+
+function decodeSeedSession(stdout) {
+  let envelope;
+  try {
+    envelope = JSON.parse(String(stdout).trim());
+  } catch {
+    throw new Error('packaged session seed returned invalid JSON');
+  }
+  if (
+    envelope?.schema_version !== 1 ||
+    envelope.status !== 'completed' ||
+    envelope.output !== ACTIVE_TURN_SEED_OUTPUT ||
+    envelope.terminal_reason !== 'completed' ||
+    envelope.exit_code !== 0 ||
+    typeof envelope.session_id !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(envelope.session_id)
+  ) {
+    throw new Error('packaged session seed did not complete');
+  }
+  return envelope.session_id;
+}
+
+async function seedActiveTurnSession({
+  backendPath,
+  baseURL,
+  environment,
+  spawnChild = spawn,
+  workspace,
+}) {
+  if (typeof backendPath !== 'string' || backendPath.length === 0) {
+    throw new TypeError('packaged backend path required');
+  }
+  if (typeof workspace !== 'string' || workspace.length === 0) {
+    throw new TypeError('active-turn workspace required');
+  }
+  const args = [
+    'exec',
+    ACTIVE_TURN_SEED_PROMPT,
+    '--output-format', 'json',
+    '--max-turns', '1',
+    '--tools', '',
+  ];
+  if (
+    environment?.PROV !== 'openai' ||
+    environment?.PROV_MODEL !== ACTIVE_TURN_PROVIDER_MODEL ||
+    environment?.PROV_API_KEY !== ACTIVE_TURN_PROVIDER_KEY ||
+    environment?.PROV_BASE_URL !== requireLoopbackProviderURL(baseURL)
+  ) {
+    throw new Error('packaged session seed provider environment did not match');
+  }
+  const child = spawnChild(backendPath, args, {
+    cwd: workspace,
+    env: environment,
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  const exit = observeSpawnedChild(child, { requireProcessGroup: false });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => {
+    stdout = appendBounded(stdout, chunk);
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr = appendBounded(stderr, chunk);
+  });
+  let result;
+  try {
+    result = await deadline(exit, ACTIVE_TURN_SEED_TIMEOUT_MS, 'packaged session seed');
+  } catch (error) {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    try {
+      await deadline(exit, CLEANUP_TIMEOUT_MS, 'packaged session seed cleanup');
+    } catch (cleanupError) {
+      throw combineSmokeFailure(error, cleanupError);
+    }
+    throw error;
+  }
+  if (result.code !== 0 || result.signal !== null) {
+    const diagnostic = stderr.trim();
+    throw new Error(
+      `packaged session seed exited abnormally (${result.code ?? result.signal})` +
+      `${diagnostic ? `\nSeed stderr tail:\n${diagnostic}` : ''}`,
+    );
+  }
+  return decodeSeedSession(stdout);
 }
 
 class CDPConnection {
@@ -1018,15 +1372,22 @@ function resolveUnpackedLayout(
 
 function validatePlatformOptions(
   platform,
-  { crashBackend = false, disableSandbox = false, reopenWindow = false } = {},
+  {
+    crashActiveTurn = false,
+    crashBackend = false,
+    disableSandbox = false,
+    reopenWindow = false,
+  } = {},
 ) {
   const normalized = {
+    crashActiveTurn: crashActiveTurn === true,
     crashBackend: crashBackend === true,
     disableSandbox: disableSandbox === true,
     reopenWindow: reopenWindow === true,
   };
-  if (normalized.crashBackend && normalized.reopenWindow) {
-    throw new Error('backend crash and window restoration smokes are mutually exclusive');
+  const crashModes = Number(normalized.crashBackend) + Number(normalized.crashActiveTurn);
+  if (crashModes > 1 || (crashModes === 1 && normalized.reopenWindow)) {
+    throw new Error('backend crash modes and window restoration smoke are mutually exclusive');
   }
   if (platform === 'linux') {
     if (normalized.reopenWindow) throw new Error('--reopen-window is macOS-only');
@@ -1044,7 +1405,7 @@ function validatePlatformOptions(
   if (platform !== 'darwin' && normalized.reopenWindow) {
     throw new Error('--reopen-window is macOS-only');
   }
-  if (normalized.crashBackend || normalized.disableSandbox) {
+  if (crashModes > 0 || normalized.disableSandbox) {
     throw new Error('crash injection and --no-sandbox are supported only on Linux, macOS, and Windows');
   }
   return normalized;
@@ -1052,6 +1413,7 @@ function validatePlatformOptions(
 
 function parseArguments(argv) {
   let appPath;
+  let crashActiveTurn = false;
   let crashBackend = false;
   let disableSandbox = false;
   let reopenWindow = false;
@@ -1068,6 +1430,8 @@ function parseArguments(argv) {
       index += 1;
     } else if (argument === '--crash-backend' && !crashBackend) {
       crashBackend = true;
+    } else if (argument === '--crash-active-turn' && !crashActiveTurn) {
+      crashActiveTurn = true;
     } else if (argument === '--no-sandbox' && !disableSandbox) {
       disableSandbox = true;
     } else if (argument === '--reopen-window' && !reopenWindow) {
@@ -1077,26 +1441,210 @@ function parseArguments(argv) {
       break;
     }
   }
-  if (invalid || !appPath || (crashBackend && reopenWindow)) {
+  const crashModes = Number(crashBackend) + Number(crashActiveTurn);
+  if (invalid || !appPath || crashModes > 1 || (crashModes === 1 && reopenWindow)) {
     throw new Error(
-      'usage: unpacked_lifecycle_smoke.cjs --app PATH [--crash-backend] ' +
-        '[--no-sandbox] [--reopen-window]',
+      'usage: unpacked_lifecycle_smoke.cjs --app PATH ' +
+        '[--crash-backend|--crash-active-turn] [--no-sandbox] [--reopen-window]',
     );
   }
   return {
     appPath: path.resolve(appPath),
+    crashActiveTurn,
     crashBackend,
     disableSandbox,
     reopenWindow,
   };
 }
 
+async function installCrashObservers(connection, rendererSessionID, activeSessionID = '') {
+  const subscribed = await evaluate(connection, rendererSessionID, `(() => {
+    const bridge = globalThis.yhcDesktop;
+    if (typeof bridge?.onBackendExit !== 'function') return false;
+    globalThis.__yhcCrashCount = 0;
+    globalThis.__yhcCrashUnsubscribe = bridge.onBackendExit(() => {
+      globalThis.__yhcCrashCount += 1;
+    });
+    globalThis.__yhcTerminalEvents = [];
+    const watchedSessionID = ${JSON.stringify(activeSessionID)};
+    if (watchedSessionID) {
+      if (typeof bridge.onEventStream !== 'function') return false;
+      globalThis.__yhcEventUnsubscribe = bridge.onEventStream((payload) => {
+        const type = payload?.event?.type || '';
+        if (payload?.sessionID !== watchedSessionID) return;
+        if (type === 'terminal' || type === 'turn.finished') {
+          globalThis.__yhcTerminalEvents.push({
+            type,
+            turnID: payload?.event?.turn_id || '',
+          });
+        }
+      });
+    }
+    return typeof globalThis.__yhcCrashUnsubscribe === 'function' &&
+      (!watchedSessionID || typeof globalThis.__yhcEventUnsubscribe === 'function');
+  })()`);
+  if (subscribed !== true) throw new Error('backend crash observer was not installed');
+}
+
+async function prepareActiveTurnCrash(
+  connection,
+  rendererSessionID,
+  activeSessionID,
+  provider,
+) {
+  await poll(async () => {
+    const result = await evaluate(connection, rendererSessionID, `(() => {
+      const rows = [...document.querySelectorAll('#session-list > .session-row')];
+      const active = rows.filter((row) => row.classList.contains('active'));
+      const timelineText = document.querySelector('#timeline')?.textContent || '';
+      return {
+        rowCount: rows.length,
+        activeCount: active.length,
+        promptEnabled: document.querySelector('#prompt')?.disabled === false,
+        sendEnabled: document.querySelector('#send')?.disabled === false,
+        seedPromptVisible: timelineText.includes(${JSON.stringify(ACTIVE_TURN_SEED_PROMPT)}),
+        seedOutputVisible: timelineText.includes(${JSON.stringify(ACTIVE_TURN_SEED_OUTPUT)}),
+      };
+    })()`);
+    const ready = result?.rowCount === 1 &&
+      result.activeCount === 1 &&
+      result.promptEnabled === true &&
+      result.sendEnabled === true &&
+      result.seedPromptVisible === true &&
+      result.seedOutputVisible === true;
+    if (!ready) {
+      throw new Error(`seeded session state ${JSON.stringify(result)}`);
+    }
+    return true;
+  }, RENDERER_TIMEOUT_MS, 'seeded Desktop session discovery');
+
+  const submitted = await evaluate(connection, rendererSessionID, `(() => {
+    const prompt = document.querySelector('#prompt');
+    const composer = document.querySelector('#composer');
+    if (!prompt || !composer || prompt.disabled) return false;
+    prompt.value = ${JSON.stringify(ACTIVE_TURN_PROMPT)};
+    prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    composer.requestSubmit();
+    return true;
+  })()`);
+  if (submitted !== true) throw new Error('active-turn fixture prompt was not submitted');
+  try {
+    await deadline(
+      provider.waitForActiveRequest(),
+      RENDERER_TIMEOUT_MS,
+      'active-turn provider request',
+    );
+  } catch (error) {
+    const state = await evaluate(connection, rendererSessionID, `(() => ({
+      status: document.querySelector('#status')?.textContent || '',
+      notice: document.querySelector('#turn-state')?.textContent || '',
+      promptDisabled: document.querySelector('#prompt')?.disabled === true,
+      sendDisabled: document.querySelector('#send')?.disabled === true,
+      cancelDisabled: document.querySelector('#cancel')?.disabled === true,
+    }))()`);
+    throw new Error(
+      `${error.message}: active submit state ${JSON.stringify(state)}, ` +
+      `provider counts ${JSON.stringify(provider.requestCounts())}`,
+    );
+  }
+
+  let lastProjection;
+  try {
+    return await poll(async () => {
+      const result = await evaluate(connection, rendererSessionID, `(async () => {
+      const bridge = globalThis.yhcDesktop;
+      const snapshot = await bridge.api('snapshot', {
+        sessionID: ${JSON.stringify(activeSessionID)},
+      });
+      const snapshotActiveTurnID = snapshot?.session?.active_turn_id || '';
+      const partials = Array.isArray(snapshot?.messages)
+        ? snapshot.messages.filter((message) => (
+          message?.role === 'assistant' &&
+          String(message?.content || '').includes(${JSON.stringify(ACTIVE_TURN_PARTIAL)})
+        ))
+        : [];
+      const partial = partials.length === 1 ? partials[0] : null;
+      const snapshotMessageFacts = Array.isArray(snapshot?.messages)
+        ? snapshot.messages.slice(-8).map((message) => ({
+          role: String(message?.role || ''),
+          turnMatches: message?.turn_id === snapshotActiveTurnID,
+          completed: message?.completed,
+          containsPartial: String(message?.content || '')
+            .includes(${JSON.stringify(ACTIVE_TURN_PARTIAL)}),
+          contentLength: String(message?.content || '').length,
+          source: String(message?.source || ''),
+        }))
+        : [];
+      const timelineText = document.querySelector('#timeline')?.textContent || '';
+      return {
+        activeSessionID: snapshot?.session?.id || '',
+        activeTurnID: snapshotActiveTurnID,
+        snapshotActiveTurnID,
+        snapshotPartialTurnID: partial?.turn_id || '',
+        snapshotPartialCount: partials.length,
+        snapshotPartialCompleted: partial?.completed,
+        snapshotMessageFacts,
+        partialVisible: timelineText.includes(${JSON.stringify(ACTIVE_TURN_PARTIAL)}),
+        activePromptVisible: timelineText.includes(${JSON.stringify(ACTIVE_TURN_PROMPT)}),
+        sessionTitle: document.querySelector('#session-title')?.textContent || '',
+        workspaceLabel: document.querySelector('#session-path')?.textContent || '',
+        status: document.querySelector('#status')?.textContent || '',
+        cancelEnabled: document.querySelector('#cancel')?.disabled === false,
+        sendDisabled: document.querySelector('#send')?.disabled === true,
+        busySession: Boolean(document.querySelector(
+          '#session-list > .session-row.active > .session-dot.is-busy',
+        )),
+      };
+      })()`);
+      lastProjection = result;
+      return result?.activeSessionID === activeSessionID &&
+        result.activeTurnID &&
+        result.snapshotActiveTurnID === result.activeTurnID &&
+        result.snapshotPartialTurnID &&
+        result.snapshotPartialCount === 1 &&
+        result.snapshotPartialCompleted === false &&
+        result.partialVisible === true &&
+        result.activePromptVisible === true &&
+        result.sessionTitle &&
+        result.workspaceLabel &&
+        result.status === 'running' &&
+        result.cancelEnabled === true &&
+        result.sendDisabled === true &&
+        result.busySession === true
+        ? result
+        : null;
+    }, RENDERER_TIMEOUT_MS, 'active-turn renderer projection');
+  } catch (error) {
+    throw new Error(
+      `${error.message}: last projection ${JSON.stringify(lastProjection)}, ` +
+      `provider counts ${JSON.stringify(provider.requestCounts())}`,
+    );
+  }
+}
+
+async function removeCrashObservers(connection, rendererSessionID) {
+  await evaluate(connection, rendererSessionID, `(() => {
+    globalThis.__yhcCrashUnsubscribe?.();
+    globalThis.__yhcEventUnsubscribe?.();
+    delete globalThis.__yhcCrashUnsubscribe;
+    delete globalThis.__yhcEventUnsubscribe;
+    delete globalThis.__yhcTerminalEvents;
+    return true;
+  })()`);
+}
+
 async function runSmoke(
   appCandidate,
-  { crashBackend = false, disableSandbox = false, reopenWindow = false } = {},
+  {
+    crashActiveTurn = false,
+    crashBackend = false,
+    disableSandbox = false,
+    reopenWindow = false,
+  } = {},
 ) {
   let layout = resolveUnpackedLayout(appCandidate);
   const options = validatePlatformOptions(layout.platform, {
+    crashActiveTurn,
     crashBackend,
     disableSandbox,
     reopenWindow,
@@ -1125,9 +1673,11 @@ async function runSmoke(
     : layout.platform === 'darwin'
       ? readDarwinProcessIdentity
       : readWindowsProcessIdentity;
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-desktop-smoke-'));
+  const temporaryRoot = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-desktop-smoke-')),
+  );
   fs.chmodSync(temporaryRoot, 0o700);
-  const environment = makeIsolatedEnvironment(temporaryRoot, process.env, {
+  let environment = makeIsolatedEnvironment(temporaryRoot, process.env, {
     platform: layout.platform,
   });
   const xvfbRun = layout.launcher === 'xvfb'
@@ -1138,11 +1688,28 @@ async function runSmoke(
   let child;
   let rootIdentity;
   let backendIdentity;
+  let activeTurnProvider;
+  let activeTurnSessionID = '';
+  let activeTurnWorkspace = '';
   let secondChild;
   let secondRootIdentity;
   let failure;
   let passed = false;
   try {
+    if (options.crashActiveTurn) {
+      const workspaceCandidate = path.join(temporaryRoot, 'workspace');
+      fs.mkdirSync(workspaceCandidate, { recursive: true, mode: 0o700 });
+      fs.chmodSync(workspaceCandidate, 0o700);
+      activeTurnWorkspace = fs.realpathSync(workspaceCandidate);
+      activeTurnProvider = await startActiveTurnProvider();
+      environment = activeTurnFixtureEnvironment(environment, activeTurnProvider.baseURL);
+      activeTurnSessionID = await seedActiveTurnSession({
+        backendPath: expectedBackend,
+        baseURL: activeTurnProvider.baseURL,
+        environment,
+        workspace: activeTurnWorkspace,
+      });
+    }
     const appArguments = [
       ...(options.disableSandbox ? ['--no-sandbox'] : []),
       '--disable-gpu',
@@ -1161,6 +1728,7 @@ async function runSmoke(
       ]
       : appArguments;
     child = spawn(launchCommand, launchArguments, {
+      ...(options.crashActiveTurn ? { cwd: activeTurnWorkspace } : {}),
       detached: layout.platform !== 'win32',
       env: environment,
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -1228,18 +1796,21 @@ async function runSmoke(
     ) {
       throw new Error('packaged backend process identity did not match');
     }
-    if (options.crashBackend) {
-      const subscribed = await evaluate(connection, renderer.sessionId, `(() => {
-        const bridge = globalThis.yhcDesktop;
-        if (typeof bridge?.onBackendExit !== 'function') return false;
-        globalThis.__yhcCrashCount = 0;
-        globalThis.__yhcCrashUnsubscribe = bridge.onBackendExit(() => {
-          globalThis.__yhcCrashCount += 1;
-        });
-        return typeof globalThis.__yhcCrashUnsubscribe === 'function';
-      })()`);
-      if (subscribed !== true) throw new Error('backend crash observer was not installed');
-
+    const crashRequested = options.crashBackend || options.crashActiveTurn;
+    if (crashRequested) {
+      await installCrashObservers(
+        connection,
+        renderer.sessionId,
+        options.crashActiveTurn ? activeTurnSessionID : '',
+      );
+      const activeTurnProbe = options.crashActiveTurn
+        ? await prepareActiveTurnCrash(
+          connection,
+          renderer.sessionId,
+          activeTurnSessionID,
+          activeTurnProvider,
+        )
+        : null;
       killVerifiedBackend(backend, {
         platform: layout.platform,
         readIdentity: readBackendIdentity,
@@ -1249,10 +1820,8 @@ async function runSmoke(
         BACKEND_EXIT_TIMEOUT_MS,
         'crashed backend exit',
       );
-      const readCrashContainment = () => evaluate(
-        connection,
-        renderer.sessionId,
-        `(async () => {
+      const readCrashContainment = async () => {
+        const result = await evaluate(connection, renderer.sessionId, `(async () => {
           const bridge = globalThis.yhcDesktop;
           const info = typeof bridge?.getInfo === 'function'
             ? await bridge.getInfo()
@@ -1265,6 +1834,8 @@ async function runSmoke(
             '#open-web',
             '#provider-settings',
           ];
+          const timelineText = document.querySelector('#timeline')?.textContent || '';
+          const activeTurnID = ${JSON.stringify(activeTurnProbe?.activeTurnID || '')};
           return {
             bootstrapReady: document.documentElement.dataset.yhcBootstrap === 'ready',
             notificationCount: globalThis.__yhcCrashCount,
@@ -1274,23 +1845,56 @@ async function runSmoke(
             checkedControlsDisabled: controls.every((selector) => (
               document.querySelector(selector)?.disabled === true
             )),
+            activeSessionID: ${JSON.stringify(activeTurnProbe?.activeSessionID || '')},
+            activeTurnID,
+            snapshotActiveTurnID: ${JSON.stringify(
+              activeTurnProbe?.snapshotActiveTurnID || '',
+            )},
+            snapshotPartialTurnID: ${JSON.stringify(
+              activeTurnProbe?.snapshotPartialTurnID || '',
+            )},
+            snapshotPartialCount: ${JSON.stringify(
+              activeTurnProbe?.snapshotPartialCount || 0,
+            )},
+            snapshotPartialCompleted: ${JSON.stringify(
+              activeTurnProbe?.snapshotPartialCompleted,
+            )},
+            partialVisible: timelineText.includes(${JSON.stringify(ACTIVE_TURN_PARTIAL)}),
+            activePromptVisible: timelineText.includes(${JSON.stringify(ACTIVE_TURN_PROMPT)}),
+            interactionHidden: document.querySelector('#interaction-panel')?.hidden === true,
+            sessionIdentityVisible:
+              (document.querySelector('#session-title')?.textContent || '') ===
+                ${JSON.stringify(activeTurnProbe?.sessionTitle || '')} &&
+              (document.querySelector('#session-path')?.textContent || '') ===
+                ${JSON.stringify(activeTurnProbe?.workspaceLabel || '')},
+            terminalEventCount: (globalThis.__yhcTerminalEvents || []).length,
           };
-        })()`,
-      );
+        })()`);
+        return result;
+      };
+      const containmentMatches = options.crashActiveTurn
+        ? activeTurnCrashContainmentMatches
+        : crashContainmentMatches;
       await poll(async () => {
         const result = await readCrashContainment();
-        return crashContainmentMatches(result) ? result : null;
-      }, RENDERER_TIMEOUT_MS, 'backend crash containment');
+        return containmentMatches(result) ? result : null;
+      }, RENDERER_TIMEOUT_MS, options.crashActiveTurn
+        ? 'active-turn backend crash containment'
+        : 'backend crash containment');
       await observeStable(
-        async () => crashContainmentMatches(await readCrashContainment()),
+        async () => containmentMatches(await readCrashContainment()),
         NO_RESTART_OBSERVATION_MS,
-        'backend crash containment',
+        options.crashActiveTurn
+          ? 'active-turn backend crash containment'
+          : 'backend crash containment',
       );
-      await evaluate(connection, renderer.sessionId, `(() => {
-        globalThis.__yhcCrashUnsubscribe?.();
-        delete globalThis.__yhcCrashUnsubscribe;
-        return true;
-      })()`);
+      if (options.crashActiveTurn) {
+        const counts = activeTurnProvider.requestCounts();
+        if (counts.total !== 2 || counts.seed !== 1 || counts.active !== 1) {
+          throw new Error('active-turn provider request count did not match');
+        }
+      }
+      await removeCrashObservers(connection, renderer.sessionId);
     }
     if (options.reopenWindow) {
       const originalRendererTargetID = renderer.targetId;
@@ -1388,7 +1992,7 @@ async function runSmoke(
     if (appExit.code !== 0 || appExit.signal !== null) {
       throw new Error(`Desktop exited abnormally (${appExit.code ?? appExit.signal})`);
     }
-    if (!options.crashBackend) {
+    if (!crashRequested) {
       await poll(
         () => !originalProcessAlive(backend, readBackendIdentity),
         BACKEND_EXIT_TIMEOUT_MS,
@@ -1402,9 +2006,10 @@ async function runSmoke(
       surface: probe.surface,
       backend_pid: probe.backendPID,
       platform: `${layout.platform}-${layout.arch}`,
-      crash_containment: options.crashBackend ? 'pass' : 'not_run',
+      crash_containment: crashRequested ? 'pass' : 'not_run',
+      active_turn_crash: options.crashActiveTurn ? 'pass' : 'not_run',
       window_reopen: options.reopenWindow ? 'pass' : 'not_run',
-      no_restart_observation_ms: options.crashBackend ? NO_RESTART_OBSERVATION_MS : 0,
+      no_restart_observation_ms: crashRequested ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
   } catch (error) {
     const diagnostic = stderr.trim();
@@ -1453,6 +2058,13 @@ async function runSmoke(
         failure = combineSmokeFailure(failure, cleanupError);
       }
     }
+    if (activeTurnProvider) {
+      try {
+        await activeTurnProvider.close();
+      } catch (cleanupError) {
+        failure = combineSmokeFailure(failure, cleanupError);
+      }
+    }
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }
   if (failure) throw failure;
@@ -1461,6 +2073,7 @@ async function runSmoke(
 async function main() {
   const input = parseArguments(process.argv.slice(2));
   await runSmoke(input.appPath, {
+    crashActiveTurn: input.crashActiveTurn,
     crashBackend: input.crashBackend,
     disableSandbox: input.disableSandbox,
     reopenWindow: input.reopenWindow,
@@ -1475,10 +2088,16 @@ if (require.main === module) {
 }
 
 module.exports = {
+  ACTIVE_TURN_PARTIAL,
+  ACTIVE_TURN_PROMPT,
+  ACTIVE_TURN_SEED_PROMPT,
   NO_RESTART_OBSERVATION_MS,
+  activeTurnCrashContainmentMatches,
+  activeTurnFixtureEnvironment,
   appendBounded,
   combineSmokeFailure,
   crashContainmentMatches,
+  decodeSeedSession,
   killVerifiedBackend,
   makeIsolatedEnvironment,
   normalizeWindowsExecutable,
@@ -1500,9 +2119,11 @@ module.exports = {
   resolveUnpackedLayout,
   safeProcessID,
   safeProcessGroupID,
+  seedActiveTurnSession,
   sameProcessIdentity,
   selectPageTarget,
   selectReplacementPageTarget,
+  startActiveTurnProvider,
   targetID,
   terminateProcessGroup,
   terminateWindowsProcessTree,
