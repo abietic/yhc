@@ -209,24 +209,19 @@ test('unpacked layouts select direct macOS launch and preserve Linux layout', ()
   assert.equal(macIntel.arch, 'x64');
 });
 
-test('platform options keep crash injection and no-sandbox confined to Linux', () => {
+test('platform options admit crash injection on Unix and keep no-sandbox Linux-only', () => {
   assert.deepEqual(
     validatePlatformOptions('linux', { crashBackend: true, disableSandbox: true }),
     { crashBackend: true, disableSandbox: true, reopenWindow: false },
   );
   assert.deepEqual(
-    validatePlatformOptions('darwin', { crashBackend: false, disableSandbox: false }),
-    { crashBackend: false, disableSandbox: false, reopenWindow: false },
+    validatePlatformOptions('darwin', { crashBackend: true, disableSandbox: false }),
+    { crashBackend: true, disableSandbox: false, reopenWindow: false },
   );
-  for (const options of [
-    { crashBackend: true, disableSandbox: false },
-    { crashBackend: false, disableSandbox: true },
-  ]) {
-    assert.throws(
-      () => validatePlatformOptions('darwin', options),
-      /Linux-only/,
-    );
-  }
+  assert.throws(
+    () => validatePlatformOptions('darwin', { disableSandbox: true }),
+    /Linux-only/,
+  );
 });
 
 test('Darwin process identity changes make the original process unavailable', () => {
@@ -561,7 +556,7 @@ test('repository wiring runs the real unpacked lifecycle after artifact verifica
   );
   assert.doesNotMatch(workflow, /make desktop-package-smoke-linux-amd64/);
   assert.match(workflow, /macos-15/);
-  assert.match(workflow, /desktop-unpacked-window-reopen-smoke-darwin-arm64/);
+  assert.match(workflow, /desktop-unpacked-native-smokes-darwin-arm64/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'ready'/);
   assert.match(app, /document\.documentElement\.dataset\.yhcBootstrap = 'error'/);
 });
@@ -624,8 +619,11 @@ test('window-reopen target selection proves the old renderer is gone and identit
   );
 });
 
-test('repository wiring runs the Darwin window-reopen smoke after package verification', async () => {
-  const makefile = await readFile(new URL('../../Makefile', import.meta.url), 'utf8');
+test('repository wiring runs Darwin window restore and crash containment on arm64', async () => {
+  const [makefile, workflow] = await Promise.all([
+    readFile(new URL('../../Makefile', import.meta.url), 'utf8'),
+    readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+  ]);
   assert.match(
     makefile,
     /desktop-unpacked-window-reopen-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64/,
@@ -634,9 +632,25 @@ test('repository wiring runs the Darwin window-reopen smoke after package verifi
     makefile,
     /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac-arm64\/YHC\.app\/Contents\/MacOS\/YHC --reopen-window/,
   );
+  assert.match(
+    makefile,
+    /desktop-unpacked-crash-containment-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac-arm64\/YHC\.app\/Contents\/MacOS\/YHC --crash-backend/,
+  );
+  assert.match(
+    makefile,
+    /desktop-unpacked-native-smokes-darwin-arm64: desktop-package-smoke-darwin-arm64/,
+  );
+  assert.match(
+    workflow,
+    /platform: macos-arm64[\s\S]*?runner: macos-15[\s\S]*?target: desktop-unpacked-native-smokes-darwin-arm64/,
+  );
 });
 
-test('repository wiring restores the Darwin Intel window after package verification', async () => {
+test('repository wiring runs Darwin window restore and crash containment on Intel', async () => {
   const [makefile, workflow] = await Promise.all([
     readFile(new URL('../../Makefile', import.meta.url), 'utf8'),
     readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'),
@@ -650,8 +664,20 @@ test('repository wiring restores the Darwin Intel window after package verificat
     /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac\/YHC\.app\/Contents\/MacOS\/YHC --reopen-window/,
   );
   assert.match(
+    makefile,
+    /desktop-unpacked-crash-containment-smoke-darwin-amd64: desktop-package-smoke-darwin-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/mac\/YHC\.app\/Contents\/MacOS\/YHC --crash-backend/,
+  );
+  assert.match(
+    makefile,
+    /desktop-unpacked-native-smokes-darwin-amd64: desktop-package-smoke-darwin-amd64/,
+  );
+  assert.match(
     workflow,
-    /platform: macos-intel[\s\S]*?runner: macos-15-intel[\s\S]*?target: desktop-unpacked-window-reopen-smoke-darwin-amd64/,
+    /platform: macos-intel[\s\S]*?runner: macos-15-intel[\s\S]*?target: desktop-unpacked-native-smokes-darwin-amd64/,
   );
 });
 

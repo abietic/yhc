@@ -1016,6 +1016,10 @@ function validatePlatformOptions(
     if (normalized.reopenWindow) throw new Error('--reopen-window is macOS-only');
     return normalized;
   }
+  if (platform === 'darwin') {
+    if (normalized.disableSandbox) throw new Error('--no-sandbox is Linux-only');
+    return normalized;
+  }
   if (normalized.crashBackend || normalized.disableSandbox) {
     throw new Error('crash injection and --no-sandbox are Linux-only');
   }
