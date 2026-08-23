@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino-ext/components/model/agenticark"
-	"github.com/cloudwego/eino-ext/components/model/agenticdeepseek"
 	"github.com/cloudwego/eino-ext/components/model/agenticqwen"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	claudeschema "github.com/cloudwego/eino/schema/claude"
 	geminischema "github.com/cloudwego/eino/schema/gemini"
 	openaischema "github.com/cloudwego/eino/schema/openai"
+
+	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 )
 
 // isolatedEnv sets HOME to a temp directory and clears all environment
@@ -167,7 +168,7 @@ func TestAgenticFinishReasonBridge(t *testing.T) {
 		},
 		{
 			name:    "deepseek finish reason",
-			message: &schema.AgenticMessage{Extra: map[string]any{"provider_meta": &agenticdeepseek.ResponseMetaExtension{FinishReason: "length"}}},
+			message: &schema.AgenticMessage{ResponseMeta: &schema.AgenticResponseMeta{Extension: &agenticdeepseek.ResponseMetaExtension{FinishReason: "length"}}},
 			want:    "length",
 		},
 		{

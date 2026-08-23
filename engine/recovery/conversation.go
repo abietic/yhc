@@ -329,6 +329,12 @@ func extractStatusCode(err error) int {
 	if err == nil {
 		return 0
 	}
+	var statusCoder interface {
+		HTTPStatusCode() int
+	}
+	if errors.As(err, &statusCoder) {
+		return statusCoder.HTTPStatusCode()
+	}
 
 	// Try common error message patterns
 	msg := err.Error()

@@ -67,6 +67,15 @@ func TestGetCapabilities_KnownModel(t *testing.T) {
 			wantFirstParty: false,
 		},
 		{
+			name:           "deepseek-v4-flash-vision-exp",
+			model:          "deepseek-v4-flash-vision-exp",
+			wantContext:    1000000,
+			wantMaxOutput:  384000,
+			wantImages:     true,
+			wantThinking:   true,
+			wantFirstParty: false,
+		},
+		{
 			name:           "claude-3-5-haiku-20241022",
 			model:          "claude-3-5-haiku-20241022",
 			wantContext:    200000,

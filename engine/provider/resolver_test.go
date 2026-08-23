@@ -289,7 +289,7 @@ func TestResolveConfig(t *testing.T) {
 			want: ResolvedConfig{
 				Config: Config{
 					Provider: ProviderAgenticDeepSeek,
-					Model:    "deepseek-chat",
+					Model:    "deepseek-v4-flash",
 					APIKey:   "stored-deepseek-key",
 					BaseURL:  "https://api.deepseek.com",
 				},
@@ -315,7 +315,7 @@ func TestResolveConfig(t *testing.T) {
 			want: ResolvedConfig{
 				Config: Config{
 					Provider: ProviderAgenticDeepSeek,
-					Model:    "deepseek-chat",
+					Model:    "deepseek-v4-flash",
 					APIKey:   "deepseek-key",
 					BaseURL:  "https://deepseek.example",
 				},

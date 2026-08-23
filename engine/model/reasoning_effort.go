@@ -18,24 +18,13 @@ const (
 	ReasoningDialectDeepSeek           ReasoningDialect = "deepseek"
 )
 
-// ReasoningMode carries an explicit provider thinking toggle when the wire
-// protocol distinguishes it from the effort value itself.
-type ReasoningMode string
-
-const (
-	ReasoningModeUnspecified ReasoningMode = ""
-	ReasoningModeDisabled    ReasoningMode = "disabled"
-	ReasoningModeEnabled     ReasoningMode = "enabled"
-)
-
 // ResolvedReasoningEffort is the adapter-owned lowering of one canonical
-// request value. CanonicalEffort remains stable across failover; WireEffort and
-// ThinkingMode are recomputed for every candidate adapter.
+// request value. CanonicalEffort remains stable across failover; WireEffort is
+// recomputed for every candidate adapter.
 type ResolvedReasoningEffort struct {
 	CanonicalEffort string
 	WireEffort      string
 	Dialect         ReasoningDialect
-	ThinkingMode    ReasoningMode
 }
 
 type reasoningAdapterPolicy struct {
@@ -117,15 +106,6 @@ func ResolveAdapterReasoningEffort(
 		WireEffort:      normalized,
 		Dialect:         policy.dialect,
 	}
-	if policy.dialect == ReasoningDialectDeepSeek {
-		switch normalized {
-		case "none":
-			resolved.WireEffort = ""
-			resolved.ThinkingMode = ReasoningModeDisabled
-		case "high", "max":
-			resolved.ThinkingMode = ReasoningModeEnabled
-		}
-	}
 	return resolved, nil
 }
 
@@ -165,7 +145,7 @@ func DefaultReasoningEfforts(provider, modelID string) ([]string, bool) {
 	}
 	if policy.dialect == ReasoningDialectDeepSeek {
 		switch strings.ToLower(capabilities.Name) {
-		case "deepseek-v4-pro", "deepseek-v4-flash":
+		case "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
 		default:
 			return nil, false
 		}

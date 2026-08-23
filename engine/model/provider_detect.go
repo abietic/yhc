@@ -61,7 +61,7 @@ var providerEnvConfigs = map[ProviderID]*ProviderEnvConfig{
 		APIKeyEnvVars:  []string{"DEEPSEEK_API_KEY", "PROV_API_KEY"},
 		BaseURLEnvVar:  "DEEPSEEK_BASE_URL",
 		DefaultBaseURL: "https://api.deepseek.com",
-		DefaultModel:   "deepseek-chat",
+		DefaultModel:   "deepseek-v4-flash",
 	},
 	ProviderQwen: {
 		Provider:       ProviderQwen,

@@ -229,6 +229,7 @@ func buildDefaultEntries() []RegistryEntry {
 		// DeepSeek
 		{modelID: "deepseek-v4-pro", provider: "DeepSeek", displayName: "DeepSeek V4 Pro", toolCalls: true, streaming: true},
 		{modelID: "deepseek-v4-flash", provider: "DeepSeek", displayName: "DeepSeek V4 Flash", toolCalls: true, streaming: true},
+		{modelID: "deepseek-v4-flash-vision-exp", provider: "DeepSeek", displayName: "DeepSeek V4 Flash Vision Exp", toolCalls: true, streaming: true},
 		{modelID: "deepseek-r1", provider: "DeepSeek", displayName: "DeepSeek R1", toolCalls: false, streaming: true},
 		{modelID: "deepseek-v3", provider: "DeepSeek", displayName: "DeepSeek V3", toolCalls: true, streaming: true},
 

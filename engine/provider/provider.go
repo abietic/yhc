@@ -8,7 +8,6 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/agenticark"
 	"github.com/cloudwego/eino-ext/components/model/agenticclaude"
-	"github.com/cloudwego/eino-ext/components/model/agenticdeepseek"
 	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino-ext/components/model/agenticqwen"
@@ -18,6 +17,7 @@ import (
 	"google.golang.org/genai"
 
 	enginemessages "github.com/abietic/yhc/engine/messages"
+	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 )
 
 // Provider enumerates supported model providers.
@@ -82,7 +82,7 @@ func newAgenticDeepSeek(ctx context.Context, cfg Config) (model.AgenticModel, er
 		return nil, fmt.Errorf("API key required for Agentic DeepSeek. Set PROV_API_KEY or DEEPSEEK_API_KEY env var")
 	}
 	if cfg.Model == "" {
-		cfg.Model = "deepseek-chat"
+		cfg.Model = "deepseek-v4-flash"
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = os.Getenv("DEEPSEEK_BASE_URL")
@@ -893,6 +893,9 @@ func agenticFinishReason(am *schema.AgenticMessage) string {
 			if reason := finishReasonFromStatus(string(ext.Status), incompleteReason, ext.StreamingError != nil); reason != "" {
 				return reason
 			}
+		}
+		if ext, ok := meta.Extension.(*agenticdeepseek.ResponseMetaExtension); ok && ext != nil {
+			return ext.FinishReason
 		}
 	}
 	for _, value := range am.Extra {

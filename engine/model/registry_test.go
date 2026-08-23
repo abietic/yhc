@@ -22,7 +22,7 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 		{"Anthropic", 5},
 		{"OpenAI", 4},
 		{"Google", 2},
-		{"DeepSeek", 3},
+		{"DeepSeek", 4},
 		{"Qwen", 2},
 	}
 
