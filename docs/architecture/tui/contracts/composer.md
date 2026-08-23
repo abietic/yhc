@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-24
 
 **Ownership:** `internal/tui` owns one mutable active-draft projection;
 `QueryEngine` owns accepted prompt and queued-input truth.
@@ -65,6 +65,32 @@ and accepted submission all run draft-media reachability collection. A
 recalled submitted rich row restores only sanitized text and an explicit
 `image content not restored` label; it never reconstructs image elements.
 Detailed editing behavior is owned by [`editing.md`](editing.md).
+
+## Next-prompt ghost
+
+After an ordinary leader turn completes successfully, the TUI may request one
+model-generated next prompt from
+[`QueryEngine.GeneratePromptSuggestion`](../../../../engine/engine.go). The
+request reads a bounded snapshot of the current engine conversation. It does
+not use prompt-recall history, mutate the conversation, expose tools, or write
+a transcript record.
+
+The returned text is an ephemeral App projection. It is visible only while the
+leader composer is idle, empty, ordinary, and following the chat, with no
+dialog, Plan mode, history search/recall, command/file/mention candidate,
+attachment load, or submission admission owning the input. Request and result
+identity include the engine, thread, composer revision, query ID, and
+generation. User input, thread/engine changes, new runtime work, or shutdown
+cancel the request; a late result that misses any fence is discarded.
+
+The ghost is rendered through a cloned textarea placeholder. It does not
+change the authoritative textarea value, cursor, structured elements, history,
+undo, or submission snapshot. `Tab` or Right Arrow copies it into the draft as
+one undoable edit; it never submits. `Enter` dismisses an unaccepted ghost and
+retains ordinary empty-draft behavior. Typing replaces the prediction path
+with the user's actual edit. YHC exposes one candidate and does not cycle
+alternatives. The ordinary `Ask anything...` initial placeholder remains local
+and is not generated from Git history.
 
 ## Input Sources
 
@@ -158,6 +184,8 @@ rich preview exists.
   [`engine/user_input_test.go`](../../../../engine/user_input_test.go)
 - ordered durable queue/restart/edit:
   [`engine/p30_4_queued_prompt_test.go`](../../../../engine/p30_4_queued_prompt_test.go)
+- ghost render/accept/cancellation/stale-result fencing:
+  [`composer_suggestion_test.go`](../../../../internal/tui/composer_suggestion_test.go)
 
 The cross-entrypoint program and remaining ACP work are owned by
 [`P30 Cross-Entrypoint Multimodal Input`](../../../migration/plans/p30-cross-entrypoint-multimodal-input.md).

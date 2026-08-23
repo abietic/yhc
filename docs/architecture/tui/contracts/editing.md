@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-24
 
 **Ownership:** `internal/tui.App` owns reverse history search and
 external-editor handoff; the composer and Plan dialog own independent drafts
@@ -77,6 +77,11 @@ submission clears the stack so undo cannot resurrect sent input.
 
 Undo, active history search, and external-editor transient state are
 presentation-only and are not persisted in the session view sidecar.
+
+A next-prompt ghost is also presentation-only. Rendering it creates no undo
+entry. Explicit `Tab` or Right Arrow acceptance writes the suggestion into the
+empty composer as one ordinary undoable edit; `Enter`, typing, history
+navigation, mode changes, and stale async results never accept it implicitly.
 
 ## Ordinary History Recall
 

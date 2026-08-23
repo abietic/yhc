@@ -158,21 +158,26 @@ func (e *QueryEngine) applyCommandAction(
 		if recorder == nil {
 			return nil, "", fmt.Errorf("clear requires a transcript recorder")
 		}
-		usage := e.providerUsageSummary()
-		if err := recorder.RecordLifecycleBoundaryWithUsage(
-			transcript.LifecycleReset,
-			nil,
-			nil,
-			nil,
-			usage,
-			true,
-		); err != nil {
-			if transcript.IsDurabilityUncertain(err) {
+		e.usagePersistenceMu.Lock()
+		persistErr := func() error {
+			usage := e.providerUsageSummary()
+			return recorder.RecordLifecycleBoundaryWithUsage(
+				transcript.LifecycleReset,
+				nil,
+				nil,
+				nil,
+				usage,
+				true,
+			)
+		}()
+		e.usagePersistenceMu.Unlock()
+		if persistErr != nil {
+			if transcript.IsDurabilityUncertain(persistErr) {
 				e.mu.Lock()
 				e.transcriptCheckpointRequired = true
 				e.mu.Unlock()
 			}
-			return nil, "", fmt.Errorf("persist reset boundary: %w", err)
+			return nil, "", fmt.Errorf("persist reset boundary: %w", persistErr)
 		}
 		e.mu.Lock()
 		e.messages = make([]*schema.Message, 0)
@@ -234,6 +239,7 @@ func (e *QueryEngine) applyCommandAction(
 		if recorder == nil {
 			return nil, "", fmt.Errorf("compact requires a transcript recorder")
 		}
+		e.usagePersistenceMu.Lock()
 		usage := e.providerUsageSummary()
 		commitCompact := func() error {
 			return recorder.RecordLifecycleBoundaryWithUsage(
@@ -255,6 +261,7 @@ func (e *QueryEngine) applyCommandAction(
 		} else {
 			persistErr = commitCompact()
 		}
+		e.usagePersistenceMu.Unlock()
 		if persistErr != nil {
 			if transcript.IsDurabilityUncertain(persistErr) {
 				e.mu.Lock()

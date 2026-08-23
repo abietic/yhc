@@ -144,8 +144,8 @@ flags is necessary provenance but not rollback capability.
 | File interaction update and incremental append | [`maybeRecordFileState`](../../../../engine/tool_execution.go#L801), [`Recorder.RecordFileHistorySnapshot`](../../../../engine/transcript/persist.go#L1253) |
 | Ordinary append checkpoint and flush | [`QueryEngine.recordTranscriptMessages`](../../../../engine/engine.go#L2166), [`Recorder.Flush`](../../../../engine/transcript/persist.go#L1190) |
 | Complete fsynced boundary | [`QueryEngine.recordTranscriptBoundary`](../../../../engine/engine.go#L2123), [`Recorder.RecordLifecycleBoundaryWithUsage`](../../../../engine/transcript/persist.go#L808) |
-| Active replay selection | [`loadTranscriptFileContextMode`](../../../../engine/transcript/persist.go#L396) |
-| Construction and Session restore | [`NewQueryEngine`](../../../../engine/engine.go#L274), [`QueryEngine.resumeSessionWithOptionsForTurn`](../../../../engine/engine.go#L4668), [`QueryEngine.reconstructFileStateCache`](../../../../engine/engine.go#L5379) |
+| Active replay selection | [`loadTranscriptFileContextMode`](../../../../engine/transcript/persist.go#L397) |
+| Construction and Session restore | [`NewQueryEngine`](../../../../engine/engine.go#L278), [`QueryEngine.resumeSessionWithOptionsForTurn`](../../../../engine/engine.go#L4854), [`QueryEngine.reconstructFileStateCache`](../../../../engine/engine.go#L5594) |
 | Compatibility rewrite behavior | [`Recorder.ReplaceWithReplacements`](../../../../engine/transcript/persist.go#L1101), [`Recorder.prepareRewriteEntriesLocked`](../../../../engine/transcript/entry_identity.go#L433) |
 | Existing lifecycle proof | [`TestQueryEngineNormalCheckpointsAppendMessagesWithoutFullStateDuplication`](../../../../engine/engine_transcript_test.go), [`TestCompactBoundaryRestoresSnapshotAndAuxiliaryState`](../../../../engine/transcript/persist_test.go#L465), [`TestCommandExecutorCompactAppendsExactlyOneDurableBoundary`](../../../../engine/command_executor_test.go#L1030) |
 | Current architecture owner | [`transcripts.md`](../../../architecture/state/transcripts.md) |

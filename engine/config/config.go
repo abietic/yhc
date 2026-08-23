@@ -63,6 +63,9 @@ type Config struct {
 	Theme string `json:"theme,omitempty"`
 	// ReducedMotion disables non-essential TUI animation
 	ReducedMotion bool `json:"reduced_motion,omitempty"`
+	// PromptSuggestions controls model-backed next-prompt ghost text in the TUI.
+	// A pointer preserves an explicit false across user/project merges.
+	PromptSuggestions *bool `json:"prompt_suggestions,omitempty"`
 	// Verbose enables verbose output
 	Verbose bool `json:"verbose,omitempty"`
 	// Goal gates supported saved-root Goal workflows. It is enabled by default,
@@ -98,15 +101,17 @@ const DefaultMaxTurns = 0
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
-	enabled := true
+	goalEnabled := true
+	promptSuggestionsEnabled := true
 	return &Config{
-		Model:          "default",
-		MaxTurns:       DefaultMaxTurns,
-		PermissionMode: "default",
-		AutoCompact:    true,
-		Theme:          "dark",
+		Model:             "default",
+		MaxTurns:          DefaultMaxTurns,
+		PermissionMode:    "default",
+		AutoCompact:       true,
+		Theme:             "dark",
+		PromptSuggestions: &promptSuggestionsEnabled,
 		Goal: &GoalConfig{
-			Enabled: &enabled,
+			Enabled: &goalEnabled,
 		},
 	}
 }
@@ -331,6 +336,10 @@ func applyOverrides(dst, src *Config, allowPortfolioDefinitions bool) {
 	}
 	if src.ReducedMotion {
 		dst.ReducedMotion = true
+	}
+	if src.PromptSuggestions != nil {
+		enabled := *src.PromptSuggestions
+		dst.PromptSuggestions = &enabled
 	}
 	if src.Verbose {
 		dst.Verbose = true

@@ -6,12 +6,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // PromptSuggestionModelFn generates prompt suggestions.
 type PromptSuggestionModelFn func(ctx context.Context, conversation []string) (string, error)
 
-const suggestionPrompt = `[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]
+const suggestionPrompt = `[SUGGESTION MODE: Suggest what the user might naturally type next into YHC.]
 
 FIRST: Look at the user's recent messages and original request.
 
@@ -38,7 +39,7 @@ NEVER SUGGEST:
 
 Stay silent if the next step isn't obvious from what the user said.
 
-Format: 2-12 words, match the user's style. Or nothing.
+Format: 2-12 words, or one short phrase in languages without spaces. Match the user's style. Or nothing.
 
 Reply with ONLY the suggestion, no quotes or explanation.`
 
@@ -76,6 +77,21 @@ var allowedSingleWords = map[string]bool{
 	"push": true, "commit": true, "deploy": true, "stop": true,
 	"continue": true, "check": true, "exit": true, "quit": true,
 	"no": true,
+}
+
+func containsCJKLetter(value string) bool {
+	for _, char := range value {
+		if unicode.In(
+			char,
+			unicode.Han,
+			unicode.Hiragana,
+			unicode.Katakana,
+			unicode.Hangul,
+		) {
+			return true
+		}
+	}
+	return false
 }
 
 // FilterSuggestion returns a reason string if the suggestion should be
@@ -129,7 +145,7 @@ func FilterSuggestion(suggestion string) string {
 	if wordCount < 2 {
 		if strings.HasPrefix(suggestion, "/") {
 			// slash commands are valid
-		} else if !allowedSingleWords[lower] {
+		} else if !allowedSingleWords[lower] && !containsCJKLetter(suggestion) {
 			return "too_few_words"
 		}
 	}

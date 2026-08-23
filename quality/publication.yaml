@@ -859,22 +859,22 @@ privacy:
       match_sha256: a68834b0594789bba5203dc58df217fb97d2cccbf11a74638ccd1adaaedc64a7
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/editing.md
-      line: 167
+      line: 172
       rule_id: high-entropy-token
       match_sha256: ab0a2dfd15ac1a32b32ed6da4b697e159eb0198ed218ed8c603b6b3a37419240
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/editing.md
-      line: 169
+      line: 174
       rule_id: high-entropy-token
       match_sha256: 9c43aef97b694a3de5498af95ae86fc2975189d9b8c05e65c6712b57bb2b6c9d
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/editing.md
-      line: 176
+      line: 181
       rule_id: high-entropy-token
       match_sha256: 2bf966cb5ea152e22180c57e8462d301806fb0ae758567c433c9b5c87c9ecc7a
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/editing.md
-      line: 178
+      line: 183
       rule_id: high-entropy-token
       match_sha256: f825aa1468cad6e8b12fcad06830639d9730e8cb6ad1221e20bc0769d5c65061
       purpose: documentation-example
@@ -2474,7 +2474,7 @@ privacy:
       match_sha256: ddaaa7021180505b8d5f0abb04c0734c729ba4acc4f982a08528fce0195ca9f8
       purpose: synthetic-security-fixture
     - path: engine/config/setup.go
-      line: 202
+      line: 207
       rule_id: credential-assignment
       match_sha256: 3d308b199965569c15e3110aa047afed588db3fad5186f6c1daed0338f6248b5
       purpose: detector-definition

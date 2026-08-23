@@ -15,6 +15,8 @@ func TestFilterSuggestionAcceptsGood(t *testing.T) {
 		"yes",
 		"no",
 		"fix the linter errors",
+		"继续运行测试",
+		"修复这个问题",
 	}
 	for _, s := range good {
 		if reason := FilterSuggestion(s); reason != "" {

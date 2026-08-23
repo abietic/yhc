@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-24
 
 > **Ownership:** current enforcement and wiring state of turn, token, task, USD, context, and model-output limits
 
@@ -41,6 +41,13 @@ count returns `continuation_limited` and exit
 The important current gap is accounting: production code does not call [`RecordInput`](../../../engine/budget/token.go) or [`RecordOutput`](../../../engine/budget/token.go). Consequently, the default query-local tracker remains at zero and does not impose an effective token stop. [`QueryEngine.GetTokenBudget`](../../../engine/engine.go) also returns only an explicitly injected tracker, so effort controls in UI/commands cannot mutate the query-local fallback.
 
 The input parser recognizes token-budget continuations, but that parsed delta is not consumed by the current production loop. Document this as a seam, not as supported enforcement.
+
+The root TUI's optional post-turn prompt suggestion is a separate side query,
+not another round in the completed canonical query. It therefore does not
+consume that query's `TokenBudget` or API `TaskBudget`. Its own boundary allows
+one provider dispatch and caps output at 64 tokens. Provider-reported tokens
+are persisted through a content-free auxiliary usage record while the
+active-context reading continues to describe the latest main-loop response.
 
 ## API task budget
 

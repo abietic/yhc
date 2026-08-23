@@ -1,7 +1,7 @@
 # Runtime Services
 
 **Status:** current
-**Last verified:** 2026-08-19
+**Last verified:** 2026-08-24
 
 > **Ownership:** entrypoint-specific background-service construction, rebinding, shutdown, and disconnected helpers
 
@@ -103,6 +103,39 @@ configuration, hooks, tool input, and ACP clients cannot broaden the matrix.
 
 Entrypoints that construct an engine must close it. Adding a goroutine without a corresponding owner, cancellation path, and join boundary is a lifecycle bug.
 
+## TUI prompt suggestions
+
+The root TUI sets `EnablePromptSuggestions` from the merged
+`prompt_suggestions` setting. `NewQueryEngine` constructs
+[`PromptSuggestionService`](../../../engine/services/prompt_suggestion.go) only
+for a non-nil model, empty `AgentID`, TUI entrypoint, and non-administration,
+non-restore-staging engine. Plain, headless, ACP, child, and administration
+engines do not construct it.
+
+After a successful completed turn, the App runs the service's synchronous
+generation method inside a cancellable Bubble Tea command. The service applies
+a 30-second deadline, requires at least two assistant message records, and
+filters unsafe or implausible output. The request uses the current engine chat
+model through the controlled side-query seam, preserving the admitted model,
+provider, main role, profile, reasoning effort, and Session identity. It sends
+a bounded conversation snapshot with no tools, allows at most one provider
+dispatch with a 64-token output cap, and is disabled in Plan mode, while
+permission input is pending at dispatch admission, or while an unfinished Goal
+requires exact provider accounting.
+
+The service starts no resident goroutine and therefore adds no engine shutdown
+join. App-owned cancellation and generation/thread/revision/query fences reject
+late results. The request and generated text are not appended to the
+conversation or transcript. A content-free auxiliary usage record is
+persisted after a successful provider response, so provider-reported tokens
+survive Session restore without replacing the latest main-loop context-window
+fact. Transcript replacement paths preserve that auxiliary record and its
+entry identity. Because this is a separate post-turn helper request, it does
+not consume the completed query's API task budget or continuation token
+tracker; the selected provider may still bill it. Set `prompt_suggestions` to
+`false` to remove that request entirely. Speculative execution and the
+service's legacy speculation API remain outside production wiring.
+
 ## Other active service-like behavior
 
 The TUI owns welcome-tip persistence and scheduling through [`NewPersistentTipHistory`](../../../internal/tui/welcome.go) and `NewTipScheduler`. This behavior is TUI-specific and is not part of `QueryEngine` background services.
@@ -123,7 +156,6 @@ Current production callers do not construct or invoke these `engine/services` AP
 - agent summarization (`StartAgentSummarization`);
 - away summaries (`GenerateAwaySummary`);
 - LSP service manager (`NewLSPServiceManager`);
-- prompt suggestion service (`NewPromptSuggestionService`);
 - magic-docs manager and prompt suggester (`NewMagicDocsManager`, `NewPromptSuggester`).
 
 Their package is reachable because active background services and TUI tips share `engine/services`. They must not be described as running services until an entrypoint owns their construction and shutdown.

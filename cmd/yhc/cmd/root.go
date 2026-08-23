@@ -269,6 +269,8 @@ func runTUI(
 		return err
 	}
 	engineCfg.EnableLongSessionServices = true
+	engineCfg.EnablePromptSuggestions = appCfg.PromptSuggestions == nil ||
+		*appCfg.PromptSuggestions
 	engineCfg.CommandEntrypoint = commands.EntrypointTUI
 	terminalCaps := terminalcap.Current(mouse)
 	focusState := terminalcap.NewFocusState(terminalCaps.FocusReporting)

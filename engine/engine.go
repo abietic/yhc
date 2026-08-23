@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/budget"
 	"github.com/abietic/yhc/engine/commands"
@@ -66,6 +67,7 @@ type QueryEngine struct {
 	messages                     []*schema.Message
 	totalUsage                   *schema.TokenUsage
 	usageSummary                 transcript.UsageSummary
+	usagePersistenceMu           sync.Mutex
 	abortController              *AbortController
 	toolRegistry                 *tools.Registry
 	transcript                   *transcript.Recorder
@@ -122,6 +124,7 @@ type QueryEngine struct {
 	workBoardShadow              *workboard.Shadow
 	logicalWorkAdapter           *workboard.LogicalWorkAdapter
 	logicalWorkErr               error
+	promptSuggestionService      *services.PromptSuggestionService
 	shellManager                 *tools.ShellManager
 	mcpManager                   *tools.MCPToolManager
 	executionPolicy              *containment.Snapshot
@@ -248,6 +251,7 @@ type QueryEngineConfig struct {
 	WorktreePath              string
 	WorktreeBranch            string
 	EnableLongSessionServices bool // interactive main-thread memory, extraction, and auto-dream
+	EnablePromptSuggestions   bool // model-backed next-prompt suggestions for the root TUI only
 	CommandEntrypoint         commands.Entrypoint
 	WorkspaceCommandRunner    WorkspaceCommandRunner
 	WorkspaceCommandTimeout   time.Duration
@@ -788,6 +792,20 @@ func newQueryEngineWithOptions(
 			})
 		}
 		tools.SetAgentTypeDescriptionsForRegistry(eng.toolRegistry, agentTypes)
+	}
+
+	// Prompt suggestions are synchronous from the service's point of view. The
+	// TUI owns the cancellable Bubble Tea command, so no resident goroutine or
+	// additional Close boundary is introduced here.
+	if config.ChatModel != nil &&
+		config.AgentID == "" &&
+		config.EnablePromptSuggestions &&
+		config.CommandEntrypoint == commands.EntrypointTUI &&
+		!construction.administration &&
+		!construction.restoreStaging {
+		eng.promptSuggestionService = services.NewPromptSuggestionService(
+			eng.generatePromptSuggestionProvider,
+		)
 	}
 
 	// Start background services (session memory, auto-dream).
@@ -2265,6 +2283,8 @@ func (e *QueryEngine) recordTranscriptBoundary(
 	if e == nil {
 		return nil
 	}
+	e.usagePersistenceMu.Lock()
+	defer e.usagePersistenceMu.Unlock()
 	e.mu.Lock()
 	recorder := e.transcript
 	fileStateCache := e.fileStateCache
@@ -2752,7 +2772,11 @@ func backgroundMessageStrings(messages []*schema.Message) []string {
 			continue
 		}
 		if len(content) > 2000 {
-			content = content[:2000] + "..."
+			end := 2000
+			for end > 0 && !utf8.RuneStart(content[end]) {
+				end--
+			}
+			content = content[:end] + "..."
 		}
 		result = append(result, string(message.Role)+": "+content)
 	}
@@ -2794,6 +2818,168 @@ func newEngineBackgroundServices(
 		MemoryDir: filepath.Join(transcriptDir, sessionID), TranscriptDir: transcriptDir,
 		SessionID: sessionID, MemoryStore: store,
 	})
+}
+
+type promptSuggestionCallSnapshot struct {
+	chatModel       model.BaseChatModel
+	options         execution.SideQueryOptions
+	routeGeneration uint64
+}
+
+func (e *QueryEngine) promptSuggestionProviderCall() (
+	promptSuggestionCallSnapshot,
+	error,
+) {
+	if e == nil {
+		return promptSuggestionCallSnapshot{}, fmt.Errorf(
+			"prompt suggestion engine is unavailable",
+		)
+	}
+	e.mu.Lock()
+	chatModel := e.config.ChatModel
+	selector := strings.TrimSpace(e.config.Model)
+	sessionID := strings.TrimSpace(e.config.SessionID)
+	role := e.config.ModelRole
+	binding := e.modelBinding.Clone()
+	block := cloneModelDispatchBlock(e.modelDispatchBlock)
+	routeGeneration := e.promptRouteGeneration
+	e.mu.Unlock()
+	if chatModel == nil {
+		return promptSuggestionCallSnapshot{}, fmt.Errorf(
+			"prompt suggestion model is unavailable",
+		)
+	}
+	if block != nil {
+		return promptSuggestionCallSnapshot{}, fmt.Errorf(
+			"%s: prompt suggestion model dispatch blocked; %s",
+			block.Code,
+			block.Remediation,
+		)
+	}
+	maxOutputTokens := 64
+	options := execution.SideQueryOptions{
+		SystemPrompt:    services.GetSuggestionPrompt(),
+		Model:           selector,
+		MaxOutputTokens: &maxOutputTokens,
+		QuerySource:     "prompt_suggestion_generation",
+		SessionID:       sessionID,
+	}
+	identity := modelCallIdentityFromBinding(role, binding)
+	if modelCallIdentityMatches(identity, selector) {
+		options.Provider = identity.Provider
+		options.ModelRole = identity.Role
+		options.ModelProfile = identity.Profile
+		options.EffortValue = identity.Reasoning
+	}
+	return promptSuggestionCallSnapshot{
+		chatModel:       chatModel,
+		options:         options,
+		routeGeneration: routeGeneration,
+	}, nil
+}
+
+func (e *QueryEngine) generatePromptSuggestionProvider(
+	ctx context.Context,
+	conversation []string,
+) (string, error) {
+	if e == nil || ctx == nil {
+		return "", fmt.Errorf("prompt suggestion provider entry is unavailable")
+	}
+	e.goalProviderBoundary.RLock()
+	defer e.goalProviderBoundary.RUnlock()
+	if e.goalProviderUsageRequired() {
+		return "", fmt.Errorf(
+			"prompt suggestion is disabled while an unfinished Goal requires exact provider accounting",
+		)
+	}
+	if e.permissionCoordinator != nil &&
+		e.permissionCoordinator.PendingCount() > 0 {
+		return "", fmt.Errorf(
+			"prompt suggestion is disabled while permission input is pending",
+		)
+	}
+	call, err := e.promptSuggestionProviderCall()
+	if err != nil {
+		return "", err
+	}
+	call.options.Messages = make([]*schema.Message, 0, len(conversation))
+	for _, entry := range conversation {
+		call.options.Messages = append(call.options.Messages, &schema.Message{
+			Role:    schema.User,
+			Content: entry,
+		})
+	}
+	// Permission state can change while the route snapshot is being built. The
+	// dispatch admission is the last safe fail-closed check; an already-issued
+	// provider request is governed by caller cancellation.
+	if e.permissionCoordinator != nil &&
+		e.permissionCoordinator.PendingCount() > 0 {
+		return "", fmt.Errorf(
+			"prompt suggestion is disabled while permission input is pending",
+		)
+	}
+	response, err := execution.SideQuery(ctx, call.chatModel, call.options)
+	if err != nil || response == nil {
+		return "", err
+	}
+	if err := e.observeAuxiliaryProviderUsageMessage(response); err != nil {
+		return "", err
+	}
+	e.mu.Lock()
+	routeUnchanged := e.promptRouteGeneration == call.routeGeneration
+	e.mu.Unlock()
+	if !routeUnchanged {
+		return "", fmt.Errorf("prompt suggestion model route changed")
+	}
+	return response.Content, nil
+}
+
+// GeneratePromptSuggestion predicts one possible next user prompt from the
+// current conversation. It is a read-only, best-effort background model call:
+// failures, cancellation, ineligible modes, and filtered output all return an
+// empty string. The caller owns request cancellation and stale-result fencing.
+func (e *QueryEngine) GeneratePromptSuggestion(ctx context.Context) string {
+	if e == nil || ctx == nil || ctx.Err() != nil {
+		return ""
+	}
+
+	e.mu.Lock()
+	service := e.promptSuggestionService
+	mode := e.config.PermissionMode
+	routeGeneration := e.promptRouteGeneration
+	conversation := backgroundMessageStrings(e.messages)
+	assistantTurnCount := 0
+	for _, message := range e.messages {
+		if message != nil && message.Role == schema.Assistant {
+			assistantTurnCount++
+		}
+	}
+	e.mu.Unlock()
+	if service == nil {
+		return ""
+	}
+
+	hasPendingPermission := e.permissionCoordinator != nil &&
+		e.permissionCoordinator.PendingCount() > 0
+	if reason := services.SuggestionSuppressReason(
+		service.IsEnabled(),
+		mode == permission.ModePlan,
+		hasPendingPermission,
+	); reason != "" {
+		return ""
+	}
+	suggestion := service.GenerateSuggestion(
+		ctx,
+		conversation,
+		assistantTurnCount,
+	)
+	e.mu.Lock()
+	routeUnchanged := e.promptRouteGeneration == routeGeneration
+	e.mu.Unlock()
+	if !routeUnchanged {
+		return ""
+	}
+	return suggestion
 }
 
 func (e *QueryEngine) callBackgroundProvider(
@@ -5294,6 +5480,35 @@ func (e *QueryEngine) observeProviderUsageMessage(message *schema.Message) {
 	defer e.mu.Unlock()
 	e.usageSummary.ObserveMessage(message)
 	e.syncLegacyTotalUsageLocked()
+}
+
+func (e *QueryEngine) observeAuxiliaryProviderUsageMessage(
+	message *schema.Message,
+) error {
+	if e == nil || message == nil {
+		return nil
+	}
+	e.usagePersistenceMu.Lock()
+	defer e.usagePersistenceMu.Unlock()
+	delta := transcript.UsageSummary{}
+	delta.ObserveAuxiliaryMessage(message)
+	e.mu.Lock()
+	e.usageSummary.ObserveAuxiliaryMessage(message)
+	e.syncLegacyTotalUsageLocked()
+	recorder := e.transcript
+	e.mu.Unlock()
+	if recorder == nil {
+		return nil
+	}
+	if err := recorder.RecordAuxiliaryUsage(delta); err != nil {
+		if transcript.IsDurabilityUncertain(err) {
+			e.mu.Lock()
+			e.transcriptCheckpointRequired = true
+			e.mu.Unlock()
+		}
+		return fmt.Errorf("persist auxiliary provider usage: %w", err)
+	}
+	return nil
 }
 
 func (e *QueryEngine) observeCompactBoundaryUsageMessage(message *schema.Message) {

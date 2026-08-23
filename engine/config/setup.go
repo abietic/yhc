@@ -38,12 +38,14 @@ type DetectedProvider struct {
 // GenerateDefaultConfig creates a default configuration with documentation comments.
 // Returns the config as a formatted JSON string suitable for writing to a file.
 func GenerateDefaultConfig() string {
+	promptSuggestionsEnabled := true
 	cfg := &Config{
-		Model:          "default",
-		MaxTurns:       DefaultMaxTurns,
-		PermissionMode: "default",
-		AutoCompact:    true,
-		Theme:          "dark",
+		Model:             "default",
+		MaxTurns:          DefaultMaxTurns,
+		PermissionMode:    "default",
+		AutoCompact:       true,
+		Theme:             "dark",
+		PromptSuggestions: &promptSuggestionsEnabled,
 	}
 
 	data, _ := json.MarshalIndent(cfg, "", "  ")
@@ -75,6 +77,9 @@ func GenerateDefaultConfigWithComments() string {
 
   // Enable automatic conversation compaction when context grows large
   "auto_compact": true,
+
+  // Show a model-generated next-prompt ghost after eligible TUI turns
+  "prompt_suggestions": true,
 
   // UI theme: "dark" or "light"
   "theme": "dark",
