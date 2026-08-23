@@ -582,6 +582,14 @@ child/restore binding, existing control-plane overlays, fail-closed
 unavailability, and a required real Ubuntu integration. Linux proof remains
 outside automatic Bash admission, and G28 stays open.
 
+## P52.1 Versioned Headless JSONL Lifecycle
+
+[`p52-1-headless-jsonl-lifecycle.md`](runtime/p52-1-headless-jsonl-lifecycle.md)
+records the completed `adapt` boundary: `exec` and its `-p` compatibility route
+project validated committed lifecycle facts as versioned JSONL, omit the
+engine terminal duplicate, and close a writable stream with one classified
+result while preserving text/JSON, Session, ACP, and permission authority.
+
 ## P36 ACP Provider-Rich Assistant Replay
 
 [`p36-1-acp-rich-assistant-replay.md`](runtime/p36-1-acp-rich-assistant-replay.md)

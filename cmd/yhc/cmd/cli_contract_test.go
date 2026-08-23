@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/abietic/yhc/engine"
+	enginetransport "github.com/abietic/yhc/engine/transport"
 	"github.com/abietic/yhc/internal/buildinfo"
 	"github.com/abietic/yhc/internal/identity"
 )
@@ -327,6 +328,96 @@ func TestHeadlessJSONEnvelopeAndDiagnosticsAreRedacted(t *testing.T) {
 	}
 }
 
+func TestHeadlessJSONLLifecycleStreamClosesWithOneResult(t *testing.T) {
+	timestamp := time.Date(2026, time.August, 24, 2, 3, 4, 5, time.UTC)
+	events := make(chan engine.QueryEvent, 3)
+	events <- engine.QueryEvent{
+		RuntimeEventEnvelope: engine.RuntimeEventEnvelope{
+			SessionID: "session-jsonl",
+			ThreadID:  "thread-jsonl",
+			TurnID:    "turn-jsonl",
+			Sequence:  1,
+			Timestamp: timestamp,
+		},
+		Type: engine.EventCanonicalProjection,
+		CanonicalProjection: &engine.CanonicalProjectionEvent{
+			Version: engine.CanonicalProjectionVersion,
+			Kind:    engine.CanonicalProjectionAssistantDelta,
+			Assistant: &engine.CanonicalAssistantPayload{
+				MessageID: "assistant-jsonl",
+				Delta:     []byte("streamed answer"),
+			},
+		},
+	}
+	events <- engine.QueryEvent{
+		RuntimeEventEnvelope: engine.RuntimeEventEnvelope{
+			SessionID: "session-jsonl",
+			ThreadID:  "thread-jsonl",
+			TurnID:    "turn-jsonl",
+			Sequence:  2,
+			Timestamp: timestamp.Add(time.Second),
+		},
+		Type:             engine.EventAssistant,
+		AssistantMessage: &schema.Message{Content: "streamed answer"},
+	}
+	events <- engine.QueryEvent{
+		RuntimeEventEnvelope: engine.RuntimeEventEnvelope{
+			SessionID: "session-jsonl",
+			ThreadID:  "thread-jsonl",
+			TurnID:    "turn-jsonl",
+			Sequence:  3,
+			Timestamp: timestamp.Add(2 * time.Second),
+		},
+		Type: engine.EventTerminal,
+		TerminalInfo: &engine.Terminal{
+			Reason: engine.TerminalCompleted,
+		},
+	}
+	close(events)
+
+	var stdout, stderr bytes.Buffer
+	writer := enginetransport.NewLifecycleWriter(&stdout)
+	result, streamErr := collectHeadlessEventsWithObserver(
+		context.Background(),
+		&stderr,
+		events,
+		func(event engine.QueryEvent) error {
+			_, err := writer.WriteEvent(event)
+			return err
+		},
+	)
+	if streamErr != nil {
+		t.Fatalf("stream events: %v", streamErr)
+	}
+	result.SessionID = "session-jsonl"
+	if err := renderHeadlessResult(outputFormatJSONL, &stdout, &stderr, result); err != nil {
+		t.Fatalf("render result: %v", err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	var records []enginetransport.LifecycleRecord
+	for {
+		var record enginetransport.LifecycleRecord
+		err := decoder.Decode(&record)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("decode record: %v", err)
+		}
+		records = append(records, record)
+	}
+	if len(records) != 2 ||
+		records[0].Type != enginetransport.LifecycleRecordEvent ||
+		records[1].Type != enginetransport.LifecycleRecordResult ||
+		records[1].Result == nil ||
+		records[1].Result.Status != "completed" ||
+		records[1].Result.Output != "streamed answer" ||
+		records[1].Result.Sequence != 3 {
+		t.Fatalf("records = %#v", records)
+	}
+}
+
 func TestPermissionReviewDiagnosticsExposeOnlyBoundedShadowStatus(t *testing.T) {
 	const secret = "secret-control"
 	events := make(chan engine.QueryEvent, 3)
@@ -476,7 +567,7 @@ func TestRedactSensitiveTextCoversStructuredCredentials(t *testing.T) {
 
 func TestHeadlessRenderRedactsBearerWithoutExactSecret(t *testing.T) {
 	const secret = "bearer-secret-without-flag"
-	for _, format := range []outputFormat{outputFormatText, outputFormatJSON} {
+	for _, format := range []outputFormat{outputFormatText, outputFormatJSON, outputFormatJSONL} {
 		t.Run(string(format), func(t *testing.T) {
 			events := make(chan engine.QueryEvent, 1)
 			events <- engine.QueryEvent{
@@ -498,6 +589,23 @@ func TestHeadlessRenderRedactsBearerWithoutExactSecret(t *testing.T) {
 				t.Fatalf("%s output leaked bearer token: %q", format, combined)
 			}
 		})
+	}
+}
+
+func TestParseHeadlessOutputFormatAcceptsJSONL(t *testing.T) {
+	for input, want := range map[string]outputFormat{
+		"text":    outputFormatText,
+		"JSON":    outputFormatJSON,
+		" jsonl ": outputFormatJSONL,
+	} {
+		got, err := parseOutputFormat(input)
+		if err != nil || got != want {
+			t.Fatalf("parseOutputFormat(%q) = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	if _, err := parseOutputFormat("ndjson"); err == nil ||
+		!strings.Contains(err.Error(), "text, json, or jsonl") {
+		t.Fatalf("unsupported output format error = %v", err)
 	}
 }
 

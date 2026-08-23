@@ -1,7 +1,7 @@
 # Getting Started
 
 **Status:** current
-**Last verified:** 2026-07-28
+**Last verified:** 2026-08-24
 
 > **Ownership:** prerequisites, build outputs, first provider setup, and first run
 
@@ -27,16 +27,18 @@ go run ./cmd/yhc exec "summarize this repository"
 ```
 
 `-p`/`--print` remains a compatibility route. For scripts, `exec` also accepts
-stdin and can emit one stable JSON result:
+stdin and can emit one stable JSON result or a JSONL lifecycle stream:
 
 ```bash
 printf '%s\n' 'inspect the failing tests' | go run ./cmd/yhc exec -
 go run ./cmd/yhc exec --output-format json "summarize this repository"
+go run ./cmd/yhc exec --output-format jsonl "summarize this repository"
 go run ./cmd/yhc version --output-format json
 ```
 
 Machine output uses exit `0` for completion, `1` for runtime failure, `2` for
-usage/validation, and `130` for cancellation. Diagnostics stay on stderr.
+usage/validation, and `130` for cancellation. JSONL emits ordered lifecycle
+events and one final result record. Diagnostics stay on stderr.
 
 Do not put a real key in shell history. Environment variables are preferable to
 `--api-key`, which may be visible in a process listing. `/login` reports masked

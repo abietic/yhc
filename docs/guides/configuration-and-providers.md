@@ -1,7 +1,7 @@
 # Configuration and Providers
 
 **Status:** current
-**Last verified:** 2026-08-25
+**Last verified:** 2026-08-26
 
 > **Ownership:** production configuration sources, precedence, provider selection, and runtime settings
 
@@ -164,7 +164,7 @@ only to that selected provider.
 | `--permission-mode`, `-y`/`--yolo`, `--max-turns`, `--tools` | Root interactive/`-p`, `exec`, `resume`, and `serve acp` runtime policy |
 | `--mouse` | Root TUI and `resume`; use `--mouse=false` to disable |
 | `-p`/`--print`, `--plain`, `--resume`, `--output-format` | Root interaction/compatibility selection |
-| `--resume`, `--output-format` | `exec` session selection and text/JSON output |
+| `--resume`, `--output-format` | `exec` session selection and text/JSON/JSONL output |
 | `--output-format` | Scoped independently to `sessions`, `config`, `doctor`, `mcp`, and `plugins` administration trees |
 
 No runtime flag is persistent. Put it after the command that consumes it, such

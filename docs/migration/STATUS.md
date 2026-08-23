@@ -17,20 +17,20 @@ Product scope and adoption rules are owned by
 
 ## Current Snapshot
 
-Generated with `go run ./scripts/migration_scan -json` on 2026-08-19:
+Generated with `go run ./scripts/migration_scan -json` on 2026-08-24:
 
 | Metric | Value |
 |---|---:|
-| Production Go files | 606 |
-| Production Go lines | 245,223 |
-| Product test Go files | 610 |
-| Product test Go lines | 233,287 |
+| Production Go files | 607 |
+| Production Go lines | 245,603 |
+| Product test Go files | 612 |
+| Product test Go lines | 234,072 |
 | Product Go packages | 66 |
 | Tool constructors | 44 |
 | Command files | 21 |
 | Canonical compatibility traces | 12 |
-| TUI production files / lines | 101 / 51,163 |
-| TUI test files / lines | 141 / 40,141 |
+| TUI production files / lines | 101 / 51,168 |
+| TUI test files / lines | 141 / 40,164 |
 | Reference files | 1,884 |
 
 Counts are a dated inventory, not a quality score. Refresh them after source,
@@ -40,7 +40,7 @@ test, registration, or reference changes.
 
 | Surface | Current owner and verified boundary | Open boundary |
 |---|---|---|
-| Query runtime | `QueryEngine` and ProjectGraph own model rounds, tool admission/execution, event ordering, cancellation, recovery, and supported entrypoint projection. See [`query-engine.md`](../architecture/runtime/query-engine.md). | A framework primitive may replace an owner only with observable equivalence and old-owner deletion. |
+| Query runtime | `QueryEngine` and ProjectGraph own model rounds, tool admission/execution, event ordering, cancellation, recovery, and supported entrypoint projection. Headless `exec` can project committed canonical lifecycle facts as versioned JSONL followed by one classified result; text and single-object JSON remain compatible. See [`query-engine.md`](../architecture/runtime/query-engine.md) and [`entrypoints-and-transports.md`](../architecture/platform/entrypoints-and-transports.md). | A framework primitive may replace an owner only with observable equivalence and old-owner deletion. The bounded JSONL process contract does not replace or version the AppServer wire protocol. |
 | Tools, permissions, and Guest execution | The registry owns canonical tool identity; QueryEngine owns permission policy, exact grants, rewrites, Plan admission, final dispatch binding, and the immutable Guest/hook/stdio-MCP process-class matrix. P50.1-P50.3 retain their revision, latency-denominator, and non-blocking audit guarantees. P51.1 supplies the Darwin Seatbelt `workspace-write` Guest proof; P51.2 Core admits ordinary canonical Auto Bash only with that exact complete Darwin proof, keeps exact local/user allows separate, requires fresh `AllowOnce` for the narrow critical corpus, and revalidates before dispatch/submission. P51.3 adds fixed-binary Linux bubblewrap for prompt-approved Guest Bash with real mount, namespace, network/socket, root, descendant, wall-time, and output evidence; Linux proof is deliberately excluded from automatic admission. See [`tool-registry.md`](../architecture/capabilities/tool-registry.md), [`permissions.md`](../architecture/capabilities/permissions.md), and [`runtime-services.md`](../architecture/platform/runtime-services.md). | G28 remains open for ambient environment credentials, hooks/MCP, missing hard memory/FD/process-count limits, and absent Linux control-plane path creation fencing; G14 reviewer promotion remains deferred. AppServer, Desktop, and Web UI P51.2 projection is not part of the current Core claim. |
 | Sessions and recovery | Append-only transcripts, immutable replay snapshots, staged restore, fork/delete containment, provider-free administration, and the P39 recovery conformance contract are verified. See [`sessions.md`](../architecture/state/sessions.md) and [`transcripts.md`](../architecture/state/transcripts.md). | G2 has no production workspace snapshot writer or rewind command. |
 | Tasks and Agents | WorkBoard owns logical work; AgentRunner owns execution generations; exact WorkItem terminal transitions consult only links for the target items; TaskExplorer supplies the bounded read model, exact generation-bound switch target, and exact current-generation output/lineage reader. See [`tasks-and-agents.md`](../architecture/runtime/tasks-and-agents.md). | Wider stress or control surfaces require a reproduced outcome, not parity inventory. |

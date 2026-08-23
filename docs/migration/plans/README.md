@@ -10,6 +10,12 @@
 
 ## Current Intake Outcome
 
+P52.1 completed the accepted bounded headless platform seam. Versioned JSONL
+records now expose committed canonical lifecycle facts and one final process
+result without creating a daemon, SDK, second Session authority, or approval
+path. The Host Session and cancelled-tool candidates remain deferred pending
+separate observable contracts.
+
 P50.1 completed the ProjectGraph rebuilt-revision fence and closed G48. P50.2
 completed the reviewer attempt-latency denominator and closed G49. P50.3 moved
 reviewer-audit storage behind a bounded non-blocking single-writer dispatcher
@@ -40,6 +46,7 @@ G36/G37; earlier intake groups have these terminal outcomes:
 
 | Contract | Outcome |
 |---|---|
+| [`p52-1-headless-jsonl-lifecycle.md`](p52-1-headless-jsonl-lifecycle.md) | Historical `adapt` contract; P52.1 completed the versioned bounded headless lifecycle stream without changing text/JSON, ACP, Session, or permission authority. |
 | [`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md) | Historical master-native Core contract; P51.2 completed on 2026-08-19, while its Desktop/AppServer/Web UI projection is deferred and G28 remains open. |
 | [`p50-permission-runtime-remediation.md`](p50-permission-runtime-remediation.md) | Historical approved contract; P50.1-P50.3 completed, closed G48-G50, and left reviewer enforcement deferred. |
 | [`p49-goal-default-unbudgeted.md`](p49-goal-default-unbudgeted.md) | P49 completed the approved budget-optional default-on Goal and restart-attribution repair; G21/G47 are closed. |

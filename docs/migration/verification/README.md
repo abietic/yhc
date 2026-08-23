@@ -54,6 +54,7 @@
 | [`p51-1-darwin-guest-seatbelt.md`](p51-1-darwin-guest-seatbelt.md) | P51.1 real Darwin fixed-binary capability probe, escape matrix, process-class binding, root/restore/child identity, ShellManager lifecycle, user-only selection, Go/Make/Git product, control-plane write, permission-invariance, race, and repository-gate evidence. |
 | [`p51-2-auto-containment-admission.md`](p51-2-auto-containment-admission.md) | P51.2 Core exact Guest identity, proof-bound ordinary Auto prompt reduction, separate exact-user authority, critical fresh-AllowOnce constraint, ProjectGraph/client propagation, hook-rewrite restart, dispatch/submission drift rejection, child derivation, real Darwin containment, race, and repository-gate evidence. |
 | [`p51-3-linux-guest-bubblewrap.md`](p51-3-linux-guest-bubblewrap.md) | P51.3 completed fixed-binary Linux Guest bubblewrap: strict mount namespace, socket/io_uring seccomp, real capability probe, existing control-plane overlays, root/child/restore binding reuse, required real Ubuntu evidence, and the explicit no-automatic-admission boundary. |
+| [`p52-1-headless-jsonl-lifecycle.md`](p52-1-headless-jsonl-lifecycle.md) | P52.1 versioned mutually exclusive records, canonical payload validation, invalid UTF-8 rejection, terminal uniqueness, redacted failure, format compatibility, and loopback public-exec evidence. |
 
 ## Docs-only gates
 

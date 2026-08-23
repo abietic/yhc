@@ -1,7 +1,7 @@
 # Production Code Map
 
 **Status:** current
-**Last verified:** 2026-08-09
+**Last verified:** 2026-08-24
 
 > **Ownership:** released-CLI package reachability, wiring labels, and owning
 > architecture documents
@@ -17,13 +17,13 @@ The reproducible scope is:
 go list -deps ./cmd/yhc
 ```
 
-Filtering that result to this module yields **47 module-local packages in the
+Filtering that result to this module yields **52 module-local packages in the
 released CLI dependency closure**. The closure already includes both supported
 server implementations because the Cobra tree wires `serve acp` and `serve
 mcp`. Reachability still does not make every exported capability active.
 
-Comparing the same result with `go list ./...` yields 21 module-local packages
-outside the closure: 13 runtime/library surfaces and eight development or
+Comparing the same result with `go list ./...` yields 22 module-local packages
+outside the closure: 11 runtime/library surfaces and 11 development or
 verification-tool packages under `scripts/`. Both sets are listed below so a
 new package cannot disappear behind the word "tooling."
 
@@ -121,6 +121,7 @@ This initial rule is deliberately narrower than a complete layer DAG.
 | `engine/skills` | [`SkillRegistry`](../../engine/skills/skills.go) | active | [skills](capabilities/skills.md) | Skill discovery and activation are capabilities, not an execution loop. |
 | `engine/storage` | [`ResultStorage`](../../engine/storage/persistence.go) | active | [large tool results](state/large-tool-results.md) | Persists oversized tool output out of band. |
 | `engine/transcript` | [`Recorder`](../../engine/transcript/persist.go) | active | [transcripts](state/transcripts.md) | Append-only messages, checkpoints, prompt records, file state, and usage authority. |
+| `engine/transport` | [`ProjectLifecycleEvent`](../../engine/transport/lifecycle_jsonl.go) | entrypoint-specific: headless JSONL | [entrypoints and transports](platform/entrypoints-and-transports.md) | Projects validated canonical lifecycle facts and one final process result; legacy `StructuredIO` remains inactive. |
 | `engine/worktree` | [`Service`](../../engine/worktree/service.go) | active | [tasks and agents](runtime/tasks-and-agents.md) | Owns isolated Agent worktree launch, handoff, continuation, cleanup, and restart projection. |
 
 ## TUI modules
@@ -160,7 +161,6 @@ presence must not be reported as shipped runtime policy.
 | `engine/state` | outside released CLI closure | [runtime events](tui/contracts/runtime-events.md) |
 | `engine/tasks` | outside released CLI closure; active work ownership is elsewhere | [tasks and agents](runtime/tasks-and-agents.md) |
 | `engine/toolhooks` | outside released CLI closure | [hooks](capabilities/hooks.md) |
-| `engine/transport` | outside released CLI closure | [entrypoints and transports](platform/entrypoints-and-transports.md) |
 | `internal/tui/display` | outside released CLI closure; active display-cell logic lives in `internal/tui` | [responsive layout](tui/contracts/responsive-layout.md) |
 
 Development and verification commands are also outside the released CLI
@@ -170,6 +170,7 @@ but they do not become runtime owners:
 | Package | Current placement | Relevant owner |
 |---|---|---|
 | `scripts` | outside released CLI closure; manifest command and build-dependency tests | [evolution process](../migration/GUIDELINE.md) |
+| `scripts/cutover_recovery` | outside released CLI closure; explicit cutover inspection and repair | [evolution process](../migration/GUIDELINE.md) |
 | `scripts/docs_check` | outside released CLI closure; documentation gate | [documentation policy](../contributing/documentation-policy.md) |
 | `scripts/e2e` | outside released CLI closure; deterministic real-binary correctness harness | [testing strategy](../contributing/testing-strategy.md) |
 | `scripts/evaluation` | outside released CLI closure; opt-in real-repository headless evaluation harness | [testing strategy](../contributing/testing-strategy.md) |
@@ -177,6 +178,8 @@ but they do not become runtime owners:
 | `scripts/iteration` | outside released CLI closure; diff policy, evidence, boundary, and deep-discovery commands | [verification guide](../contributing/verification.md) |
 | `scripts/migration_queue` | outside released CLI closure; evolution-queue validator and renderer | [product evolution plan](../migration/PLAN.md) |
 | `scripts/migration_scan` | outside released CLI closure; dated repository/reference inventory | [project evolution status](../migration/STATUS.md) |
+| `scripts/publication` | outside released CLI closure; public-tree publication policy checks | [verification guide](../contributing/verification.md) |
+| `scripts/worktree_audit` | outside released CLI closure; worktree/session routing inspection | [verification guide](../contributing/verification.md) |
 
 ## Known partial boundaries
 
