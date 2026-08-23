@@ -196,7 +196,7 @@ should not survive as alternate mutation owners.
 | Production composition and bounded adapter | [`runTUI`](../../../../cmd/yhc/cmd/root.go#L235), [`tuiNotifyAdapter.Notify`](../../../../cmd/yhc/cmd/root.go#L1405) |
 | Synchronous notification handlers | [`NotificationManager.Send`](../../../../engine/notify/notify.go#L223) |
 | Current typed Update owner | [`App.MakePermissionPromptFn`](../../../../internal/tui/app.go#L569), [`App.Update`](../../../../internal/tui/app.go#L844) |
-| Current App mutation and pure status read | [`App.showNotification`](../../../../internal/tui/app.go#L6113), [`App.activeToast`](../../../../internal/tui/app.go#L6118) |
+| Current App mutation and pure status read | [`App.showNotification`](../../../../internal/tui/app.go#L6115), [`App.activeToast`](../../../../internal/tui/app.go#L6120) |
 | Current explicit stack time and pure rendering | [`NotificationStack.PushAt`](../../../../internal/tui/notifications.go#L59), [`NotificationStack.PruneAt`](../../../../internal/tui/notifications.go#L83), [`NotificationStack.Active`](../../../../internal/tui/notifications.go#L117), [`NotificationStack.RenderSingleLineWithEnvironment`](../../../../internal/tui/notifications.go#L166) |
 | Deterministic replacement proof | [`TestNotificationStackAutoDismiss`](../../../../internal/tui/parity_test.go#L150), [`P35.1 verification`](../../verification/p35-1-tui-notification-lifecycle.md) |
 | Bubble Tea dependency | [`go.mod`](../../../../go.mod#L12); `charm.land/bubbletea/v2@v2.0.8/tea.go:1176-1187` |

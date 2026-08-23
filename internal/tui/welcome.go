@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 
+	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/services"
 	"github.com/abietic/yhc/internal/identity"
 	"github.com/abietic/yhc/internal/tui/terminalcap"
@@ -218,10 +219,12 @@ func (a *App) welcomeMode() string {
 		return "command input"
 	}
 	switch a.permissionMode() {
-	case "plan":
+	case permission.ModePlan:
 		return "plan mode"
-	case "bypassPermissions":
+	case permission.ModeBypassPermissions:
 		return "bypass permissions"
+	case permission.ModeAuto:
+		return "auto permissions"
 	default:
 		return "default permissions"
 	}
