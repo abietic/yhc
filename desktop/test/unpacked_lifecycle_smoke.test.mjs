@@ -209,7 +209,7 @@ test('unpacked layouts select direct macOS launch and preserve Linux layout', ()
   assert.equal(macIntel.arch, 'x64');
 });
 
-test('platform options admit crash injection on Unix and keep no-sandbox Linux-only', () => {
+test('platform options admit crash injection on supported native hosts and keep no-sandbox Linux-only', () => {
   assert.deepEqual(
     validatePlatformOptions('linux', { crashBackend: true, disableSandbox: true }),
     { crashBackend: true, disableSandbox: true, reopenWindow: false },
@@ -218,8 +218,16 @@ test('platform options admit crash injection on Unix and keep no-sandbox Linux-o
     validatePlatformOptions('darwin', { crashBackend: true, disableSandbox: false }),
     { crashBackend: true, disableSandbox: false, reopenWindow: false },
   );
+  assert.deepEqual(
+    validatePlatformOptions('win32', { crashBackend: true, disableSandbox: false }),
+    { crashBackend: true, disableSandbox: false, reopenWindow: false },
+  );
   assert.throws(
     () => validatePlatformOptions('darwin', { disableSandbox: true }),
+    /Linux-only/,
+  );
+  assert.throws(
+    () => validatePlatformOptions('win32', { disableSandbox: true }),
     /Linux-only/,
   );
 });
@@ -391,6 +399,47 @@ test('crash injection requires a matching current backend identity', () => {
     signalProcess: (pid, signal) => signals.push([pid, signal]),
   });
   assert.deepEqual(signals, [[expected.pid, 'SIGKILL']]);
+
+  const windowsExpected = {
+    pid: 5252,
+    parentPid: 5151,
+    startTime: '2026-08-24T04:00:00.1234567Z',
+    executable: 'd:\\a\\yhc\\resources\\bin\\yhc.exe',
+  };
+  const taskkills = [];
+  killVerifiedBackend(windowsExpected, {
+    platform: 'win32',
+    readIdentity: () => ({ ...windowsExpected }),
+    runTaskkill(command, args, options) {
+      taskkills.push({ command, args, options });
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    signalProcess: () => assert.fail('Windows crash injection must use bounded taskkill'),
+  });
+  assert.equal(taskkills.length, 1);
+  assert.equal(taskkills[0].command, 'taskkill.exe');
+  assert.deepEqual(taskkills[0].args, ['/PID', '5252', '/F']);
+  assert.equal(taskkills[0].options.shell, false);
+  assert.equal(taskkills[0].options.windowsHide, true);
+  assert.throws(
+    () => killVerifiedBackend(windowsExpected, {
+      platform: 'win32',
+      readIdentity: () => ({
+        ...windowsExpected,
+        startTime: '2026-08-24T04:00:01.1234567Z',
+      }),
+      runTaskkill: () => assert.fail('reused Windows PID must not be terminated'),
+    }),
+    /backend process identity changed before crash injection/,
+  );
+  assert.throws(
+    () => killVerifiedBackend(windowsExpected, {
+      platform: 'win32',
+      readIdentity: () => ({ ...windowsExpected }),
+      runTaskkill: () => ({ status: 1, stdout: '', stderr: 'access denied' }),
+    }),
+    /Windows backend crash injection failed/,
+  );
 
   for (const current of [
     { ...expected, pid: 4243 },
@@ -910,7 +959,7 @@ test('Windows cleanup refuses unknown descendants and PID reuse', async () => {
   assert.equal(signals, 0);
 });
 
-test('repository wiring launches the Windows unpacked app after package verification', async () => {
+test('repository wiring runs Windows lifecycle and crash containment after package verification', async () => {
   const [makefile, workflow] = await Promise.all([
     readFile(new URL('../../Makefile', import.meta.url), 'utf8'),
     readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'),
@@ -924,7 +973,19 @@ test('repository wiring launches the Windows unpacked app after package verifica
     /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/win-unpacked\/YHC\.exe/,
   );
   assert.match(
+    makefile,
+    /desktop-unpacked-crash-containment-smoke-windows-amd64: desktop-package-smoke-windows-amd64/,
+  );
+  assert.match(
+    makefile,
+    /unpacked_lifecycle_smoke\.cjs --app desktop\/dist\/win-unpacked\/YHC\.exe --crash-backend/,
+  );
+  assert.match(
+    makefile,
+    /desktop-unpacked-native-smokes-windows-amd64: desktop-package-smoke-windows-amd64/,
+  );
+  assert.match(
     workflow,
-    /platform: windows-x64[\s\S]*?runner: windows-2025[\s\S]*?target: desktop-unpacked-lifecycle-smoke-windows-amd64/,
+    /platform: windows-x64[\s\S]*?runner: windows-2025[\s\S]*?target: desktop-unpacked-native-smokes-windows-amd64/,
   );
 });

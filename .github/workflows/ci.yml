@@ -432,7 +432,7 @@ jobs:
             target: desktop-unpacked-native-smokes-darwin-arm64
           - platform: windows-x64
             runner: windows-2025
-            target: desktop-unpacked-lifecycle-smoke-windows-amd64
+            target: desktop-unpacked-native-smokes-windows-amd64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:

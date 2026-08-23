@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-21
+**Last verified:** 2026-08-24
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > renderer/server trust boundaries, and user-visible interaction projections.
@@ -273,14 +273,20 @@ inspection cannot observe; neither row is distribution evidence.
 The Windows Server 2025 x64 row launches the exact unpacked `YHC.exe` with an
 isolated user profile and verifies the same renderer, frozen preload bridge,
 trusted `app:get-info` IPC, bundled `resources\bin\yhc.exe` identity, and
-browser-level graceful shutdown. Windows process identity combines PID, UTC
-creation time, and normalized executable path. Failure cleanup takes a fresh
-`Win32_Process` snapshot, accepts only the observed app/backend executable tree,
-rechecks the root identity, and then applies `taskkill /PID ... /T /F`; unknown
-or incomplete lineage fails closed. Because the final identity observation and
-tree termination are separate OS operations, this is a best-effort PID-reuse
-defense rather than atomic process-handle or Job Object ownership. Crash
-injection and last-window restoration remain outside this Windows row.
+browser-level graceful shutdown. A second isolated launch installs the same
+backend-exit observer, rechecks the backend PID, UTC creation time, and
+normalized executable path, then applies `taskkill /PID ... /F` to that backend
+alone. It requires the same single notification, fixed Offline guidance,
+disabled controls, empty `app:get-info`, and 11-second no-restart observation
+before the Electron app closes normally.
+
+Failure cleanup remains separate: it takes a fresh `Win32_Process` snapshot,
+accepts only the observed app/backend executable tree, rechecks the root
+identity, and then applies `taskkill /PID ... /T /F`; unknown or incomplete
+lineage fails closed. Both crash injection and cleanup separate the last
+identity observation from process termination, so they are best-effort
+PID-reuse defenses rather than atomic process-handle or Job Object ownership.
+Last-window restoration remains outside the Windows row.
 
 Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
 [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L143) stops event
@@ -300,8 +306,9 @@ A separate native packaging matrix runs the same unpacked `afterPack` contract
 on macOS 15 Intel, macOS 15 Apple Silicon, and Windows Server 2025 x64 runners.
 Those jobs prove that each native electron-builder path can assemble the exact
 ASAR, WebUI, backend, and license payload. All three rows add the automated
-normal lifecycle above; both macOS rows also add last-window restoration. The
-matrix does not produce installer media, sign code, or upload artifacts.
+normal lifecycle and backend crash containment above; both macOS rows also add
+last-window restoration. The matrix does not produce installer media, sign
+code, or upload artifacts.
 
 The Linux CI invocation uses `--no-sandbox` because it runs inside the hosted
 test environment. That evidence therefore does not validate Chromium's OS

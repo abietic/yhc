@@ -96,7 +96,7 @@ func TestDesktopNativePackageMatrixUsesExactUnpackedSmokeTargets(t *testing.T) {
 		"fail-fast: false",
 		"- platform: macos-intel\n            runner: macos-15-intel\n            target: desktop-unpacked-native-smokes-darwin-amd64",
 		"- platform: macos-arm64\n            runner: macos-15\n            target: desktop-unpacked-native-smokes-darwin-arm64",
-		"- platform: windows-x64\n            runner: windows-2025\n            target: desktop-unpacked-lifecycle-smoke-windows-amd64",
+		"- platform: windows-x64\n            runner: windows-2025\n            target: desktop-unpacked-native-smokes-windows-amd64",
 		"runs-on: ${{ matrix.runner }}",
 		"CSC_IDENTITY_AUTO_DISCOVERY: 'false'",
 		"if: runner.os == 'Windows'",
@@ -133,6 +133,7 @@ func TestDesktopNativePackageMatrixUsesExactUnpackedSmokeTargets(t *testing.T) {
 		"desktop-unpacked-native-smokes-darwin-arm64: desktop-package-smoke-darwin-arm64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --reopen-window\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --crash-backend",
 		"desktop-package-smoke-windows-amd64: desktop-stage-windows-amd64 desktop-install\n\tnpm --prefix desktop run package -- --win --x64",
 		"desktop-unpacked-lifecycle-smoke-windows-amd64: desktop-package-smoke-windows-amd64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/win-unpacked/YHC.exe",
+		"desktop-unpacked-native-smokes-windows-amd64: desktop-package-smoke-windows-amd64\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/win-unpacked/YHC.exe\n\tnode desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/win-unpacked/YHC.exe --crash-backend",
 	} {
 		if !strings.Contains(makefile, contract) {
 			t.Fatalf("native Desktop package target lacks unpacked contract %q", contract)

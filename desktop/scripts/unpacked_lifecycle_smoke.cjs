@@ -465,18 +465,34 @@ function combineSmokeFailure(primary, cleanup) {
 function killVerifiedBackend(
   identity,
   {
+    platform = process.platform,
     readIdentity = readLinuxProcessIdentity,
+    runTaskkill = spawnSync,
     signalProcess = process.kill,
   } = {},
 ) {
   const current = readIdentity(identity?.pid);
-  if (
-    current.pid !== identity?.pid ||
-    current.startTime !== identity?.startTime ||
-    current.executable !== identity?.executable ||
-    current.state === 'Z'
-  ) {
+  if (!sameProcessIdentity(identity, current)) {
     throw new Error('backend process identity changed before crash injection');
+  }
+  if (platform === 'win32') {
+    const result = runTaskkill('taskkill.exe', [
+      '/PID',
+      String(identity.pid),
+      '/F',
+    ], {
+      encoding: 'utf8',
+      maxBuffer: PROCESS_QUERY_MAX_BUFFER,
+      shell: false,
+      timeout: WINDOWS_PROCESS_QUERY_TIMEOUT_MS,
+      windowsHide: true,
+    });
+    if (result?.error || result?.status !== 0) {
+      throw new Error('Windows backend crash injection failed', {
+        ...(result?.error ? { cause: result.error } : {}),
+      });
+    }
+    return;
   }
   signalProcess(identity.pid, 'SIGKILL');
 }
@@ -1020,11 +1036,16 @@ function validatePlatformOptions(
     if (normalized.disableSandbox) throw new Error('--no-sandbox is Linux-only');
     return normalized;
   }
-  if (normalized.crashBackend || normalized.disableSandbox) {
-    throw new Error('crash injection and --no-sandbox are Linux-only');
+  if (platform === 'win32') {
+    if (normalized.disableSandbox) throw new Error('--no-sandbox is Linux-only');
+    if (normalized.reopenWindow) throw new Error('--reopen-window is macOS-only');
+    return normalized;
   }
   if (platform !== 'darwin' && normalized.reopenWindow) {
     throw new Error('--reopen-window is macOS-only');
+  }
+  if (normalized.crashBackend || normalized.disableSandbox) {
+    throw new Error('crash injection and --no-sandbox are supported only on Linux, macOS, and Windows');
   }
   return normalized;
 }
@@ -1219,7 +1240,10 @@ async function runSmoke(
       })()`);
       if (subscribed !== true) throw new Error('backend crash observer was not installed');
 
-      killVerifiedBackend(backend, { readIdentity: readBackendIdentity });
+      killVerifiedBackend(backend, {
+        platform: layout.platform,
+        readIdentity: readBackendIdentity,
+      });
       await poll(
         () => !originalProcessAlive(backend, readBackendIdentity),
         BACKEND_EXIT_TIMEOUT_MS,

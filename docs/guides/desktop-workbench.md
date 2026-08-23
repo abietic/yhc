@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-08-21
+**Last verified:** 2026-08-24
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -139,27 +139,31 @@ Both macOS rows remain automation evidence: they do not exercise Finder/Dock
 launch, foreground focus, native picker interaction, secure-storage prompts,
 signing, notarization, or a physical display acceptance scenario.
 
-On a Windows x64 host, the native unpacked lifecycle gate is:
+On a Windows x64 host, run both native unpacked lifecycle gates with:
 
 ```powershell
-make desktop-unpacked-lifecycle-smoke-windows-amd64
+make desktop-unpacked-native-smokes-windows-amd64
 ```
 
 It starts the exact `desktop/dist/win-unpacked/YHC.exe` with an isolated user
 profile, verifies the packaged renderer, frozen preload bridge, and bundled
 `resources\bin\yhc.exe` process identity, then uses the browser-level graceful
-close and requires both original process identities to retire. Failure cleanup
+close and requires both original process identities to retire. A second launch
+rechecks that backend's PID, UTC creation time, and normalized executable before
+terminating only the backend. It requires one backend-exit notification, fixed
+Offline guidance, disabled controls, no replacement backend for 11 seconds,
+and a normal Electron close. Failure cleanup
 queries fresh `Win32_Process` PID, UTC creation time, executable path, and the
 visible parent-child tree before invoking `taskkill /PID ... /T /F`. Missing or
 changed identity, an unknown descendant executable, or an unowned backend fails
-closed. The final recheck and `taskkill` remain separate operations, so this is
-a best-effort PID-reuse guard rather than an atomic Windows process-handle or
-Job Object ownership guarantee.
+closed. The final identity checks and `taskkill` operations remain separate, so
+these are best-effort PID-reuse guards rather than an atomic Windows
+process-handle or Job Object ownership guarantee.
 
 The Windows row is native automation evidence, not proof of Start-menu launch,
 foreground focus, file-picker interaction, installer behavior, Authenticode,
-SmartScreen reputation, or physical UI acceptance. It does not inject a backend
-crash or exercise macOS window restoration.
+SmartScreen reputation, or physical UI acceptance. It does not exercise macOS
+window restoration.
 
 Run `make desktop-check` for deterministic Node/unit and syntax checks. The
 browser-only transport can also be started explicitly with:
