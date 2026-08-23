@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/abietic/yhc/engine"
+	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/transcript"
 	"github.com/cloudwego/eino/components/model"
@@ -661,6 +662,10 @@ func TestACP_AllowAlwaysPersistsRuleThroughEngineCoordinator(t *testing.T) {
 	}}
 	conn, client, agent := setupTestACPWithAgent(t, model)
 	agent.config.YoloMode = false
+	// This fixture exercises interactive AllowAlways persistence, so keep the
+	// Bash action outside the Default proof-bound fast path.
+	agent.config.SandboxProfileFlag = string(containment.ProfileDangerFullAccess)
+	agent.config.SandboxProfileFlagSet = true
 	client.mu.Lock()
 	client.permissionOptionID = "allow_always"
 	client.mu.Unlock()

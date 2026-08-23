@@ -166,7 +166,7 @@ func TestP512ContainedAutoBashProofRejectsDescriptorWithoutGuestIdentity(
 		Mode:                     permission.ModeAuto,
 	}
 
-	if allowed, reason := completeContainedAutoBashProof(action); allowed ||
+	if allowed, reason := completeProofBoundBashAdmission(action); allowed ||
 		!strings.Contains(reason, "Guest") {
 		t.Fatalf("proof = (%v, %q), want missing Guest rejection", allowed, reason)
 	}
@@ -174,15 +174,20 @@ func TestP512ContainedAutoBashProofRejectsDescriptorWithoutGuestIdentity(
 
 func TestP512ContainedAutoBashProofRequiresExactGuestFacts(t *testing.T) {
 	base := p512CompleteContainedAutoBashAction()
-	if allowed, reason := completeContainedAutoBashProof(base); !allowed {
+	if allowed, reason := completeProofBoundBashAdmission(base); !allowed {
 		t.Fatalf("complete proof rejected: %s", reason)
+	}
+	defaultAction := base
+	defaultAction.Mode = permission.ModeDefault
+	if allowed, reason := completeProofBoundBashAdmission(defaultAction); !allowed {
+		t.Fatalf("complete default-mode proof rejected: %s", reason)
 	}
 
 	tests := []struct {
 		name   string
 		mutate func(*PermissionActionDescriptor)
 	}{
-		{name: "wrong mode", mutate: func(action *PermissionActionDescriptor) { action.Mode = permission.ModeDefault }},
+		{name: "wrong mode", mutate: func(action *PermissionActionDescriptor) { action.Mode = permission.ModePlan }},
 		{name: "wrong tool", mutate: func(action *PermissionActionDescriptor) { action.CanonicalToolName = "Write" }},
 		{name: "wrong origin", mutate: func(action *PermissionActionDescriptor) { action.Origin = tools.ToolOriginMCP }},
 		{name: "not selected", mutate: func(action *PermissionActionDescriptor) { action.Selected = false }},
@@ -205,7 +210,7 @@ func TestP512ContainedAutoBashProofRequiresExactGuestFacts(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			action := base
 			test.mutate(&action)
-			if allowed, _ := completeContainedAutoBashProof(action); allowed {
+			if allowed, _ := completeProofBoundBashAdmission(action); allowed {
 				t.Fatalf("mutated proof accepted: %#v", action)
 			}
 		})
@@ -270,10 +275,10 @@ func TestP512PermissionActionBindsGuestIdentity(t *testing.T) {
 		t.Fatalf("descriptor Guest identity = %#v, want %#v", action, identity)
 	}
 	if identity.Availability == containment.BindingAvailable {
-		if allowed, reason := completeContainedAutoBashProof(action); !allowed {
+		if allowed, reason := completeProofBoundBashAdmission(action); !allowed {
 			t.Fatalf("available Darwin proof rejected: %s", reason)
 		}
-	} else if allowed, _ := completeContainedAutoBashProof(action); allowed {
+	} else if allowed, _ := completeProofBoundBashAdmission(action); allowed {
 		t.Fatal("unavailable Guest proof was accepted")
 	}
 }
@@ -713,6 +718,54 @@ func TestP221bAutoCapabilityMatrixRequiresHumanBeforeClassifier(t *testing.T) {
 		t.Fatalf(
 			"human-required capabilities reached classifier %d time(s)",
 			classifierCalls.Load(),
+		)
+	}
+}
+
+func TestDefaultProofBoundAutoKeepsClassifierAutoOnly(t *testing.T) {
+	registry, _ := p221bPolicyActionRegistry(nil)
+	var classifierCalls atomic.Int32
+	var promptCalls atomic.Int32
+	engine := NewQueryEngine(QueryEngineConfig{
+		CWD:            t.TempDir(),
+		ToolRegistry:   registry,
+		PermissionMode: permission.ModeDefault,
+		ChatModel: &funcModel{fn: func(
+			context.Context,
+			[]*schema.Message,
+			...model.Option,
+		) (*schema.Message, error) {
+			classifierCalls.Add(1)
+			return &schema.Message{
+				Role:    schema.Assistant,
+				Content: "<allow/>",
+			}, nil
+		}},
+		PermissionPrompt: func(
+			context.Context,
+			PermissionPromptRequest,
+		) PermissionInteractionResult {
+			promptCalls.Add(1)
+			return PermissionInteractionResult{Decision: PermissionDeny}
+		},
+	})
+	t.Cleanup(engine.Close)
+
+	outcome := engine.evaluateInvocationPolicy(
+		withToolUseID(context.Background(), "default-classifier-boundary"),
+		nil,
+		"PolicyAction",
+		map[string]any{"value": "requires-interaction"},
+		nil,
+	)
+	if outcome.Allowed || outcome.Decision != invocationPolicyRequireHuman {
+		t.Fatalf("default outcome = %#v", outcome)
+	}
+	if classifierCalls.Load() != 0 || promptCalls.Load() != 1 {
+		t.Fatalf(
+			"default classifier/prompt calls = %d/%d, want 0/1",
+			classifierCalls.Load(),
+			promptCalls.Load(),
 		)
 	}
 }

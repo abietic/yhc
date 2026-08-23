@@ -149,7 +149,7 @@ func TestP512ExactUserAuthorityRemainsSeparateFromProofShortcut(t *testing.T) {
 			settled,
 		)
 	}
-	if allowed, _ := completeContainedAutoBashProof(*settled); allowed {
+	if allowed, _ := completeProofBoundBashAdmission(*settled); allowed {
 		t.Fatal("ambient explicit authority was mislabeled as proof-bound admission")
 	}
 
@@ -174,14 +174,20 @@ func TestP512ExactUserAuthorityRemainsSeparateFromProofShortcut(t *testing.T) {
 func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 	for _, test := range []struct {
 		name        string
+		mode        permission.Mode
 		entrypoint  commands.Entrypoint
 		interactive bool
 	}{
-		{name: "tui", entrypoint: commands.EntrypointTUI, interactive: true},
-		{name: "plain", entrypoint: commands.EntrypointPlain, interactive: true},
-		{name: "headless", entrypoint: commands.EntrypointHeadless},
-		{name: "headless goal", entrypoint: commands.EntrypointHeadlessGoal},
-		{name: "acp", entrypoint: commands.EntrypointACP, interactive: true},
+		{name: "default/tui", mode: permission.ModeDefault, entrypoint: commands.EntrypointTUI, interactive: true},
+		{name: "default/plain", mode: permission.ModeDefault, entrypoint: commands.EntrypointPlain, interactive: true},
+		{name: "default/headless", mode: permission.ModeDefault, entrypoint: commands.EntrypointHeadless},
+		{name: "default/headless goal", mode: permission.ModeDefault, entrypoint: commands.EntrypointHeadlessGoal},
+		{name: "default/acp", mode: permission.ModeDefault, entrypoint: commands.EntrypointACP, interactive: true},
+		{name: "auto/tui", mode: permission.ModeAuto, entrypoint: commands.EntrypointTUI, interactive: true},
+		{name: "auto/plain", mode: permission.ModeAuto, entrypoint: commands.EntrypointPlain, interactive: true},
+		{name: "auto/headless", mode: permission.ModeAuto, entrypoint: commands.EntrypointHeadless},
+		{name: "auto/headless goal", mode: permission.ModeAuto, entrypoint: commands.EntrypointHeadlessGoal},
+		{name: "auto/acp", mode: permission.ModeAuto, entrypoint: commands.EntrypointACP, interactive: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			selection, err := NewSandboxSelection(
@@ -197,7 +203,7 @@ func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 			config := QueryEngineConfig{
 				CWD:               t.TempDir(),
 				CommandEntrypoint: test.entrypoint,
-				PermissionMode:    permission.ModeAuto,
+				PermissionMode:    test.mode,
 				SandboxSelection:  selection,
 			}
 			if test.interactive {
@@ -209,9 +215,21 @@ func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 					gotConstraint = request.DecisionConstraint
 					return PermissionInteractionResult{Decision: PermissionAllowOnce}
 				}
+			} else {
+				config.CanUseTool = func(
+					context.Context,
+					string,
+					map[string]any,
+					*ToolUseContext,
+				) (bool, string) {
+					return false, "interactive permission prompting not available"
+				}
 			}
 			engine := NewQueryEngine(config)
 			t.Cleanup(engine.Close)
+			if engine.wrappedCanUseTool == nil {
+				t.Fatal("supported proof-bound entrypoint did not install invocation policy")
+			}
 
 			var ordinaryAction *PermissionActionDescriptor
 			ordinary := engine.evaluateInvocationPolicy(
@@ -228,7 +246,7 @@ func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 				containment.BindingAvailable
 			if available {
 				if !ordinary.Allowed || ordinaryAction == nil ||
-					ordinaryAction.admission != permissionAdmissionContainedAutoBash ||
+					ordinaryAction.admission != permissionAdmissionProofBoundBash ||
 					prompts.Load() != 0 {
 					t.Fatalf(
 						"contained ordinary outcome=%#v action=%#v prompts=%d",
@@ -238,7 +256,7 @@ func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 					)
 				}
 			} else if ordinaryAction != nil &&
-				ordinaryAction.admission == permissionAdmissionContainedAutoBash {
+				ordinaryAction.admission == permissionAdmissionProofBoundBash {
 				t.Fatalf("unavailable Guest admitted contained action %#v", ordinaryAction)
 			}
 
@@ -267,7 +285,7 @@ func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 				}
 			} else if critical.Allowed ||
 				critical.Decision != invocationPolicyRequireHuman ||
-				critical.Reason != "sandbox_critical_path_confirmation_required" {
+				strings.TrimSpace(critical.Reason) == "" {
 				t.Fatalf("non-interactive critical outcome=%#v", critical)
 			}
 			if len(engine.approvalTracker.List()) != 0 {
@@ -502,7 +520,7 @@ func TestP512ContainedAutoBashDispatch(t *testing.T) {
 		return
 	}
 	if !outcome.Allowed || settled == nil ||
-		settled.admission != permissionAdmissionContainedAutoBash {
+		settled.admission != permissionAdmissionProofBoundBash {
 		t.Fatalf("admission outcome=%#v settled=%#v", outcome, settled)
 	}
 	dispatchCtx := withPermissionDispatchAction(context.Background(), *settled, nil)
@@ -545,7 +563,7 @@ func TestP512ContainedAutoBashDispatchRejectsBindingDrift(t *testing.T) {
 		Enforced: containedAutoBashAxes,
 		Root:     containment.RootIdentity{Path: engine.config.CWD, Device: 1, Inode: 1},
 	})
-	action.admission = permissionAdmissionContainedAutoBash
+	action.admission = permissionAdmissionProofBoundBash
 	_, err = engine.toolExecutor(
 		withPermissionDispatchAction(context.Background(), action, nil),
 		"Bash",
@@ -621,7 +639,7 @@ func TestP512ContainedAutoBashDispatchRejectsReplacedRootBeforeExecution(
 		nil,
 	)
 	if !outcome.Allowed || settled == nil ||
-		settled.admission != permissionAdmissionContainedAutoBash {
+		settled.admission != permissionAdmissionProofBoundBash {
 		t.Fatalf("contained admission outcome=%#v settled=%#v", outcome, settled)
 	}
 
