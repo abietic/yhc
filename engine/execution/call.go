@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/agenticclaude"
 	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
+	aclopenai "github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
@@ -237,56 +238,62 @@ func buildProviderEffortOption(
 	if normalizedProvider == "" {
 		normalizedProvider = providerAgenticClaude
 	}
-	if !enginemodel.SupportsAdapterReasoningEffort(
+	resolved, err := enginemodel.ResolveAdapterReasoningEffort(
 		normalizedProvider,
 		effort,
-	) {
+	)
+	if err != nil {
 		return model.Option{}, false, fmt.Errorf(
-			"provider %q does not support reasoning effort %q",
+			"provider %q does not support reasoning effort %q: %w",
 			normalizedProvider,
 			effort,
+			err,
 		)
 	}
-	switch normalizedProvider {
-	case providerAgenticClaude:
+	switch resolved.Dialect {
+	case enginemodel.ReasoningDialectClaudeOutputConfig:
 		return model.Option{}, false, nil
-	case providerAgenticOpenAI:
+	case enginemodel.ReasoningDialectOpenAIResponses:
 		return agenticopenai.WithResponsesReasoning(&openairesponses.ReasoningParam{
-			Effort: shared.ReasoningEffort(effort),
+			Effort: shared.ReasoningEffort(resolved.WireEffort),
 		}), true, nil
-	case providerAgenticArk:
-		enumValue, ok := arkresponses.ReasoningEffort_Enum_value[effort]
+	case enginemodel.ReasoningDialectArkResponses:
+		enumValue, ok := arkresponses.ReasoningEffort_Enum_value[resolved.WireEffort]
 		if !ok {
 			return model.Option{}, false, fmt.Errorf(
 				"provider %q has no typed reasoning effort %q",
 				normalizedProvider,
-				effort,
+				resolved.WireEffort,
 			)
 		}
 		return agenticark.WithReasoning(&arkresponses.ResponsesReasoning{
 			Effort: arkresponses.ReasoningEffort_Enum(enumValue),
 		}), true, nil
-	case providerAgenticGemini:
+	case enginemodel.ReasoningDialectGeminiThinking:
 		level := genai.ThinkingLevelLow
-		if effort == "high" {
+		if resolved.WireEffort == "high" {
 			level = genai.ThinkingLevelHigh
 		}
 		return agenticgemini.WithThinkingConfig(&genai.ThinkingConfig{
 			ThinkingLevel: level,
 		}), true, nil
-	case providerAgenticDeepSeek, providerAgenticQwen:
-		// These pinned adapters have no per-call graded effort option.
+	case enginemodel.ReasoningDialectDeepSeek:
+		extraFields := map[string]any{
+			"thinking": map[string]any{
+				"type": string(resolved.ThinkingMode),
+			},
+		}
+		if resolved.WireEffort != "" {
+			extraFields["reasoning_effort"] = resolved.WireEffort
+		}
+		return aclopenai.WithExtraFields(extraFields), true, nil
 	default:
 		return model.Option{}, false, fmt.Errorf(
-			"unknown provider %q for reasoning effort",
-			rawProvider,
+			"provider %q has unknown reasoning dialect %q",
+			normalizedProvider,
+			resolved.Dialect,
 		)
 	}
-	return model.Option{}, false, fmt.Errorf(
-		"provider %q does not support reasoning effort %q",
-		normalizedProvider,
-		effort,
-	)
 }
 
 func buildClaudeCustomHeaders(opts CallModelOptions) map[string]string {

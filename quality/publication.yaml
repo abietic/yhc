@@ -303,7 +303,7 @@ privacy:
       match_sha256: 094cdeca85abd50687c2cbead2fc1b2998d71c90f433764d6440bf2a83ab9758
       purpose: documentation-example
     - path: "docs/architecture/platform/model-providers.md"
-      line: 567
+      line: 609
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
@@ -1898,27 +1898,27 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: "engine/config/portfolio_test.go"
-      line: 254
+      line: 313
       rule_id: private-url
       match_sha256: dfb9fb4ea1abf2b1c1828cd4afb68b0da46952d8df972f795cf03b84ccc61c50
       purpose: synthetic-security-fixture
     - path: "engine/config/portfolio_test.go"
-      line: 255
+      line: 314
       rule_id: private-url
       match_sha256: dfb9fb4ea1abf2b1c1828cd4afb68b0da46952d8df972f795cf03b84ccc61c50
       purpose: synthetic-security-fixture
     - path: "engine/config/portfolio_test.go"
-      line: 374
+      line: 433
       rule_id: private-email
       match_sha256: 5621d8503bf646fdcb9c1c9be19718a44af4b7c27c2e13dd7d4ca53652866a51
       purpose: synthetic-security-fixture
     - path: "engine/config/portfolio_test.go"
-      line: 374
+      line: 433
       rule_id: private-url
       match_sha256: 6507cd60169ae5a526ed9820bf2356bdfb9db12213bcb1b950ff4108b80f037c
       purpose: synthetic-security-fixture
     - path: "engine/config/portfolio_test.go"
-      line: 418
+      line: 477
       rule_id: private-url
       match_sha256: 9f8dbedf71204345763fc16a5fa5451cb98c33b8f8ef832c5c1ca546bc26d3fb
       purpose: synthetic-security-fixture
@@ -2561,6 +2561,11 @@ privacy:
       line: 738
       rule_id: private-url
       match_sha256: 29bbb267190d6b1a331640bed30f1728c2f117246b238c6bc4f294ac48a3e832
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/deepseek_reasoning_test.go"
+      line: 51
+      rule_id: credential-assignment
+      match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
       purpose: synthetic-security-fixture
     - path: "engine/provider/p29_0_characterization_test.go"
       line: 99

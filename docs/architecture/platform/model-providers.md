@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-20
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -266,6 +266,40 @@ finish reasons into the legacy `schema.ResponseMeta.FinishReason`. The query
 execution layer classifies those raw values centrally; the bridge does not
 choose tool disposition or alter provider routes.
 
+## Model request capability layers
+
+Model interaction has three separate owners. This follows the useful common
+shape in the local Pi and DeepSeek Harness references without copying either
+runtime wholesale:
+
+1. QueryEngine and Session own model-neutral request intent, such as the
+   canonical reasoning effort selected by the user. They do not construct SDK
+   options or provider JSON.
+2. Exact-model metadata owns which values may be offered. Built-in facts are
+   derived only when the catalog model and selected adapter agree; a custom
+   profile may override the field with explicit provenance. CLI and ACP read
+   this admitted set instead of maintaining their own enums.
+3. The adapter policy validates the canonical value and lowers it into a
+   provider dialect immediately before dispatch. The resulting SDK option or
+   wire fields are attempt-local and are recomputed for every failover
+   candidate.
+
+This split prevents a model catalog entry from promising a feature that its
+selected adapter cannot serialize. It also prevents an adapter-wide feature
+from being advertised for an exact model whose capability remains unknown.
+Configuration compilation rejects explicit metadata or defaults that the
+adapter cannot lower. Runtime admission intersects exact-model metadata with
+the ordered adapter vocabulary once more, so model switches, Session resume,
+roles, failover, `/effort`, and ACP use the same decision.
+
+The durable semantic identifier accepts a bounded adapter-owned name rather
+than one project-global feature enum. Adding a new value therefore requires an
+adapter policy and authoritative model metadata, but not changes to Session,
+commands, or ACP schemas. Arbitrary unvalidated provider JSON is deliberately
+not a configuration surface: new model features should extend the typed
+semantic request and adapter lowering layers while keeping credentials,
+headers, retry, and failover authority outside model profiles.
+
 ## Classic-to-Agentic input bridge
 
 The wider runtime currently owns classic `schema.Message` values.
@@ -423,19 +457,24 @@ exact value and the selected adapter to support exact lowering:
 | Agentic OpenAI Responses | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | typed Responses reasoning |
 | Agentic Ark Responses | `minimal`, `low`, `medium`, `high` | typed Ark reasoning |
 | Agentic Gemini | `low`, `high` | typed Gemini thinking level |
-| Agentic DeepSeek, Qwen | none | provider default only |
+| Agentic DeepSeek V4 Pro/Flash | `none`, `high`, `max` | `thinking.type`; `high`/`max` also set exact `reasoning_effort` |
+| Agentic Qwen | none | provider default only |
 
-Empty effort emits no provider option. A profile default applies when the
-Session/call has no override, and `/effort default` restores that profile
-default or provider default. An unsupported or unknown value fails before
-provider-usage admission and dispatch; no level is guessed, clamped, or
-converted to a boolean. Manually switching to or resuming an incompatible
-model clears the prior effort visibly rather than guessing a replacement. The
-exact applied effort enters binding v1, role snapshots, call options, and the
-bounded provider-usage descriptor. One in-flight failover request instead
-preserves its frozen reasoning intent: an alternate that cannot lower that
-exact effort is skipped before dispatch rather than receiving a cleared or
-guessed value.
+For DeepSeek V4, `none` sends `thinking.type=disabled` and omits
+`reasoning_effort`; `high` and `max` send `thinking.type=enabled` plus the exact
+effort. Compatibility aliases such as `low`, `medium`, or `xhigh` are rejected
+instead of silently mapped. Empty effort emits no provider option. A profile
+default applies when the Session/call has no override, and `/effort default`
+restores that profile default or provider default.
+
+An unsupported or unknown value fails before provider-usage admission and
+dispatch; no level is guessed, clamped, or converted to a boolean. Manually
+switching to or resuming an incompatible model clears the prior effort visibly
+rather than guessing a replacement. The exact applied effort enters binding
+v1, role snapshots, call options, and the bounded provider-usage descriptor.
+One in-flight failover request instead preserves its frozen reasoning intent:
+an alternate that cannot lower that exact effort is skipped before dispatch
+rather than receiving a cleared or guessed value.
 
 ## Durable main-route binding and recovery
 
@@ -540,6 +579,8 @@ the explicit startup preflight owns network/auth probing.
 |---|---|---|
 | Legacy provider resolution | [`ResolveConfig`](../../../engine/provider/resolver.go) | Owns explicit, environment, settings, credential-store, and provider-default precedence for legacy routes. |
 | Portfolio compilation | [`CompilePortfolio`](../../../engine/config/portfolio.go) | Validates account/profile authority, metadata, roles, failover policy, and the immutable non-secret snapshot. |
+| Request capability policy | [`ResolveAdapterReasoningEffort`](../../../engine/model/reasoning_effort.go) | Separates canonical request intent, exact-model defaults, ordered adapter support, and provider wire dialects. |
+| Request lowering | [`buildProviderEffortOption`](../../../engine/execution/call.go) | Produces the final typed SDK option or DeepSeek wire fields immediately before provider admission and dispatch. |
 | Named credentials | [`ResolveNamedCredential`](../../../engine/auth/auth.go) | Resolves opaque user-owned credential references only when a selected route is constructed. |
 | Configured runtime | [`NewConfiguredRuntime`](../../../engine/provider/configured_runtime.go) | Joins source-aware configuration with the single shared CLI/ACP provider runtime. |
 | Client isolation | [`NewRouteIdentity`](../../../engine/provider/route_identity.go) | Defines the complete non-secret identity used to isolate and reuse provider clients. |
@@ -548,6 +589,7 @@ the explicit startup preflight owns network/auth probing.
 | Canonical dispatch | [`runCanonicalModelRound`](../../../engine/model_round.go) | Freezes model-visible inputs and owns retry, switching, stream classification, and final commit. |
 | Same-route retry | [`CallModelWithRetry`](../../../engine/execution/retry.go) | Keeps 429 and overload retry on one profile under the shared provider-call/deadline budget. |
 | Durable model changes | [`QueryEngine.ChangeModel`](../../../engine/execution_controls.go) | Serializes admission and checkpoint commit before changing the live main binding. |
+| Dynamic effort controls | [`QueryEngine.ReasoningEffortOptions`](../../../engine/execution_controls.go) | Projects the same exact model/adapter intersection to commands and ACP. |
 | Safe diagnostics | [`QueryEngine.DiagnosticsSnapshot`](../../../engine/diagnostics.go) | Exposes bounded runtime facts without credentials, endpoints, or opaque binding data. |
 | CLI composition | [`NewConfiguredRuntime` call](../../../cmd/yhc/cmd/root.go) | Proves the command runtime consumes the same compiled portfolio owner. |
 | ACP composition | [`NewConfiguredRuntime` call](../../../server/acp/agent.go) | Proves ACP Session construction uses the shared provider/runtime policy. |

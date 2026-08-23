@@ -11,11 +11,13 @@ import (
 // budgeting.
 const ActionSetEffort CommandAction = "set_effort"
 
-var effortLevels = []string{"default", "low", "medium", "high", "max"}
-
 type reasoningEffortControl interface {
 	ReasoningEffortCapability(context.Context) (supported bool, reason string, err error)
 	ReasoningEffort() string
+}
+
+type reasoningEffortOptionSource interface {
+	ReasoningEffortOptions(context.Context) ([]string, error)
 }
 
 func resolveEffortAvailability(
@@ -46,6 +48,10 @@ func resolveEffortAvailability(
 // model calls. Capability admission is resolved by the registry before this
 // handler runs.
 func executeEffort(ctx *CommandContext, args string) (*CommandResult, error) {
+	levels, err := availableEffortLevels(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(args) == "" {
 		current := "default"
 		if control, ok := ctx.Engine.(reasoningEffortControl); ok {
@@ -57,17 +63,17 @@ func executeEffort(ctx *CommandContext, args string) (*CommandResult, error) {
 			Output: fmt.Sprintf(
 				"Current reasoning effort: %s\nAvailable levels: %s\nUsage: /effort <level>",
 				current,
-				strings.Join(effortLevels, ", "),
+				strings.Join(levels, ", "),
 			),
 		}, nil
 	}
 
 	level := strings.ToLower(strings.TrimSpace(args))
-	if !validEffortLevel(level) {
+	if !validEffortLevel(level, levels) {
 		return nil, fmt.Errorf(
 			"unsupported reasoning effort %q (valid: %s)",
 			level,
-			strings.Join(effortLevels, ", "),
+			strings.Join(levels, ", "),
 		)
 	}
 
@@ -78,8 +84,30 @@ func executeEffort(ctx *CommandContext, args string) (*CommandResult, error) {
 	}, nil
 }
 
-func validEffortLevel(level string) bool {
-	for _, candidate := range effortLevels {
+func availableEffortLevels(cmdCtx *CommandContext) ([]string, error) {
+	if cmdCtx == nil || cmdCtx.Engine == nil {
+		return nil, fmt.Errorf("reasoning effort requires an active provider runtime")
+	}
+	control, ok := cmdCtx.Engine.(reasoningEffortOptionSource)
+	if !ok {
+		return nil, fmt.Errorf("the active runtime does not expose reasoning effort options")
+	}
+	ctx := cmdCtx.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	options, err := control.ReasoningEffortOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	levels := make([]string, 0, len(options)+1)
+	levels = append(levels, "default")
+	levels = append(levels, options...)
+	return levels, nil
+}
+
+func validEffortLevel(level string, levels []string) bool {
+	for _, candidate := range levels {
 		if level == candidate {
 			return true
 		}

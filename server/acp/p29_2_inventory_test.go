@@ -112,3 +112,58 @@ func TestP292ACPOptionsUseConfiguredInventorySelectors(t *testing.T) {
 		t.Fatalf("ACP model option labels = %#v", names)
 	}
 }
+
+func TestACPReasoningOptionsUseExactDeepSeekModelCapabilities(t *testing.T) {
+	required := modelcaps.EffectiveModelMetadata{
+		Text:         modelcaps.MetadataField[bool]{Value: true, Source: "test"},
+		Streaming:    modelcaps.MetadataField[bool]{Value: true, Source: "test"},
+		Tools:        modelcaps.MetadataField[bool]{Value: true, Source: "test"},
+		SystemPrompt: modelcaps.MetadataField[bool]{Value: true, Source: "test"},
+		Thinking:     modelcaps.MetadataField[bool]{Value: true, Source: "test"},
+		SupportedReasoningEfforts: modelcaps.MetadataField[[]string]{
+			Value:  []string{"none", "high", "max"},
+			Source: "test",
+		},
+	}
+	inventory := &p292ACPInventory{
+		snapshot: provider.RuntimeInventorySnapshot{
+			Revision: strings.Repeat("a", 64),
+			Default:  "deepseek",
+			Entries: []provider.RuntimeInventoryEntry{{
+				Selector:            "deepseek",
+				ProfileID:           "deepseek",
+				DisplayName:         "DeepSeek V4 Flash",
+				Provider:            string(provider.ProviderAgenticDeepSeek),
+				APIModel:            "deepseek-v4-flash",
+				Metadata:            required,
+				RouteIdentityDigest: strings.Repeat("1", 64),
+				MetadataDigest:      strings.Repeat("2", 64),
+			}},
+		},
+	}
+	cwd := t.TempDir()
+	eng := engine.NewQueryEngine(engine.QueryEngineConfig{
+		SessionID:     "deepseek-v4-acp-options",
+		CWD:           cwd,
+		TranscriptDir: filepath.Join(cwd, "transcripts"),
+		Model:         "deepseek",
+		ModelResolver: inventory,
+	})
+	t.Cleanup(eng.Close)
+
+	options := sessionConfigOptions(context.Background(), eng)
+	var values []string
+	for _, option := range options {
+		if option.Select == nil ||
+			option.Select.Id != acpsdk.SessionConfigId("effort") ||
+			option.Select.Options.Ungrouped == nil {
+			continue
+		}
+		for _, candidate := range *option.Select.Options.Ungrouped {
+			values = append(values, string(candidate.Value))
+		}
+	}
+	if got := strings.Join(values, ","); got != "default,none,high,max" {
+		t.Fatalf("ACP DeepSeek effort options = %q", got)
+	}
+}

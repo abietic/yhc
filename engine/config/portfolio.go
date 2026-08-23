@@ -396,16 +396,31 @@ func compileProfiles(
 			return nil, fmt.Errorf("model profile %q: %w", id, err)
 		}
 		accountID := AccountID(accountIDValue)
-		if _, ok := accounts[accountID]; !ok {
+		account, ok := accounts[accountID]
+		if !ok {
 			return nil, fmt.Errorf("model profile %q references missing or disabled account %q", id, accountID)
 		}
 		apiModel := strings.TrimSpace(profile.APIModel)
 		if apiModel == "" {
 			return nil, fmt.Errorf("model profile %q api_model must not be empty", id)
 		}
-		metadata, err := enginemodel.ResolvePortfolioMetadata(apiModel, profile.Metadata)
+		metadata, err := enginemodel.ResolvePortfolioMetadataForProvider(
+			account.Provider,
+			apiModel,
+			profile.Metadata,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("model profile %q metadata: %w", id, err)
+		}
+		for _, supported := range metadata.SupportedReasoningEfforts.Value {
+			if !enginemodel.SupportsAdapterReasoningEffort(account.Provider, supported) {
+				return nil, fmt.Errorf(
+					"model profile %q metadata reasoning effort %q cannot be lowered by provider %q",
+					id,
+					supported,
+					account.Provider,
+				)
+			}
 		}
 		effort, err := enginemodel.ValidateReasoningEffort(profile.Reasoning.DefaultEffort)
 		if err != nil {
@@ -415,6 +430,14 @@ func compileProfiles(
 			if !containsString(metadata.SupportedReasoningEfforts.Value, effort) {
 				return nil, fmt.Errorf("model profile %q default reasoning effort %q is not supported by its metadata", id, effort)
 			}
+		}
+		if effort != "" && !enginemodel.SupportsAdapterReasoningEffort(account.Provider, effort) {
+			return nil, fmt.Errorf(
+				"model profile %q default reasoning effort %q cannot be lowered by provider %q",
+				id,
+				effort,
+				account.Provider,
+			)
 		}
 		result[profileID] = ResolvedProfile{
 			ID:                profileID,

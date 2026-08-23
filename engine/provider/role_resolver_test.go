@@ -193,6 +193,9 @@ func TestRoleResolverReasoningPrecedenceAndAdapterTable(t *testing.T) {
 		{ProviderAgenticArk, "minimal", true},
 		{ProviderAgenticGemini, "high", true},
 		{ProviderAgenticGemini, "medium", false},
+		{ProviderAgenticDeepSeek, "none", true},
+		{ProviderAgenticDeepSeek, "high", true},
+		{ProviderAgenticDeepSeek, "max", true},
 		{ProviderAgenticDeepSeek, "low", false},
 		{ProviderAgenticQwen, "high", false},
 	}
@@ -212,6 +215,46 @@ func TestRoleResolverReasoningPrecedenceAndAdapterTable(t *testing.T) {
 				t.Fatalf("adapter effort error = %v, want ok=%t", err, test.ok)
 			}
 		})
+	}
+}
+
+func TestDeepSeekMaxFailoverSkipsAdapterWithoutExactEffort(t *testing.T) {
+	primary := roleTestEntry(
+		"primary",
+		ProviderAgenticDeepSeek,
+		"deepseek-v4-flash",
+		"max",
+	)
+	primary.Metadata.SupportedReasoningEfforts.Value = []string{"none", "high", "max"}
+	alternate := roleTestEntry(
+		"alternate",
+		ProviderAgenticOpenAI,
+		"gpt-5",
+		"",
+	)
+	alternate.Metadata.SupportedReasoningEfforts.Value = []string{"max"}
+	runtime := roleTestRuntime(nil, primary, alternate)
+	runtime.portfolio.Failover = map[engineconfig.ModelRole]engineconfig.ResolvedFailoverPolicy{
+		engineconfig.RoleMain: {
+			Alternates:       []engineconfig.ProfileID{"alternate"},
+			On:               []string{"overloaded"},
+			MaxSwitches:      1,
+			MaxProviderCalls: 6,
+			MaxElapsedMS:     45000,
+		},
+	}
+
+	snapshot, err := runtime.ResolveFailoverChain(RoleResolutionInput{
+		Role:         engineconfig.RoleMain,
+		MainSelector: "primary",
+		Requirements: RoleRequirements{RequestedEffort: "max"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Alternates) != 1 ||
+		snapshot.Alternates[0].AdmissionCode != "capability_reasoning_effort" {
+		t.Fatalf("failover candidate = %#v", snapshot.Alternates)
 	}
 }
 
