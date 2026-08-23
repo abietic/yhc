@@ -3160,12 +3160,13 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 	planActive := actionDescriptor.PlanActive
 	canonicalToolName := actionDescriptor.CanonicalToolName
 	planDecision := evaluatePlanToolPolicy(planToolPolicyRequest{
-		Active:    planActive,
-		ToolName:  canonicalToolName,
-		Input:     input,
-		SessionID: toolContextSessionID(toolCtx, e.config.SessionID),
-		AgentID:   toolContextAgentID(toolCtx, e.config.AgentID),
-		Registry:  e.toolRegistry,
+		Active:           planActive,
+		ToolName:         canonicalToolName,
+		Input:            input,
+		SessionID:        toolContextSessionID(toolCtx, e.config.SessionID),
+		AgentID:          toolContextAgentID(toolCtx, e.config.AgentID),
+		PlanFileIdentity: toolContextPlanFileIdentity(toolCtx),
+		Registry:         e.toolRegistry,
 	})
 	if !planDecision.Allowed {
 		return denyInvocationPolicy(planDecision.Reason)

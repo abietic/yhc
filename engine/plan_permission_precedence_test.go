@@ -92,6 +92,41 @@ func TestP20H0ExactPlanCapabilityPrecedesOrdinaryAsk(t *testing.T) {
 	}
 }
 
+func TestP20H0ExactPlanCapabilityUsesEngineOwnedRestoredIdentity(t *testing.T) {
+	oldHome := p17H0RealTempDir(t)
+	t.Setenv("HOME", oldHome)
+	exact := tools.GetPlanFilePath("session", "agent")
+
+	newHome := p17H0RealTempDir(t)
+	t.Setenv("HOME", newHome)
+	registry := p20H0PlanMutationRegistry()
+	eng := p20H0PlanEngine(registry, permission.ModePlan, nil)
+	toolCtx := p20H0ActivePlanContext()
+	toolCtx.Options.PlanFilePath = exact
+
+	var innerCalls atomic.Int32
+	allowed, reason := eng.wrapCanUseTool(func(
+		context.Context,
+		string,
+		map[string]any,
+		*ToolUseContext,
+	) (bool, string) {
+		innerCalls.Add(1)
+		return false, "ordinary prompt reached"
+	})(
+		context.Background(),
+		"Write",
+		map[string]any{"file_path": exact},
+		toolCtx,
+	)
+	if !allowed || reason != "" {
+		t.Fatalf("restored exact Plan capability = (%v, %q)", allowed, reason)
+	}
+	if innerCalls.Load() != 0 {
+		t.Fatalf("restored exact Plan capability reached ordinary permission %d times", innerCalls.Load())
+	}
+}
+
 func TestP20H0ExplicitDenyWinsExactPlanCapability(t *testing.T) {
 	home := p17H0RealTempDir(t)
 	t.Setenv("HOME", home)
