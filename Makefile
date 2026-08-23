@@ -1,4 +1,4 @@
-.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit desktop-backend desktop-backend-darwin-amd64 desktop-backend-darwin-arm64 desktop-backend-linux-amd64 desktop-backend-windows-amd64 desktop-stage-host desktop-stage-darwin-amd64 desktop-stage-darwin-arm64 desktop-stage-linux-amd64 desktop-stage-windows-amd64 desktop-install desktop-test desktop-check desktop-dev desktop-package desktop-package-darwin-amd64 desktop-package-darwin-arm64 desktop-package-linux-amd64 desktop-package-windows-amd64 desktop-package-smoke-darwin-amd64 desktop-package-smoke-darwin-arm64 desktop-package-smoke-linux-amd64 desktop-package-smoke-windows-amd64 desktop-unpacked-lifecycle-smoke-darwin-amd64 desktop-unpacked-window-reopen-smoke-darwin-amd64 desktop-unpacked-lifecycle-smoke-darwin-arm64 desktop-unpacked-window-reopen-smoke-darwin-arm64 desktop-unpacked-lifecycle-smoke-linux-amd64 desktop-unpacked-lifecycle-smoke-linux-amd64-ci desktop-unpacked-crash-containment-smoke-linux-amd64 desktop-unpacked-crash-containment-smoke-linux-amd64-ci desktop-unpacked-lifecycle-smoke-windows-amd64 publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom node-sbom node-license-check desktop-audit verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
+.PHONY: build clear test test-contract test-race test-pty test-fuzz-smoke test-e2e test-risk test-fault-injection test-fuzz-deep test-e2e-deep test-pty-deep eval-baseline run debug fmt fmt-check lint lint-new docs-check docs-check-ci verify verify-focused verify-merge verify-deep check-boundaries change-plan change-evidence change-evidence-ready iteration-policy-check iteration-metrics iteration-hook-benchmark worktree-audit force-desktop-build-identity desktop-backend desktop-backend-darwin-amd64 desktop-backend-darwin-arm64 desktop-backend-linux-amd64 desktop-backend-windows-amd64 desktop-stage-host desktop-stage-darwin-amd64 desktop-stage-darwin-arm64 desktop-stage-linux-amd64 desktop-stage-windows-amd64 desktop-install desktop-test desktop-check desktop-dev desktop-package desktop-package-darwin-amd64 desktop-package-darwin-arm64 desktop-package-linux-amd64 desktop-package-windows-amd64 desktop-package-smoke-darwin-amd64 desktop-package-smoke-darwin-arm64 desktop-package-smoke-linux-amd64 desktop-package-smoke-windows-amd64 desktop-unpacked-lifecycle-smoke-darwin-amd64 desktop-unpacked-window-reopen-smoke-darwin-amd64 desktop-unpacked-lifecycle-smoke-darwin-arm64 desktop-unpacked-window-reopen-smoke-darwin-arm64 desktop-unpacked-lifecycle-smoke-linux-amd64 desktop-unpacked-lifecycle-smoke-linux-amd64-ci desktop-unpacked-crash-containment-smoke-linux-amd64 desktop-unpacked-crash-containment-smoke-linux-amd64-ci desktop-unpacked-lifecycle-smoke-windows-amd64 publication-inventory publication-check-policy publication-scan-expression publication-materialize publication-check-tree publication-manifest publication-safety prepare-publication-tools prepare-govulncheck prepare-gitleaks prepare-cyclonedx-gomod vuln-check secret-check license-check sbom node-sbom node-license-check desktop-audit verify-publication verify-publication-tree setup-git-hooks prepare-gofumpt prepare-golangci-lint prepare-golangci-lint-v2 prepare-gotestsum prepare-dlv
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -119,19 +119,24 @@ build/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) go.mod go.sum
 # ── Clear ──────────────────────────────────────────────
 desktop-backend: desktop-stage-host
 
-build/desktop/darwin-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
+# Commit and dirty-state build identity are not representable by source mtimes.
+# Relink before every Desktop stage/package so a fresh app cannot retain an old
+# backend identity while still reusing Go's compilation cache.
+force-desktop-build-identity:
+
+build/desktop/darwin-amd64/yhc: force-desktop-build-identity $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/desktop/darwin-arm64/yhc: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
+build/desktop/darwin-arm64/yhc: force-desktop-build-identity $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/desktop/linux-amd64/yhc: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
+build/desktop/linux-amd64/yhc: force-desktop-build-identity $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
-build/desktop/windows-amd64/yhc.exe: $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
+build/desktop/windows-amd64/yhc.exe: force-desktop-build-identity $(SOURCES) $(WEBUI_ASSETS) desktop/package.json go.mod go.sum
 	@mkdir -p $(dir $@)
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(DESKTOP_LDFLAGS)" -o $@ ./cmd/yhc/
 
