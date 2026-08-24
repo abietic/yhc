@@ -28,6 +28,7 @@ const {
   parseArguments,
   parseDarwinProcessIdentity,
   parseDarwinScreenLockState,
+  parseDevToolsActivePort,
   parseDevToolsEndpoint,
   parseProcStat,
   readDarwinProcessIdentity,
@@ -60,6 +61,23 @@ test('DevTools discovery accepts one ephemeral loopback browser endpoint', () =>
       () => parseDevToolsEndpoint(`DevTools listening on ${invalid}`),
       /invalid loopback DevTools endpoint/,
     );
+  }
+});
+
+test('DevTools discovery accepts Chromium active-port file fallback', () => {
+  const endpoint = 'ws://127.0.0.1:43127/devtools/browser/01234567-89ab-cdef-0123-456789abcdef';
+  assert.equal(
+    parseDevToolsActivePort('43127\n/devtools/browser/01234567-89ab-cdef-0123-456789abcdef'),
+    endpoint,
+  );
+  for (const invalid of [
+    '',
+    '0\n/devtools/browser/id',
+    '43127\n/devtools/page/id',
+    '43127\n/devtools/browser/id?token=secret',
+    '43127\n/devtools/browser/id\nextra',
+  ]) {
+    assert.throws(() => parseDevToolsActivePort(invalid));
   }
 });
 

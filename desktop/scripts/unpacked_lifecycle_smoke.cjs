@@ -66,6 +66,31 @@ function parseDevToolsEndpoint(output) {
   return parsed.href;
 }
 
+function parseDevToolsActivePort(contents) {
+  const lines = String(contents).trim().split(/\r?\n/);
+  if (
+    lines.length !== 2 ||
+    !/^[0-9]+$/.test(lines[0]) ||
+    !/^\/devtools\/browser\/[^\s/?#]+$/.test(lines[1])
+  ) {
+    throw new Error('invalid DevTools active port file');
+  }
+  return parseDevToolsEndpoint(
+    `DevTools listening on ws://127.0.0.1:${lines[0]}${lines[1]}`,
+  );
+}
+
+function discoverDevToolsEndpoint(output, activePortPath) {
+  const logged = parseDevToolsEndpoint(output);
+  if (logged) return logged;
+  try {
+    return parseDevToolsActivePort(fs.readFileSync(activePortPath, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 function selectPageTarget(targets, expectedURL) {
   if (!Array.isArray(targets) || typeof expectedURL !== 'string' || expectedURL.length === 0) {
     throw new TypeError('bounded target list and URL required');
@@ -1749,10 +1774,13 @@ async function runSmoke(
       '--remote-debugging-port=0',
       `--user-data-dir=${path.join(temporaryRoot, 'profile')}`,
     ];
+    const activePortPath = path.join(temporaryRoot, 'profile', 'DevToolsActivePort');
     const launchCommand = layout.launcher === 'xvfb' ? xvfbRun : appPath;
     const launchArguments = layout.launcher === 'xvfb'
       ? [
         '-a',
+        '-e',
+        '/dev/stderr',
         '-s',
         '-screen 0 1440x920x24 -nolisten tcp',
         appPath,
@@ -1792,20 +1820,19 @@ async function runSmoke(
         throw new Error('Windows Desktop process identity did not match');
       }
     }
-    const endpoint = await deadline(new Promise((resolve, reject) => {
-      child.stderr.on('data', (chunk) => {
-        stderr = appendBounded(stderr, chunk);
-        try {
-          const discovered = parseDevToolsEndpoint(stderr);
-          if (discovered) resolve(discovered);
-        } catch (error) {
-          reject(error);
-        }
-      });
+    child.stderr.on('data', (chunk) => {
+      stderr = appendBounded(stderr, chunk);
+    });
+    const endpoint = await Promise.race([
+      poll(
+        () => discoverDevToolsEndpoint(stderr, activePortPath),
+        DEVTOOLS_TIMEOUT_MS,
+        'DevTools discovery',
+      ),
       exit.then(({ code, signal }) => {
-        reject(new Error(`Desktop exited before DevTools discovery (${code ?? signal})`));
-      }, reject);
-    }), DEVTOOLS_TIMEOUT_MS, 'DevTools discovery');
+        throw new Error(`Desktop exited before DevTools discovery (${code ?? signal})`);
+      }),
+    ]);
 
     connection = await CDPConnection.open(endpoint);
     const target = await poll(async () => {
@@ -2152,6 +2179,7 @@ module.exports = {
   parseArguments,
   parseDarwinProcessIdentity,
   parseDarwinScreenLockState,
+  parseDevToolsActivePort,
   parseDevToolsEndpoint,
   parseProcStat,
   parseWindowsProcessIdentity,

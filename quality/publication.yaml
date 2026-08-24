@@ -358,7 +358,7 @@ privacy:
       match_sha256: 795a63b98bda4946d23d3c13590bb1009b4ef993f891e5accc9dc44ba067dcd8
       purpose: runtime-loopback
     - path: desktop/scripts/unpacked_lifecycle_smoke.cjs
-      line: 569
+      line: 594
       rule_id: credential-assignment
       match_sha256: 5f1a6d0874f34755f0e9db5aba7bfce7a91e5c02d3172e9806e893ca245c21f8
       purpose: runtime-loopback
@@ -673,127 +673,137 @@ privacy:
       match_sha256: f5817aed0df15f0ff6491556384e001ef8501ff1b4937eced8926841bd46c537
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 47
+      line: 48
       rule_id: private-url
       match_sha256: b2791e18c089446a5a041721be059915c226f23da16166a6de6d1d5d0855c7d4
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 54
+      line: 55
       rule_id: private-url
       match_sha256: 49584357ad6ec3f79dfb1c461edfd04aed0d88882821e12bc9d001297fade042
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 55
+      line: 56
       rule_id: private-url
       match_sha256: 1cb5c39658a62b6418292705621341b6bbb5c66b0f09c8ad8bcbc6a156df29af
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 56
+      line: 57
       rule_id: private-url
       match_sha256: 080f99e7372b9350f5809021274823a55c6df7d81f01788bf60d8648e01c3716
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 57
+      line: 58
       rule_id: private-url
       match_sha256: 4866ba0e5f9d2a7cb93a8856ccbd6b4ac00438a34bd9ab1e6a721eeff6072d22
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 510
+      line: 68
+      rule_id: private-url
+      match_sha256: b2791e18c089446a5a041721be059915c226f23da16166a6de6d1d5d0855c7d4
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 70
+      rule_id: high-entropy-token
+      match_sha256: afaf8f548d345122de316103c8d241e7a1e22c67b7d1df1102f67ca65d8929d7
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 528
       rule_id: credential-assignment
       match_sha256: 92819818173d453054080948e9076af601304d743dfc51ad8f45e7ac3b55e961
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 511
+      line: 529
       rule_id: private-url
       match_sha256: 0f01f942f0175fbd9fe7b349159bfc91f7cd9c1c3c23b57fd24c6e2c9e072251
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 512
+      line: 530
       rule_id: credential-assignment
       match_sha256: ec9121032890bc1ecefba65ebc4d3221258029a89a10db63f8f5b628eb0c6076
-      purpose: synthetic-security-fixture
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 516
-      rule_id: private-url
-      match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
-      purpose: synthetic-security-fixture
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 521
-      rule_id: credential-assignment
-      match_sha256: faf3baa7e6aea236c6ccd3b8a4890c4822b30493851f0d1d5ebc55a9a559aeec
-      purpose: synthetic-security-fixture
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 527
-      rule_id: credential-assignment
-      match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
-      purpose: synthetic-security-fixture
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 528
-      rule_id: private-url
-      match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
       line: 534
       rule_id: private-url
+      match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 539
+      rule_id: credential-assignment
+      match_sha256: faf3baa7e6aea236c6ccd3b8a4890c4822b30493851f0d1d5ebc55a9a559aeec
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 545
+      rule_id: credential-assignment
+      match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 546
+      rule_id: private-url
+      match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 552
+      rule_id: private-url
       match_sha256: 5d1c61513b9fdb13e891e2e765fb70ff6f8d87830c7338c57e3173d324e45b02
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 535
+      line: 553
       rule_id: private-url
       match_sha256: 12439ce80393777b37cc147d85e3cf956e43c5cb60eeb99c8c488d0f389c2dcc
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 536
+      line: 554
       rule_id: private-url
       match_sha256: 6e55782268e2bec58a1826ca8e81b66e77054eb192b453c1eaa712455c44e7e2
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 573
+      line: 591
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 577
+      line: 595
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 593
+      line: 611
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 601
+      line: 619
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 650
+      line: 668
       rule_id: bearer-token
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 660
+      line: 678
       rule_id: bearer-token
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 680
+      line: 698
       rule_id: bearer-token
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 894
+      line: 912
       rule_id: credential-assignment
       match_sha256: 92819818173d453054080948e9076af601304d743dfc51ad8f45e7ac3b55e961
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 895
+      line: 913
       rule_id: credential-assignment
       match_sha256: ec9121032890bc1ecefba65ebc4d3221258029a89a10db63f8f5b628eb0c6076
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 968
+      line: 986
       rule_id: high-entropy-token
       match_sha256: 4fa34f0ebeccb0b16dccb24d2fbe510ffc0b2babed711fd73a191d2c53d517ac
       purpose: build-metadata
