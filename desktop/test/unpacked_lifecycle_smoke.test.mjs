@@ -17,6 +17,7 @@ const {
   activeTurnCrashContainmentMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
+  closePackagedDesktop,
   combineSmokeFailure,
   crashContainmentMatches,
   decodeSeedSession,
@@ -59,6 +60,53 @@ test('DevTools discovery accepts one ephemeral loopback browser endpoint', () =>
       /invalid loopback DevTools endpoint/,
     );
   }
+});
+
+test('browser close response timeout defers to bounded process-exit evidence', async () => {
+  const calls = [];
+  const connection = {
+    async send(method) {
+      calls.push(method);
+      throw new Error('CDP Browser.close timed out');
+    },
+    close() {
+      calls.push('socket.close');
+    },
+  };
+  const exited = Promise.resolve({ code: 0, signal: null });
+  const result = await closePackagedDesktop(
+    connection,
+    'renderer-session',
+    'browser',
+    exited,
+    {
+      async waitForExit(pending) {
+        calls.push('waitForExit');
+        return pending;
+      },
+    },
+  );
+  assert.deepEqual(result, { code: 0, signal: null });
+  assert.deepEqual(calls, ['Browser.close', 'socket.close', 'waitForExit']);
+
+  await assert.rejects(
+    closePackagedDesktop(connection, 'renderer-session', 'browser', new Promise(() => {}), {
+      waitForExit: async () => {
+        throw new Error('Desktop exit timed out');
+      },
+    }),
+    /Desktop exit timed out/,
+  );
+
+  await assert.rejects(
+    closePackagedDesktop({
+      send: async () => {
+        throw new Error('CDP Browser.close failed: denied');
+      },
+      close: () => assert.fail('unexpected CDP failure must not close through success path'),
+    }, 'renderer-session', 'browser', exited),
+    /CDP Browser\.close failed: denied/,
+  );
 });
 
 test('target selection requires one exact packaged renderer URL', () => {

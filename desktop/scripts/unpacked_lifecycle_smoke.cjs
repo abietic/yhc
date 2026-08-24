@@ -938,6 +938,34 @@ class CDPConnection {
   }
 }
 
+async function closePackagedDesktop(
+  connection,
+  rendererSessionID,
+  closeStrategy,
+  exit,
+  { waitForExit = (pending) => deadline(pending, APP_EXIT_TIMEOUT_MS, 'Desktop exit') } = {},
+) {
+  if (closeStrategy === 'browser') {
+    try {
+      await connection.send('Browser.close');
+    } catch (error) {
+      if (!/^(?:CDP Browser\.close timed out|CDP connection (?:closed|failed|is not open))$/.test(
+        error.message,
+      )) {
+        throw error;
+      }
+    }
+  } else {
+    try {
+      await evaluate(connection, rendererSessionID, 'globalThis.close(); true');
+    } catch (error) {
+      if (!/^CDP connection (?:closed|is not open)$/.test(error.message)) throw error;
+    }
+  }
+  connection.close();
+  return waitForExit(exit);
+}
+
 async function evaluate(connection, sessionId, expression) {
   const response = await connection.send('Runtime.evaluate', {
     expression,
@@ -1972,23 +2000,13 @@ async function runSmoke(
         throw new Error('packaged backend changed during window restoration');
       }
     }
-    if (layout.closeStrategy === 'browser') {
-      try {
-        await connection.send('Browser.close');
-      } catch (error) {
-        if (!/CDP connection (?:closed|failed|is not open)/.test(error.message)) throw error;
-      }
-    } else {
-      try {
-        await evaluate(connection, renderer.sessionId, 'globalThis.close(); true');
-      } catch (error) {
-        if (!/CDP connection (?:closed|is not open)/.test(error.message)) throw error;
-      }
-    }
-    connection.close();
+    const appExit = await closePackagedDesktop(
+      connection,
+      renderer.sessionId,
+      layout.closeStrategy,
+      exit,
+    );
     connection = null;
-
-    const appExit = await deadline(exit, APP_EXIT_TIMEOUT_MS, 'Desktop exit');
     if (appExit.code !== 0 || appExit.signal !== null) {
       throw new Error(`Desktop exited abnormally (${appExit.code ?? appExit.signal})`);
     }
@@ -2095,6 +2113,7 @@ module.exports = {
   activeTurnCrashContainmentMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
+  closePackagedDesktop,
   combineSmokeFailure,
   crashContainmentMatches,
   decodeSeedSession,
