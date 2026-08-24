@@ -1740,6 +1740,9 @@ async function runSmoke(
   const xvfbRun = layout.launcher === 'xvfb'
     ? findCommand('xvfb-run', environment.PATH)
     : null;
+  const xvfbErrorPath = layout.launcher === 'xvfb'
+    ? path.join(temporaryRoot, 'xvfb.stderr.log')
+    : null;
   let stderr = '';
   let connection;
   let child;
@@ -1780,7 +1783,7 @@ async function runSmoke(
       ? [
         '-a',
         '-e',
-        '/proc/self/fd/2',
+        xvfbErrorPath,
         '-s',
         '-screen 0 1440x920x24 -nolisten tcp',
         appPath,
@@ -2083,6 +2086,15 @@ async function runSmoke(
       no_restart_observation_ms: crashRequested ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
   } catch (error) {
+    if (xvfbErrorPath) {
+      try {
+        stderr = appendBounded(stderr, fs.readFileSync(xvfbErrorPath));
+      } catch (diagnosticError) {
+        if (diagnosticError?.code !== 'ENOENT') {
+          stderr = appendBounded(stderr, '\nXvfb diagnostic file could not be read.');
+        }
+      }
+    }
     const diagnostic = stderr.trim();
     const lockedSessionDiagnostic = layout.platform === 'darwin' &&
       readDarwinScreenLockState() === true
