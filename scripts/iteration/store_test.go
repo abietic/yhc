@@ -38,6 +38,17 @@ func TestEvidenceStoreReplacesOnlyUnexecutedBlockedGate(t *testing.T) {
 	if got := gateFor(evidence, "test-contract", string(VerifyFocused)); got == nil || got.Status != GatePass {
 		t.Fatalf("immutable gate = %#v, want pass", got)
 	}
+
+	if _, err := store.Record(plan, GateEvidence{Target: "docs-check", Level: string(VerifyMerge), Status: GateBlocked}); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err = store.Record(plan, GateEvidence{Target: "docs-check", Level: string(VerifyMerge), Status: GateNotApplicable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := gateFor(evidence, "docs-check", string(VerifyMerge)); got == nil || got.Status != GateNotApplicable {
+		t.Fatalf("recovered applicability gate = %#v, want not_applicable", got)
+	}
 }
 
 func TestEvidenceStoreExecutedAndNotApplicableGatesAreImmutable(t *testing.T) {
