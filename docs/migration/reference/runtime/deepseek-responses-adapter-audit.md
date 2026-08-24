@@ -87,7 +87,7 @@ The project-owned adapter:
 
 - accepts an HTTP(S) API root without userinfo, query, or fragment and appends
   `/responses` while preserving an explicit path prefix;
-- owns bearer authentication, bounded request/response/error bodies, typed
+- owns Authorization-header authentication, bounded request/response/error bodies, typed
   conversion/protocol/API/transport errors, and redacted error formatting;
 - maps system, user, assistant reasoning/text/function calls, function results,
   function tools, tool choice, structured text, user isolation, token usage,
@@ -101,8 +101,12 @@ The project-owned adapter:
   which the existing classic-message bridge projects into canonical finish
   reasons; and
 - changes the provider default to `deepseek-v4-flash`, adds the exact vision
-  model to the catalog/registry, and publishes its image, tool, streaming, and
-  reasoning capabilities through the existing provider/model intersection.
+  model to the catalog/registry, retires obsolete V3/R1 picker entries and the
+  stale `deepseek` -> V3 shorthand, and publishes image, tool, streaming, and
+  reasoning capabilities through the existing provider/model intersection;
+- preserves requested token log probabilities in the typed DeepSeek response
+  extension and the classic YHC response metadata instead of advertising a
+  request-only `top_logprobs` control.
 
 ## Verification boundary
 

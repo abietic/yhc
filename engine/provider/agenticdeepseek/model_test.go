@@ -46,7 +46,7 @@ func TestGenerateUsesResponsesWithVisionToolsAndUsage(t *testing.T) {
 			"model":"deepseek-v4-flash-vision-exp",
 			"output":[
 				{"type":"reasoning","id":"rs-1","status":"completed","content":[{"type":"reasoning_text","text":"think"}]},
-				{"type":"message","id":"msg-1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"answer"}]},
+				{"type":"message","id":"msg-1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"answer","logprobs":[{"token":"answer","logprob":-0.25,"bytes":[97],"top_logprobs":[{"token":"answer","logprob":-0.25,"bytes":[97]},{"token":"reply","logprob":-1.5,"bytes":[114]}]}]}]},
 				{"type":"function_call","id":"fc-2","status":"completed","call_id":"call-2","name":"next_tool","arguments":"{\"q\":\"x\"}"}
 			],
 			"usage":{
@@ -183,6 +183,12 @@ func TestGenerateUsesResponsesWithVisionToolsAndUsage(t *testing.T) {
 	ext, ok := out.ResponseMeta.Extension.(*ResponseMetaExtension)
 	if !ok || ext.ResponseID != "resp-1" || ext.Status != ResponseStatusCompleted || ext.FinishReason != "tool_calls" {
 		t.Errorf("response extension = %#v", out.ResponseMeta.Extension)
+	}
+	if ext.LogProbs == nil || len(ext.LogProbs.Content) != 1 ||
+		ext.LogProbs.Content[0].Token != "answer" ||
+		len(ext.LogProbs.Content[0].TopLogProbs) != 2 ||
+		ext.LogProbs.Content[0].TopLogProbs[1].Token != "reply" {
+		t.Errorf("response logprobs = %#v", ext.LogProbs)
 	}
 }
 

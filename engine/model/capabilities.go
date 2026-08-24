@@ -826,7 +826,7 @@ var aliases = map[string]string{
 	"claude-3-haiku":   "claude-3-haiku-20240307",
 
 	// Convenience short names
-	"deepseek": "deepseek-v3",
+	"deepseek": "deepseek-v4-flash",
 }
 
 // ResolveModelAlias returns the canonical identifier for a built-in model

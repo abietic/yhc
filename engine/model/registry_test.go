@@ -1,6 +1,7 @@
 package model
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 		{"Anthropic", 5},
 		{"OpenAI", 4},
 		{"Google", 2},
-		{"DeepSeek", 4},
+		{"DeepSeek", 3},
 		{"Qwen", 2},
 	}
 
@@ -38,6 +39,24 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDefaultRegistryPublishesOnlyCurrentDeepSeekResponsesModels(t *testing.T) {
+	t.Parallel()
+
+	models := DefaultRegistry().ByProvider("DeepSeek")
+	got := make([]string, 0, len(models))
+	for _, entry := range models {
+		got = append(got, entry.ModelID)
+	}
+	want := []string{
+		"deepseek-v4-pro",
+		"deepseek-v4-flash",
+		"deepseek-v4-flash-vision-exp",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DeepSeek registry = %#v, want %#v", got, want)
 	}
 }
 

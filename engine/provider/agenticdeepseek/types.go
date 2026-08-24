@@ -179,12 +179,13 @@ func NewFileIDToolResultImage(fileID string) *schema.FunctionToolResultContentBl
 // ResponseMetaExtension retains DeepSeek Responses terminal semantics without
 // exposing raw provider bodies.
 type ResponseMetaExtension struct {
-	ResponseID       string         `json:"response_id,omitempty"`
-	Status           ResponseStatus `json:"status,omitempty"`
-	FinishReason     string         `json:"finish_reason,omitempty"`
-	IncompleteReason string         `json:"incomplete_reason,omitempty"`
-	ErrorCode        string         `json:"error_code,omitempty"`
-	Model            string         `json:"model,omitempty"`
+	ResponseID       string           `json:"response_id,omitempty"`
+	Status           ResponseStatus   `json:"status,omitempty"`
+	FinishReason     string           `json:"finish_reason,omitempty"`
+	IncompleteReason string           `json:"incomplete_reason,omitempty"`
+	ErrorCode        string           `json:"error_code,omitempty"`
+	Model            string           `json:"model,omitempty"`
+	LogProbs         *schema.LogProbs `json:"logprobs,omitempty"`
 }
 
 // APIError is a bounded, typed DeepSeek API or response.failed error.

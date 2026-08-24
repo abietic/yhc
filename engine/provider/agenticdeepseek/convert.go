@@ -108,8 +108,22 @@ type outputItem struct {
 }
 
 type outputContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string            `json:"type"`
+	Text     string            `json:"text"`
+	LogProbs []responseLogProb `json:"logprobs"`
+}
+
+type responseLogProb struct {
+	Token       string               `json:"token"`
+	LogProb     float64              `json:"logprob"`
+	Bytes       []int64              `json:"bytes"`
+	TopLogProbs []responseTopLogProb `json:"top_logprobs"`
+}
+
+type responseTopLogProb struct {
+	Token   string  `json:"token"`
+	LogProb float64 `json:"logprob"`
+	Bytes   []int64 `json:"bytes"`
 }
 
 type responseUsage struct {
@@ -510,7 +524,7 @@ func convertTools(tools []*schema.ToolInfo, choice *schema.AgenticToolChoice) ([
 			return nil, nil, conversionError(-1, -1, "tool_name_duplicate")
 		}
 		seen[tool.Name] = struct{}{}
-		params, err := tool.ParamsOneOf.ToJSONSchema()
+		params, err := tool.ToJSONSchema()
 		if err != nil {
 			return nil, nil, conversionError(-1, -1, "tool_schema_invalid")
 		}
@@ -609,6 +623,7 @@ func responseToAgentic(response *responseObject) (*schema.AgenticMessage, error)
 }
 
 func responseMeta(response *responseObject) *schema.AgenticResponseMeta {
+	logProbs := responseLogProbs(response)
 	meta := &schema.AgenticResponseMeta{
 		Extension: &ResponseMetaExtension{
 			ResponseID:       response.ID,
@@ -617,6 +632,7 @@ func responseMeta(response *responseObject) *schema.AgenticResponseMeta {
 			IncompleteReason: incompleteReason(response),
 			ErrorCode:        responseErrorCode(response),
 			Model:            response.Model,
+			LogProbs:         logProbs,
 		},
 	}
 	if response.Usage != nil {
@@ -629,6 +645,43 @@ func responseMeta(response *responseObject) *schema.AgenticResponseMeta {
 		meta.TokenUsage.CompletionTokensDetails.ReasoningTokens = response.Usage.OutputTokensDetails.ReasoningTokens
 	}
 	return meta
+}
+
+func responseLogProbs(response *responseObject) *schema.LogProbs {
+	if response == nil {
+		return nil
+	}
+	var converted []schema.LogProb
+	for _, item := range response.Output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, content := range item.Content {
+			if content.Type != "output_text" {
+				continue
+			}
+			for _, logProb := range content.LogProbs {
+				top := make([]schema.TopLogProb, 0, len(logProb.TopLogProbs))
+				for _, candidate := range logProb.TopLogProbs {
+					top = append(top, schema.TopLogProb{
+						Token:   candidate.Token,
+						LogProb: candidate.LogProb,
+						Bytes:   append([]int64(nil), candidate.Bytes...),
+					})
+				}
+				converted = append(converted, schema.LogProb{
+					Token:       logProb.Token,
+					LogProb:     logProb.LogProb,
+					Bytes:       append([]int64(nil), logProb.Bytes...),
+					TopLogProbs: top,
+				})
+			}
+		}
+	}
+	if len(converted) == 0 {
+		return nil
+	}
+	return &schema.LogProbs{Content: converted}
 }
 
 func finishReason(response *responseObject) string {

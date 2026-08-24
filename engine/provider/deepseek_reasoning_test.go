@@ -170,3 +170,45 @@ func TestDeepSeekVisionInputAndToolsReachResponsesWire(t *testing.T) {
 		t.Fatalf("tools = %#v", body["tools"])
 	}
 }
+
+func TestDeepSeekResponsesLogProbsReachClassicModelMetadata(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id":"logprobs-fixture",
+			"object":"response",
+			"status":"completed",
+			"model":"deepseek-v4-flash",
+			"output":[{"type":"message","id":"msg-1","status":"completed","role":"assistant","content":[{
+				"type":"output_text",
+				"text":"ok",
+				"logprobs":[{"token":"ok","logprob":-0.1,"bytes":[111,107],"top_logprobs":[{"token":"ok","logprob":-0.1,"bytes":[111,107]}]}]
+			}]}]
+		}`)
+	}))
+	defer server.Close()
+
+	inner, err := newAgenticDeepSeek(context.Background(), Config{
+		Provider: ProviderAgenticDeepSeek,
+		BaseURL:  server.URL,
+		APIKey:   t.Name(),
+		Model:    "deepseek-v4-flash",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := wrapAgenticModel(inner).Generate(
+		context.Background(),
+		[]*schema.Message{{Role: schema.User, Content: "hello"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ResponseMeta == nil || message.ResponseMeta.LogProbs == nil ||
+		len(message.ResponseMeta.LogProbs.Content) != 1 ||
+		message.ResponseMeta.LogProbs.Content[0].Token != "ok" {
+		t.Fatalf("classic response logprobs = %#v", message.ResponseMeta)
+	}
+}

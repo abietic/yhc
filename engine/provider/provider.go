@@ -856,12 +856,19 @@ func legacyResponseMeta(am *schema.AgenticMessage) *schema.ResponseMeta {
 		usage = am.ResponseMeta.TokenUsage
 	}
 	finishReason := agenticFinishReason(am)
-	if usage == nil && finishReason == "" {
+	var logProbs *schema.LogProbs
+	if am.ResponseMeta != nil {
+		if ext, ok := am.ResponseMeta.Extension.(*agenticdeepseek.ResponseMetaExtension); ok && ext != nil {
+			logProbs = ext.LogProbs
+		}
+	}
+	if usage == nil && finishReason == "" && logProbs == nil {
 		return nil
 	}
 	return &schema.ResponseMeta{
 		Usage:        usage,
 		FinishReason: finishReason,
+		LogProbs:     logProbs,
 	}
 }
 

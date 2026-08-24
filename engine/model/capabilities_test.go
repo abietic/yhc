@@ -188,8 +188,8 @@ func TestGetCapabilities_PartialNameMatching(t *testing.T) {
 		{
 			name:        "deepseek alias",
 			input:       "deepseek",
-			wantContext: 128000,
-			wantOutput:  8192,
+			wantContext: 1000000,
+			wantOutput:  384000,
 		},
 	}
 
