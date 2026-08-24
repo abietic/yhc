@@ -1258,13 +1258,15 @@ func sessionConfigOptions(
 	modelOption.Select.Category = &modelCategory
 	options := []acpsdk.SessionConfigOption{modelOption}
 
-	if supported, _, err := eng.ReasoningEffortCapability(ctx); err == nil && supported {
+	if supportedEfforts, err := eng.ReasoningEffortOptions(ctx); err == nil && len(supportedEfforts) > 0 {
 		effortValues := acpsdk.SessionConfigSelectOptionsUngrouped{
 			{Name: "Provider default", Value: "default"},
-			{Name: "Low", Value: "low"},
-			{Name: "Medium", Value: "medium"},
-			{Name: "High", Value: "high"},
-			{Name: "Max", Value: "max"},
+		}
+		for _, effort := range supportedEfforts {
+			effortValues = append(effortValues, acpsdk.SessionConfigSelectOption{
+				Name:  displayReasoningEffort(effort),
+				Value: acpsdk.SessionConfigValueId(effort),
+			})
 		}
 		currentEffort := eng.ReasoningEffort()
 		if currentEffort == "" {
@@ -1281,6 +1283,14 @@ func sessionConfigOptions(
 		options = append(options, effortOption)
 	}
 	return options
+}
+
+func displayReasoningEffort(effort string) string {
+	effort = strings.TrimSpace(effort)
+	if effort == "" {
+		return effort
+	}
+	return strings.ToUpper(effort[:1]) + effort[1:]
 }
 
 func sessionModeState(eng *engine.QueryEngine) *acpsdk.SessionModeState {

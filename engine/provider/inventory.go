@@ -84,7 +84,8 @@ func (r *Runtime) ResolveInventorySelector(
 	if err != nil {
 		return RuntimeInventoryEntry{}, err
 	}
-	metadata, err := enginemodel.ResolvePortfolioMetadata(
+	metadata, err := enginemodel.ResolvePortfolioMetadataForProvider(
+		string(resolved.Provider),
 		resolved.Model,
 		enginemodel.MetadataOverrides{},
 	)

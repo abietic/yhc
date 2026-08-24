@@ -604,7 +604,7 @@ desktop-package-smoke-darwin-amd64: desktop-stage-darwin-amd64 desktop-install
 desktop-package-smoke-darwin-arm64: desktop-stage-darwin-arm64 desktop-install
 	npm --prefix desktop run package -- --mac --arm64
 
-desktop-package-smoke-linux-amd64: desktop-stage-linux-amd64
+desktop-package-smoke-linux-amd64: desktop-stage-linux-amd64 desktop-install
 	npm --prefix desktop run package -- --linux --x64
 
 desktop-package-smoke-windows-amd64: desktop-stage-windows-amd64 desktop-install

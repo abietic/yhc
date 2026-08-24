@@ -618,12 +618,60 @@ func TestCallModelLowersProviderReasoningEffortThroughTypedOptions(t *testing.T)
 	}
 }
 
+func TestCallModelLowersDeepSeekV4ReasoningToExactWireFields(t *testing.T) {
+	for _, tc := range []struct {
+		effort         string
+		wantThinking   string
+		wantWireEffort string
+	}{
+		{effort: "none", wantThinking: "disabled"},
+		{effort: "high", wantThinking: "enabled", wantWireEffort: "high"},
+		{effort: "max", wantThinking: "enabled", wantWireEffort: "max"},
+	} {
+		t.Run(tc.effort, func(t *testing.T) {
+			chatModel := &captureCallOptionsModel{}
+			_, err := CallModel(
+				context.Background(),
+				chatModel,
+				[]*schema.Message{{Role: schema.User, Content: "hello"}},
+				nil,
+				nil,
+				CallModelOptions{
+					Provider:    providerAgenticDeepSeek,
+					EffortValue: tc.effort,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			extraFields, ok := extractOpenAIACLExtraFields(chatModel.streamOptions)
+			if !ok {
+				t.Fatalf("DeepSeek ACL extra fields missing from %#v", chatModel.streamOptions)
+			}
+			thinking, ok := extraFields["thinking"].(map[string]any)
+			if !ok || thinking["type"] != tc.wantThinking {
+				t.Fatalf("thinking = %#v, want type %q", extraFields["thinking"], tc.wantThinking)
+			}
+			wireEffort, hasWireEffort := extraFields["reasoning_effort"]
+			if tc.wantWireEffort == "" {
+				if hasWireEffort {
+					t.Fatalf("disabled thinking must omit reasoning_effort, got %#v", wireEffort)
+				}
+				return
+			}
+			if wireEffort != tc.wantWireEffort {
+				t.Fatalf("reasoning_effort = %#v, want %q", wireEffort, tc.wantWireEffort)
+			}
+		})
+	}
+}
+
 func TestCallModelRejectsUnsupportedEffortBeforeProviderUse(t *testing.T) {
 	for _, tc := range []struct {
 		provider string
 		effort   string
 	}{
-		{provider: providerAgenticDeepSeek, effort: "high"},
+		{provider: providerAgenticDeepSeek, effort: "low"},
 		{provider: providerAgenticQwen, effort: "low"},
 		{provider: providerAgenticGemini, effort: "medium"},
 		{provider: providerAgenticArk, effort: "xhigh"},
@@ -790,6 +838,28 @@ func extractImplSpecificPayload(
 	arg := reflect.New(fnType.In(0).Elem())
 	fnValue.Call([]reflect.Value{arg})
 	return arg.Elem(), true
+}
+
+func extractOpenAIACLExtraFields(options []model.Option) (map[string]any, bool) {
+	for _, option := range options {
+		payload, ok := extractImplSpecificPayload(option, "openai.openaiOptions")
+		if !ok {
+			continue
+		}
+		field := payload.FieldByName("ExtraFields")
+		if !field.IsValid() {
+			continue
+		}
+		field = reflect.NewAt(
+			field.Type(),
+			unsafe.Pointer(field.UnsafeAddr()),
+		).Elem()
+		if field.IsNil() {
+			continue
+		}
+		return field.Interface().(map[string]any), true
+	}
+	return nil, false
 }
 
 func TestCallModelForwardsFastModeAsSpeedField(t *testing.T) {

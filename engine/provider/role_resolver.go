@@ -132,17 +132,26 @@ func (r *Runtime) resolveExactRoleCall(
 		}
 	}
 
-	effort := strings.ToLower(strings.TrimSpace(
-		input.Requirements.RequestedEffort,
-	))
-	if effort == "" && source == RoleCallSourceInheritedMain {
-		effort = strings.ToLower(strings.TrimSpace(input.MainReasoning))
+	rawEffort := input.Requirements.RequestedEffort
+	if strings.TrimSpace(rawEffort) == "" && source == RoleCallSourceInheritedMain {
+		rawEffort = input.MainReasoning
 	}
-	if effort == "" {
-		effort = strings.ToLower(strings.TrimSpace(entry.ReasoningDefault))
+	if strings.TrimSpace(rawEffort) == "" {
+		rawEffort = entry.ReasoningDefault
+	}
+	effort, err := enginemodel.ValidateReasoningEffort(rawEffort)
+	if err != nil {
+		return RoleCallSnapshot{}, fmt.Errorf(
+			"model role %q has invalid reasoning effort: %w",
+			role,
+			err,
+		)
 	}
 	if effort != "" {
-		if entry.Metadata.SupportedReasoningEfforts.Source == "" ||
+		if (entry.Metadata.Thinking.Source != "" &&
+			entry.Metadata.Thinking.Source != "unknown" &&
+			!entry.Metadata.Thinking.Value) ||
+			entry.Metadata.SupportedReasoningEfforts.Source == "" ||
 			entry.Metadata.SupportedReasoningEfforts.Source == "unknown" ||
 			!containsNormalized(
 				entry.Metadata.SupportedReasoningEfforts.Value,

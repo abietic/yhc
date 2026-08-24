@@ -2142,7 +2142,7 @@ Use quoted rule arguments so parsing is deterministic:
 	r.mustRegister(&Command{
 		Name:                "effort",
 		Description:         "Show or change reasoning effort level",
-		Usage:               "/effort [default|low|medium|high|max]",
+		Usage:               "/effort [level]",
 		ResolveAvailability: resolveEffortAvailability,
 		legacyExecute:       executeEffort,
 	})

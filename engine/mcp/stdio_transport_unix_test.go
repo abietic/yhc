@@ -87,8 +87,8 @@ func TestStdioProcessTransportCloseKillsStubbornProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
+	t.Cleanup(func() { _ = conn.Close() })
 	if err := waitForFile(pidsFile); err != nil {
-		_ = conn.Close()
 		t.Fatal(err)
 	}
 	pids := readPIDs(t, pidsFile)
@@ -281,7 +281,9 @@ func TestStdioTransportHelperProcess(*testing.T) {
 		if err := child.Start(); err != nil {
 			os.Exit(3)
 		}
-		_ = os.WriteFile(record, []byte(fmt.Sprintf("%d\n%d\n", os.Getpid(), child.Process.Pid)), 0o600)
+		if err := writePIDRecord(record, os.Getpid(), child.Process.Pid); err != nil {
+			os.Exit(7)
+		}
 		for {
 			time.Sleep(time.Second)
 		}
@@ -305,11 +307,9 @@ func TestStdioTransportHelperProcess(*testing.T) {
 		if err := child.Start(); err != nil {
 			os.Exit(6)
 		}
-		_ = os.WriteFile(
-			record,
-			[]byte(fmt.Sprintf("%d\n%d\n", os.Getpid(), child.Process.Pid)),
-			0o600,
-		)
+		if err := writePIDRecord(record, os.Getpid(), child.Process.Pid); err != nil {
+			os.Exit(7)
+		}
 		server := sdkmcp.NewServer(
 			&sdkmcp.Implementation{Name: "exit-tree-test", Version: "1"},
 			nil,
@@ -346,6 +346,18 @@ func TestStdioTransportHelperProcess(*testing.T) {
 	default:
 		os.Exit(4)
 	}
+}
+
+func writePIDRecord(path string, pids ...int) error {
+	var content strings.Builder
+	for _, pid := range pids {
+		fmt.Fprintf(&content, "%d\n", pid)
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, []byte(content.String()), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temporary, path)
 }
 
 func waitForFile(path string) error {

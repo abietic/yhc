@@ -194,12 +194,22 @@ func (e *QueryEngine) resolveModelBindingCandidate(
 	if !ok {
 		state, err := e.resolveModelControl(ctx, modelSpec)
 		if err == nil {
-			reasoning = strings.ToLower(strings.TrimSpace(reasoning))
-			if state.SupportsReasoningEffort {
-				state.ReasoningEffort = reasoning
-			} else {
-				state.ReasoningEffort = ""
+			reasoning, err = modelcaps.ValidateReasoningEffort(reasoning)
+			if err != nil {
+				return ModelControlState{}, nil, err
 			}
+			if reasoning != "" && !reasoningEffortOptionContains(
+				state.SupportedReasoningEfforts,
+				reasoning,
+			) {
+				return ModelControlState{}, nil, fmt.Errorf(
+					"%w: model selector %q does not support reasoning effort %q",
+					errModelReasoningUnsupported,
+					modelSpec,
+					reasoning,
+				)
+			}
+			state.ReasoningEffort = reasoning
 		}
 		return state, nil, err
 	}
@@ -225,28 +235,30 @@ func (e *QueryEngine) resolveModelBindingCandidate(
 		Model:     resolved.Model,
 	}
 	_, legacyRoute := splitEngineLegacySelector(entry.Selector)
-	state.SupportsReasoningEffort = inventoryHasAdapterReasoningEffort(
+	state.SupportedReasoningEfforts = inventoryReasoningEffortOptions(
 		entry,
 		legacyRoute,
 	)
-	reasoning = strings.ToLower(strings.TrimSpace(reasoning))
+	state.SupportsReasoningEffort = len(state.SupportedReasoningEfforts) > 0
+	reasoning, err = modelcaps.ValidateReasoningEffort(reasoning)
+	if err != nil {
+		return ModelControlState{}, nil, err
+	}
 	if reasoning == "" {
-		reasoning = strings.ToLower(strings.TrimSpace(entry.ReasoningDefault))
+		reasoning, err = modelcaps.ValidateReasoningEffort(entry.ReasoningDefault)
+		if err != nil {
+			return ModelControlState{}, nil, fmt.Errorf(
+				"model selector %q has invalid default reasoning effort: %w",
+				entry.Selector,
+				err,
+			)
+		}
 	}
 	if reasoning != "" {
-		metadataSupported := inventoryReasoningEffortSupported(entry, reasoning)
-		if legacyRoute &&
-			resolved.Provider == provider.ProviderAgenticClaude &&
-			entry.Metadata.Thinking.Source != "" &&
-			entry.Metadata.Thinking.Source != "unknown" &&
-			entry.Metadata.Thinking.Value {
-			metadataSupported = true
-		}
-		if !metadataSupported ||
-			!modelcaps.SupportsAdapterReasoningEffort(
-				entry.Provider,
-				reasoning,
-			) {
+		if !reasoningEffortOptionContains(
+			state.SupportedReasoningEfforts,
+			reasoning,
+		) {
 			return ModelControlState{}, nil, fmt.Errorf(
 				"%w: model selector %q does not support reasoning effort %q",
 				errModelReasoningUnsupported,
@@ -288,42 +300,46 @@ func (e *QueryEngine) resolveModelBindingCandidate(
 	return state, binding, nil
 }
 
-func inventoryReasoningEffortSupported(
-	entry provider.RuntimeInventoryEntry,
-	effort string,
-) bool {
-	field := entry.Metadata.SupportedReasoningEfforts
-	if field.Source == "" || field.Source == "unknown" {
-		return false
-	}
-	for _, supported := range field.Value {
-		if strings.EqualFold(strings.TrimSpace(supported), effort) {
-			return true
-		}
-	}
-	return false
-}
-
-func inventoryHasAdapterReasoningEffort(
+func inventoryReasoningEffortOptions(
 	entry provider.RuntimeInventoryEntry,
 	legacyRoute bool,
-) bool {
+) []string {
+	if entry.Metadata.Thinking.Source != "" &&
+		entry.Metadata.Thinking.Source != "unknown" &&
+		!entry.Metadata.Thinking.Value {
+		return nil
+	}
 	if legacyRoute &&
 		entry.Provider == string(provider.ProviderAgenticClaude) &&
 		entry.Metadata.Thinking.Source != "" &&
 		entry.Metadata.Thinking.Source != "unknown" &&
-		entry.Metadata.Thinking.Value {
-		return true
+		entry.Metadata.Thinking.Value &&
+		(entry.Metadata.SupportedReasoningEfforts.Source == "" ||
+			entry.Metadata.SupportedReasoningEfforts.Source == "unknown") {
+		return modelcaps.AdapterReasoningEfforts(entry.Provider)
 	}
 	field := entry.Metadata.SupportedReasoningEfforts
 	if field.Source == "" || field.Source == "unknown" {
-		return false
+		return nil
 	}
-	for _, effort := range field.Value {
-		if modelcaps.SupportsAdapterReasoningEffort(
-			entry.Provider,
-			effort,
-		) {
+	allowed := make(map[string]struct{}, len(field.Value))
+	for _, raw := range field.Value {
+		if effort, err := modelcaps.ValidateReasoningEffort(raw); err == nil && effort != "" {
+			allowed[effort] = struct{}{}
+		}
+	}
+	options := make([]string, 0, len(allowed))
+	for _, effort := range modelcaps.AdapterReasoningEfforts(entry.Provider) {
+		if _, ok := allowed[effort]; ok {
+			options = append(options, effort)
+		}
+	}
+	return options
+}
+
+func reasoningEffortOptionContains(options []string, wanted string) bool {
+	for _, option := range options {
+		if option == wanted {
 			return true
 		}
 	}
@@ -454,23 +470,11 @@ func (e *QueryEngine) admitResumedModelBinding(
 			if entry, resolveErr := inventory.ResolveInventorySelector(
 				selector,
 			); resolveErr == nil {
-				metadataSupported := inventoryReasoningEffortSupported(
-					entry,
-					resumeReasoning,
-				)
 				_, legacyRoute := splitEngineLegacySelector(entry.Selector)
-				if legacyRoute &&
-					entry.Provider == string(provider.ProviderAgenticClaude) &&
-					entry.Metadata.Thinking.Source != "" &&
-					entry.Metadata.Thinking.Source != "unknown" &&
-					entry.Metadata.Thinking.Value {
-					metadataSupported = true
-				}
-				if !metadataSupported ||
-					!modelcaps.SupportsAdapterReasoningEffort(
-						entry.Provider,
-						resumeReasoning,
-					) {
+				if !reasoningEffortOptionContains(
+					inventoryReasoningEffortOptions(entry, legacyRoute),
+					resumeReasoning,
+				) {
 					resumeReasoning = ""
 					clearPersistedReasoning = true
 				}

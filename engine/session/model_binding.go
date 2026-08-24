@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	enginemodel "github.com/abietic/yhc/engine/model"
 )
 
 const PersistedModelBindingVersion uint16 = 1
@@ -187,14 +189,8 @@ func (b *PersistedModelBinding) ValidateV1() error {
 	if b.MaxOutputTokens != nil && *b.MaxOutputTokens <= 0 {
 		return fmt.Errorf("invalid model binding output limit")
 	}
-	if b.ReasoningEffort != "" &&
-		(b.ReasoningEffort != strings.TrimSpace(b.ReasoningEffort) ||
-			b.ReasoningEffort != strings.ToLower(b.ReasoningEffort)) {
-		return fmt.Errorf("invalid model binding reasoning effort")
-	}
-	switch b.ReasoningEffort {
-	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max":
-	default:
+	validatedEffort, err := enginemodel.ValidateReasoningEffort(b.ReasoningEffort)
+	if err != nil || validatedEffort != b.ReasoningEffort {
 		return fmt.Errorf("unsupported model binding reasoning effort")
 	}
 	return nil

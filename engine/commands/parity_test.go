@@ -11,13 +11,29 @@ type effortCapabilityStub struct {
 	supported bool
 	reason    string
 	current   string
+	options   []string
 }
 
 func (s *effortCapabilityStub) ReasoningEffortCapability(context.Context) (bool, string, error) {
 	return s.supported, s.reason, nil
 }
 
+func (s *effortCapabilityStub) ReasoningEffortOptions(context.Context) ([]string, error) {
+	if s.options != nil {
+		return append([]string(nil), s.options...), nil
+	}
+	return []string{"low", "medium", "high", "max"}, nil
+}
+
 func (s *effortCapabilityStub) ReasoningEffort() string { return s.current }
+
+type effortAvailabilityOnlyStub struct{}
+
+func (*effortAvailabilityOnlyStub) ReasoningEffortCapability(context.Context) (bool, string, error) {
+	return true, "", nil
+}
+
+func (*effortAvailabilityOnlyStub) ReasoningEffort() string { return "default" }
 
 // ---------------------------------------------------------------------------
 // Command output structure parity tests
@@ -116,6 +132,7 @@ func TestEffortDiscoveryHelpAndDispatchShareRuntimeCapability(t *testing.T) {
 	supported := &CommandContext{Engine: &effortCapabilityStub{
 		supported: true,
 		current:   "medium",
+		options:   []string{"none", "high", "max"},
 	}}
 	if got := reg.GetForContext(
 		context.Background(),
@@ -131,6 +148,34 @@ func TestEffortDiscoveryHelpAndDispatchShareRuntimeCapability(t *testing.T) {
 	}
 	if accepted.Action != ActionSetEffort || accepted.Data["level"] != "high" {
 		t.Fatalf("supported effort intent = %#v", accepted)
+	}
+	if rejected, err := reg.Dispatch(
+		context.Background(),
+		EntrypointTUI,
+		supported,
+		"/effort medium",
+	); err == nil || rejected != nil || !strings.Contains(err.Error(), "valid: default, none, high, max") {
+		t.Fatalf("model-specific effort rejection = %#v, %v", rejected, err)
+	}
+}
+
+func TestEffortDiscoveryDoesNotRequireOptionEnumeration(t *testing.T) {
+	reg := NewRegistry()
+	RegisterDefaults(reg)
+	ctx := &CommandContext{Engine: &effortAvailabilityOnlyStub{}}
+
+	if got := reg.GetForContext(
+		context.Background(),
+		EntrypointTUI,
+		ctx,
+		"effort",
+	); got == nil {
+		t.Fatal("capability-only runtime lost effort discovery")
+	}
+	result, err := reg.Dispatch(context.Background(), EntrypointTUI, ctx, "/effort")
+	if err == nil || result != nil ||
+		!strings.Contains(err.Error(), "does not expose reasoning effort options") {
+		t.Fatalf("capability-only effort execution = %#v, %v", result, err)
 	}
 }
 
