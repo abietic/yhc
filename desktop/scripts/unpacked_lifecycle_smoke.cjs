@@ -966,6 +966,10 @@ async function closePackagedDesktop(
   return waitForExit(exit);
 }
 
+function shouldForceCrashCleanup(error, crashRequested) {
+  return crashRequested === true && error?.message === 'Desktop exit timed out';
+}
+
 async function evaluate(connection, sessionId, expression) {
   const response = await connection.send('Runtime.evaluate', {
     expression,
@@ -2000,14 +2004,35 @@ async function runSmoke(
         throw new Error('packaged backend changed during window restoration');
       }
     }
-    const appExit = await closePackagedDesktop(
-      connection,
-      renderer.sessionId,
-      layout.closeStrategy,
-      exit,
-    );
-    connection = null;
-    if (appExit.code !== 0 || appExit.signal !== null) {
+    let appExit;
+    let crashCleanup = 'normal-exit';
+    try {
+      appExit = await closePackagedDesktop(
+        connection,
+        renderer.sessionId,
+        layout.closeStrategy,
+        exit,
+      );
+      connection = null;
+    } catch (error) {
+      if (!shouldForceCrashCleanup(error, crashRequested)) throw error;
+      if (layout.cleanupStrategy === 'windows-tree') {
+        await terminateWindowsProcessTree(rootIdentity, {
+          expectedBackend: backendIdentity,
+        });
+      } else {
+        await terminateProcessGroup(child.pid, layout.platform === 'darwin'
+          ? {
+            expectedIdentity: rootIdentity,
+            readIdentity: readDarwinProcessIdentity,
+          }
+          : undefined);
+      }
+      await deadline(exit, CLEANUP_TIMEOUT_MS, 'Desktop crash cleanup exit');
+      connection = null;
+      crashCleanup = 'owned-process-tree';
+    }
+    if (appExit && (appExit.code !== 0 || appExit.signal !== null)) {
       throw new Error(`Desktop exited abnormally (${appExit.code ?? appExit.signal})`);
     }
     if (!crashRequested) {
@@ -2027,6 +2052,7 @@ async function runSmoke(
       crash_containment: crashRequested ? 'pass' : 'not_run',
       active_turn_crash: options.crashActiveTurn ? 'pass' : 'not_run',
       window_reopen: options.reopenWindow ? 'pass' : 'not_run',
+      crash_cleanup: crashRequested ? crashCleanup : 'not_run',
       no_restart_observation_ms: crashRequested ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
   } catch (error) {
@@ -2142,6 +2168,7 @@ module.exports = {
   sameProcessIdentity,
   selectPageTarget,
   selectReplacementPageTarget,
+  shouldForceCrashCleanup,
   startActiveTurnProvider,
   targetID,
   terminateProcessGroup,

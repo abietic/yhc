@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const asar = require('@electron/asar');
 const {
   REQUIRED_ARCHIVE_FILES,
+  normalizeArchiveEntry,
   verifyPackagedArtifact,
 } = require('../scripts/verify_packaged_artifact.cjs');
 const {
@@ -22,6 +23,13 @@ async function createArchive(source, destination) {
   if (!output.writableFinished) await once(output, 'finish');
   asar.uncache(destination);
 }
+
+test('archive entries normalize native separators before exact allowlist comparison', () => {
+  assert.equal(normalizeArchiveEntry('/bootstrap.cjs'), 'bootstrap.cjs');
+  assert.equal(normalizeArchiveEntry('\\bootstrap.cjs'), 'bootstrap.cjs');
+  assert.equal(normalizeArchiveEntry('\\nested\\entry.cjs'), 'nested/entry.cjs');
+  assert.throws(() => normalizeArchiveEntry(null), /archive entry must be text/);
+});
 
 async function createArtifactFixture(platform) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-packaged-artifact-'));

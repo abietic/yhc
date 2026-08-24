@@ -37,6 +37,7 @@ const {
   seedActiveTurnSession,
   sameProcessIdentity,
   selectPageTarget, selectReplacementPageTarget, targetID,
+  shouldForceCrashCleanup,
   startActiveTurnProvider,
   terminateProcessGroup,
   validatePlatformOptions,
@@ -107,6 +108,13 @@ test('browser close response timeout defers to bounded process-exit evidence', a
     }, 'renderer-session', 'browser', exited),
     /CDP Browser\.close failed: denied/,
   );
+});
+
+test('only a crash scenario may replace a timed-out normal exit with owned cleanup', () => {
+  const timeout = new Error('Desktop exit timed out');
+  assert.equal(shouldForceCrashCleanup(timeout, true), true);
+  assert.equal(shouldForceCrashCleanup(timeout, false), false);
+  assert.equal(shouldForceCrashCleanup(new Error('CDP Browser.close failed: denied'), true), false);
 });
 
 test('target selection requires one exact packaged renderer URL', () => {

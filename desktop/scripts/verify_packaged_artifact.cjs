@@ -72,11 +72,16 @@ function sameList(left, right) {
     left.every((value, index) => value === right[index]);
 }
 
+function normalizeArchiveEntry(entry) {
+  if (typeof entry !== 'string') throw new TypeError('archive entry must be text');
+  return entry.replace(/^[\\/]+/, '').replaceAll('\\', '/');
+}
+
 function verifyArchive(resources, context) {
   const archive = path.join(resources, 'app.asar');
   requireRegularFile(archive, 'packaged application archive');
   const entries = asar.listPackage(archive)
-    .map((entry) => entry.replace(/^\/+/, ''))
+    .map(normalizeArchiveEntry)
     .sort();
   if (!sameList(entries, REQUIRED_ARCHIVE_FILES)) {
     throw new Error('packaged application archive entries do not match');
@@ -158,5 +163,6 @@ function verifyPackagedArtifact(context) {
 module.exports = async (context) => verifyPackagedArtifact(context);
 module.exports.REQUIRED_ARCHIVE_FILES = REQUIRED_ARCHIVE_FILES;
 module.exports.backendName = backendName;
+module.exports.normalizeArchiveEntry = normalizeArchiveEntry;
 module.exports.regularFileList = regularFileList;
 module.exports.verifyPackagedArtifact = verifyPackagedArtifact;
