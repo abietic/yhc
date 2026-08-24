@@ -1780,7 +1780,7 @@ async function runSmoke(
       ? [
         '-a',
         '-e',
-        '/dev/stderr',
+        '/proc/self/fd/2',
         '-s',
         '-screen 0 1440x920x24 -nolisten tcp',
         appPath,
