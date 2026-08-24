@@ -190,6 +190,18 @@ and `max`. The three explicit values are sent unchanged as DeepSeek Responses
 DeepSeek defaults to `deepseek-v4-flash`; the former `deepseek-chat` and
 `deepseek-reasoner` compatibility names passed their announced deprecation date
 on 2026-07-24. Select `deepseek-v4-flash-vision-exp` for ordered image input.
+The dedicated SDK also supports DeepSeek Files API upload, listing, retrieval,
+and deletion for reusable image `file_id` input. Its external canary is
+explicitly opt-in and billable:
+
+```bash
+DEEPSEEK_API_KEY='replace-me' make test-deepseek-live
+```
+
+The canary uploads a small one-hour image, submits it to the vision model, and
+deletes it before succeeding. Ordinary `make test` never enables this external
+operation.
+
 That experimental model supports URL and base64 images through the normal YHC
 multimodal input path; other DeepSeek models reject image input before provider
 dispatch.
