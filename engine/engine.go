@@ -2462,7 +2462,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 		if err != nil ||
 			!samePermissionActionBinding(binding.action, currentAction) ||
 			binding.action.CanonicalInput != currentAction.CanonicalInput {
-			if binding.action.admission == permissionAdmissionContainedAutoBash {
+			if binding.action.admission == permissionAdmissionProofBoundBash {
 				return "", errors.New("sandbox_binding_expired")
 			}
 			if err != nil {
@@ -2515,7 +2515,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 	)
 	ctx = tools.WithMediaSupport(ctx, modelcaps.GetCapabilities(e.config.Model).SupportsImages)
 	if hasBinding {
-		if binding.action.admission == permissionAdmissionContainedAutoBash {
+		if binding.action.admission == permissionAdmissionProofBoundBash {
 			freshAction, freshErr := e.buildPermissionActionDescriptor(
 				toolName,
 				currentAction.Input,
@@ -2533,7 +2533,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 				binding.action.CanonicalInput != freshAction.CanonicalInput {
 				return "", errors.New("sandbox_binding_expired")
 			}
-			if allowed, _ := completeContainedAutoBashProof(freshAction); !allowed {
+			if allowed, _ := completeProofBoundBashAdmission(freshAction); !allowed {
 				return "", errors.New("sandbox_binding_expired")
 			}
 		}
@@ -2543,7 +2543,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 			binding.action.CapabilityGeneration,
 		)
 		if err != nil {
-			if binding.action.admission == permissionAdmissionContainedAutoBash {
+			if binding.action.admission == permissionAdmissionProofBoundBash {
 				return "", errors.New("sandbox_binding_expired")
 			}
 			return "", fmt.Errorf(
@@ -2553,7 +2553,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 		}
 		defer lease.Cancel()
 		output, executeErr := lease.Execute(ctx, jsonInput)
-		if binding.action.admission == permissionAdmissionContainedAutoBash &&
+		if binding.action.admission == permissionAdmissionProofBoundBash &&
 			errors.Is(executeErr, tools.ErrSandboxBindingExpired) {
 			return "", errors.New("sandbox_binding_expired")
 		}
@@ -3308,8 +3308,8 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 		}
 	}
 
-	if allowed, _ := completeContainedAutoBashProof(actionDescriptor); allowed {
-		actionDescriptor.admission = permissionAdmissionContainedAutoBash
+	if allowed, _ := completeProofBoundBashAdmission(actionDescriptor); allowed {
+		actionDescriptor.admission = permissionAdmissionProofBoundBash
 		setSettledPermissionAction(ctx, &actionDescriptor)
 		return allowInvocationPolicy()
 	}
