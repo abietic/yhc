@@ -79,7 +79,7 @@ type permissionAdmissionKind uint8
 
 const (
 	permissionAdmissionNone permissionAdmissionKind = iota
-	permissionAdmissionContainedAutoBash
+	permissionAdmissionProofBoundBash
 )
 
 type preparedToolInput struct {
@@ -497,12 +497,16 @@ const containedAutoBashRuntimeAxes = containment.AxisRootIdentity |
 	containment.AxisWallTime |
 	containment.AxisOutput
 
-func completeContainedAutoBashProof(
+func proofBoundBashMode(mode permission.Mode) bool {
+	return mode == permission.ModeDefault || mode == permission.ModeAuto
+}
+
+func completeProofBoundBashAdmission(
 	action PermissionActionDescriptor,
 ) (bool, string) {
 	switch {
-	case action.Mode != permission.ModeAuto:
-		return false, "contained Bash requires Auto mode"
+	case !proofBoundBashMode(action.Mode):
+		return false, "contained Bash requires Default or Auto mode"
 	case action.CanonicalToolName != "Bash" ||
 		action.Origin != tools.ToolOriginBuiltin ||
 		action.ActionKind != tools.ToolActionShell:

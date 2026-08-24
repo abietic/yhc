@@ -1,7 +1,7 @@
 # Permissions
 
 **Status:** current
-**Last verified:** 2026-08-19
+**Last verified:** 2026-08-24
 
 > **Ownership:** QueryEngine permission coordinator; `engine/permission` primitives
 
@@ -55,9 +55,9 @@ AwaitingApproval owns the boundary.
     identity or a contained Read/Grep/Glob root scope, not broad text matching.
 12. Apply safe memory/working-directory reads and the bounded memory,
     accept-edits, and plan-file write contracts.
-13. In Auto, admit an exact non-critical canonical built-in Bash action when
-    it carries the complete available Darwin Seatbelt Guest proof. This path
-    skips only the ordinary permission prompt and classifier.
+13. In Default or Auto, admit an exact non-critical canonical built-in Bash
+    action when it carries the complete available Darwin Seatbelt Guest proof.
+    This path skips only the ordinary permission prompt and classifier.
 14. In Auto, route remaining missing capability facts, MCP/app/dynamic origins, Agent/
     child, network, user-interaction, and incompletely represented shell
     actions to a person before classifier work. Without an interactive adapter,
@@ -145,7 +145,7 @@ owner.
 
 | Mode | Unmatched invocation behavior |
 |---|---|
-| `default` | Prompt when no safe fast path applies. |
+| `default` | Apply deterministic safe paths, including the complete Guest-proof Bash path; prompt when no safe path applies. |
 | `plan` | Only the explicit exploration/clarification capability set, TodoWrite, exact session/Agent plan-file Write/Edit, and Exit are admitted. |
 | `acceptEdits` | Write/Edit inside allowed roots are auto-approved. Bash has no command-name fast path and returns to the existing interactive prompt or fail-closed callback boundary. |
 | `bypassPermissions` | Auto-allow after explicit rule handling, except the narrow critical Bash subset still requires live `AllowOnce`. |
@@ -183,6 +183,14 @@ abandon restores that exact mode; the requested external target cannot smuggle
 a different post-Plan permission mode. Model-initiated Exit remains a typed
 approval.
 
+TUI, Plain, headless, bounded headless Goal, and ACP production composition
+roots install a prompt or fail-closed callback, so Default reaches the same
+proof-bound Bash decision at their invocation boundary. A low-level embedded
+`QueryEngineConfig` with both permission callbacks unset remains the existing
+caller-authoritative `NoInvocationPolicyInstalled` boundary; selecting Default
+does not silently install a new policy owner there. Explicit Auto retains its
+existing supported-entrypoint fail-closed installation behavior.
+
 The TUI's Shift+Tab interaction is a separate user execution-control path:
 Default enters Plan; Plan opens the bypass-risk dialog without leaving Plan;
 an explicit confirmation commits `user_confirmed` Plan → Bypass; cancel keeps
@@ -190,30 +198,34 @@ Plan; and Bypass returns to Default. The confirmed path still loses to an
 active turn or AwaitingApproval owner. It cannot be invoked by a model tool and
 does not replace reviewed-byte `ExitPlanMode` approval.
 
-## Current Auto implementation and safety boundary
+## Current Default-safe and Auto implementation boundary
 
-The authoritative Auto path remains synchronous and shares the turn context:
+The action construction and proof-bound Bash path remain synchronous and use
+the exact turn context in both Default and Auto. Other Auto branches retain
+their existing mode-specific behavior:
 
 1. QueryEngine parses and validates one detached input, resolves the canonical
    registry identity, and constructs the host-owned action/capability
    descriptor before deterministic policy.
-2. Exact local/user rules, exact typed session grants, contained
+2. In Auto, exact local/user rules, exact typed session grants, contained
    Read/Grep/Glob, contained Write/Edit, and explicitly declared built-in
    internal-state defaults may admit their bounded action. An exact local/user
    rule is independent explicit authority; it does not assert or receive
    proof-bound admission. Duplicate name-only production allowlists no longer
    authorize Auto.
-3. A non-critical canonical built-in Bash action skips the ordinary prompt
-   through P51.2's automatic path only when its exact descriptor carries the
-   complete available Darwin Guest proof. Incomplete or unavailable proof
-   falls through; aggregate `degraded` state alone is not authority.
+3. In Default or Auto, a non-critical canonical built-in Bash action skips the
+   ordinary prompt through P51.2's automatic path only when its exact
+   descriptor carries the complete available Darwin Guest proof. Incomplete or
+   unavailable proof falls through; aggregate `degraded` state alone is not
+   authority.
 4. The narrow literal critical `rm`/`rmdir` corpus always requires one fresh
    `AllowOnce`. Exact rules, session/always responses, grants, Bypass,
    classifier, reviewer, and coalescing cannot authorize it; DontAsk denies.
-5. Other incomplete shell actions, Agent/child, WebFetch/WebSearch,
+5. In Auto, other incomplete shell actions, Agent/child, WebFetch/WebSearch,
    MCP/app/dynamic, network, and user-interaction actions require a person
    unless exact user authority covers the current action.
-6. A remaining complete built-in reaches the same primary `ChatModel`, which
+6. Only in Auto, a remaining complete built-in reaches the same primary
+   `ChatModel`, which
    receives raw tool input and the last five non-empty message contents,
    including assistant or tool-role prose. The call has a 256-token output
    budget but no reviewer-specific model route or deadline.
@@ -321,12 +333,13 @@ boundary:
   open.
 - The package's `Evaluator`, `ToolRiskClassifier`, speculative classifier, and
   cache primitives are not the production authority and do not close G14.
-- Selecting Auto does not establish or broaden an OS sandbox. P51.1 separately
+- Selecting Default or Auto does not establish or broaden an OS sandbox. P51.1 separately
   defaults Darwin Guest Bash to a real Seatbelt `workspace-write` binding for
   every permission mode, including bypass. Shell hooks and configured stdio
   MCP remain ambient; unsupported or failed Guest enforcement fails before
-  spawn. P51.2 Core consumes only the complete exact Guest proof for ordinary
-  canonical Bash; it does not infer safety from the `degraded` aggregate.
+  spawn. P51.2 Core lets Default and Auto consume only the complete exact Guest
+  proof for ordinary canonical Bash; it does not infer safety from the
+  `degraded` aggregate.
 
 The accepted policy-first target and ordered repair are
 [`P22 Auto Permission Review`](../../migration/plans/p22-auto-permission-review.md);
