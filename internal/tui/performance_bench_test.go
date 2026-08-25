@@ -68,6 +68,8 @@ func BenchmarkThreadSwitch20Agents(b *testing.B) {
 }
 
 func TestTUIHotPathPerformanceBudgets(t *testing.T) {
+	requireUninstrumentedPerformanceBudget(t)
+
 	if streamBatchWindow < time.Second/30 {
 		t.Fatalf("stream batch window %s exceeds the 30fps redraw ceiling", streamBatchWindow)
 	}
@@ -157,6 +159,13 @@ func TestTUIHotPathPerformanceBudgets(t *testing.T) {
 		keyApp.Update(tea.KeyPressMsg{Code: tea.KeyExtended, Text: string([]rune{'x'})})
 		keyApp.renderView()
 	})
+}
+
+func requireUninstrumentedPerformanceBudget(t *testing.T) {
+	t.Helper()
+	if mode := testing.CoverMode(); mode != "" {
+		t.Skipf("portable performance budgets require an uninstrumented test binary; coverage mode %q is diagnostic only", mode)
+	}
 }
 
 func performanceLongChat(messages int) *ChatView {
