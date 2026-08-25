@@ -938,6 +938,11 @@ privacy:
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
+    - path: docs/migration/REMAINING.md
+      line: 23
+      rule_id: high-entropy-token
+      match_sha256: 56098ee08edbfa2944efd065178f8232c1148b91aaeea7ab56c5b0c6418174c5
+      purpose: documentation-example
     - path: docs/migration/history/README.md
       line: 146
       rule_id: high-entropy-token
@@ -1022,6 +1027,11 @@ privacy:
       line: 56
       rule_id: high-entropy-token
       match_sha256: eec45c0e3c9f0f1e16009915b70008c0d8bcca79adb117fcdac049e1cba78c7c
+      purpose: historical-trace-identifier
+    - path: docs/migration/history/runtime/p51-3-linux-guest-bubblewrap.md
+      line: 47
+      rule_id: high-entropy-token
+      match_sha256: a86a8586712833f2ada01392df4d2888e23c195a3628652c2ec06b9c4a8f0b8d
       purpose: historical-trace-identifier
     - path: docs/migration/history/runtime/post-parity.md
       line: 2509
