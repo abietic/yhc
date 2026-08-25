@@ -1,9 +1,9 @@
 # Product Evolution Plan
 
 **Created:** 2026-06-15
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-26
 **Status:** active-plan
-**Current stage:** no slice is `Ready`; P44 remains deferred.
+**Current stage:** P51.3 is `Ready`; P44 remains deferred.
 
 > **Ownership:** accepted future work, dependency-safe execution order, and
 > the next executable slice. [`queue.yaml`](queue.yaml) is the machine-readable
@@ -45,7 +45,12 @@ now binds ordinary Auto Bash admission to the exact complete Guest proof,
 requires a fresh live `AllowOnce` for narrow critical literal `rm`/`rmdir`,
 persists the constraint through ProjectGraph and supported Core clients, and
 revalidates the exact identity before dispatch and ShellManager submission.
-AppServer, Desktop, and Web UI projection remains outside that delivery.
+AppServer, Desktop, and Web UI projection remains outside that delivery. P51.3
+is now accepted as the next narrow G28 subset: prompt-approved Linux Guest Bash
+must use a fixed bubblewrap adapter with a restricted filesystem view, isolated
+user/PID/IPC/network namespaces, dropped capabilities, a socket-denial seccomp
+filter, root revalidation, and the existing descendant, wall-time, and output
+owners. It deliberately does not let Default or Auto consume Linux proof.
 
 P48 records five approved ACP boundary repairs for Session-root deletion, Plan
 tool identity, replay output type, Windows MCP environment identity, and unsafe
@@ -63,7 +68,8 @@ explains why no numeric Goal default was justified, while P49 closed the user
 problem through optional-budget semantics instead. G2 has no accepted
 successor. G28 remains open after P51.2 because environment credentials, shell
 hooks, configured stdio MCP, and hard memory/file-descriptor/process-count
-limits are still ambient. G48-G50 are closed. No successor slice is admitted.
+limits are still ambient. G48-G50 are closed. P51.3 is the only admitted
+successor and does not close G28.
 
 ## Execution Topology
 
@@ -79,16 +85,22 @@ Three relationships are intentionally separate:
 <!-- migration-queue:begin -->
 > Generated from [`queue.yaml`](queue.yaml). Run `go run ./scripts/migration_queue render` after changing queue data; `make docs-check` rejects drift.
 
-**Snapshot:** 2026-08-19; 0 `Ready`, 0 `Queued`, 0 `Blocked`, 1 deferred decisions.
+**Snapshot:** 2026-08-26; 1 `Ready`, 0 `Queued`, 0 `Blocked`, 1 deferred decisions.
 
 ```mermaid
 flowchart LR
     accTitle: Active evolution promotion topology
     accDescr: Each active slice follows its promotion gate. Solid gate edges are satisfied; dotted gate edges are pending. Future hard slice dependencies are rendered as solid slice-to-slice edges.
-    no_active["No accepted active slices"]
+    gate_slice_p51_3["Gate satisfied: fixed-helper Linux Guest containment intake"] --> slice_p51_3["P51.3 Ready"]
+    classDef ready stroke-width:3px
+    class slice_p51_3 ready
 ```
 
-There is no accepted incomplete slice. Open gaps remain in `REMAINING.md` until intake accepts a successor; they do not become queue rows automatically.
+The diagram is a gate/dependency view, not a schedule. The table below is its text equivalent and adds risk priority.
+
+| Priority | Slice and state | Hard dependencies | Promotion gate | Gap | Accepted outcome |
+|---:|---|---|---|---|---|
+| 180 | [P51.3](plans/p42-host-execution-containment.md#p513-accepted-linux-guest-bubblewrap-subset) `Ready` | — | [fixed-helper Linux Guest containment intake](plans/p42-host-execution-containment.md#p513-accepted-linux-guest-bubblewrap-subset) `Satisfied` | [G28](REMAINING.md#verified-current-implementation-gaps) | Enforce prompt-approved Linux Guest Bash through fixed bubblewrap filesystem, namespace, network, root, descendant, wall-time, and output boundaries without ambient fallback or proof-bound Auto admission. |
 
 ### Deferred decisions
 

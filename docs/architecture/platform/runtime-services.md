@@ -65,15 +65,20 @@ adapter probe instead of copying the parent's proof.
 The Darwin `workspace-write` Guest may write the ordinary workspace and
 approved temporary roots, but an immutable denied-write root reserves
 `<canonical-workspace>/.eino-agent` for host-owned transcript, WorkBoard, and
-runtime services. This is write protection only: P51.1 does not claim that
-Guest processes cannot read the subtree. Permission mode cannot remove or
-widen this denial.
+runtime services. Linux bubblewrap overlays existing denied roots read-only;
+it fails closed when a workspace-local denied path crosses a symlink, but does
+not reserve absent names against later creation. These are write protections,
+not read secrecy. Permission mode cannot remove or widen them.
 
 On Darwin amd64/arm64, the default Guest binding is
 `workspace-write`/`degraded` through the fixed
-`/usr/bin/sandbox-exec` Seatbelt adapter. The real capability probe and launch
-path prove declared reads/writes, network denial, root identity, descendant
-confinement, process-group cleanup, wall time, and bounded retained output.
+`/usr/bin/sandbox-exec` Seatbelt adapter. On Linux amd64/arm64 it uses fixed
+`/usr/bin/bwrap`, an empty mount root, user/PID/IPC/network namespaces,
+capability removal, and a seccomp filter denying socket and io_uring setup.
+Each adapter performs a real capability probe before the binding becomes
+available. The launch path proves declared reads/writes, network denial, root
+identity, descendant confinement, process-group cleanup, wall time, and
+bounded retained output.
 `ShellManager` passes the current `os.Environ()` byte-for-byte, pins the exact
 binding before persistent Bash starts, and rechecks both binding digest and
 workspace device/inode before every start/command. A missing executable,
@@ -86,6 +91,11 @@ Bash revalidates the exact Guest identity before registry acquisition, and
 ShellManager repeats root validation at the last boundary before a new process
 start or persistent-shell stdin write. Any bound-identity drift returns
 `sandbox_binding_expired` without executing or retrying ambient.
+
+P51.3 deliberately does not let the Linux proof satisfy Default/Auto's
+automatic Bash admission. Until absent control-plane names can be fenced,
+Linux containment limits prompt-approved Guest execution only; the automatic
+path remains Darwin-specific.
 
 The Session-facing CWD retains the caller or restored metadata spelling for
 hooks, permissions, transcripts, and user-visible state. The Guest policy owns
@@ -180,8 +190,10 @@ For any service addition or lifecycle change, document and test:
 - [`ShellManager.ExecuteAt`](../../../tools/bash_shell.go) sets only the
   shell process initial directory and never calls process-wide `os.Chdir`.
 - [`ResolveExecutionBindings`](../../../engine/execution_policy.go) owns the
-  process-class matrix and Darwin root/profile resolution.
+  process-class matrix and platform root/profile resolution.
 - [`Binding.Prepare`](../../../engine/containment/binding.go) validates the
   immutable policy, adapter generation, availability, and launch digest.
 - [`darwinSeatbeltAdapter`](../../../engine/containment/seatbelt.go) owns the
   real capability probe and fixed-binary launch transform.
+- [`linuxBubblewrapAdapter`](../../../engine/containment/bubblewrap.go) owns the
+  Linux real probe, strict mount projection, and fixed-binary launch transform.

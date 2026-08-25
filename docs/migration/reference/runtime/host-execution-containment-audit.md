@@ -1,7 +1,7 @@
 # Host Execution Containment Audit
 
 **Status:** reference-snapshot
-**Snapshot:** 2026-08-02; Eino-Agent
+**Snapshot:** 2026-08-26 Linux addendum; original 2026-08-02 Eino-Agent
 `967dfdc87dbb87c018eb7431b948ee9b26687d92`, Codex
 `66bd101fff6f`, Claude Code Ripe `4b9d30f79532`, OpenCode
 `411eff73f026`, and Crush `2af939d8e900`
@@ -27,6 +27,23 @@ paths can change whether a sandbox attempt is made. Claude Code Ripe delegates
 to an external sandbox runtime and exposes useful availability diagnostics.
 Crush and OpenCode provide descendant-lifecycle evidence, not host-authority
 containment.
+
+### 2026-08-26 Linux adapter addendum
+
+Recommendation: `adapt`. Current upstream Codex prefers bubblewrap, builds a
+read-only or empty filesystem view with writable-root overlays and protected
+carve-outs, enters user/PID/IPC/network namespaces, drops capabilities, and
+applies `no_new_privs` plus seccomp before the requested command. Kernel
+Landlock remains useful but cannot by itself express this project's writable
+workspace with subtractive control-plane paths on every supported kernel.
+
+P51.3 therefore adapts the fixed bubblewrap primitive family while retaining
+YHC's immutable policy-to-binding-to-runtime proof chain, exact root identity,
+process-group cleanup, and no-ambient-fallback rule. It does not copy Codex's
+approval-driven backend selection, bundled helper, dynamic split-policy model,
+or automatic fallback. Linux proof-bound Default/Auto admission is deferred
+until absent protected-path creation fencing has independent real-process
+evidence.
 
 ## Reproduced current behavior
 

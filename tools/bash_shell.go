@@ -119,7 +119,7 @@ type ShellManager struct {
 	executionProof containment.ExecutionProof
 	start          func(*exec.Cmd) error
 	// captureRootIdentityForTest supplies a platform-neutral root identity
-	// oracle to white-box tests. Production always uses Darwin containment.
+	// oracle to white-box tests. Production uses the selected platform adapter.
 	captureRootIdentityForTest func(string) (containment.RootIdentity, error)
 	// beforeGuestStartForTest holds the final identity check immediately before
 	// exec.Cmd.Start. Production code leaves it nil.
@@ -168,7 +168,7 @@ func validateGuestBindingForShell(binding *containment.Binding) (containment.Exe
 	if binding == nil || binding.ProcessClass() != containment.ProcessClassGuest || binding.Digest() == "" || binding.Policy() == nil {
 		return containment.ExecutionProof{}, fmt.Errorf("shell guest binding must be valid")
 	}
-	if binding.Availability() == containment.BindingAvailable && binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+	if binding.Availability() == containment.BindingAvailable && containment.IsContainedAdapter(binding.AdapterFamily()) {
 		spec := binding.Policy().Spec()
 		if spec.Root.Path == "" || spec.Root.Device == 0 || spec.Root.Inode == 0 || spec.Descendants.Mode != containment.DescendantCleanupRequired || spec.Resources.WallTimeMillis <= 0 || spec.Resources.OutputBytes <= 0 {
 			return containment.ExecutionProof{}, fmt.Errorf("shell guest policy is incomplete")
@@ -236,7 +236,7 @@ func (m *ShellManager) RevalidateGuestExecutionIdentity() (containment.Execution
 	if err != nil {
 		return containment.ExecutionIdentity{}, err
 	}
-	if identity.Availability == containment.BindingAvailable && identity.Adapter == containment.AdapterDarwinSeatbelt {
+	if identity.Availability == containment.BindingAvailable && containment.IsContainedAdapter(identity.Adapter) {
 		if err := m.revalidateGuestRootIdentity(identity.Root); err != nil {
 			return containment.ExecutionIdentity{}, fmt.Errorf("guest root identity changed")
 		}
@@ -377,7 +377,7 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 			cwd = spec.CWD
 		}
 		executable := "bash"
-		if binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+		if containment.IsContainedAdapter(binding.AdapterFamily()) {
 			if err := m.revalidateGuestRootIdentity(spec.Root); err != nil {
 				return nil, ErrSandboxBindingExpired
 			}
@@ -393,6 +393,7 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 		request := containment.SpawnRequest{Binding: binding, Executable: executable, Args: []string{"--noediting", "--noprofile", "--norc"}, Dir: cwd, Env: env}
 		spawn, err := binding.Prepare(context.Background(), request)
 		if err != nil || spawn.BindingDigest != m.bindingDigest || spawn.Dir != cwd || !equalStringSlices(spawn.Env, env) {
+			closeSpawnExtraFiles(spawn.ExtraFiles)
 			return nil, fmt.Errorf("shell guest binding preparation rejected")
 		}
 		// Persistent shells outlive individual tool calls. Their lifecycle is
@@ -400,6 +401,8 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 		// context that could kill only the process-group leader.
 		cmd = exec.CommandContext(context.Background(), spawn.Path, spawn.Args...)
 		cmd.Dir, cmd.Env = spawn.Dir, append([]string(nil), spawn.Env...)
+		cmd.ExtraFiles = spawn.ExtraFiles
+		defer closeSpawnExtraFiles(spawn.ExtraFiles)
 	} else {
 		cmd = exec.CommandContext(context.Background(), "bash", "--noediting", "--noprofile", "--norc")
 		if cwd != "" {
@@ -430,7 +433,7 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 		if m.binding != binding || binding.Digest() != m.bindingDigest {
 			return nil, ErrSandboxBindingExpired
 		}
-		if binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+		if containment.IsContainedAdapter(binding.AdapterFamily()) {
 			if err := m.revalidateGuestRootIdentity(binding.Policy().Spec().Root); err != nil {
 				return nil, ErrSandboxBindingExpired
 			}
@@ -484,6 +487,14 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func closeSpawnExtraFiles(files []*os.File) {
+	for _, file := range files {
+		if file != nil {
+			_ = file.Close()
+		}
+	}
 }
 
 // ExecutionPolicyDigest returns the identity pinned before this shell spawned.
@@ -683,14 +694,14 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 			m.retireLocked(shellID, shell)
 			return nil, ErrSandboxBindingExpired
 		}
-		if shell.binding.AdapterFamily() == containment.AdapterDarwinSeatbelt && m.revalidateGuestRootIdentity(shell.binding.Policy().Spec().Root) != nil {
+		if containment.IsContainedAdapter(shell.binding.AdapterFamily()) && m.revalidateGuestRootIdentity(shell.binding.Policy().Spec().Root) != nil {
 			m.retireLocked(shellID, shell)
 			return nil, ErrSandboxBindingExpired
 		}
 	}
 
 	// Create a context with timeout if specified
-	if shell.binding != nil && shell.binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+	if shell.binding != nil && containment.IsContainedAdapter(shell.binding.AdapterFamily()) {
 		limit := time.Duration(shell.binding.Policy().Spec().Resources.WallTimeMillis) * time.Millisecond
 		if timeout <= 0 || timeout > limit {
 			timeout = limit
@@ -718,7 +729,7 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	// needs an unbounded follow-up pwd round trip.
 	wrappedCmd := fmt.Sprintf("echo '%s'; %s 2>&1; __eino_status=$?; printf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
 		startMarker, command, cwdMarker, endMarker)
-	if shell.binding != nil && shell.binding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+	if shell.binding != nil && containment.IsContainedAdapter(shell.binding.AdapterFamily()) {
 		if beforeSubmission := m.beforeGuestCommandSubmissionForTest; beforeSubmission != nil {
 			beforeSubmission()
 		}

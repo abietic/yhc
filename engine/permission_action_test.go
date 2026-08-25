@@ -192,6 +192,7 @@ func TestP512ContainedAutoBashProofRequiresExactGuestFacts(t *testing.T) {
 		{name: "wrong origin", mutate: func(action *PermissionActionDescriptor) { action.Origin = tools.ToolOriginMCP }},
 		{name: "not selected", mutate: func(action *PermissionActionDescriptor) { action.Selected = false }},
 		{name: "ambient", mutate: func(action *PermissionActionDescriptor) { action.ExecutionAdapter = containment.AdapterAmbientHost }},
+		{name: "linux bubblewrap deferred", mutate: func(action *PermissionActionDescriptor) { action.ExecutionAdapter = containment.AdapterLinuxBubblewrap }},
 		{name: "unavailable", mutate: func(action *PermissionActionDescriptor) {
 			action.ExecutionAvailability = containment.BindingUnavailable
 		}},

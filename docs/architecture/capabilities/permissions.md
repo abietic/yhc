@@ -57,7 +57,9 @@ AwaitingApproval owns the boundary.
     accept-edits, and plan-file write contracts.
 13. In Default or Auto, admit an exact non-critical canonical built-in Bash
     action when it carries the complete available Darwin Seatbelt Guest proof.
-    This path skips only the ordinary permission prompt and classifier.
+    The Linux bubblewrap Guest proof is intentionally excluded until absent
+    protected-path creation can be fenced. This path skips only the ordinary
+    permission prompt and classifier.
 14. In Auto, route remaining missing capability facts, MCP/app/dynamic origins, Agent/
     child, network, user-interaction, and incompletely represented shell
     actions to a person before classifier work. Without an interactive adapter,
@@ -145,12 +147,12 @@ owner.
 
 | Mode | Unmatched invocation behavior |
 |---|---|
-| `default` | Apply deterministic safe paths, including the complete Guest-proof Bash path; prompt when no safe path applies. |
+| `default` | Apply deterministic safe paths, including the complete Darwin Guest-proof Bash path; prompt when no safe path applies. |
 | `plan` | Only the explicit exploration/clarification capability set, TodoWrite, exact session/Agent plan-file Write/Edit, and Exit are admitted. |
 | `acceptEdits` | Write/Edit inside allowed roots are auto-approved. Bash has no command-name fast path and returns to the existing interactive prompt or fail-closed callback boundary. |
 | `bypassPermissions` | Auto-allow after explicit rule handling, except the narrow critical Bash subset still requires live `AllowOnce`. |
 | `dontAsk` | Deny instead of prompting. |
-| `auto` | Apply exact user authority and typed contained/default-safe paths; ordinary canonical Bash may also use the complete Guest-proof path. Remaining incomplete shell, Agent/child, network, MCP/app/dynamic, and user-interaction actions require a person. Complete built-ins may use the primary model classifier. Model error/uncertainty and denial thresholds fall back to prompting. G14 limits the current reviewer claim. |
+| `auto` | Apply exact user authority and typed contained/default-safe paths; ordinary canonical Bash may also use the complete Darwin Guest-proof path. Remaining incomplete shell, Agent/child, network, MCP/app/dynamic, and user-interaction actions require a person. Complete built-ins may use the primary model classifier. Model error/uncertainty and denial thresholds fall back to prompting. G14 limits the current reviewer claim. |
 | `bubble` | Surface child-agent prompts to the parent interaction. |
 
 `bubble` is an internal child-to-parent coordination mode and is not accepted
@@ -215,9 +217,12 @@ their existing mode-specific behavior:
    authorize Auto.
 3. In Default or Auto, a non-critical canonical built-in Bash action skips the
    ordinary prompt through P51.2's automatic path only when its exact
-   descriptor carries the complete available Darwin Guest proof. Incomplete or
-   unavailable proof falls through; aggregate `degraded` state alone is not
-   authority.
+   descriptor carries the complete available Darwin Guest proof. P51.3 adds a
+   Linux bubblewrap Guest proof for prompt-approved execution, but that proof
+   deliberately fails this automatic admission check because absent protected
+   paths cannot yet be reserved against later creation. Incomplete,
+   unavailable, or Linux proof falls through; aggregate `degraded` state alone
+   is not authority.
 4. The narrow literal critical `rm`/`rmdir` corpus always requires one fresh
    `AllowOnce`. Exact rules, session/always responses, grants, Bypass,
    classifier, reviewer, and coalescing cannot authorize it; DontAsk denies.

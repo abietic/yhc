@@ -66,8 +66,9 @@ const (
 type AdapterFamily string
 
 const (
-	AdapterAmbientHost    AdapterFamily = "ambient-host"
-	AdapterDarwinSeatbelt AdapterFamily = "darwin-seatbelt"
+	AdapterAmbientHost     AdapterFamily = "ambient-host"
+	AdapterDarwinSeatbelt  AdapterFamily = "darwin-seatbelt"
+	AdapterLinuxBubblewrap AdapterFamily = "linux-bubblewrap"
 )
 
 // SelectionSource identifies the stable owner of a policy choice.
@@ -410,7 +411,7 @@ func canonicalSpec(spec Spec) (Spec, error) {
 	if !validEntrypoint(spec.Entrypoint) {
 		return Spec{}, invalid("entrypoint", "unsupported")
 	}
-	if spec.Adapter != AdapterAmbientHost && spec.Adapter != AdapterDarwinSeatbelt {
+	if spec.Adapter != AdapterAmbientHost && spec.Adapter != AdapterDarwinSeatbelt && spec.Adapter != AdapterLinuxBubblewrap {
 		return Spec{}, invalid("adapter", "unsupported")
 	}
 	if spec.Adapter == AdapterAmbientHost && (spec.Profile != ProfileDangerFullAccess || spec.State != StateDisabled) {
@@ -422,6 +423,14 @@ func canonicalSpec(spec Spec) (Spec, error) {
 		}
 		if spec.Network.Mode != NetworkDenied || spec.Credentials.Mode != CredentialAmbientEnvironment || !validIdentity(spec.CapabilityGeneration) {
 			return Spec{}, invalid("adapter", "darwin-seatbelt requires denied network, ambient credentials, and generation")
+		}
+	}
+	if spec.Adapter == AdapterLinuxBubblewrap {
+		if spec.Profile != ProfileWorkspaceWrite || (spec.State != StateDegraded && spec.State != StateUnavailable) {
+			return Spec{}, invalid("adapter", "linux-bubblewrap requires degraded or unavailable workspace-write")
+		}
+		if spec.Network.Mode != NetworkDenied || spec.Credentials.Mode != CredentialAmbientEnvironment || !validIdentity(spec.CapabilityGeneration) {
+			return Spec{}, invalid("adapter", "linux-bubblewrap requires denied network, ambient credentials, and generation")
 		}
 	}
 	if !validSelectionSource(spec.SelectionSource) {
@@ -462,12 +471,12 @@ func canonicalSpec(spec Spec) (Spec, error) {
 			return Spec{}, invalid("root", "cannot canonicalize")
 		}
 	}
-	if spec.Adapter == AdapterDarwinSeatbelt {
+	if spec.Adapter == AdapterDarwinSeatbelt || spec.Adapter == AdapterLinuxBubblewrap {
 		if spec.Root.Path != spec.CWD {
-			return Spec{}, invalid("root", "darwin-seatbelt requires workspace root identity")
+			return Spec{}, invalid("root", "contained adapter requires workspace root identity")
 		}
 		if spec.State == StateDegraded && (spec.Root.Device == 0 || spec.Root.Inode == 0) {
-			return Spec{}, invalid("root", "available darwin-seatbelt requires immutable workspace identity")
+			return Spec{}, invalid("root", "available contained adapter requires immutable workspace identity")
 		}
 		if spec.State == StateUnavailable && (spec.Root.Device == 0) != (spec.Root.Inode == 0) {
 			return Spec{}, invalid("root", "partial workspace identity is not accepted")
@@ -475,6 +484,9 @@ func canonicalSpec(spec Spec) (Spec, error) {
 	}
 	if spec.Adapter == AdapterDarwinSeatbelt && spec.State == StateDegraded && (spec.Platform != "darwin" || (spec.Architecture != "amd64" && spec.Architecture != "arm64")) {
 		return Spec{}, invalid("adapter", "darwin-seatbelt requires darwin amd64 or arm64")
+	}
+	if spec.Adapter == AdapterLinuxBubblewrap && spec.State == StateDegraded && (spec.Platform != "linux" || (spec.Architecture != "amd64" && spec.Architecture != "arm64")) {
+		return Spec{}, invalid("adapter", "linux-bubblewrap requires linux amd64 or arm64")
 	}
 	if spec.ReadRoots, err = canonicalPaths(spec.ReadRoots); err != nil {
 		return Spec{}, err
