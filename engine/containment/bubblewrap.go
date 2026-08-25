@@ -129,7 +129,7 @@ func (a *linuxBubblewrapAdapter) probeCapabilities(ctx context.Context, policy *
 		return a.deps.run(ctx, spawn)
 	}
 	stageFailure := func(stage string, err error) error {
-		return fmt.Errorf("%w: %s: %v", errBubblewrapProbe, stage, err)
+		return fmt.Errorf("%w: %s: %w", errBubblewrapProbe, stage, err)
 	}
 
 	allowedFile := filepath.Join(allowed, "allowed")

@@ -123,7 +123,7 @@ func runBubblewrapSpawn(ctx context.Context, spawn SpawnSpec) error {
 		if len(detail) > 1024 {
 			detail = detail[:1024]
 		}
-		return fmt.Errorf("%w: %v: %s", errBubblewrapProbe, err, detail)
+		return fmt.Errorf("%w: %w: %s", errBubblewrapProbe, err, detail)
 	}
 	return nil
 }
