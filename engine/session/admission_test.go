@@ -47,6 +47,131 @@ func TestSessionResumeAdmissionReturnsTypedImportRequiredWithoutWrites(t *testin
 	}
 }
 
+func TestImportDiscoveredLegacySessionRequiresAttestationBeforeWrites(t *testing.T) {
+	fixture := newSessionImportFixture(t, false)
+	t.Setenv("HOME", fixture.home)
+	info := resolveLegacyImportFixture(t, fixture)
+
+	_, err := ImportDiscoveredLegacySession(t.Context(), ImportDiscoveredLegacySessionRequest{
+		Info:              info,
+		CatalogPath:       fixture.canonicalCatalog,
+		LegacyCatalogPath: fixture.legacyCatalog,
+		UserRoots:         fixture.roots,
+		Now:               time.Date(2026, 8, 10, 0, 1, 0, 0, time.UTC),
+	})
+	if !errors.Is(err, ErrSessionImportAttestationRequired) {
+		t.Fatalf("unattested import error = %v", err)
+	}
+	fixture.assertLegacyUnchanged(t)
+	for _, path := range []string{fixture.canonicalDir, fixture.canonicalCatalog} {
+		if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("unattested facade created %q: %v", path, statErr)
+		}
+	}
+}
+
+func TestImportDiscoveredLegacySessionRequiresFreshProvenanceAndDefaultPair(t *testing.T) {
+	fixture := newSessionImportFixture(t, false)
+	t.Setenv("HOME", fixture.home)
+	base := ImportDiscoveredLegacySessionRequest{
+		Info:                 resolveLegacyImportFixture(t, fixture),
+		CatalogPath:          fixture.canonicalCatalog,
+		LegacyCatalogPath:    fixture.legacyCatalog,
+		UserRoots:            fixture.roots,
+		ConfirmLegacyStopped: true,
+		Now:                  time.Date(2026, 8, 10, 0, 1, 0, 0, time.UTC),
+	}
+
+	t.Run("missing provenance", func(t *testing.T) {
+		request := base
+		request.Info.sourceCWD = ""
+		if _, err := ImportDiscoveredLegacySession(t.Context(), request); !errors.Is(err, ErrSessionImportUnsafe) {
+			t.Fatalf("missing provenance error = %v", err)
+		}
+	})
+	t.Run("changed source", func(t *testing.T) {
+		request := base
+		request.Info.sourceCWD = t.TempDir()
+		if _, err := ImportDiscoveredLegacySession(t.Context(), request); !errors.Is(err, ErrSessionImportUnsafe) {
+			t.Fatalf("changed source error = %v", err)
+		}
+	})
+	t.Run("changed legacy owner", func(t *testing.T) {
+		request := base
+		request.Info.TranscriptDir = t.TempDir()
+		if _, err := ImportDiscoveredLegacySession(t.Context(), request); !errors.Is(err, ErrSessionImportUnsafe) {
+			t.Fatalf("changed owner error = %v", err)
+		}
+	})
+	t.Run("explicit catalog", func(t *testing.T) {
+		request := base
+		request.CatalogPath = filepath.Join(t.TempDir(), "session-roots.json")
+		if _, err := ImportDiscoveredLegacySession(t.Context(), request); !errors.Is(err, ErrSessionImportUnsafe) {
+			t.Fatalf("explicit catalog error = %v", err)
+		}
+	})
+	fixture.assertLegacyUnchanged(t)
+	for _, path := range []string{fixture.canonicalDir, fixture.canonicalCatalog} {
+		if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("rejected facade created %q: %v", path, statErr)
+		}
+	}
+}
+
+func TestImportDiscoveredLegacySessionPromotesAndAdmitsIdempotently(t *testing.T) {
+	fixture := newSessionImportFixture(t, true)
+	t.Setenv("HOME", fixture.home)
+	request := ImportDiscoveredLegacySessionRequest{
+		Info:                 resolveLegacyImportFixture(t, fixture),
+		CatalogPath:          fixture.canonicalCatalog,
+		LegacyCatalogPath:    fixture.legacyCatalog,
+		UserRoots:            fixture.roots,
+		ConfirmLegacyStopped: true,
+		Now:                  time.Date(2026, 8, 10, 0, 1, 0, 0, time.UTC),
+	}
+	// CWD is transcript metadata. The import target must be derived from the
+	// non-wire resolved source instead of this caller-visible field.
+	request.Info.CWD = t.TempDir()
+
+	admitted, err := ImportDiscoveredLegacySession(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted.SessionID != fixture.sessionID || admitted.ReadOnly || admitted.NeedsImport ||
+		admitted.TranscriptDir != fixture.canonicalDir {
+		t.Fatalf("admitted session = %#v", admitted)
+	}
+	fixture.assertLegacyUnchanged(t)
+
+	// Re-use the original legacy discovery. The import transaction reports its
+	// committed marker, and the facade must still return the canonical admission.
+	admitted, err = ImportDiscoveredLegacySession(t.Context(), request)
+	if err != nil {
+		t.Fatalf("idempotent import: %v", err)
+	}
+	if admitted.SessionID != fixture.sessionID || admitted.ReadOnly || admitted.NeedsImport ||
+		admitted.TranscriptDir != fixture.canonicalDir {
+		t.Fatalf("idempotent admission = %#v", admitted)
+	}
+}
+
+func resolveLegacyImportFixture(t *testing.T, fixture *sessionImportFixture) SessionInfo {
+	t.Helper()
+	info, err := ResolveSession(SessionQuery{
+		Scope:             SessionScopeCWD,
+		CWD:               fixture.project,
+		CatalogPath:       fixture.canonicalCatalog,
+		LegacyCatalogPath: fixture.legacyCatalog,
+	}, fixture.sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.HasResolvedSource() || !info.ReadOnly || !info.NeedsImport {
+		t.Fatalf("legacy discovery = %#v", info)
+	}
+	return info
+}
+
 func TestSessionResumeAdmissionReturnsExactCanonicalSource(t *testing.T) {
 	fixture := newSessionImportFixture(t, false)
 	if _, err := ImportSessionForResume(t.Context(), fixture.request(true)); err != nil {

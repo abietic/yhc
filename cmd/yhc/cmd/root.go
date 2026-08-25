@@ -1167,7 +1167,18 @@ func resolveApprovalReviewAudit(
 }
 
 func buildEngineConfig(ctx context.Context, flags runtimeFlags, stderr io.Writer) (engine.QueryEngineConfig, provider.ResolvedConfig, *config.Config, error) {
-	cwd := mustCwd()
+	return buildEngineConfigForCWD(ctx, flags, mustCwd(), stderr)
+}
+
+func buildEngineConfigForCWD(
+	ctx context.Context,
+	flags runtimeFlags,
+	cwd string,
+	stderr io.Writer,
+) (engine.QueryEngineConfig, provider.ResolvedConfig, *config.Config, error) {
+	if strings.TrimSpace(cwd) == "" {
+		return engine.QueryEngineConfig{}, provider.ResolvedConfig{}, nil, errors.New("engine CWD is required")
+	}
 	if stderr == nil {
 		stderr = io.Discard
 	}

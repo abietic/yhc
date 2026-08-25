@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"
+    >
+    <title>YHC</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="workbench">
+      <aside id="navigation" class="sidebar" aria-label="Session navigation">
+        <header class="sidebar-header">
+          <div class="brand">
+            <span class="mark" aria-hidden="true">Y</span>
+            <span class="brand-name">YHC</span>
+          </div>
+          <button
+            id="navigation-close"
+            class="icon-button sheet-close"
+            type="button"
+            aria-label="Close sessions"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </header>
+        <button id="new-session" class="primary new-session" type="button">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+          <span>New session</span>
+        </button>
+        <button id="open-web" class="quiet" type="button" hidden>Open Web</button>
+        <div class="sidebar-search">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/></svg>
+          <input
+            id="session-filter"
+            class="session-filter"
+            type="search"
+            placeholder="Filter sessions"
+            aria-label="Filter sessions"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
+        <nav id="session-list" aria-label="Sessions"></nav>
+        <button id="toggle-session-history" class="history-toggle" type="button" hidden>
+          Show session history
+        </button>
+        <button id="load-more-sessions" class="quiet load-more" type="button" hidden>
+          Load more sessions
+        </button>
+        <p id="session-catalog-status" role="status" aria-live="polite"></p>
+        <section id="provider-card" class="provider-card" aria-label="Model provider">
+          <span class="provider-dot" aria-hidden="true"></span>
+          <div class="provider-card-body">
+            <div class="provider-card-heading">
+              <strong id="provider-status">Not configured</strong>
+            </div>
+            <p id="provider-detail">Set up a provider before your first prompt.</p>
+            <p id="provider-host-guidance" hidden>
+              Provider credentials are managed by the Desktop App or host process.
+            </p>
+          </div>
+          <button
+            id="provider-settings"
+            class="icon-button provider-settings"
+            type="button"
+            aria-label="Configure provider"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 2.5h2.4l.4 1.7 1.5.6 1.4-1 1.7 1.7-1 1.4.6 1.5 1.7.4v2.4l-1.7.4-.6 1.5 1 1.4-1.7 1.7-1.4-1-1.5.6-.4 1.7H6.8l-.4-1.7-1.5-.6-1.4 1-1.7-1.7 1-1.4-.6-1.5-1.7-.4V8.2l1.7-.4.6-1.5-1-1.4 1.7-1.7 1.4 1 1.5-.6z"/><circle cx="8" cy="8" r="2"/></svg>
+          </button>
+        </section>
+        <div class="sidebar-foot">
+          <span>Local agent workspace</span>
+          <span id="build-identity" hidden></span>
+        </div>
+      </aside>
+
+      <section id="conversation" class="conversation">
+        <header class="topbar">
+          <div class="topbar-primary">
+            <button
+              id="navigation-toggle"
+              class="icon-button navigation-toggle"
+              type="button"
+              aria-controls="navigation"
+              aria-expanded="false"
+              aria-label="Show sessions"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12"/></svg>
+            </button>
+            <div class="session-heading">
+              <p id="session-path">Choose a workspace</p>
+              <h1 id="session-title">New session</h1>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <span id="status" class="status">Offline</span>
+            <button
+              id="inspector-toggle"
+              class="icon-button inspector-toggle"
+              type="button"
+              aria-controls="inspector"
+              aria-expanded="false"
+              aria-label="Show activity and changes"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5h11v11h-11z"/><path d="M9.5 2.5v11"/></svg>
+            </button>
+          </div>
+        </header>
+        <div id="timeline" class="timeline" aria-live="polite"></div>
+        <button id="load-earlier" class="quiet load-earlier" type="button" hidden>
+          Load earlier
+        </button>
+        <section
+          id="interaction-panel"
+          class="interactions"
+          aria-labelledby="interaction-title"
+          hidden
+        >
+          <header class="interaction-header">
+            <div>
+              <p id="interaction-kind" class="interaction-kind"></p>
+              <h2 id="interaction-title">Input required</h2>
+            </div>
+            <span id="interaction-queue" class="interaction-queue" hidden></span>
+          </header>
+          <div id="interaction-body" class="interaction-body"></div>
+          <p id="interaction-error" class="interaction-error" role="alert" hidden></p>
+          <div id="interaction-actions" class="interaction-actions"></div>
+        </section>
+        <form id="composer" class="composer">
+          <textarea
+            id="prompt"
+            rows="3"
+            placeholder="Ask YHC to help with your code…"
+          ></textarea>
+          <div id="legacy-import-remediation" class="model-remediation legacy-import-remediation" hidden>
+            <p id="legacy-import-copy" role="status">
+              This legacy history must be imported before it can continue.
+            </p>
+            <button id="legacy-import" class="quiet" type="button">Import and continue</button>
+          </div>
+          <div id="model-remediation" class="model-remediation" hidden>
+            <p id="model-block" role="status"></p>
+            <button id="model-rebind" class="quiet" type="button" hidden>Rebind current model</button>
+          </div>
+          <div class="composer-bar">
+            <div id="execution-controls" class="execution-controls" aria-label="Execution settings">
+              <label class="control-chip model-chip" for="model-select">
+                <select id="model-select" disabled></select>
+                <span class="chip-caret" aria-hidden="true"></span>
+              </label>
+              <label class="control-chip" for="reasoning-select">
+                <span class="chip-caption">Reasoning</span>
+                <select id="reasoning-select" disabled></select>
+                <span class="chip-caret" aria-hidden="true"></span>
+              </label>
+              <label class="control-chip" for="permission-mode-select">
+                <span class="chip-caption">Access</span>
+                <select id="permission-mode-select" disabled></select>
+                <span class="chip-caret" aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="composer-actions">
+              <span id="turn-state">Ready</span>
+              <button id="cancel" type="button" class="quiet" disabled>Cancel</button>
+              <button id="send" class="primary send-button" type="submit" title="Send (⌘⏎)">
+                <span>Send</span>
+                <kbd aria-hidden="true">⌘⏎</kbd>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <aside id="inspector" class="inspector" aria-label="Activity and changes">
+        <header class="inspector-header">
+          <div class="inspector-tabs" role="tablist" aria-label="Inspector">
+            <button
+              id="activity-tab"
+              class="inspector-tab active"
+              type="button"
+              role="tab"
+              aria-controls="activity-view"
+              aria-selected="true"
+            >Activity</button>
+            <button
+              id="review-tab"
+              class="inspector-tab"
+              type="button"
+              role="tab"
+              aria-controls="review-view"
+              aria-selected="false"
+            >Changes</button>
+          </div>
+          <div class="inspector-header-actions">
+            <span id="activity-count" class="count-badge">0</span>
+            <button
+              id="inspector-close"
+              class="icon-button sheet-close"
+              type="button"
+              aria-label="Close activity and changes"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            </button>
+          </div>
+        </header>
+        <section
+          id="activity-view"
+          role="tabpanel"
+          aria-labelledby="activity-tab"
+        >
+          <div id="activity" class="activity"></div>
+        </section>
+        <section
+          id="review-view"
+          class="review-view"
+          role="tabpanel"
+          aria-labelledby="review-tab"
+          hidden
+        >
+          <div class="review-toolbar">
+            <label>
+              <input id="ignore-whitespace" type="checkbox">
+              Ignore whitespace
+            </label>
+            <button id="refresh-review" class="quiet" type="button">Refresh</button>
+          </div>
+          <p id="review-status" class="review-status">
+            Open a live session to inspect tracked worktree changes.
+          </p>
+          <pre id="review-diff" class="review-diff"></pre>
+        </section>
+      </aside>
+      <button
+        id="sheet-backdrop"
+        class="sheet-backdrop"
+        type="button"
+        aria-label="Close open panel"
+        tabindex="-1"
+        hidden
+      ></button>
+    </main>
+
+    <template id="empty-state">
+      <div class="empty">
+        <span class="empty-mark" aria-hidden="true">YHC</span>
+        <h2>Start with a workspace</h2>
+        <p id="empty-copy">Connect a model provider, then open a folder to start coding.</p>
+        <div class="empty-actions">
+          <button data-empty-action="provider" class="primary" type="button">
+            Configure provider
+          </button>
+          <button data-empty-action="workspace" class="quiet" type="button">
+            Open workspace
+          </button>
+        </div>
+      </div>
+    </template>
+    <dialog id="provider-dialog" class="workspace-dialog provider-dialog">
+      <form id="provider-form">
+        <p class="dialog-kicker">First-run setup</p>
+        <h2>Connect a model provider</h2>
+        <p>
+          Your API key is encrypted by the operating system and never returned
+          to this window after saving.
+        </p>
+        <div class="provider-fields">
+          <label for="provider-select">
+            Provider
+            <select id="provider-select" name="provider" required>
+              <option value="anthropic">Anthropic</option>
+              <option value="openai">OpenAI</option>
+              <option value="google">Google Gemini</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="qwen">Qwen</option>
+              <option value="ark">Volcengine Ark</option>
+            </select>
+          </label>
+          <label for="provider-model">
+            Model
+            <input
+              id="provider-model"
+              name="model"
+              type="text"
+              value="default"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="256"
+              required
+            >
+            <small>Use “default” to start with the provider’s recommended model.</small>
+          </label>
+          <label for="provider-base-url">
+            Base URL <span>Optional</span>
+            <input
+              id="provider-base-url"
+              name="base-url"
+              type="url"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="2048"
+              placeholder="https://api.example.com/v1"
+            >
+          </label>
+          <label for="provider-api-key">
+            API key
+            <input
+              id="provider-api-key"
+              name="api-key"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="4096"
+              required
+            >
+          </label>
+        </div>
+        <p id="provider-dialog-status" class="dialog-status" role="status" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button id="provider-cancel" class="quiet" type="button">Cancel</button>
+          <button id="provider-save" class="primary" type="submit">Save and continue</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="confirm-dialog" class="workspace-dialog">
+      <form id="confirm-form">
+        <p class="dialog-kicker">Session lifecycle</p>
+        <h2 id="confirm-title">Close session?</h2>
+        <p id="confirm-copy"></p>
+        <div class="dialog-actions">
+          <button id="confirm-cancel" class="quiet" type="button">Cancel</button>
+          <button id="confirm-accept" class="primary" type="submit">Continue</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="app.mjs"></script>
+  </body>
+</html>

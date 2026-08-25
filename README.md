@@ -31,6 +31,8 @@ Use the documentation owners instead of counts copied into this README:
 - durable transcripts and sessions plus process-local runtime projections;
 - Bubble Tea TUI, plain/headless CLI, ACP server, and standalone MCP server
   entrypoints;
+- an authenticated loopback Desktop workbench that replays saved history before
+  activating a conversation runtime;
 - provider-neutral model resolution through Eino provider adapters.
 
 For package-by-package ownership and production-wiring labels, use the
@@ -47,6 +49,8 @@ Follow [Getting Started](docs/guides/getting-started.md) for the current build
 artifact paths, provider credentials, first interactive run, and non-interactive
 modes. Configuration and provider precedence are documented separately in
 [Configuration And Providers](docs/guides/configuration-and-providers.md).
+For the packaged Electron workbench and its local-QA boundary, use the
+[Desktop workbench guide](docs/guides/desktop-workbench.md).
 
 ## Development
 

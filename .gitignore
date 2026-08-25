@@ -1,5 +1,9 @@
 # Build output
 build/
+/desktop/node_modules/
+/desktop/dist/
+/desktop/release/
+/desktop/resources/bin/
 
 # IDE
 .idea/

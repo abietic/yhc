@@ -106,10 +106,11 @@ func newAgenticClaude(ctx context.Context, cfg Config) (model.AgenticModel, erro
 		maxTokens = 8192
 	}
 	return agenticclaude.New(ctx, &agenticclaude.Config{
-		BaseURL:   cfg.BaseURL,
-		APIKey:    cfg.APIKey,
-		Model:     cfg.Model,
-		MaxTokens: maxTokens,
+		HTTPClient: claudeHTTPClientForBaseURL(cfg.BaseURL),
+		BaseURL:    cfg.BaseURL,
+		APIKey:     cfg.APIKey,
+		Model:      cfg.Model,
+		MaxTokens:  maxTokens,
 	})
 }
 

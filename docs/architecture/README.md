@@ -30,6 +30,7 @@ execution kernel.
 | Change config, provider routing, entrypoints, onboarding, notifications, or services | [`platform/`](platform/README.md) |
 | Change sessions, transcripts, result offload, or memory files | [`state/`](state/README.md) |
 | Change terminal UI, replay, composer, queue, or terminal lifecycle | [`tui/`](tui/README.md) |
+| Change the Electron workbench, app-server protocol, or browser projections | [`desktop-workbench.md`](desktop-workbench.md) |
 | Change Goal state, continuation, or entrypoint exposure | [`runtime/query-engine.md`](runtime/query-engine.md) and [`platform/entrypoints-and-transports.md`](platform/entrypoints-and-transports.md) |
 | Find the owner for a Go package | [`code-map.md`](code-map.md) |
 | Use the product rather than modify it | [`guides/`](../guides/README.md) |
@@ -58,12 +59,15 @@ flowchart TD
     CLI --> Headless["explicit exec / print compatibility"]
     CLI --> GoalRun["bounded goal run"]
     CLI --> ACP["ACP server"]
+    CLI --> AppServer["serve app"]
     CLI --> Admin["version / completion / administration"]
     TUI --> QE["engine.QueryEngine"]
     Plain --> QE
     Headless --> QE
     GoalRun --> QE
     ACP --> QE
+    AppServer --> AppSession["appserver session"]
+    AppSession --> QE
     QE --> Select["validate session-pinned kernel metadata"]
     Select --> Graph["ProjectGraph kernel"]
     DirectQ["direct engine.Query caller"] --> Graph
@@ -90,6 +94,10 @@ flowchart TD
   Graph, or starting long-lived services.
 - ACP owns one `QueryEngine` per ACP session and translates engine events to
   protocol notifications.
+- `serve app` owns an authenticated loopback app-server. The same-origin Web UI
+  and the Electron host use its typed projections; a saved session is read as
+  durable history first and its engine is attached only when the user submits a
+  new prompt. Details belong in [Desktop workbench](desktop-workbench.md).
 - `serve mcp` is an independent tool server. It creates a registry and invokes
   tool executors directly; it does **not** enter `QueryEngine` or ProjectGraph.
   Its `MCP_PERMISSION_MODE` and `MCPToolHook` are therefore a separate policy

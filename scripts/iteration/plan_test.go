@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -184,6 +185,79 @@ func TestRepositoryPolicyClassifiesLegacyCLIDeletion(t *testing.T) {
 		focused: []FocusedCheck{{Owner: "cli-entrypoint", Packages: []string{"./cmd/yhc/..."}}},
 		targets: []string{"build", "check-boundaries", "docs-check", "docs-check-ci", "fmt", "git-diff-check", "lint", "test", "test-contract", "test-e2e", "test-pty"},
 	})
+}
+
+func TestRepositoryPolicyClassifiesDesktopOwners(t *testing.T) {
+	root := openPolicyRoot(t, "../..")
+	policy, err := loadPolicy(root, "quality/iteration.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		path    string
+		owner   string
+		kind    PathKind
+		focused []FocusedCheck
+		risks   []string
+	}{
+		{
+			name:    "app server",
+			path:    "server/appserver/server.go",
+			owner:   "app-server-adapter",
+			kind:    PathProduction,
+			focused: []FocusedCheck{{Owner: "app-server-adapter", Packages: []string{"./server/appserver"}}},
+			risks:   []string{"concurrency", "contract", "desktop", "e2e"},
+		},
+		{
+			name:    "web UI",
+			path:    "internal/webui/assets/app.mjs",
+			owner:   "webui-adapter",
+			kind:    PathProduction,
+			focused: []FocusedCheck{{Owner: "webui-adapter", Packages: []string{"./internal/webui"}}},
+			risks:   []string{"desktop"},
+		},
+		{
+			name:    "desktop workbench test",
+			path:    "desktop/test/state.test.mjs",
+			owner:   "desktop-workbench",
+			kind:    PathTest,
+			focused: []FocusedCheck{{Owner: "desktop-workbench", Packages: []string{"./cmd/yhc/cmd"}}},
+			risks:   []string{"desktop"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := buildPlan(policy, testSnapshot(GitChange{Status: "M", Path: tc.path}), "linux", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertPlanSlices(t, plan, planExpectation{
+				changed: []ChangedPath{{Path: tc.path, Status: "M", Owner: tc.owner, Kind: tc.kind}},
+				modules: []string{tc.owner},
+				risks:   tc.risks,
+				docs:    []string{"docs/superpowers/specs/2026-08-13-yhc-desktop-workbench-forward-port-design.md"},
+				focused: tc.focused,
+				targets: desktopTargets(tc.risks),
+			})
+		})
+	}
+}
+
+func desktopTargets(risks []string) []string {
+	targets := []string{"build", "check-boundaries", "desktop-check", "docs-check", "docs-check-ci", "fmt", "git-diff-check", "lint", "test"}
+	for _, risk := range risks {
+		switch risk {
+		case "contract":
+			targets = append(targets, "test-contract")
+		case "concurrency":
+			targets = append(targets, "test-race")
+		case "e2e":
+			targets = append(targets, "test-e2e")
+		}
+	}
+	sort.Strings(targets)
+	return targets
 }
 
 func TestBuildPlanDeduplicatesMatchesWithinOwner(t *testing.T) {

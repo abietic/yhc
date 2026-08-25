@@ -3160,12 +3160,13 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 	planActive := actionDescriptor.PlanActive
 	canonicalToolName := actionDescriptor.CanonicalToolName
 	planDecision := evaluatePlanToolPolicy(planToolPolicyRequest{
-		Active:    planActive,
-		ToolName:  canonicalToolName,
-		Input:     input,
-		SessionID: toolContextSessionID(toolCtx, e.config.SessionID),
-		AgentID:   toolContextAgentID(toolCtx, e.config.AgentID),
-		Registry:  e.toolRegistry,
+		Active:           planActive,
+		ToolName:         canonicalToolName,
+		Input:            input,
+		SessionID:        toolContextSessionID(toolCtx, e.config.SessionID),
+		AgentID:          toolContextAgentID(toolCtx, e.config.AgentID),
+		PlanFileIdentity: toolContextPlanFileIdentity(toolCtx),
+		Registry:         e.toolRegistry,
 	})
 	if !planDecision.Allowed {
 		return denyInvocationPolicy(planDecision.Reason)
@@ -3199,6 +3200,13 @@ func (e *QueryEngine) evaluateInvocationPolicy(
 	)
 	if ruleDecision.Matched && ruleDecision.Action == permission.ActionDeny {
 		return denyInvocationPolicy("permission rule denied tool use")
+	}
+	if canonicalToolName == "EnterPlanMode" &&
+		e.config.CommandEntrypoint == commands.EntrypointAppServer {
+		// EnterPlanMode only moves the runtime into the more restrictive Plan
+		// lifecycle. It is not an authorization request. Plan policy and the
+		// explicit deny rule above remain authoritative.
+		return allowInvocationPolicy()
 	}
 	if canonicalToolName == "Bash" {
 		if critical := classifyCriticalBashAction(actionDescriptor); critical.Match {
@@ -3632,21 +3640,25 @@ func (e *QueryEngine) promptForTool(
 		grantEvaluator = nil
 	}
 	request := PermissionPromptRequest{
-		Kind:               permissionPromptKind(toolName, planApproval),
-		Source:             "coordinator",
-		ToolName:           toolName,
-		CanonicalToolName:  initialAction.CanonicalToolName,
-		ToolUseID:          currentToolUseID(ctx),
-		Input:              cloneInputMap(input),
-		Message:            e.SessionApprovalDescription(toolName, input),
-		SessionScope:       e.SessionApprovalDescription(toolName, input),
-		ProjectIdentity:    e.permissionProjectIdentity,
-		RootSessionID:      e.permissionRootSessionID,
-		SessionID:          sessionID,
-		ThreadID:           threadID,
-		AgentID:            agentID,
-		ToolContext:        toolCtx,
-		PlanApproval:       planApproval,
+		Kind:              permissionPromptKind(toolName, planApproval),
+		Source:            "coordinator",
+		ToolName:          toolName,
+		CanonicalToolName: initialAction.CanonicalToolName,
+		ToolUseID:         currentToolUseID(ctx),
+		Input:             cloneInputMap(input),
+		Message:           e.SessionApprovalDescription(toolName, input),
+		SessionScope:      e.SessionApprovalDescription(toolName, input),
+		ProjectIdentity:   e.permissionProjectIdentity,
+		RootSessionID:     e.permissionRootSessionID,
+		SessionID:         sessionID,
+		ThreadID:          threadID,
+		AgentID:           agentID,
+		ToolContext:       toolCtx,
+		PlanApproval:      planApproval,
+		Presentation: permissionPresentationForAction(
+			permissionPromptKind(toolName, planApproval),
+			*initialAction,
+		),
 		DecisionConstraint: constraint,
 		action:             initialAction,
 	}
@@ -4172,6 +4184,8 @@ func sdkCompatToolName(name string) string {
 
 type toolUseIDContextKey struct{}
 
+type canonicalToolNameContextKey struct{}
+
 func withToolUseID(ctx context.Context, toolUseID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -4187,6 +4201,21 @@ func currentToolUseID(ctx context.Context) string {
 		return v
 	}
 	return ""
+}
+
+func withCanonicalToolName(ctx context.Context, toolName string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, canonicalToolNameContextKey{}, strings.TrimSpace(toolName))
+}
+
+func currentCanonicalToolName(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	toolName, _ := ctx.Value(canonicalToolNameContextKey{}).(string)
+	return strings.TrimSpace(toolName)
 }
 
 // ToolUseIDFromContext returns the stable tool call identity visible to
@@ -4877,7 +4906,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 	fallbackPermissionMode := e.config.PermissionMode
 	e.mu.Unlock()
 	preserveDurableGraphPlanApproval := restoredGraphInterrupt != nil &&
-		restoredGraphInterrupt.Kind == "plan_approval" &&
+		restoredGraphInterrupt.Kind == PermissionInteractionKindPlanApproval &&
 		restoredGraphInterrupt.PlanApproval != nil &&
 		resumed.Metadata.PlanState != nil &&
 		resumed.Metadata.PlanState.ApprovalRequestID ==
@@ -5225,6 +5254,21 @@ func (e *QueryEngine) AgentID() string {
 // GetTranscript returns the engine's transcript recorder.
 func (e *QueryEngine) GetTranscript() *transcript.Recorder {
 	return e.transcript
+}
+
+// TranscriptPath returns the durable root-session transcript selected by this
+// engine. Callers may use it only for read-only inspection; the recorder and
+// runtime remain the sole mutation authority.
+func (e *QueryEngine) TranscriptPath() string {
+	if e == nil {
+		return ""
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.transcript == nil {
+		return ""
+	}
+	return e.transcript.Path()
 }
 
 // GetTokenBudget returns the engine's token budget tracker.

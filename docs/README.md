@@ -16,6 +16,7 @@ Product scope, reference roles, and adoption decisions are owned by
 | You want to... | Start here | What it owns |
 |---|---|---|
 | Install, configure, and use the agent | [`guides/`](guides/README.md) | Task-oriented user and operator workflows |
+| Use the packaged Desktop workbench | [`guides/desktop-workbench.md`](guides/desktop-workbench.md) | Local desktop setup, session behavior, and recovery |
 | Understand or change current code | [`architecture/`](architecture/README.md) | Current runtime, module ownership, data flow, invariants, and code references |
 | Contribute and verify a change | [`contributing/`](contributing/README.md) | Repository workflow, documentation policy, and validation gates |
 | Audit or publish the public source tree | [`publication/`](publication/README.md) | Source clearance, provenance, privacy review, and clean-root release boundaries |
@@ -44,8 +45,9 @@ flowchart LR
 
 1. [`Getting started`](guides/getting-started.md)
 2. [`Configuration and providers`](guides/configuration-and-providers.md)
-3. [`Interaction modes and commands`](guides/interaction-modes-and-commands.md)
-4. [`Permissions and safety`](guides/permissions-and-safety.md)
+3. [`Desktop workbench`](guides/desktop-workbench.md) when using the packaged app
+4. [`Interaction modes and commands`](guides/interaction-modes-and-commands.md)
+5. [`Permissions and safety`](guides/permissions-and-safety.md)
 
 ### Runtime contributor or coding agent
 

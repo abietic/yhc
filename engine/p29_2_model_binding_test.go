@@ -22,6 +22,7 @@ import (
 
 type p292InventoryResolver struct {
 	snapshot        provider.RuntimeInventorySnapshot
+	usesNamed       bool
 	resolveStarted  chan struct{}
 	resolveContinue chan struct{}
 	resolveOnce     sync.Once
@@ -43,6 +44,7 @@ func newP292InventoryResolver(contextWindow int) *p292InventoryResolver {
 		),
 	}
 	return &p292InventoryResolver{
+		usesNamed: true,
 		snapshot: provider.RuntimeInventorySnapshot{
 			Revision: strings.Repeat("a", 64),
 			Default:  "primary",
@@ -70,6 +72,10 @@ func newP292InventoryResolver(contextWindow int) *p292InventoryResolver {
 			},
 		},
 	}
+}
+
+func (r *p292InventoryResolver) UsesNamedPortfolio() bool {
+	return r.usesNamed
 }
 
 func p292MetadataField[T any](value T) modelcaps.MetadataField[T] {
@@ -375,6 +381,89 @@ func TestP292NewSessionWithIncompatibleMetadataFailsClosed(t *testing.T) {
 	}
 	if calls := model.CallCount(); calls != 0 {
 		t.Fatalf("incompatible startup metadata reached provider %d times", calls)
+	}
+}
+
+func TestP292NewSessionPreservesUnknownLegacyMainModel(t *testing.T) {
+	resolver := newP292InventoryResolver(200000)
+	metadata, err := modelcaps.ResolvePortfolioMetadata(
+		"haiku",
+		modelcaps.MetadataOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver.snapshot.Default = "legacy:haiku"
+	resolver.usesNamed = false
+	resolver.snapshot.Entries = []provider.RuntimeInventoryEntry{{
+		Selector:            "legacy:haiku",
+		ProfileID:           "legacy.main",
+		DisplayName:         "haiku",
+		Provider:            string(provider.ProviderAgenticClaude),
+		APIModel:            "haiku",
+		Metadata:            metadata,
+		RouteIdentityDigest: strings.Repeat("1", 64),
+		MetadataDigest:      strings.Repeat("2", 64),
+	}}
+	cwd := t.TempDir()
+	queryEngine := NewQueryEngine(QueryEngineConfig{
+		SessionID:     "p29-2-legacy-startup",
+		CWD:           cwd,
+		TranscriptDir: filepath.Join(cwd, "transcripts"),
+		Model:         "haiku",
+		ModelResolver: resolver,
+	})
+	t.Cleanup(queryEngine.Close)
+
+	if block := queryEngine.ModelDispatchBlockSnapshot(); block != nil {
+		t.Fatalf("legacy startup dispatch block = %#v", block)
+	}
+	projection := session.SafeModelBindingProjection(queryEngine.modelBinding)
+	if projection.State != session.ModelBindingStateValid ||
+		projection.Kind != session.ModelBindingKindLegacy ||
+		projection.Value != "haiku" {
+		t.Fatalf("legacy startup binding = %#v", projection)
+	}
+}
+
+func TestP292NamedPortfolioCannotBypassMetadataWithLegacySelector(t *testing.T) {
+	resolver := newP292InventoryResolver(200000)
+	metadata, err := modelcaps.ResolvePortfolioMetadata(
+		"custom-model-without-metadata",
+		modelcaps.MetadataOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver.snapshot.Entries = append(
+		resolver.snapshot.Entries,
+		provider.RuntimeInventoryEntry{
+			Selector:            "legacy:custom-model-without-metadata",
+			DisplayName:         "custom-model-without-metadata",
+			Provider:            string(provider.ProviderAgenticOpenAI),
+			APIModel:            "custom-model-without-metadata",
+			Metadata:            metadata,
+			RouteIdentityDigest: strings.Repeat("5", 64),
+			MetadataDigest:      strings.Repeat("6", 64),
+		},
+	)
+	queryEngine := newP292BindingEngine(t, resolver)
+	originalBinding := queryEngine.modelBinding.Clone()
+
+	if _, err := queryEngine.ChangeModel(
+		context.Background(),
+		"legacy:custom-model-without-metadata",
+	); err == nil {
+		t.Fatal("named portfolio accepted legacy selector with unknown metadata")
+	}
+	if queryEngine.GetModelName() != "primary" ||
+		queryEngine.modelBinding.Value != originalBinding.Value ||
+		queryEngine.modelBinding.RouteIdentityDigest != originalBinding.RouteIdentityDigest {
+		t.Fatalf(
+			"rejected legacy selector mutated binding: model=%q binding=%#v",
+			queryEngine.GetModelName(),
+			queryEngine.modelBinding,
+		)
 	}
 }
 

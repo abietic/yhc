@@ -121,8 +121,15 @@ func (r *Runtime) resolveExactRoleCall(
 			err,
 		)
 	}
-	if err := admitRoleMetadata(role, entry.Metadata, input.Requirements); err != nil {
-		return RoleCallSnapshot{}, err
+	legacyMain := role == engineconfig.RoleMain &&
+		source == RoleCallSourceInheritedMain &&
+		r.portfolio != nil &&
+		strings.HasPrefix(string(r.portfolio.Default), "legacy.") &&
+		strings.HasPrefix(strings.ToLower(strings.TrimSpace(entry.Selector)), "legacy:")
+	if !legacyMain {
+		if err := admitRoleMetadata(role, entry.Metadata, input.Requirements); err != nil {
+			return RoleCallSnapshot{}, err
+		}
 	}
 
 	rawEffort := input.Requirements.RequestedEffort

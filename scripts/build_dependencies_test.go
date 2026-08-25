@@ -20,6 +20,13 @@ var releaseAndDebugTargets = []string{
 	"build/evaluation/yhc" + evaluationExecutableSuffix(),
 }
 
+var desktopBackendTargets = []string{
+	"build/desktop/darwin-amd64/yhc",
+	"build/desktop/darwin-arm64/yhc",
+	"build/desktop/linux-amd64/yhc",
+	"build/desktop/windows-amd64/yhc.exe",
+}
+
 func evaluationExecutableSuffix() string {
 	if runtime.GOOS == "windows" {
 		return ".exe"
@@ -155,6 +162,105 @@ func TestBuildDependencies(t *testing.T) {
 			}
 			assertTargetsState(t, dir, makefile, 1)
 		})
+	}
+}
+
+func TestDesktopBackendsRebuildWhenBuildIdentityChanges(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Makefile uses a POSIX shell")
+	}
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Fatalf("make is required to validate desktop build identity: %v", err)
+	}
+
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	makefile := filepath.Clean(filepath.Join(workingDir, "..", "Makefile"))
+	fixtureRoot := t.TempDir()
+	createSourceFixture(t, fixtureRoot, "cmd", time.Now().Add(-time.Hour))
+	if err := os.MkdirAll(filepath.Join(fixtureRoot, "desktop"), 0o755); err != nil {
+		t.Fatalf("mkdir desktop fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixtureRoot, "desktop", "package.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write desktop package fixture: %v", err)
+	}
+
+	journal := filepath.Join(fixtureRoot, "go-build.log")
+	fakeGo := filepath.Join(fixtureRoot, "go")
+	const fakeGoScript = `#!/bin/sh
+set -eu
+if [ "$#" -eq 2 ] && [ "$1" = "env" ]; then
+	case "$2" in
+		GOPATH) printf '%s\n' "${YHC_TEST_GOPATH:?}" ;;
+		GOHOSTOS) printf '%s\n' "darwin" ;;
+		GOHOSTARCH) printf '%s\n' "arm64" ;;
+		*) exit 2 ;;
+	esac
+	exit 0
+fi
+output=""
+previous=""
+for argument in "$@"; do
+	if [ "$previous" = "-o" ]; then
+		output="$argument"
+		break
+	fi
+	previous="$argument"
+done
+test -n "$output"
+printf '%s\n' "$*" >>"${YHC_TEST_JOURNAL:?}"
+mkdir -p "$(dirname "$output")"
+printf '%s\n' artifact >"$output"
+`
+	if err := os.WriteFile(fakeGo, []byte(fakeGoScript), 0o700); err != nil {
+		t.Fatalf("write fake go: %v", err)
+	}
+
+	runBuilds := func(commit, buildTime, modified string) {
+		t.Helper()
+		args := []string{
+			"--no-print-directory",
+			"--file", makefile,
+			"GO=" + fakeGo,
+			"NODE=true",
+			"DESKTOP_VERSION=0.1.0",
+			"BUILD_COMMIT=" + commit,
+			"BUILD_TIME=" + buildTime,
+			"BUILD_MODIFIED=" + modified,
+		}
+		args = append(args, desktopBackendTargets...)
+		cmd := exec.Command("make", args...)
+		cmd.Dir = fixtureRoot
+		cmd.Env = append(os.Environ(),
+			"YHC_TEST_GOPATH="+fixtureRoot,
+			"YHC_TEST_JOURNAL="+journal,
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("build desktop backends: %v: %s", err, output)
+		}
+	}
+
+	firstCommit := strings.Repeat("1", 40)
+	secondCommit := strings.Repeat("2", 40)
+	runBuilds(firstCommit, "2026-08-20T04:36:10+08:00", "true")
+	runBuilds(secondCommit, "2026-08-24T01:27:00+08:00", "false")
+
+	data, err := os.ReadFile(journal)
+	if err != nil {
+		t.Fatalf("read build journal: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if got, want := len(lines), 2*len(desktopBackendTargets); got != want {
+		t.Fatalf("desktop backend build count = %d, want %d; journal:\n%s", got, want, data)
+	}
+	for _, line := range lines[len(desktopBackendTargets):] {
+		if !strings.Contains(line, "buildinfo.Commit="+secondCommit) ||
+			!strings.Contains(line, "buildinfo.BuildTime=2026-08-24T01:27:00+08:00") ||
+			!strings.Contains(line, "buildinfo.Modified=false") {
+			t.Fatalf("second desktop build retained stale identity: %s", line)
+		}
 	}
 }
 

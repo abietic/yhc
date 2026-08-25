@@ -2241,7 +2241,7 @@ git diff --check
 | canonical WorkBoard projection | [`workboard.ProjectionReducer`](../../../engine/internal/workboard/projection.go) and [`LogicalWorkAdapter.ProjectionSnapshot`](../../../engine/internal/workboard/adapter.go) |
 | canonical explorer and exact action dispatcher | [`QueryEngine.TaskExplorerSnapshot`](../../../engine/task_explorer.go) and [`QueryEngine.ApplyTaskExplorerAction`](../../../engine/task_explorer.go) |
 | task/runtime reducer | [`RuntimeStateStore`](../../../engine/runtime_state.go) |
-| Ctrl+T projection | [`buildTaskPanelLines`](../../../internal/tui/app.go#L5689) |
+| Ctrl+T projection | [`buildTaskPanelLines`](../../../internal/tui/app.go#L5806) |
 | Ctrl+B projection/control | [`BackgroundTasksPanel`](../../../internal/tui/background_tasks.go#L25) |
 | team monitor | [`TeamsPanel`](../../../internal/tui/teams.go) |
 | standalone ephemeral Task/Todo owner | [`server/mcp/server.go`](../../../server/mcp/server.go) and [`tools.EphemeralTodoAuthority`](../../../tools/logical_work.go) |

@@ -54,6 +54,11 @@ const (
 	PermissionInteractionKindRepeatedTool = "repeated_tool"
 )
 
+// RepeatedToolInteractionPromptMessage is the immutable semantic prompt for a
+// third consecutive identical tool call. Both the event and callback paths use
+// it so replay never invents a second interaction identity.
+const RepeatedToolInteractionPromptMessage = "This is the third consecutive identical tool call. Run this call once, or stop and change strategy."
+
 // PlanApprovalOutcome is the canonical semantic result of a Plan review.
 // The generic permission decision remains transport compatibility only.
 type PlanApprovalOutcome string
@@ -143,6 +148,7 @@ type PermissionPromptRequest struct {
 	AgentID            string
 	ToolContext        *ToolUseContext
 	PlanApproval       *PlanApprovalRequest
+	Presentation       *PermissionPresentation
 	DecisionConstraint PermissionDecisionConstraint
 	action             *PermissionActionDescriptor
 }
@@ -490,14 +496,15 @@ func (c *PermissionCoordinator) request(
 	if request.ProjectIdentity.Root != "" && request.ProjectIdentity.key() != c.identity.key() {
 		return PermissionInteractionResult{Decision: PermissionDeny, Message: "permission request project identity mismatch"}
 	}
-	if !request.DecisionConstraint.valid() {
-		return PermissionInteractionResult{Decision: PermissionDeny, Message: "invalid permission decision constraint"}
-	}
-	if permissionInteractionKind(request) != PermissionInteractionKindPermission &&
-		request.DecisionConstraint != PermissionDecisionUnconstrained {
-		return PermissionInteractionResult{Decision: PermissionDeny, Message: "decision constraint is only valid for permission interactions"}
+	if err := validatePermissionPromptIdentity(request); err != nil {
+		return PermissionInteractionResult{Decision: PermissionDeny, Message: err.Error()}
 	}
 	request.PlanApproval = clonePlanApprovalRequest(request.PlanApproval)
+	request.Presentation = normalizedPermissionPresentation(
+		permissionInteractionKind(request),
+		permissionPresentationToolName(request),
+		request.Presentation,
+	)
 
 	key := permissionRequestKey{engineID: engineID, toolUseID: request.ToolUseID}
 	adapterCtx, adapterCancel := context.WithCancel(ctx)
@@ -535,6 +542,7 @@ func (c *PermissionCoordinator) request(
 				Input:     cloneInputMap(request.Input), Message: request.Message,
 				Source: permissionInteractionSource(request), Kind: permissionInteractionKind(request), Attempt: request.Attempt,
 				PlanApproval:       clonePlanApprovalRequest(request.PlanApproval),
+				Presentation:       clonePermissionPresentation(request.Presentation),
 				DecisionConstraint: request.DecisionConstraint,
 			},
 		})
@@ -689,13 +697,57 @@ func (c *PermissionCoordinator) settleRequest(
 }
 
 func permissionInteractionKind(request PermissionPromptRequest) string {
-	if request.Kind != "" {
+	switch request.Kind {
+	case "":
+		if request.PlanApproval != nil {
+			return PermissionInteractionKindPlanApproval
+		}
+		return PermissionInteractionKindPermission
+	case PermissionInteractionKindPermission, PermissionInteractionKindQuestion, PermissionInteractionKindPlanApproval, PermissionInteractionKindRepeatedTool:
+		return request.Kind
+	default:
 		return request.Kind
 	}
-	if request.PlanApproval != nil {
-		return PermissionInteractionKindPlanApproval
+}
+
+func validatePermissionPromptIdentity(request PermissionPromptRequest) error {
+	kind := permissionInteractionKind(request)
+	if !request.DecisionConstraint.valid() {
+		return errors.New("invalid permission decision constraint")
 	}
-	return PermissionInteractionKindPermission
+	if kind != PermissionInteractionKindPermission &&
+		request.DecisionConstraint != PermissionDecisionUnconstrained {
+		return errors.New("decision constraint is only valid for permission interactions")
+	}
+	switch kind {
+	case PermissionInteractionKindPermission, PermissionInteractionKindQuestion:
+		if request.PlanApproval != nil || request.Attempt != 0 {
+			return errors.New("invalid typed permission request identity")
+		}
+		if kind == PermissionInteractionKindQuestion && request.Presentation != nil {
+			return errors.New("question interaction cannot carry permission presentation")
+		}
+	case PermissionInteractionKindPlanApproval:
+		if request.PlanApproval == nil || request.Attempt != 0 || request.Presentation != nil {
+			return errors.New("invalid Plan approval request identity")
+		}
+	case PermissionInteractionKindRepeatedTool:
+		if request.PlanApproval != nil || request.Attempt != 3 ||
+			strings.TrimSpace(request.Source) != "repeated_tool_guard" ||
+			request.Presentation != nil {
+			return errors.New("invalid repeated-tool request identity")
+		}
+	default:
+		return errors.New("unknown permission interaction kind")
+	}
+	return nil
+}
+
+func permissionPresentationToolName(request PermissionPromptRequest) string {
+	if strings.TrimSpace(request.CanonicalToolName) != "" {
+		return request.CanonicalToolName
+	}
+	return request.ToolName
 }
 
 func permissionInteractionSource(request PermissionPromptRequest) string {

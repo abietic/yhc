@@ -650,6 +650,8 @@ func containmentEntrypoint(entrypoint commands.Entrypoint) containment.Entrypoin
 		return containment.EntrypointHeadlessGoal
 	case commands.EntrypointACP:
 		return containment.EntrypointACP
+	case commands.EntrypointAppServer:
+		return containment.EntrypointAppServer
 	default:
 		return containment.EntrypointEmbedded
 	}

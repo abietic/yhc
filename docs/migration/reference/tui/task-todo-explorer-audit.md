@@ -61,7 +61,7 @@ The following are outside the evidence boundary:
 | Todo checklist | [`TodoWriteTool`](../../../../tools/todo_write.go#L192) replaces a package-global list scoped by trusted Session and Agent IDs. All-complete clears the active list. It has no durable store or runtime selector input. |
 | Agent execution | [`tools.AgentRunner`](../../../../tools/agent_runner.go) owns child identity, generation, progress, message, pause/resume/abort, terminal state, transcript, and retained/evicted inspection. |
 | Shared read path | `QueryEngine.TaskAgentSnapshot` gave canonical runtime Agent/task rows precedence and excluded package-global fallback state. Todo was not a row. P31.5 later deleted this historical selector. |
-| Ctrl+T | [`buildTaskPanelLines`](../../../../internal/tui/app.go#L5689) shows a bounded status summary. Its keys only scroll, refresh, and close. |
+| Ctrl+T | [`buildTaskPanelLines`](../../../../internal/tui/app.go#L5806) shows a bounded status summary. Its keys only scroll, refresh, and close. |
 | Ctrl+B | [`BackgroundTasksPanel`](../../../../internal/tui/background_tasks.go#L25) adds Agent detail/transcript/control and local-task output/stop. It still reads local-task output through the root task manager. |
 | Other views | `/team` and the wide sidebar consume the shared selector for smaller read-only projections. Task/Todo tool history renders the mutation call, not current board truth. |
 

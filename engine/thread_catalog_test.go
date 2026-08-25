@@ -20,7 +20,10 @@ func TestThreadCatalogClassifiesLiveReplayQuestionAndEvictedModes(t *testing.T) 
 		evt.StreamEvent = &schema.Message{Role: schema.Assistant, Content: "partial response"}
 	}))
 	apply(threadCatalogEvent("leader-thread", "leader-turn", 3, EventPermissionRequest, func(evt *QueryEvent) {
-		evt.PermissionRequest = &PermissionRequestEvent{ToolUseID: "question-1", ToolName: "AskUserQuestion", Message: "choose a path"}
+		evt.PermissionRequest = &PermissionRequestEvent{
+			ToolUseID: "question-1", ToolName: "AskUserQuestion",
+			Kind: PermissionInteractionKindQuestion, Message: "choose a path",
+		}
 	}))
 
 	apply(threadCatalogEvent("child-thread", "agent-launch:agent-1:1", 1, EventAgentLifecycle, func(evt *QueryEvent) {
@@ -82,7 +85,10 @@ func TestThreadCatalogKeepsTerminalAttentionLiveAttach(t *testing.T) {
 
 	apply(threadCatalogEvent("attention-thread", "turn-1", 1, EventStreamRequestStart, nil))
 	apply(threadCatalogEvent("attention-thread", "turn-1", 2, EventPermissionRequest, func(evt *QueryEvent) {
-		evt.PermissionRequest = &PermissionRequestEvent{ToolUseID: "question-1", ToolName: "AskUserQuestion", Message: "choose a path"}
+		evt.PermissionRequest = &PermissionRequestEvent{
+			ToolUseID: "question-1", ToolName: "AskUserQuestion",
+			Kind: PermissionInteractionKindQuestion, Message: "choose a path",
+		}
 	}))
 	apply(threadCatalogEvent("attention-thread", "turn-1", 3, EventTerminal, func(evt *QueryEvent) {
 		evt.TerminalInfo = &Terminal{Reason: TerminalCompleted}

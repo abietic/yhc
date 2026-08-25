@@ -182,6 +182,25 @@ func TestP138ProjectGraphInterruptResumeExecutesToolExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestProjectGraphHITLRequestPreservesTypedInteractionIdentity(t *testing.T) {
+	original := projectGraphHITLRequest{
+		Version: projectGraphHITLRequestVersion, RequestID: "request-1", InterruptID: "interrupt-1",
+		InvocationDigest: strings.Repeat("a", 64), PolicyRevision: strings.Repeat("b", 64),
+		ToolName: "AskUserQuestion", CanonicalToolName: "AskUserQuestion", Kind: PermissionInteractionKindQuestion, Attempt: 3,
+	}
+	encoded, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored projectGraphHITLRequest
+	if err := json.Unmarshal(encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Kind != original.Kind || restored.Attempt != original.Attempt || restored.CanonicalToolName != original.CanonicalToolName {
+		t.Fatalf("restored typed identity = %#v", restored)
+	}
+}
+
 func TestP138ProjectGraphColdRestartResumesPersistedInterrupt(t *testing.T) {
 	registry := tools.NewRegistry()
 	var executions atomic.Int32

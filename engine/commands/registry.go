@@ -87,6 +87,7 @@ const (
 	EntrypointHeadless       Entrypoint = "headless"
 	EntrypointHeadlessGoal   Entrypoint = "headless-goal"
 	EntrypointACP            Entrypoint = "acp"
+	EntrypointAppServer      Entrypoint = "app-server"
 	EntrypointAdministration Entrypoint = "cli-administration"
 )
 
@@ -116,6 +117,10 @@ func (s EntrypointSet) Supports(entrypoint Entrypoint) bool {
 	case EntrypointHeadlessGoal:
 		required = EntrypointsHeadlessGoal
 	case EntrypointACP:
+		required = EntrypointsACP
+	case EntrypointAppServer:
+		// The app-server intentionally reuses ACP's transport-neutral command
+		// capability set while retaining its own runtime identity.
 		required = EntrypointsACP
 	case EntrypointAdministration:
 		required = EntrypointsAdministration

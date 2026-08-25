@@ -45,6 +45,10 @@ type runtimeModelInventory interface {
 	ResolveInventorySelector(string) (provider.RuntimeInventoryEntry, error)
 }
 
+type runtimePortfolioMode interface {
+	UsesNamedPortfolio() bool
+}
+
 type resumedModelAdmission struct {
 	selector  string
 	binding   *session.PersistedModelBinding
@@ -140,7 +144,10 @@ func (e *QueryEngine) initializeModelBinding() {
 			selector,
 		); resolveErr == nil {
 			safeSelector = entry.Selector
-			if metadataErr := validateMainRouteMetadata(entry); metadataErr != nil {
+			if metadataErr := validateMainRouteMetadataForInventory(
+				inventory,
+				entry,
+			); metadataErr != nil {
 				code = ModelDispatchBlockMetadataChanged
 				remediation = "select a model with compatible required capabilities"
 			}
@@ -210,7 +217,7 @@ func (e *QueryEngine) resolveModelBindingCandidate(
 	if err != nil {
 		return ModelControlState{}, nil, err
 	}
-	if err := validateMainRouteMetadata(entry); err != nil {
+	if err := validateMainRouteMetadataForInventory(inventory, entry); err != nil {
 		return ModelControlState{}, nil, err
 	}
 	resolved, err := inventory.ResolveModel(entry.Selector)
@@ -388,6 +395,19 @@ func validateMainRouteMetadata(
 	return nil
 }
 
+func validateMainRouteMetadataForInventory(
+	inventory runtimeModelInventory,
+	entry provider.RuntimeInventoryEntry,
+) error {
+	if _, legacyRoute := splitEngineLegacySelector(entry.Selector); legacyRoute {
+		mode, authoritative := inventory.(runtimePortfolioMode)
+		if authoritative && !mode.UsesNamedPortfolio() {
+			return nil
+		}
+	}
+	return validateMainRouteMetadata(entry)
+}
+
 func (e *QueryEngine) admitResumedModelBinding(
 	ctx context.Context,
 	persisted *session.PersistedModelBinding,
@@ -473,7 +493,10 @@ func (e *QueryEngine) admitResumedModelBinding(
 			if entry, resolveErr := inventory.ResolveInventorySelector(
 				selector,
 			); resolveErr == nil {
-				if metadataErr := validateMainRouteMetadata(entry); metadataErr != nil {
+				if metadataErr := validateMainRouteMetadataForInventory(
+					inventory,
+					entry,
+				); metadataErr != nil {
 					code = ModelDispatchBlockMetadataChanged
 					remediation = "select a model with compatible required capabilities"
 				}

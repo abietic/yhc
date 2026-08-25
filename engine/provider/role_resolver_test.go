@@ -55,6 +55,58 @@ func TestRoleResolverExplicitAndDynamicMainInheritance(t *testing.T) {
 	}
 }
 
+func TestRoleResolverPreservesOnlyLegacyBoundInheritedMain(t *testing.T) {
+	metadata, err := enginemodel.ResolvePortfolioMetadata(
+		"haiku",
+		enginemodel.MetadataOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := RuntimeInventoryEntry{
+		Selector:            "legacy:haiku",
+		ProfileID:           "legacy.main",
+		Provider:            string(ProviderAgenticClaude),
+		APIModel:            "haiku",
+		RouteIdentityDigest: "legacy-route",
+		MetadataDigest:      "legacy-metadata",
+		Metadata:            metadata,
+	}
+	runtime := roleTestRuntime(nil, entry)
+	runtime.portfolio.Default = "legacy.main"
+	runtime.routes.resolution = ResolveInput{
+		Explicit: Config{Provider: ProviderAgenticClaude, Model: "haiku", BaseURL: "https://api.anthropic.com"},
+		Getenv:   func(string) string { return "" },
+	}
+	runtime.routes.main = ResolvedConfig{Config: runtime.routes.resolution.Explicit}
+
+	main, err := runtime.ResolveFailoverChain(RoleResolutionInput{
+		Role:         engineconfig.RoleMain,
+		MainSelector: "legacy:haiku",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if main.Primary.Source != RoleCallSourceInheritedMain ||
+		main.Primary.Selector != "legacy:haiku" {
+		t.Fatalf("legacy main = %#v", main.Primary)
+	}
+	if _, err := runtime.ResolveRoleCall(RoleResolutionInput{
+		Role:         engineconfig.RoleExplore,
+		MainSelector: "legacy:haiku",
+	}); err == nil || !strings.Contains(err.Error(), "authoritative text") {
+		t.Fatalf("legacy automatic role admission error = %v", err)
+	}
+
+	runtime.portfolio.Default = "named-main"
+	if _, err := runtime.ResolveRoleCall(RoleResolutionInput{
+		Role:         engineconfig.RoleMain,
+		MainSelector: "legacy:haiku",
+	}); err == nil || !strings.Contains(err.Error(), "authoritative text") {
+		t.Fatalf("named runtime legacy main admission error = %v", err)
+	}
+}
+
 func TestRoleResolverStaticAndDynamicCapabilityAdmission(t *testing.T) {
 	entry := roleTestEntry("primary", ProviderAgenticOpenAI, "gpt-5.1", "")
 	entry.Metadata.Tools.Value = false

@@ -22,7 +22,7 @@ func TestPermissionInteractionResultPreservesStructuredDecisions(t *testing.T) {
 		{name: "always", response: PermissionAllowAlways, want: engine.PermissionInteractionResult{Decision: engine.PermissionAllowAlways}},
 		{name: "deny", response: PermissionDeny, want: engine.PermissionInteractionResult{Decision: engine.PermissionDeny, Message: "user denied permission"}},
 		{
-			name: "question answer", toolName: "AskUserQuestion", response: PermissionAllow,
+			name: "question answer", toolName: "renamed-question-tool", response: PermissionAllow,
 			data: threadAttentionResponseData{answerJSON: `{"answers":{"Choose":"A"}}`},
 			want: engine.PermissionInteractionResult{
 				Decision:     engine.PermissionAllowOnce,
@@ -33,6 +33,9 @@ func TestPermissionInteractionResultPreservesStructuredDecisions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := engine.PermissionPromptRequest{ToolName: test.toolName}
+			if test.name == "question answer" {
+				request.Kind = engine.PermissionInteractionKindQuestion
+			}
 			if got := permissionInteractionResult(request, test.response, test.data); !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("result = %#v, want %#v", got, test.want)
 			}

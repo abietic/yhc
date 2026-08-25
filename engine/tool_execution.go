@@ -112,13 +112,13 @@ func executeToolCall(
 			ticket.release(false)
 			ticketReleased = true
 		case repeatedToolRequestOverride:
-			message := "This is the third consecutive identical tool call. Run this call once, or stop and change strategy."
+			message := RepeatedToolInteractionPromptMessage
 			if yieldFn != nil {
 				yieldFn(QueryEvent{
 					Type: EventPermissionRequest,
 					PermissionRequest: &PermissionRequestEvent{
-						ToolName: canonicalToolName, ToolUseID: toolUseID, Message: message,
-						Source: "callback", Kind: "repeated_tool", Attempt: attempt,
+						ToolName: canonicalToolName, CanonicalToolName: canonicalToolName, ToolUseID: toolUseID, Message: message,
+						Source: "repeated_tool_guard", Kind: PermissionInteractionKindRepeatedTool, Attempt: attempt,
 					},
 				})
 			}
@@ -144,7 +144,7 @@ func executeToolCall(
 					Type: EventPermissionResolved,
 					PermissionResolved: &PermissionResolvedEvent{
 						ToolUseID: toolUseID, Decision: resolvedDecision,
-						Reason: "repeated_tool", Message: resolvedMessage, Kind: "repeated_tool", Attempt: attempt,
+						Reason: "repeated_tool", Message: resolvedMessage, Kind: PermissionInteractionKindRepeatedTool, Attempt: attempt,
 					},
 				})
 			}
@@ -257,6 +257,7 @@ func executeToolCall(
 				withToolUseID(innerCtx, toolUseID),
 				&canUseUpdatedInput,
 			)
+			callCtx = withCanonicalToolName(callCtx, canonicalToolName)
 			callCtx = withSettledPermissionActionPtr(
 				callCtx,
 				&settledPermissionAction,
@@ -605,9 +606,17 @@ func ReportPermissionPromptRequested(ctx context.Context, toolName string, input
 	emit(QueryEvent{
 		Type: EventPermissionRequest,
 		PermissionRequest: &PermissionRequestEvent{
-			ToolName: toolName, ToolUseID: toolUseID, Input: cloneInputMap(input), Message: message, Source: "callback",
+			ToolName: toolName, CanonicalToolName: permissionPromptCanonicalToolName(ctx, toolName), ToolUseID: toolUseID, Input: cloneInputMap(input), Message: message,
+			Source: "callback", Kind: permissionPromptKind(toolName, nil),
 		},
 	})
+}
+
+func permissionPromptCanonicalToolName(ctx context.Context, toolName string) string {
+	if canonicalToolName := currentCanonicalToolName(ctx); canonicalToolName != "" {
+		return canonicalToolName
+	}
+	return strings.TrimSpace(toolName)
 }
 
 // ReportPermissionPromptResolved closes a callback-sourced interactive

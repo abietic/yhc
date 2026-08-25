@@ -13,8 +13,15 @@ import (
 
 const SchemaVersion = 1
 
-// Version is overridden for release builds through -ldflags -X.
-var Version = "0.1.0"
+// Release builds override these values through -ldflags -X. Empty or unknown
+// source values retain the Go runtime's VCS metadata as a development-build
+// fallback.
+var (
+	Version   = "0.1.0"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+	Modified  = ""
+)
 
 // Dependency is one stable dependency identity in the build metadata.
 type Dependency struct {
@@ -41,34 +48,47 @@ var keyDependencies = []string{
 	"github.com/spf13/cobra",
 }
 
-// Current reads the build identity once from the Go runtime. Missing VCS
-// metadata remains explicit instead of being inferred from the working tree.
+// Current reads explicit release identity plus the Go runtime's build
+// information. Missing VCS metadata remains explicit instead of being inferred
+// from the working tree at process startup.
 func Current() Info {
+	build, ok := debug.ReadBuildInfo()
+	return current(build, ok)
+}
+
+func current(build *debug.BuildInfo, ok bool) Info {
 	info := Info{
 		SchemaVersion: SchemaVersion,
 		Version:       strings.TrimPrefix(strings.TrimSpace(Version), "v"),
-		Commit:        "unknown",
-		BuildTime:     "unknown",
+		Commit:        normalizedSourceValue(Commit),
+		BuildTime:     normalizedSourceValue(BuildTime),
 		GoVersion:     runtime.Version(),
 		OS:            runtime.GOOS,
 		Arch:          runtime.GOARCH,
 	}
+	modified, modifiedSet := explicitModified(Modified)
+	info.Modified = modified
 	if info.Version == "" {
 		info.Version = "unknown"
 	}
 
-	build, ok := debug.ReadBuildInfo()
-	if !ok {
+	if !ok || build == nil {
 		return info
 	}
 	for _, setting := range build.Settings {
 		switch setting.Key {
 		case "vcs.revision":
-			info.Commit = setting.Value
+			if info.Commit == "unknown" {
+				info.Commit = normalizedSourceValue(setting.Value)
+			}
 		case "vcs.time":
-			info.BuildTime = setting.Value
+			if info.BuildTime == "unknown" {
+				info.BuildTime = normalizedSourceValue(setting.Value)
+			}
 		case "vcs.modified":
-			info.Modified = setting.Value == "true"
+			if !modifiedSet {
+				info.Modified = strings.EqualFold(strings.TrimSpace(setting.Value), "true")
+			}
 		}
 	}
 	for _, path := range keyDependencies {
@@ -83,6 +103,25 @@ func Current() Info {
 		}
 	}
 	return info
+}
+
+func normalizedSourceValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	return value
+}
+
+func explicitModified(value string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // ShortText is the stable single-line CLI version projection.

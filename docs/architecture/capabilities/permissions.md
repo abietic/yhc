@@ -81,9 +81,12 @@ the critical final invocation needs a new live constrained request.
 
 Critical requests carry an additive `allow_once_only` decision constraint.
 ProjectGraph includes it in request/decision identity and durable replay;
-Plain, TUI, and ACP project only permitted choices, while engine settlement
-independently rejects a forged persistent result. The zero constraint preserves
-all pre-P51.2 requests.
+Plain, TUI, ACP, and AppServer/Desktop project only permitted choices, while
+their adapter settlement and engine settlement independently reject a forged
+persistent result. AppServer includes the constraint in its callback/event
+request digest, exposes only `allow_once` to the Desktop renderer, and rejects
+session/always resolutions before they reach the engine. The zero constraint
+preserves all pre-P51.2 requests.
 
 The settled descriptor binds requested/canonical tool identity, registry
 capability generation, detached input, resolved path/root facts, CWD and
@@ -478,6 +481,8 @@ outcomes never create session or always-allow grants.
 - [Plain ProjectGraph event driver](../../../cmd/yhc/cmd/root.go)
 - [ACP ProjectGraph permission resolver](../../../server/acp/agent.go)
 - [ACP Plan permission identity adapter](../../../server/acp/agent.go)
+- [`permissionPromptRequest`](../../../server/appserver/session.go#L800) maps the engine constraint into AppServer request identity
+- [`projectInteraction`](../../../server/appserver/permission_broker.go#L506) projects and validates Desktop permission choices
 - [ProjectGraph permission settlement chain](../../../engine/graph_hitl.go)
 - [`Mode`](../../../engine/permission/mode.go)
 - [`RulesEngine.EvaluateMatch`](../../../engine/permission/rules.go)

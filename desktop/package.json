@@ -1,0 +1,90 @@
+{
+  "name": "yhc-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop workspace for the YHC coding runtime",
+  "author": "YHC contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs",
+    "package": "electron-builder --dir",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux",
+    "package:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "@electron/asar": "3.4.1",
+    "electron": "41.10.4",
+    "electron-builder": "26.15.6"
+  },
+    "build": {
+    "appId": "com.abietic.yhc.desktop",
+    "productName": "YHC",
+    "icon": "assets/icon.png",
+    "files": [
+      "main.cjs",
+      "bootstrap.cjs",
+      "lifecycle.cjs",
+      "provider_setup.cjs",
+      "request.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "afterPack": "scripts/verify_packaged_artifact.cjs",
+    "extraResources": [
+      {
+        "from": "../internal/webui/assets",
+        "to": "webui"
+      },
+      {
+        "from": "../LICENSE",
+        "to": "licenses/YHC.LICENSE"
+      },
+      {
+        "from": "../NOTICE",
+        "to": "licenses/YHC.NOTICE"
+      },
+      {
+        "from": "../internal/webui/assets/vendor/marked.LICENSE.txt",
+        "to": "licenses/marked.LICENSE.txt"
+      },
+      {
+        "from": "../internal/webui/assets/vendor/marked.NOTICE.txt",
+        "to": "licenses/marked.NOTICE.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "licenses/electron.LICENSE"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "licenses/electron-third-party.LICENSES.html"
+      }
+    ],
+    "mac": {
+      "extraResources": [
+        {
+          "from": "resources/bin/yhc",
+          "to": "bin/yhc"
+        }
+      ]
+    },
+    "linux": {
+      "extraResources": [
+        {
+          "from": "resources/bin/yhc",
+          "to": "bin/yhc"
+        }
+      ]
+    },
+    "win": {
+      "extraResources": [
+        {
+          "from": "resources/bin/yhc.exe",
+          "to": "bin/yhc.exe"
+        }
+      ]
+    }
+  }
+}

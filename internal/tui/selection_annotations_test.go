@@ -200,6 +200,27 @@ func TestP272AnnotationParserInvalidatesEveryRowInUnclosedScope(t *testing.T) {
 	}
 }
 
+const p272FuzzCellSampleLimit = 64
+
+func p272FuzzCellSamples(startCell, endCell int) []int {
+	width := endCell - startCell
+	if width <= 0 {
+		return nil
+	}
+	sampleCount := min(width, p272FuzzCellSampleLimit)
+	result := make([]int, 0, sampleCount)
+	if sampleCount == 1 {
+		return append(result, startCell)
+	}
+	for index := 0; index < sampleCount; index++ {
+		result = append(
+			result,
+			startCell+index*(width-1)/(sampleCount-1),
+		)
+	}
+	return result
+}
+
 func FuzzP272AnnotationRoundTrip(f *testing.F) {
 	for _, seed := range []string{
 		"plain text",
@@ -255,13 +276,49 @@ func FuzzP272AnnotationRoundTrip(f *testing.F) {
 		if got := selectionRowText(profile, rows[0], start, end); got != value {
 			t.Fatalf("semantic round trip = %q, want %q", got, value)
 		}
-		for cell := start; cell < end; cell++ {
+		// selectionRowText intentionally re-segments the semantic span for exact
+		// byte boundaries. Keep exhaustive coverage for ordinary short values,
+		// but bound long-input fuzz work so this oracle stays linear in input size.
+		for _, cell := range p272FuzzCellSamples(start, end) {
 			got := selectionRowText(profile, rows[0], cell, cell+1)
 			if !utf8.ValidString(got) {
 				t.Fatalf("cell %d split UTF-8: %q", cell, got)
 			}
 		}
 	})
+}
+
+func TestP272FuzzCellSamplesBoundWorkAndKeepEdges(t *testing.T) {
+	t.Run("short ranges keep every cell", func(t *testing.T) {
+		got := p272FuzzCellSamples(3, 8)
+		want := []int{3, 4, 5, 6, 7}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("samples = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("long ranges stay bounded and keep both edges", func(t *testing.T) {
+		got := p272FuzzCellSamples(11, 1011)
+		if len(got) != p272FuzzCellSampleLimit {
+			t.Fatalf(
+				"sample count = %d, want %d",
+				len(got),
+				p272FuzzCellSampleLimit,
+			)
+		}
+		if got[0] != 11 || got[len(got)-1] != 1010 {
+			t.Fatalf("sample edges = %d..%d, want 11..1010", got[0], got[len(got)-1])
+		}
+		for index := 1; index < len(got); index++ {
+			if got[index] <= got[index-1] {
+				t.Fatalf("samples are not strictly increasing: %#v", got)
+			}
+		}
+	})
+
+	if got := p272FuzzCellSamples(7, 7); got != nil {
+		t.Fatalf("empty range samples = %#v, want nil", got)
+	}
 }
 
 func TestSelectionAnnotationFragmentsFailClosed(t *testing.T) {

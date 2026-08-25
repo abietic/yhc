@@ -150,6 +150,7 @@ func (kernel *projectGraphQueryKernel) run(
 					Kind:               request.Kind,
 					Attempt:            request.Attempt,
 					PlanApproval:       request.PlanApproval,
+					Presentation:       clonePermissionPresentation(request.Presentation),
 					DecisionConstraint: request.DecisionConstraint,
 				},
 			})

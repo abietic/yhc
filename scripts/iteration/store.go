@@ -566,7 +566,7 @@ func validateStoredEvidence(evidence Evidence, plan Plan) error {
 func mayReplace(existing, next GateEvidence) bool {
 	return existing.Target == next.Target && existing.Level == next.Level &&
 		existing.Status == GateBlocked && existing.DurationMillis == 0 && existing.ExitCode == nil &&
-		(next.Status == GatePass || next.Status == GateFail || next.Status == GateBlocked)
+		(next.Status == GatePass || next.Status == GateFail || next.Status == GateBlocked || next.Status == GateNotApplicable)
 }
 
 func (s *fileEvidenceStore) persistTransition(dir *os.Root, plan Plan, evidence Evidence) (Evidence, error) {

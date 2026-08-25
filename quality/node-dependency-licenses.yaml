@@ -1,0 +1,1085 @@
+version: 1
+registry_host: registry.npmjs.org
+dependencies:
+  - package: "@electron-internal/extract-zip"
+    version: "1.0.5"
+    license: "BSD-2-Clause"
+    decision: allow
+  - package: "@electron/asar"
+    version: "3.4.1"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/fuses"
+    version: "1.8.0"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/get"
+    version: "3.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/get"
+    version: "5.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/notarize"
+    version: "2.5.0"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/osx-sign"
+    version: "1.3.3"
+    license: "BSD-2-Clause"
+    decision: allow
+  - package: "@electron/rebuild"
+    version: "4.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/universal"
+    version: "2.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "@electron/windows-sign"
+    version: "1.2.2"
+    license: "BSD-2-Clause"
+    decision: allow
+  - package: "@isaacs/fs-minipass"
+    version: "4.0.1"
+    license: "ISC"
+    decision: allow
+  - package: "@malept/cross-spawn-promise"
+    version: "2.0.0"
+    license: "Apache-2.0"
+    decision: allow
+  - package: "@malept/flatpak-bundler"
+    version: "0.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "@noble/hashes"
+    version: "1.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "@noble/hashes"
+    version: "2.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "@peculiar/asn1-schema"
+    version: "2.8.0"
+    license: "MIT"
+    decision: allow
+  - package: "@peculiar/json-schema"
+    version: "1.1.12"
+    license: "MIT"
+    decision: allow
+  - package: "@peculiar/utils"
+    version: "2.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "@peculiar/webcrypto"
+    version: "1.7.1"
+    license: "MIT"
+    decision: allow
+  - package: "@sindresorhus/is"
+    version: "4.6.0"
+    license: "MIT"
+    decision: allow
+  - package: "@szmarczak/http-timer"
+    version: "4.0.6"
+    license: "MIT"
+    decision: allow
+  - package: "@types/cacheable-request"
+    version: "6.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "@types/debug"
+    version: "4.1.13"
+    license: "MIT"
+    decision: allow
+  - package: "@types/fs-extra"
+    version: "9.0.13"
+    license: "MIT"
+    decision: allow
+  - package: "@types/http-cache-semantics"
+    version: "4.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "@types/keyv"
+    version: "3.1.4"
+    license: "MIT"
+    decision: allow
+  - package: "@types/ms"
+    version: "2.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "@types/node"
+    version: "24.13.3"
+    license: "MIT"
+    decision: allow
+  - package: "@types/responselike"
+    version: "1.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "@xmldom/xmldom"
+    version: "0.8.13"
+    license: "MIT"
+    decision: allow
+  - package: "abbrev"
+    version: "4.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "agent-base"
+    version: "7.1.4"
+    license: "MIT"
+    decision: allow
+  - package: "ajv"
+    version: "8.20.0"
+    license: "MIT"
+    decision: allow
+  - package: "ansi-regex"
+    version: "5.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "ansi-styles"
+    version: "4.3.0"
+    license: "MIT"
+    decision: allow
+  - package: "app-builder-lib"
+    version: "26.15.6"
+    license: "MIT"
+    decision: allow
+  - package: "argparse"
+    version: "2.0.1"
+    license: "Python-2.0"
+    decision: allow
+  - package: "asn1js"
+    version: "3.0.10"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "async"
+    version: "3.2.6"
+    license: "MIT"
+    decision: allow
+  - package: "async-exit-hook"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "asynckit"
+    version: "0.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "at-least-node"
+    version: "1.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "aws4"
+    version: "1.13.2"
+    license: "MIT"
+    decision: allow
+  - package: "balanced-match"
+    version: "1.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "balanced-match"
+    version: "4.0.4"
+    license: "MIT"
+    decision: allow
+  - package: "base64-js"
+    version: "1.5.1"
+    license: "MIT"
+    decision: allow
+  - package: "bluebird"
+    version: "3.7.2"
+    license: "MIT"
+    decision: allow
+  - package: "boolean"
+    version: "3.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "brace-expansion"
+    version: "1.1.18"
+    license: "MIT"
+    decision: allow
+  - package: "brace-expansion"
+    version: "2.1.4"
+    license: "MIT"
+    decision: allow
+  - package: "brace-expansion"
+    version: "5.0.9"
+    license: "MIT"
+    decision: allow
+  - package: "buffer-from"
+    version: "1.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "builder-util"
+    version: "26.15.3"
+    license: "MIT"
+    decision: allow
+  - package: "builder-util-runtime"
+    version: "9.7.0"
+    license: "MIT"
+    decision: allow
+  - package: "bytestreamjs"
+    version: "2.0.1"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "cacheable-lookup"
+    version: "5.0.4"
+    license: "MIT"
+    decision: allow
+  - package: "cacheable-request"
+    version: "7.0.4"
+    license: "MIT"
+    decision: allow
+  - package: "call-bind-apply-helpers"
+    version: "1.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "chalk"
+    version: "4.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "chownr"
+    version: "3.0.0"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "chromium-pickle-js"
+    version: "0.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "ci-info"
+    version: "4.3.1"
+    license: "MIT"
+    decision: allow
+  - package: "ci-info"
+    version: "4.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "cliui"
+    version: "8.0.1"
+    license: "ISC"
+    decision: allow
+  - package: "clone-response"
+    version: "1.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "color-convert"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "color-name"
+    version: "1.1.4"
+    license: "MIT"
+    decision: allow
+  - package: "combined-stream"
+    version: "1.0.8"
+    license: "MIT"
+    decision: allow
+  - package: "commander"
+    version: "5.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "commander"
+    version: "9.5.0"
+    license: "MIT"
+    decision: allow
+  - package: "compare-version"
+    version: "0.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "concat-map"
+    version: "0.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "core-util-is"
+    version: "1.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "cross-dirname"
+    version: "0.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "cross-spawn"
+    version: "7.0.6"
+    license: "MIT"
+    decision: allow
+  - package: "debug"
+    version: "4.4.3"
+    license: "MIT"
+    decision: allow
+  - package: "decompress-response"
+    version: "6.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "defer-to-connect"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "define-data-property"
+    version: "1.1.4"
+    license: "MIT"
+    decision: allow
+  - package: "define-properties"
+    version: "1.2.1"
+    license: "MIT"
+    decision: allow
+  - package: "delayed-stream"
+    version: "1.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "detect-node"
+    version: "2.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "dir-compare"
+    version: "4.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "dmg-builder"
+    version: "26.15.6"
+    license: "MIT"
+    decision: allow
+  - package: "dotenv"
+    version: "16.6.1"
+    license: "BSD-2-Clause"
+    decision: allow
+  - package: "dotenv-expand"
+    version: "11.0.7"
+    license: "BSD-2-Clause"
+    decision: allow
+  - package: "dunder-proto"
+    version: "1.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "duplexer2"
+    version: "0.1.4"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "ejs"
+    version: "3.1.10"
+    license: "Apache-2.0"
+    decision: allow
+  - package: "electron"
+    version: "41.10.4"
+    license: "MIT"
+    decision: allow
+  - package: "electron-builder"
+    version: "26.15.6"
+    license: "MIT"
+    decision: allow
+  - package: "electron-builder-squirrel-windows"
+    version: "26.15.6"
+    license: "MIT"
+    decision: allow
+  - package: "electron-publish"
+    version: "26.15.3"
+    license: "MIT"
+    decision: allow
+  - package: "electron-winstaller"
+    version: "5.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "emoji-regex"
+    version: "8.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "end-of-stream"
+    version: "1.4.5"
+    license: "MIT"
+    decision: allow
+  - package: "env-paths"
+    version: "2.2.1"
+    license: "MIT"
+    decision: allow
+  - package: "env-paths"
+    version: "3.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "err-code"
+    version: "2.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "es-define-property"
+    version: "1.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "es-errors"
+    version: "1.3.0"
+    license: "MIT"
+    decision: allow
+  - package: "es-object-atoms"
+    version: "1.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "es-set-tostringtag"
+    version: "2.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "es6-error"
+    version: "4.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "escalade"
+    version: "3.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "escape-string-regexp"
+    version: "4.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "exponential-backoff"
+    version: "3.1.3"
+    license: "Apache-2.0"
+    decision: allow
+  - package: "fast-deep-equal"
+    version: "3.1.3"
+    license: "MIT"
+    decision: allow
+  - package: "fast-uri"
+    version: "3.1.5"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "fdir"
+    version: "6.5.0"
+    license: "MIT"
+    decision: allow
+  - package: "filelist"
+    version: "1.0.6"
+    license: "Apache-2.0"
+    decision: allow
+  - package: "form-data"
+    version: "4.0.6"
+    license: "MIT"
+    decision: allow
+  - package: "fs-extra"
+    version: "10.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "fs-extra"
+    version: "11.3.1"
+    license: "MIT"
+    decision: allow
+  - package: "fs-extra"
+    version: "11.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "fs-extra"
+    version: "7.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "fs-extra"
+    version: "8.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "fs-extra"
+    version: "9.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "fs.realpath"
+    version: "1.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "function-bind"
+    version: "1.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "get-caller-file"
+    version: "2.0.5"
+    license: "ISC"
+    decision: allow
+  - package: "get-intrinsic"
+    version: "1.3.0"
+    license: "MIT"
+    decision: allow
+  - package: "get-proto"
+    version: "1.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "get-stream"
+    version: "5.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "glob"
+    version: "7.2.3"
+    license: "ISC"
+    decision: allow
+  - package: "global-agent"
+    version: "3.0.0"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "globalthis"
+    version: "1.0.4"
+    license: "MIT"
+    decision: allow
+  - package: "gopd"
+    version: "1.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "got"
+    version: "11.8.6"
+    license: "MIT"
+    decision: allow
+  - package: "graceful-fs"
+    version: "4.2.11"
+    license: "ISC"
+    decision: allow
+  - package: "has-flag"
+    version: "4.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "has-property-descriptors"
+    version: "1.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "has-symbols"
+    version: "1.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "has-tostringtag"
+    version: "1.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "hasown"
+    version: "2.0.4"
+    license: "MIT"
+    decision: allow
+  - package: "hosted-git-info"
+    version: "4.1.0"
+    license: "ISC"
+    decision: allow
+  - package: "http-cache-semantics"
+    version: "4.2.0"
+    license: "BSD-2-Clause"
+    decision: allow
+  - package: "http-proxy-agent"
+    version: "7.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "http2-wrapper"
+    version: "1.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "https-proxy-agent"
+    version: "7.0.6"
+    license: "MIT"
+    decision: allow
+  - package: "inflight"
+    version: "1.0.6"
+    license: "ISC"
+    decision: allow
+  - package: "inherits"
+    version: "2.0.4"
+    license: "ISC"
+    decision: allow
+  - package: "is-fullwidth-code-point"
+    version: "3.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "isarray"
+    version: "1.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "isbinaryfile"
+    version: "4.0.10"
+    license: "MIT"
+    decision: allow
+  - package: "isbinaryfile"
+    version: "5.0.7"
+    license: "MIT"
+    decision: allow
+  - package: "isexe"
+    version: "2.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "isexe"
+    version: "3.1.5"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "isexe"
+    version: "4.0.0"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "jake"
+    version: "10.9.4"
+    license: "Apache-2.0"
+    decision: allow
+  - package: "jiti"
+    version: "2.7.0"
+    license: "MIT"
+    decision: allow
+  - package: "js-yaml"
+    version: "4.3.1"
+    license: "MIT"
+    decision: allow
+  - package: "json-buffer"
+    version: "3.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "json-schema-traverse"
+    version: "1.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "json-stringify-safe"
+    version: "5.0.1"
+    license: "ISC"
+    decision: allow
+  - package: "json5"
+    version: "2.2.3"
+    license: "MIT"
+    decision: allow
+  - package: "jsonfile"
+    version: "4.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "jsonfile"
+    version: "6.2.1"
+    license: "MIT"
+    decision: allow
+  - package: "keyv"
+    version: "4.5.4"
+    license: "MIT"
+    decision: allow
+  - package: "lazy-val"
+    version: "1.0.5"
+    license: "MIT"
+    decision: allow
+  - package: "lodash"
+    version: "4.18.1"
+    license: "MIT"
+    decision: allow
+  - package: "lowercase-keys"
+    version: "2.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "lru-cache"
+    version: "6.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "matcher"
+    version: "3.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "math-intrinsics"
+    version: "1.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "mime"
+    version: "2.6.0"
+    license: "MIT"
+    decision: allow
+  - package: "mime-db"
+    version: "1.52.0"
+    license: "MIT"
+    decision: allow
+  - package: "mime-types"
+    version: "2.1.35"
+    license: "MIT"
+    decision: allow
+  - package: "mimic-response"
+    version: "1.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "mimic-response"
+    version: "3.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "minimatch"
+    version: "10.2.5"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "minimatch"
+    version: "3.1.5"
+    license: "ISC"
+    decision: allow
+  - package: "minimatch"
+    version: "5.1.9"
+    license: "ISC"
+    decision: allow
+  - package: "minimatch"
+    version: "9.0.9"
+    license: "ISC"
+    decision: allow
+  - package: "minimist"
+    version: "1.2.8"
+    license: "MIT"
+    decision: allow
+  - package: "minipass"
+    version: "7.1.3"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "minizlib"
+    version: "3.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "mkdirp"
+    version: "0.5.6"
+    license: "MIT"
+    decision: allow
+  - package: "ms"
+    version: "2.1.3"
+    license: "MIT"
+    decision: allow
+  - package: "node-abi"
+    version: "4.33.0"
+    license: "MIT"
+    decision: allow
+  - package: "node-api-version"
+    version: "0.2.1"
+    license: "MIT"
+    decision: allow
+  - package: "node-gyp"
+    version: "12.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "node-int64"
+    version: "0.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "nopt"
+    version: "9.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "normalize-url"
+    version: "6.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "object-keys"
+    version: "1.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "once"
+    version: "1.4.0"
+    license: "ISC"
+    decision: allow
+  - package: "p-cancelable"
+    version: "2.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "p-limit"
+    version: "3.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "path-is-absolute"
+    version: "1.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "path-key"
+    version: "3.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "pe-library"
+    version: "0.4.1"
+    license: "MIT"
+    decision: allow
+  - package: "picocolors"
+    version: "1.1.1"
+    license: "ISC"
+    decision: allow
+  - package: "picomatch"
+    version: "4.0.5"
+    license: "MIT"
+    decision: allow
+  - package: "pkijs"
+    version: "3.4.0"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "plist"
+    version: "3.1.0"
+    license: "MIT"
+    decision: allow
+  - package: "postject"
+    version: "1.0.0-alpha.6"
+    license: "MIT"
+    decision: allow
+  - package: "proc-log"
+    version: "6.1.0"
+    license: "ISC"
+    decision: allow
+  - package: "process-nextick-args"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "progress"
+    version: "2.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "promise-retry"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "proper-lockfile"
+    version: "4.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "pump"
+    version: "3.0.4"
+    license: "MIT"
+    decision: allow
+  - package: "pvtsutils"
+    version: "1.3.6"
+    license: "MIT"
+    decision: allow
+  - package: "pvutils"
+    version: "1.1.5"
+    license: "MIT"
+    decision: allow
+  - package: "quick-lru"
+    version: "5.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "read-binary-file-arch"
+    version: "1.0.6"
+    license: "MIT"
+    decision: allow
+  - package: "readable-stream"
+    version: "2.3.8"
+    license: "MIT"
+    decision: allow
+  - package: "require-directory"
+    version: "2.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "require-from-string"
+    version: "2.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "resedit"
+    version: "1.7.2"
+    license: "MIT"
+    decision: allow
+  - package: "resolve-alpn"
+    version: "1.2.1"
+    license: "MIT"
+    decision: allow
+  - package: "responselike"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "retry"
+    version: "0.12.0"
+    license: "MIT"
+    decision: allow
+  - package: "rimraf"
+    version: "2.6.3"
+    license: "ISC"
+    decision: allow
+  - package: "roarr"
+    version: "2.15.4"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "safe-buffer"
+    version: "5.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "sanitize-filename"
+    version: "1.6.4"
+    license: "WTFPL OR ISC"
+    decision: allow
+  - package: "sax"
+    version: "1.6.1"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "semver"
+    version: "5.7.2"
+    license: "ISC"
+    decision: allow
+  - package: "semver"
+    version: "6.3.1"
+    license: "ISC"
+    decision: allow
+  - package: "semver"
+    version: "7.7.4"
+    license: "ISC"
+    decision: allow
+  - package: "semver"
+    version: "7.8.5"
+    license: "ISC"
+    decision: allow
+  - package: "semver-compare"
+    version: "1.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "serialize-error"
+    version: "7.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "shebang-command"
+    version: "2.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "shebang-regex"
+    version: "3.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "signal-exit"
+    version: "3.0.7"
+    license: "ISC"
+    decision: allow
+  - package: "simple-update-notifier"
+    version: "2.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "source-map"
+    version: "0.6.1"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "source-map-support"
+    version: "0.5.21"
+    license: "MIT"
+    decision: allow
+  - package: "sprintf-js"
+    version: "1.1.3"
+    license: "BSD-3-Clause"
+    decision: allow
+  - package: "stat-mode"
+    version: "1.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "string_decoder"
+    version: "1.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "string-width"
+    version: "4.2.3"
+    license: "MIT"
+    decision: allow
+  - package: "strip-ansi"
+    version: "6.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "sumchecker"
+    version: "3.0.1"
+    license: "Apache-2.0"
+    decision: allow
+  - package: "supports-color"
+    version: "7.2.0"
+    license: "MIT"
+    decision: allow
+  - package: "tar"
+    version: "7.5.22"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "temp"
+    version: "0.9.4"
+    license: "MIT"
+    decision: allow
+  - package: "temp-file"
+    version: "3.4.0"
+    license: "MIT"
+    decision: allow
+  - package: "tiny-async-pool"
+    version: "1.3.0"
+    license: "MIT"
+    decision: allow
+  - package: "tinyglobby"
+    version: "0.2.17"
+    license: "MIT"
+    decision: allow
+  - package: "tmp"
+    version: "0.2.7"
+    license: "MIT"
+    decision: allow
+  - package: "tmp-promise"
+    version: "3.0.3"
+    license: "MIT"
+    decision: allow
+  - package: "truncate-utf8-bytes"
+    version: "1.0.2"
+    license: "WTFPL"
+    decision: allow
+  - package: "tslib"
+    version: "2.8.1"
+    license: "0BSD"
+    decision: allow
+  - package: "type-fest"
+    version: "0.13.1"
+    license: "(MIT OR CC0-1.0)"
+    decision: allow
+  - package: "undici"
+    version: "6.28.0"
+    license: "MIT"
+    decision: allow
+  - package: "undici"
+    version: "7.29.0"
+    license: "MIT"
+    decision: allow
+  - package: "undici-types"
+    version: "7.18.2"
+    license: "MIT"
+    decision: allow
+  - package: "universalify"
+    version: "0.1.2"
+    license: "MIT"
+    decision: allow
+  - package: "universalify"
+    version: "2.0.1"
+    license: "MIT"
+    decision: allow
+  - package: "unzipper"
+    version: "0.12.5"
+    license: "MIT"
+    decision: allow
+  - package: "utf8-byte-length"
+    version: "1.0.5"
+    license: "(WTFPL OR MIT)"
+    decision: allow
+  - package: "util-deprecate"
+    version: "1.0.2"
+    license: "MIT"
+    decision: allow
+  - package: "webcrypto-core"
+    version: "1.9.2"
+    license: "MIT"
+    decision: allow
+  - package: "which"
+    version: "2.0.2"
+    license: "ISC"
+    decision: allow
+  - package: "which"
+    version: "5.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "which"
+    version: "6.0.1"
+    license: "ISC"
+    decision: allow
+  - package: "wrap-ansi"
+    version: "7.0.0"
+    license: "MIT"
+    decision: allow
+  - package: "wrappy"
+    version: "1.0.2"
+    license: "ISC"
+    decision: allow
+  - package: "xmlbuilder"
+    version: "15.1.1"
+    license: "MIT"
+    decision: allow
+  - package: "y18n"
+    version: "5.0.8"
+    license: "ISC"
+    decision: allow
+  - package: "yallist"
+    version: "4.0.0"
+    license: "ISC"
+    decision: allow
+  - package: "yallist"
+    version: "5.0.0"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "yargs"
+    version: "17.7.3"
+    license: "MIT"
+    decision: allow
+  - package: "yargs-parser"
+    version: "21.1.1"
+    license: "ISC"
+    decision: allow
+  - package: "yocto-queue"
+    version: "0.1.0"
+    license: "MIT"
+    decision: allow
+vendored:
+  - package: marked
+    version: "18.0.9"
+    license: MIT
+    notice: internal/webui/assets/vendor/marked.NOTICE.txt
+    license_file: internal/webui/assets/vendor/marked.LICENSE.txt

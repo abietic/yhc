@@ -1171,7 +1171,7 @@ func (s *RuntimeStateStore) RestorePlanSnapshot(
 		)
 	}
 	for id, interaction := range thread.PendingInteractions {
-		if interaction.Kind == "plan_approval" ||
+		if interaction.Kind == PermissionInteractionKindPlanApproval ||
 			strings.EqualFold(interaction.ToolName, "ExitPlanMode") {
 			delete(thread.PendingInteractions, id)
 		}
@@ -1305,7 +1305,7 @@ func (s *RuntimeStateStore) HasLivePlanApproval(
 	}
 	request, ok := thread.PendingInteractions[record.ApprovalRequestID]
 	return ok &&
-		request.Kind == "plan_approval" &&
+		request.Kind == PermissionInteractionKindPlanApproval &&
 		request.PlanRevision == record.Revision &&
 		request.PlanFile == record.PlanFileIdentity &&
 		request.PlanInitialDigest == record.ApprovalInitialDigest &&
@@ -1379,7 +1379,7 @@ func validateRuntimeEventEnvelope(evt QueryEvent) error {
 		if evt.PermissionResolved == nil || strings.TrimSpace(evt.PermissionResolved.ToolUseID) == "" {
 			return fmt.Errorf("runtime state: permission resolution has no tool use ID")
 		}
-		if evt.PermissionResolved.Kind == "plan_approval" {
+		if evt.PermissionResolved.Kind == PermissionInteractionKindPlanApproval {
 			approval := evt.PermissionResolved.PlanApproval
 			if approval == nil ||
 				approval.RequestID != evt.PermissionResolved.ToolUseID ||
@@ -2149,9 +2149,6 @@ func (s *RuntimeStateStore) reduceInteractionLocked(thread *runtimeThreadState, 
 		kind := strings.TrimSpace(evt.PermissionRequest.Kind)
 		if kind == "" {
 			kind = "permission"
-		}
-		if kind == "permission" && strings.EqualFold(strings.TrimSpace(evt.PermissionRequest.ToolName), "AskUserQuestion") {
-			kind = "question"
 		}
 		input, truncated := boundedRuntimeInput(evt.PermissionRequest.Input)
 		var planRevision uint64

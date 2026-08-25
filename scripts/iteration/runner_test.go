@@ -15,6 +15,7 @@ func TestTargetMapping(t *testing.T) {
 	r := newCommandTargetRunner(Plan{Base: "abc", FocusedChecks: []FocusedCheck{{Owner: "engine-runtime", Packages: []string{"./engine/..."}}}})
 	for target, want := range map[string][]string{
 		"fmt":                    {"make", "fmt"},
+		"desktop-check":          {"make", "desktop-check"},
 		"focused/engine-runtime": {"go", "test", "./engine/...", "-count=1"},
 		"git-diff-check":         {"git", "diff", "--check", "abc..HEAD", "--"},
 		"check-boundaries":       {"make", "check-boundaries", "ITERATION_BASE=abc"},
@@ -23,6 +24,9 @@ func TestTargetMapping(t *testing.T) {
 		if !ok || strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 			t.Fatalf("command(%q) = %#v, %v; want %#v", target, got, ok, want)
 		}
+	}
+	if _, timeout, ok := r.command("desktop-check"); !ok || timeout != 5*time.Minute {
+		t.Fatalf("desktop-check deadline = %s, %v; want %s, true", timeout, ok, 5*time.Minute)
 	}
 	if _, _, ok := r.command("arbitrary"); ok {
 		t.Fatal("unknown target accepted")

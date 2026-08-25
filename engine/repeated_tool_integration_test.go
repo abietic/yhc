@@ -137,7 +137,7 @@ func TestRepeatedToolGuardStopsBeforeHooksPermissionAndExecution(t *testing.T) {
 		t.Fatalf("canonical lifecycle events = %#v", events)
 	}
 	request := interactions[0].PermissionRequest
-	if request == nil || request.Kind != "repeated_tool" || request.Attempt != 3 || request.ToolName != "Count" || request.Input != nil {
+	if request == nil || request.Kind != PermissionInteractionKindRepeatedTool || request.Source != "repeated_tool_guard" || request.Attempt != 3 || request.ToolName != "Count" || request.CanonicalToolName != "Count" || request.Input != nil || request.Message != RepeatedToolInteractionPromptMessage {
 		t.Fatalf("safe repeated-tool request = %#v", request)
 	}
 }

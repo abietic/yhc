@@ -140,6 +140,79 @@ func TestLoadMessagePageUsesNewestLifecycleAsActiveBoundary(t *testing.T) {
 	}
 }
 
+func TestLoadMessagePageAuditScopeSkipsLifecycleCopiesAndKeepsHistory(t *testing.T) {
+	recorder := NewRecorder("audit-page", t.TempDir())
+	if err := recorder.RecordMessages([]*schema.Message{
+		{Role: schema.User, Content: "before-0"},
+		{Role: schema.Assistant, Content: "before-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := recorder.RecordLifecycleBoundary(
+		LifecycleCompact,
+		[]*schema.Message{{Role: schema.System, Content: "boundary"}, {Role: schema.User, Content: "summary-copy"}},
+		nil,
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := recorder.RecordMessages([]*schema.Message{
+		{Role: schema.User, Content: "after-0"},
+		{Role: schema.Assistant, Content: "after-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := recorder.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := LoadMessagePage(MessagePageRequest{Path: recorder.Path(), Limit: 2, Scope: MessagePageScopeAudit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPageContents(t, first, "after-0", "after-1")
+	if !first.HasMore {
+		t.Fatalf("audit first page should retain earlier messages: %#v", first)
+	}
+	second, err := LoadMessagePage(MessagePageRequest{
+		Path: recorder.Path(), Limit: 4, SnapshotSize: first.SnapshotSize,
+		Boundary: first.Next, ExpectedFile: first.FileInfo, Scope: MessagePageScopeAudit,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPageContents(t, second, "before-0", "before-1")
+	if second.HasMore {
+		t.Fatalf("audit second page unexpectedly has more: %#v", second)
+	}
+}
+
+func TestLoadMessagePageAuditScopeRejectsLifecycleCursor(t *testing.T) {
+	recorder := NewRecorder("audit-cursor", t.TempDir())
+	if err := recorder.RecordLifecycleBoundary(
+		LifecycleCompact,
+		[]*schema.Message{{Role: schema.System, Content: "boundary"}, {Role: schema.User, Content: "summary-copy"}},
+		nil,
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := recorder.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	active, err := LoadMessagePage(MessagePageRequest{Path: recorder.Path(), Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadMessagePage(MessagePageRequest{
+		Path: recorder.Path(), Limit: 1, SnapshotSize: active.SnapshotSize,
+		Boundary: active.Next, ExpectedFile: active.FileInfo, Scope: MessagePageScopeAudit,
+	})
+	if !errors.Is(err, ErrTranscriptPageCursorInvalid) {
+		t.Fatalf("audit lifecycle cursor error = %v", err)
+	}
+}
+
 func TestLoadMessagePageLegacyIdentityAndRevisionValidation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.jsonl")

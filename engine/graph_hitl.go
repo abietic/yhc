@@ -74,6 +74,7 @@ type projectGraphHITLRequest struct {
 	Kind               string                       `json:"kind"`
 	Attempt            int                          `json:"attempt,omitempty"`
 	PlanApproval       *PlanApprovalRequest         `json:"plan_approval,omitempty"`
+	Presentation       *PermissionPresentation      `json:"presentation,omitempty"`
 	DecisionConstraint PermissionDecisionConstraint `json:"decision_constraint,omitempty"`
 }
 
@@ -531,6 +532,11 @@ func cloneProjectGraphHITLRequest(
 		approval := *request.PlanApproval
 		request.PlanApproval = &approval
 	}
+	request.Presentation = normalizedPermissionPresentation(
+		request.Kind,
+		projectGraphPresentationToolName(request),
+		request.Presentation,
+	)
 	return request
 }
 
@@ -849,6 +855,7 @@ func (e *QueryEngine) resolveProjectGraphHITLPermission(
 		Kind:               permissionInteractionKind(request),
 		Attempt:            request.Attempt,
 		PlanApproval:       request.PlanApproval,
+		Presentation:       clonePermissionPresentation(request.Presentation),
 		DecisionConstraint: request.DecisionConstraint,
 	}
 	if err := validateProjectGraphHITLRequest(durable, false); err != nil {
@@ -1008,9 +1015,14 @@ func emitProjectGraphPermissionResolved(
 			Reason:       reason,
 			Message:      result.Message,
 			Kind:         request.Kind,
+			Attempt:      request.Attempt,
 			PlanApproval: clonePlanApprovalDecision(result.PlanApproval),
 		},
 	})
+}
+
+func projectGraphPresentationToolName(request projectGraphHITLRequest) string {
+	return strings.TrimSpace(request.CanonicalToolName)
 }
 
 func (e *QueryEngine) reprojectProjectGraphInterrupt(
@@ -1020,6 +1032,11 @@ func (e *QueryEngine) reprojectProjectGraphInterrupt(
 		return
 	}
 	turnID := "restored-project-graph-" + request.RequestID
+	request.Presentation = normalizedPermissionPresentation(
+		request.Kind,
+		projectGraphPresentationToolName(request),
+		request.Presentation,
+	)
 	e.decorateRuntimeEvent(turnID, QueryEvent{
 		Type: EventPermissionRequest,
 		PermissionRequest: &PermissionRequestEvent{
@@ -1032,6 +1049,7 @@ func (e *QueryEngine) reprojectProjectGraphInterrupt(
 			Kind:               request.Kind,
 			Attempt:            request.Attempt,
 			PlanApproval:       request.PlanApproval,
+			Presentation:       clonePermissionPresentation(request.Presentation),
 			DecisionConstraint: request.DecisionConstraint,
 		},
 	})
@@ -1062,6 +1080,11 @@ func (e *QueryEngine) PendingProjectGraphPermissionRequest() (
 	if !ok {
 		return PermissionRequestEvent{}, false
 	}
+	request.Presentation = normalizedPermissionPresentation(
+		request.Kind,
+		projectGraphPresentationToolName(request),
+		request.Presentation,
+	)
 	return PermissionRequestEvent{
 		ToolName:           request.ToolName,
 		CanonicalToolName:  request.CanonicalToolName,
@@ -1072,6 +1095,7 @@ func (e *QueryEngine) PendingProjectGraphPermissionRequest() (
 		Kind:               request.Kind,
 		Attempt:            request.Attempt,
 		PlanApproval:       request.PlanApproval,
+		Presentation:       clonePermissionPresentation(request.Presentation),
 		DecisionConstraint: request.DecisionConstraint,
 	}, true
 }
