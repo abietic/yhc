@@ -72,6 +72,8 @@ func TestG11F2SteadyFrameKeepsFrozenHistorySegmentedAndViewportBounded(t *testin
 }
 
 func TestG11F2SteadyFramePerformanceBudgets(t *testing.T) {
+	requireUninstrumentedPerformanceBudget(t)
+
 	chat, _ := g11F2LongFrozenHistory()
 	chat.Render(120, 40)
 	assertPerformanceP95(

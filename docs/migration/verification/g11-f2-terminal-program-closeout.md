@@ -87,7 +87,11 @@ go test ./internal/tui \
 Accepted budgets are `< 20 ms` p95 for a 10K frozen-history steady dirty frame
 and `< 50 ms` p95 for a 100-live-sidebar-row steady frame. The structural
 counter, not timing alone, rejects frozen-history re-segmentation and
-full-history rendering.
+full-history rendering. The timing gate requires an uninstrumented test binary:
+coverage mode changes the measured hot path and therefore skips the latency
+assertion instead of publishing a false regression. The command above is the
+authoritative portable performance check; `make test` still owns coverage and
+all non-timing assertions.
 
 Diagnostic benchmark:
 

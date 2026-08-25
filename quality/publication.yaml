@@ -1769,7 +1769,7 @@ privacy:
       match_sha256: 7bbafa91c679ef267047d715cbe1243e47055ea74aeacf3a1b1e76f7f4248fb3
       purpose: documentation-example
     - path: docs/migration/verification/tui-performance-baseline.md
-      line: 120
+      line: 122
       rule_id: high-entropy-token
       match_sha256: 9ba08b0714f1cf0dac4007ec565ca007429b901d85dbb954fdb4a9454c9ef607
       purpose: documentation-example

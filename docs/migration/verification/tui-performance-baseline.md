@@ -115,8 +115,10 @@ hiding frozen-item re-segmentation or a full-history render.
 Run the benchmark command above after changes to `ChatView`, runtime selectors,
 thread view cloning, event batching, session inspection, or responsive
 rendering. Run `TestTUIHotPathPerformanceBudgets` and
-`TestInspectRecent10KPerformanceBudget` plus
-`TestG11F2SteadyFramePerformanceBudgets` and
+`TestG11F2SteadyFramePerformanceBudgets` in an uninstrumented
+`go test ./internal/tui` invocation; coverage instrumentation is diagnostic and
+the timing tests skip it rather than treating instrumented p95 as product
+latency. Keep `TestInspectRecent10KPerformanceBudget` and
 `TestG11F2SteadyFrameKeepsFrozenHistorySegmentedAndViewportBounded` in the
-normal test gate; do not replace those p95/structural checks with
+normal test gate. Do not replace those p95/structural checks with
 machine-specific nanosecond assertions.
