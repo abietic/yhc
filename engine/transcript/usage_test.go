@@ -3,6 +3,7 @@ package transcript
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -63,6 +64,211 @@ func TestLoadFullAggregatesUsageAcrossCumulativeLifecycleSnapshot(t *testing.T) 
 	if loaded.Usage.CurrentContextPromptTokens != 20 || !loaded.Usage.CurrentContextUsageKnown {
 		t.Fatalf("current context usage = %#v", loaded.Usage)
 	}
+}
+
+func TestLoadFullRestoresContentFreeAuxiliaryUsage(t *testing.T) {
+	recorder := NewRecorder("auxiliary-usage", t.TempDir())
+	mainResponse := &schema.Message{
+		Role: schema.Assistant, Content: "main response",
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+			PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120,
+		}},
+	}
+	if err := recorder.RecordMessages([]*schema.Message{mainResponse}); err != nil {
+		t.Fatalf("record main response: %v", err)
+	}
+	delta := UsageSummary{}
+	delta.ObserveAuxiliaryMessage(&schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+			PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12,
+		}},
+	})
+	if err := recorder.RecordAuxiliaryUsage(delta); err != nil {
+		t.Fatalf("record auxiliary usage: %v", err)
+	}
+
+	loaded, err := NewRecorder("auxiliary-usage", recorder.Dir).LoadFull()
+	if err != nil {
+		t.Fatalf("LoadFull: %v", err)
+	}
+	if len(loaded.Messages) != 1 || loaded.Messages[0].Content != "main response" ||
+		len(loaded.LifecycleBoundaries) != 0 {
+		t.Fatalf("auxiliary usage became conversation content: %#v", loaded)
+	}
+	if loaded.Usage.PromptTokens != 110 ||
+		loaded.Usage.CompletionTokens != 22 ||
+		loaded.Usage.TotalTokens != 132 ||
+		loaded.Usage.ResponsesWithMetadata != 2 {
+		t.Fatalf("restored auxiliary usage = %#v", loaded.Usage)
+	}
+	if !loaded.Usage.CurrentContextUsageKnown ||
+		loaded.Usage.CurrentContextPromptTokens != 100 {
+		t.Fatalf("restored current context = %#v", loaded.Usage)
+	}
+}
+
+func TestTranscriptRewritesPreserveAuxiliaryUsage(t *testing.T) {
+	tests := []struct {
+		name    string
+		rewrite func(*Recorder, []*schema.Message) error
+	}{
+		{name: "replace", rewrite: func(recorder *Recorder, messages []*schema.Message) error {
+			return recorder.Replace(messages)
+		}},
+		{name: "replace with replacements", rewrite: func(recorder *Recorder, messages []*schema.Message) error {
+			return recorder.ReplaceWithReplacements(messages, []Replacement{{
+				ToolUseID: "tool-1", Replacement: "preview",
+			}})
+		}},
+		{name: "atomic replace", rewrite: func(recorder *Recorder, messages []*schema.Message) error {
+			return recorder.AtomicReplace(messages)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := NewRecorder("auxiliary-rewrite", t.TempDir())
+			mainResponse := &schema.Message{
+				Role: schema.Assistant, Content: "main response",
+				ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+					PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120,
+				}},
+			}
+			if err := recorder.RecordMessages([]*schema.Message{mainResponse}); err != nil {
+				t.Fatal(err)
+			}
+			delta := UsageSummary{}
+			delta.ObserveAuxiliaryMessage(&schema.Message{
+				Role: schema.Assistant,
+				ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+					PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12,
+				}},
+			})
+			if err := recorder.RecordAuxiliaryUsage(delta); err != nil {
+				t.Fatal(err)
+			}
+			before, err := recorder.LoadFull()
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeIdentity := entryIdentityForKind(
+				before.Entries,
+				AuxiliaryUsageRecordKind,
+			)
+			if beforeIdentity == "" {
+				t.Fatal("auxiliary usage has no durable entry identity")
+			}
+
+			if err := test.rewrite(recorder, before.Messages); err != nil {
+				t.Fatal(err)
+			}
+			after, err := NewRecorder("auxiliary-rewrite", recorder.Dir).LoadFull()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := entryIdentityForKind(after.Entries, AuxiliaryUsageRecordKind); got != beforeIdentity {
+				t.Fatalf("auxiliary usage identity = %q, want %q", got, beforeIdentity)
+			}
+			if after.Usage.PromptTokens != 110 ||
+				after.Usage.CompletionTokens != 22 ||
+				after.Usage.TotalTokens != 132 ||
+				!after.Usage.CurrentContextUsageKnown ||
+				after.Usage.CurrentContextPromptTokens != 100 {
+				t.Fatalf("rewritten auxiliary usage = %#v", after.Usage)
+			}
+		})
+	}
+}
+
+func TestReplacePreservesMultipleAuxiliaryUsagePositionsAndIdentities(t *testing.T) {
+	recorder := NewRecorder("multiple-auxiliary-rewrite", t.TempDir())
+	recordResponse := func(content string, prompt, completion int) {
+		t.Helper()
+		if err := recorder.RecordMessages([]*schema.Message{{
+			Role: schema.Assistant, Content: content,
+			ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+				PromptTokens: prompt, CompletionTokens: completion,
+				TotalTokens: prompt + completion,
+			}},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recordAuxiliary := func(prompt, completion int) {
+		t.Helper()
+		delta := UsageSummary{}
+		delta.ObserveAuxiliaryMessage(&schema.Message{
+			Role: schema.Assistant,
+			ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+				PromptTokens: prompt, CompletionTokens: completion,
+				TotalTokens: prompt + completion,
+			}},
+		})
+		if err := recorder.RecordAuxiliaryUsage(delta); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	recordResponse("first main response", 100, 20)
+	recordAuxiliary(10, 2)
+	recordResponse("second main response", 200, 30)
+	recordAuxiliary(20, 3)
+
+	before, err := recorder.LoadFull()
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeIdentities := auxiliaryEntryIdentities(before.Entries)
+	if len(beforeIdentities) != 2 {
+		t.Fatalf("auxiliary identities before rewrite = %#v", beforeIdentities)
+	}
+	if err := recorder.Replace(before.Messages); err != nil {
+		t.Fatal(err)
+	}
+	after, err := NewRecorder("multiple-auxiliary-rewrite", recorder.Dir).LoadFull()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := auxiliaryEntryIdentities(after.Entries); !slices.Equal(got, beforeIdentities) {
+		t.Fatalf("auxiliary identities after rewrite = %#v, want %#v", got, beforeIdentities)
+	}
+	wantKinds := []string{
+		"assistant", AuxiliaryUsageRecordKind,
+		"assistant", AuxiliaryUsageRecordKind,
+	}
+	gotKinds := make([]string, 0, len(after.Entries))
+	for _, entry := range after.Entries {
+		gotKinds = append(gotKinds, entry.Kind)
+	}
+	if !slices.Equal(gotKinds, wantKinds) {
+		t.Fatalf("rewritten entry order = %#v, want %#v", gotKinds, wantKinds)
+	}
+	if after.Usage.PromptTokens != 330 ||
+		after.Usage.CompletionTokens != 55 ||
+		after.Usage.TotalTokens != 385 ||
+		!after.Usage.CurrentContextUsageKnown ||
+		after.Usage.CurrentContextPromptTokens != 200 {
+		t.Fatalf("rewritten multiple auxiliary usage = %#v", after.Usage)
+	}
+}
+
+func entryIdentityForKind(entries []DurableEntry, kind string) string {
+	for _, entry := range entries {
+		if entry.Kind == kind {
+			return entry.Identity.Key()
+		}
+	}
+	return ""
+}
+
+func auxiliaryEntryIdentities(entries []DurableEntry) []string {
+	identities := make([]string, 0)
+	for _, entry := range entries {
+		if entry.Kind == AuxiliaryUsageRecordKind {
+			identities = append(identities, entry.Identity.Key())
+		}
+	}
+	return identities
 }
 
 func TestLoadFullPreservesUnsupportedUsageSnapshotCoverage(t *testing.T) {
@@ -168,6 +374,33 @@ func TestUsageSummaryDistinguishesKnownZeroFromMissingMetadata(t *testing.T) {
 	})
 	if summary.ResponsesWithoutMetadata != 2 {
 		t.Fatalf("synthetic API error changed provider coverage = %#v", summary)
+	}
+}
+
+func TestUsageSummaryAuxiliaryResponsePreservesCurrentContext(t *testing.T) {
+	summary := UsageSummary{}
+	summary.ObserveMessage(&schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+			PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120,
+		}},
+	})
+	summary.ObserveAuxiliaryMessage(&schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+			PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12,
+		}},
+	})
+	summary.ObserveAuxiliaryMessage(&schema.Message{Role: schema.Assistant})
+
+	if summary.PromptTokens != 110 || summary.CompletionTokens != 22 ||
+		summary.TotalTokens != 132 || summary.ResponsesWithMetadata != 2 ||
+		summary.ResponsesWithoutMetadata != 1 {
+		t.Fatalf("cumulative auxiliary usage = %#v", summary)
+	}
+	if !summary.CurrentContextUsageKnown ||
+		summary.CurrentContextPromptTokens != 100 {
+		t.Fatalf("auxiliary response replaced current context = %#v", summary)
 	}
 }
 

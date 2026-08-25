@@ -6394,9 +6394,13 @@ files:
       status: done
       targets:
         - engine/services/prompt_suggestion.go
+        - engine/engine.go
+        - internal/tui/composer_suggestion.go
       tests:
         - engine/services/prompt_suggestion_test.go
-      notes: Prompt generation/filtering is ported; interactive model speculation remains disabled without an explicit product gate.
+        - engine/prompt_suggestion_test.go
+        - internal/tui/composer_suggestion_test.go
+      notes: Prompt generation/filtering is wired as a root-TUI-only, cancellable, read-only next-prompt ghost; speculative execution remains disabled.
     - path: src/services/PromptSuggestion/speculation.ts
       domain: services
       scope: required
@@ -6405,7 +6409,7 @@ files:
         - engine/services/prompt_suggestion.go
       tests:
         - engine/services/prompt_suggestion_test.go
-      notes: Bounded cancellable pre-computation exists as a service; production prompt speculation remains an explicit non-goal for P4.
+      notes: Bounded cancellable pre-computation exists as a service, but production uses only synchronous generation in a TUI-owned command; speculative execution remains disabled.
     - path: src/services/SessionMemory/prompts.ts
       domain: services
       scope: required

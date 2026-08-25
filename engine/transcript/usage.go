@@ -4,6 +4,8 @@ import "github.com/cloudwego/eino/schema"
 
 const UsageSummaryVersion = 1
 
+const AuxiliaryUsageRecordKind = "auxiliary-usage"
+
 // UsageSummary is a cumulative, provider-reported usage ledger. It never
 // estimates tokens: missing metadata is counted separately so callers can
 // distinguish a known zero from unavailable or partial accounting.
@@ -47,6 +49,43 @@ func (s *UsageSummary) ObserveMessage(message *schema.Message) {
 		s.CurrentContextPromptTokens = 0
 		s.CurrentContextUsageKnown = false
 	}
+}
+
+// ObserveAuxiliaryMessage adds one provider response that does not represent
+// the active conversation context. It contributes to cumulative usage and
+// coverage without replacing the latest main-loop context-window fact.
+func (s *UsageSummary) ObserveAuxiliaryMessage(message *schema.Message) {
+	if s == nil || message == nil {
+		return
+	}
+	if message.ResponseMeta != nil && message.ResponseMeta.Usage != nil {
+		s.ObserveUsage(message.ResponseMeta.Usage)
+		return
+	}
+	if usageExpectedForMessage(message) {
+		s.ResponsesWithoutMetadata++
+		s.LastResponseHadUsageMetadata = false
+	}
+}
+
+// MergeAuxiliary adds one content-free auxiliary usage delta while preserving
+// the active main-loop context-window fact.
+func (s *UsageSummary) MergeAuxiliary(delta UsageSummary) {
+	if s == nil || delta.Version != UsageSummaryVersion {
+		return
+	}
+	if s.Version == 0 {
+		s.Version = UsageSummaryVersion
+	}
+	s.PromptTokens += delta.PromptTokens
+	s.CompletionTokens += delta.CompletionTokens
+	s.TotalTokens += delta.TotalTokens
+	s.ResponsesWithMetadata += delta.ResponsesWithMetadata
+	s.ResponsesWithoutMetadata += delta.ResponsesWithoutMetadata
+	s.LastPromptTokens = delta.LastPromptTokens
+	s.LastCompletionTokens = delta.LastCompletionTokens
+	s.LastTotalTokens = delta.LastTotalTokens
+	s.LastResponseHadUsageMetadata = delta.LastResponseHadUsageMetadata
 }
 
 // ObserveUsage adds one provider-reported response usage record.

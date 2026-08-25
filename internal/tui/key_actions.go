@@ -143,7 +143,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionAutocompleteAccept:
 		return true, a.acceptAutocomplete(msg)
 	case keybindings.ActionAutocompleteDismiss:
-		if len(a.mentionHints) > 0 {
+		if a.hasComposerSuggestionActivity() {
+			a.dismissComposerSuggestion()
+		} else if len(a.mentionHints) > 0 {
 			a.dismissMentionHints()
 		} else {
 			a.cancelEditorInput()
@@ -363,6 +365,9 @@ func (a *App) moveAutocomplete(direction int) {
 }
 
 func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
+	if a.visibleComposerSuggestion() != "" {
+		return a.acceptComposerSuggestion()
+	}
 	if a.mentionHintIdx >= 0 && a.mentionHintIdx < len(a.mentionHints) {
 		return a.acceptMentionHint()
 	}
@@ -385,6 +390,14 @@ func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *App) autocompleteOwnsKey(msg tea.KeyPressMsg) bool {
+	if a.visibleComposerSuggestion() != "" {
+		switch msg.Code {
+		case tea.KeyTab, tea.KeyRight, tea.KeyEscape:
+			return true
+		default:
+			return false
+		}
+	}
 	if a.suppressingHistoryHints() {
 		return false
 	}

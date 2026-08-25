@@ -25,7 +25,7 @@ whose `x/ansi` width differs from the selected project grid.
 
 ## Final Frame And Diagnostics
 
-[`finalizeFrameGeometry`](../../../../internal/tui/app.go#L1612) balances
+[`finalizeFrameGeometry`](../../../../internal/tui/app.go#L1736) balances
 supported SGR/OSC state per physical row, applies the selected profile's
 terminal-width bound, and returns the first pre-clip overflow diagnostic. That
 diagnostic contains the complete profile summary plus the zero-based row,

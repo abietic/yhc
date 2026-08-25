@@ -37,6 +37,7 @@ type SideQueryOptions struct {
 	ForcedToolName      string
 	MaxOutputTokens     *int
 	QuerySource         string
+	SessionID           string
 	ProviderUsage       ProviderUsageAdmitter
 	UsageLogicalRoundID string
 }
@@ -69,6 +70,7 @@ func SideQuery(ctx context.Context, chatModel model.BaseChatModel, opts SideQuer
 		ForcedToolName:      opts.ForcedToolName,
 		MaxOutputTokens:     opts.MaxOutputTokens,
 		QuerySource:         opts.QuerySource,
+		SessionID:           opts.SessionID,
 		ProviderUsage:       opts.ProviderUsage,
 		UsageLogicalRoundID: opts.UsageLogicalRoundID,
 	})

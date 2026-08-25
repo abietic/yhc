@@ -94,8 +94,9 @@ type recordEntry struct {
 	MetaValue string `json:"meta_value,omitempty"`
 	// File history snapshot fields (used when Kind == "file-history-snapshot")
 	FileStates map[string]FileState `json:"file_states,omitempty"`
-	// Usage is a cumulative provider-reported snapshot written with lifecycle
-	// boundaries. It closes checkpoint/compaction repair gaps without treating
+	// Usage is a provider-reported snapshot written with lifecycle boundaries
+	// or a content-free auxiliary-usage delta. It closes
+	// checkpoint/compaction and post-turn side-query gaps without treating
 	// repeated boundary messages as new model calls.
 	Usage     *UsageSummary    `json:"usage,omitempty"`
 	GoalUsage *GoalUsageRecord `json:"goal_usage,omitempty"`
@@ -557,6 +558,21 @@ func loadTranscriptFileContextMode(
 				)
 			}
 		}
+		if entry.Kind == AuxiliaryUsageRecordKind {
+			if entry.Usage == nil {
+				result.Corruptions = append(result.Corruptions, CorruptionInfo{
+					Line: lineNum,
+					Err:  errors.New("auxiliary usage record has no payload"),
+				})
+			} else if entry.Usage.Version != UsageSummaryVersion {
+				result.Corruptions = append(result.Corruptions, CorruptionInfo{
+					Line: lineNum,
+					Err:  errors.New("auxiliary usage record has an unsupported version"),
+				})
+			} else {
+				result.Usage.MergeAuxiliary(*entry.Usage)
+			}
+		}
 		if kind := LifecycleBoundaryKind(entry.Kind); isLifecycleBoundaryKind(kind) {
 			var usageSnapshot *UsageSummary
 			if entry.Usage != nil {
@@ -1016,6 +1032,36 @@ func (r *Recorder) RecordMessages(messages []*schema.Message) error {
 		); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// RecordAuxiliaryUsage durably appends one provider-usage delta without
+// persisting the auxiliary request or response as conversation content.
+func (r *Recorder) RecordAuxiliaryUsage(usage UsageSummary) error {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ensureFileOpen(); err != nil {
+		return err
+	}
+	if r.file == nil {
+		return nil
+	}
+	copied := prepareUsageSnapshot(usage)
+	if err := r.encodeEntryLocked(recordEntry{
+		Timestamp: time.Now().UTC(),
+		Kind:      AuxiliaryUsageRecordKind,
+		Usage:     &copied,
+	}, "encode auxiliary usage"); err != nil {
+		return err
+	}
+	if err := r.syncOpenFileAndParent(); err != nil {
+		r.closeFileAfterDurabilityFailure()
+		return err
 	}
 	return nil
 }

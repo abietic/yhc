@@ -1,7 +1,7 @@
 # Configuration and Providers
 
 **Status:** current
-**Last verified:** 2026-08-20
+**Last verified:** 2026-08-25
 
 > **Ownership:** production configuration sources, precedence, provider selection, and runtime settings
 
@@ -38,6 +38,7 @@ These fields are consumed by at least one CLI or ACP composition path:
   "permission_mode": "default",
   "theme": "dark",
   "reduced_motion": false,
+  "prompt_suggestions": true,
   "goal": {
     "enabled": true
   }
@@ -47,6 +48,17 @@ These fields are consumed by at least one CLI or ACP composition path:
 `theme` and `reduced_motion` are TUI presentation settings; the ACP server does
 not consume them. Provider, model, base URL, max-turn, prompt, and permission
 fields are resolved by the composition roots described below.
+
+`prompt_suggestions` defaults to `true` and is consumed only by the root TUI.
+After an eligible completed turn it permits one extra request through the
+current provider/model route to predict the next prompt. The request receives a
+bounded current-conversation snapshot, has no tools, and is not stored in the
+conversation or transcript. It is capped at one provider dispatch and 64 output
+tokens; only a content-free auxiliary usage record is persisted.
+Provider-reported usage therefore survives Session restore but does not replace
+the active conversation's context-window reading. It can still incur provider
+charges. Set it to `false` at user or project level to disable both the ghost
+and the extra request.
 
 `goal.enabled` defaults to true in supported production composition roots. It
 exposes commands in saved-root TUI or Plain Sessions and also gates dedicated

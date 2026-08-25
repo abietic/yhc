@@ -42,6 +42,7 @@ func (a *App) markComposerChanged() {
 	if a == nil {
 		return
 	}
+	a.dismissComposerSuggestion()
 	a.composerRevision++
 	if a.composerRevision == 0 {
 		a.composerRevision++
@@ -207,6 +208,8 @@ func (a *App) startAcceptedComposerQuery(
 	events <-chan engine.QueryEvent,
 	cancel context.CancelFunc,
 ) {
+	a.dismissComposerSuggestion()
+	a.composerSuggestionTurnSeen = false
 	a.commandPaletteSubmission = nil
 	a.running = true
 	a.spinnerCount = 0

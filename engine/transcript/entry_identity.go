@@ -529,6 +529,7 @@ func (r *Recorder) prepareRewriteEntriesLocked(
 		}
 		rewritten = append(rewritten, entry)
 	}
+	rewritten = interleaveAuxiliaryUsageEntries(rewritten, existing)
 
 	if len(replacements) > 0 {
 		replacementEntry := recordEntry{
@@ -539,6 +540,58 @@ func (r *Recorder) prepareRewriteEntriesLocked(
 		rewritten = append(rewritten, replacementEntry)
 	}
 	return rewritten, nil
+}
+
+func interleaveAuxiliaryUsageEntries(
+	rewritten []recordEntry,
+	existing []recordEntry,
+) []recordEntry {
+	positions := make(map[string]int, len(rewritten))
+	for index := range rewritten {
+		entry := rewritten[index]
+		if entry.EntryID != nil && isPersistedEntryIdentity(*entry.EntryID) {
+			positions[entry.EntryID.Key()] = index
+		}
+	}
+	buckets := make([][]recordEntry, len(rewritten)+1)
+	count := 0
+	for index := range existing {
+		entry := existing[index]
+		if entry.Kind != AuxiliaryUsageRecordKind || entry.Usage == nil ||
+			entry.Usage.Version != UsageSummaryVersion {
+			continue
+		}
+		position := len(rewritten)
+		for next := index + 1; next < len(existing); next++ {
+			identity := existing[next].EntryID
+			if identity == nil || !isPersistedEntryIdentity(*identity) {
+				continue
+			}
+			if candidate, ok := positions[identity.Key()]; ok {
+				position = candidate
+				break
+			}
+		}
+		copied := entry
+		usage := *entry.Usage
+		copied.Usage = &usage
+		if entry.EntryID != nil {
+			identity := *entry.EntryID
+			copied.EntryID = &identity
+		}
+		buckets[position] = append(buckets[position], copied)
+		count++
+	}
+	if count == 0 {
+		return rewritten
+	}
+	result := make([]recordEntry, 0, len(rewritten)+count)
+	for index := range rewritten {
+		result = append(result, buckets[index]...)
+		result = append(result, rewritten[index])
+	}
+	result = append(result, buckets[len(rewritten)]...)
+	return result
 }
 
 func isSynthesizedCompactionMessage(message *schema.Message) bool {

@@ -185,21 +185,25 @@ type App struct {
 
 	// View-only state keyed by the canonical runtime ThreadID. Engine facts are
 	// never copied into this store.
-	threadViews               *threadViewStore
-	composerElements          []threadComposerElement
-	nextComposerElementID     uint64
-	draftMedia                map[string]*composerDraftImage
-	composerRevision          uint64
-	composerImageLoadPending  *composerImageLoadRequest
-	composerImageLoadSerial   uint64
-	composerAdmissionPending  *composerAdmissionRequest
-	composerAdmissionSerial   uint64
-	queuedInputPreview        []threadQueuedInput
-	threadDetailTab           agentDetailTab
-	threadAttentionResponses  sync.Map
-	sessionViewSaveGeneration uint64
-	sessionViewSaveError      string
-	sessionRestorePending     bool
+	threadViews                *threadViewStore
+	composerElements           []threadComposerElement
+	nextComposerElementID      uint64
+	draftMedia                 map[string]*composerDraftImage
+	composerRevision           uint64
+	composerImageLoadPending   *composerImageLoadRequest
+	composerImageLoadSerial    uint64
+	composerAdmissionPending   *composerAdmissionRequest
+	composerAdmissionSerial    uint64
+	composerSuggestion         composerSuggestionState
+	composerSuggestionRequest  *composerSuggestionRequest
+	composerSuggestionSerial   uint64
+	composerSuggestionTurnSeen bool
+	queuedInputPreview         []threadQueuedInput
+	threadDetailTab            agentDetailTab
+	threadAttentionResponses   sync.Map
+	sessionViewSaveGeneration  uint64
+	sessionViewSaveError       string
+	sessionRestorePending      bool
 
 	// Quit
 	quitting  bool
@@ -500,6 +504,7 @@ func (a *App) SetProgram(p *tea.Program) {
 
 // SetEngine sets the query engine after creation.
 func (a *App) SetEngine(eng *engine.QueryEngine) {
+	a.dismissComposerSuggestion()
 	a.engine = eng
 	if eng != nil {
 		a.commandRegistry = eng.GetCommandRegistry()
@@ -958,6 +963,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if a.quitting {
+			a.dismissComposerSuggestion()
 			a.stopMascotIdle()
 			a.invalidateSessionViewSave()
 			_ = a.persistSessionViewState()
@@ -1171,6 +1177,11 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			return a, nil
 		}
 		return a, a.mascotAnim.TriggerIdle(a.mascotIdleSequence())
+
+	case composerSuggestionMsg:
+		a.handleComposerSuggestion(msg)
+		a.updateLayout()
+		return a, nil
 
 	case engineEventMsg:
 		if msg.queryID != a.queryID {
@@ -1897,18 +1908,26 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 		a.showNotification("Wait for the current composer submission to finish", NotifyWarning)
 		return nil
 	}
+	if a.composerSuggestionRequest != nil {
+		// Any interaction makes an in-flight prediction stale. A visible result
+		// has its own explicit accept/dismiss path below.
+		a.dismissComposerSuggestion()
+	}
 	if handled, cmd := a.handleVimEditorKey(msg); handled {
+		a.dismissComposerSuggestion()
 		return tea.Batch(cmd, a.ensureMentionIndex())
 	}
 	if a.textarea.Value() == "" {
 		switch msg.String() {
 		case "/":
+			a.dismissComposerSuggestion()
 			a.inputMode = InputCommand
 			a.textarea.SetValue("/")
 			a.composerElements = nil
 			a.updateCommandHints()
 			return nil
 		case "!", "$":
+			a.dismissComposerSuggestion()
 			a.inputMode = InputShell
 			a.textarea.SetValue("")
 			a.composerElements = nil
@@ -1916,18 +1935,26 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 			a.updateCommandHints()
 			return nil
 		case "?":
+			a.dismissComposerSuggestion()
 			a.openHelpOverlay()
 			return nil
 		}
 	}
 	if msg.String() == "backspace" && a.inputMode == InputShell && a.textarea.Value() == "" {
+		a.dismissComposerSuggestion()
 		a.textarea.Reset()
 		a.composerElements = nil
 		a.setEditorPrompt()
 		a.inputMode = InputNormal
 		return nil
 	}
+	if a.visibleComposerSuggestion() != "" && msg.Code == tea.KeyRight {
+		return a.acceptComposerSuggestion()
+	}
 	if handled, cmd := a.resolveEditorKeyAction(msg); handled {
+		if a.hasComposerSuggestionActivity() {
+			a.dismissComposerSuggestion()
+		}
 		return cmd
 	}
 
@@ -1946,7 +1973,9 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 
 	}
 
-	// Default: let textarea handle it
+	// Default: let textarea handle it. Any unhandled key makes the current
+	// prediction stale before it can mutate the authoritative draft.
+	a.dismissComposerSuggestion()
 	before := a.captureComposerUndoEntry()
 	var cmd tea.Cmd
 	a.textarea, cmd = a.textarea.Update(msg)
@@ -2023,6 +2052,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 	switch evt.Type {
 	case engine.EventAssistant:
 		if evt.AssistantMessage != nil {
+			a.composerSuggestionTurnSeen = true
 			// Complete assistant message (non-streaming path)
 			a.spinnerState.RecordEvent()
 			if evt.AssistantMessage.ReasoningContent != "" {
@@ -2064,6 +2094,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 				}
 			}
 		} else if evt.Message != nil {
+			a.composerSuggestionTurnSeen = true
 			// Streaming delta — accumulate, don't replace
 			a.spinnerState.RecordEvent()
 			if evt.Message.ReasoningContent != "" {
@@ -2111,6 +2142,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 
 	case engine.EventStream:
 		if evt.StreamEvent != nil {
+			a.composerSuggestionTurnSeen = true
 			a.spinnerState.RecordEvent()
 			if evt.StreamEvent.ReasoningContent != "" {
 				a.chat.StreamThinkingDeltaAttempt(
@@ -2348,6 +2380,8 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 		a.showNotification("Context compacted", NotifySuccess)
 
 	case engine.EventUserInterruption:
+		a.dismissComposerSuggestion()
+		a.composerSuggestionTurnSeen = false
 		a.chat.FinishAssistant()
 		a.appendInterruptionOnce()
 		a.activeTasks = make(map[string]*taskEntry)
@@ -2404,6 +2438,8 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 		}
 
 	case engine.EventTerminal:
+		assistantSeen := a.composerSuggestionTurnSeen
+		a.composerSuggestionTurnSeen = false
 		a.chat.FinishAssistant()
 		a.running = false
 		a.cancelFn = nil
@@ -2435,9 +2471,17 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 		if followUpPrompt != "" {
 			return a.startEngineRequest(followUpPrompt)
 		}
-		return a.scheduleNextRuntimeWork()
+		if next := a.scheduleNextRuntimeWork(); next != nil {
+			return next
+		}
+		if assistantSeen && evt.TerminalInfo != nil &&
+			evt.TerminalInfo.Reason == engine.TerminalCompleted {
+			return a.requestComposerSuggestion()
+		}
+		return nil
 
 	case engine.EventMaxTurnsReached:
+		a.composerSuggestionTurnSeen = false
 		a.chat.FinishAssistant()
 		info := "max turns reached"
 		if evt.MaxTurnsInfo != nil {
@@ -3034,7 +3078,11 @@ func (a *App) renderEditor() string {
 	multiline := NewMultilineState()
 	multiline.Update(a.textarea.Value())
 
-	content := a.textarea.View()
+	editorModel := a.textarea
+	if suggestion := a.visibleComposerSuggestion(); suggestion != "" {
+		editorModel.Placeholder = suggestion
+	}
+	content := editorModel.View()
 	inner := content
 
 	// Multiline indicator: show line count when input spans multiple lines
@@ -4814,6 +4862,8 @@ func (a *App) sendShellCommand(command string) tea.Cmd {
 }
 
 func (a *App) startEngineRequest(prompt string) tea.Cmd {
+	a.dismissComposerSuggestion()
+	a.composerSuggestionTurnSeen = false
 	a.commandPaletteSubmission = nil
 	if a.engine == nil {
 		a.chat.AppendSystem("No engine configured.")
@@ -4840,6 +4890,8 @@ func (a *App) startEngineRequest(prompt string) tea.Cmd {
 }
 
 func (a *App) startEngineRuntimeItem(item engine.RuntimeItem) tea.Cmd {
+	a.dismissComposerSuggestion()
+	a.composerSuggestionTurnSeen = false
 	if a.engine == nil {
 		a.chat.AppendSystem("No engine configured.")
 		return nil
@@ -4864,6 +4916,8 @@ func (a *App) startEngineRuntimeItem(item engine.RuntimeItem) tea.Cmd {
 }
 
 func (a *App) startEngineGoalContinuation(item engine.RuntimeItem) tea.Cmd {
+	a.dismissComposerSuggestion()
+	a.composerSuggestionTurnSeen = false
 	if a.engine == nil {
 		a.chat.AppendSystem("No engine configured.")
 		return nil
