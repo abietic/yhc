@@ -37,7 +37,7 @@ func CaptureRootIdentity(path string) (RootIdentity, error) {
 	if !ok || stat.Dev == 0 || stat.Ino == 0 {
 		return RootIdentity{}, errBubblewrapRootChanged
 	}
-	return RootIdentity{Path: resolved, Device: uint64(stat.Dev), Inode: stat.Ino}, nil
+	return RootIdentity{Path: resolved, Device: stat.Dev, Inode: stat.Ino}, nil
 }
 
 func verifyBubblewrapExecutable() error {
