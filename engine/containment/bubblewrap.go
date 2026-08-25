@@ -3,6 +3,7 @@ package containment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -127,20 +128,29 @@ func (a *linuxBubblewrapAdapter) probeCapabilities(ctx context.Context, policy *
 		}
 		return a.deps.run(ctx, spawn)
 	}
+	stageFailure := func(stage string, err error) error {
+		return fmt.Errorf("%w: %s: %v", errBubblewrapProbe, stage, err)
+	}
 
 	allowedFile := filepath.Join(allowed, "allowed")
-	if run("/bin/sh", "-c", "printf allowed > \"$1\"", "sh", allowedFile) != nil || run("/bin/cat", allowedFile) != nil {
-		return errBubblewrapProbe
+	if err := run("/bin/sh", "-c", "printf allowed > \"$1\"", "sh", allowedFile); err != nil {
+		return stageFailure("allowed-write", err)
+	}
+	if err := run("/bin/cat", allowedFile); err != nil {
+		return stageFailure("allowed-read", err)
 	}
 	deniedWrite := filepath.Join(denied, "write")
-	if run("/bin/sh", "-c", "printf denied > \"$1\"", "sh", deniedWrite) == nil {
+	if err := run("/bin/sh", "-c", "printf denied > \"$1\"", "sh", deniedWrite); err == nil {
 		return errBubblewrapProbe
 	}
 	if _, statErr := os.Stat(deniedWrite); !os.IsNotExist(statErr) {
 		return errBubblewrapProbe
 	}
 	deniedRead := filepath.Join(denied, "read")
-	if os.WriteFile(deniedRead, []byte("secret"), 0o600) != nil || run("/bin/cat", deniedRead) == nil {
+	if os.WriteFile(deniedRead, []byte("secret"), 0o600) != nil {
+		return errBubblewrapProbe
+	}
+	if err := run("/bin/cat", deniedRead); err == nil {
 		return errBubblewrapProbe
 	}
 
@@ -152,14 +162,14 @@ func (a *linuxBubblewrapAdapter) probeCapabilities(ctx context.Context, policy *
 	closeListener := closeListenerOnContext(ctx, listener)
 	defer closeListener()
 	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-	if run("/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/"+port) == nil {
+	if err := run("/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/"+port); err == nil {
 		return errBubblewrapProbe
 	}
-	if run("/bin/bash", "-c", "printf denied >/dev/udp/127.0.0.1/9") == nil {
+	if err := run("/bin/bash", "-c", "printf denied >/dev/udp/127.0.0.1/9"); err == nil {
 		return errBubblewrapProbe
 	}
 	descendantWrite := filepath.Join(denied, "descendant")
-	if run("/bin/sh", "-c", "/bin/sh -c 'printf denied > \"$1\"' sh \"$1\"", "sh", descendantWrite) == nil {
+	if err := run("/bin/sh", "-c", "/bin/sh -c 'printf denied > \"$1\"' sh \"$1\"", "sh", descendantWrite); err == nil {
 		return errBubblewrapProbe
 	}
 	if _, statErr := os.Stat(descendantWrite); !os.IsNotExist(statErr) {

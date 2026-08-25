@@ -3,8 +3,10 @@
 package containment
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,8 +116,14 @@ func runBubblewrapSpawn(ctx context.Context, spawn SpawnSpec) error {
 	command := exec.CommandContext(bounded, spawn.Path, spawn.Args...)
 	command.Dir, command.Env = spawn.Dir, spawn.Env
 	command.ExtraFiles = spawn.ExtraFiles
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
-		return errBubblewrapProbe
+		detail := bytes.TrimSpace(stderr.Bytes())
+		if len(detail) > 1024 {
+			detail = detail[:1024]
+		}
+		return fmt.Errorf("%w: %v: %s", errBubblewrapProbe, err, detail)
 	}
 	return nil
 }

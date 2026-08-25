@@ -61,7 +61,8 @@ func TestBubblewrapLinuxIntegration(t *testing.T) {
 	result := adapter.Probe(context.Background(), policy)
 	if result.ReasonCode != "" {
 		if os.Getenv("YHC_REQUIRE_LINUX_BWRAP") == "1" {
-			t.Fatalf("required bubblewrap probe failed: %#v", result)
+			detail := adapter.(*linuxBubblewrapAdapter).probeCapabilities(context.Background(), policy)
+			t.Fatalf("required bubblewrap probe failed: %#v; detail: %v", result, detail)
 		}
 		t.Skipf("bubblewrap enforcement unavailable: %s", result.ReasonCode)
 	}
