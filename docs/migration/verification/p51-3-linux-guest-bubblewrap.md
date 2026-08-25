@@ -44,7 +44,9 @@ tools, and engine suites, the focused ACP/engine checks, and Linux amd64/arm64
 test-binary cross-compilation. Those checks prove build and deterministic
 contract behavior; they do not prove Linux kernel enforcement.
 
-The required GitHub Actions `linux-sandbox` job installs bubblewrap and runs:
+The required GitHub Actions `linux-sandbox` job installs bubblewrap, enables
+unprivileged user namespaces on the disposable hosted runner, clears Ubuntu's
+AppArmor user-namespace gate when present, and runs:
 
 ```bash
 YHC_REQUIRE_LINUX_BWRAP=1 go test ./engine/containment -run '^TestBubblewrapLinuxIntegration$' -count=1
@@ -58,6 +60,9 @@ they run on the corresponding committed tree.
 
 - `YHC_REQUIRE_LINUX_BWRAP=1` converts a missing binary or failed real probe
   into a test failure. A local optional skip proves no Linux containment.
+- A host that blocks unprivileged user namespaces remains unsupported at
+  runtime and produces an unavailable Guest. The CI sysctl setup changes only
+  its disposable hosted runner; it is not an application fallback.
 - A Linux unavailable Guest rejects Bash before spawn and never retries
   ambient execution.
 - A successful Linux binding does not authorize automatic Bash admission; an
