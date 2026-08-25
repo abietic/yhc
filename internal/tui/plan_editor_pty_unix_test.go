@@ -21,7 +21,13 @@ import (
 	"github.com/abietic/yhc/internal/tui/terminalcap"
 )
 
-const p203PlanEditorPTYHelperEnv = "YHC_P20_3_PLAN_EDITOR_PTY_HELPER"
+const (
+	p203PlanEditorPTYHelperEnv = "YHC_P20_3_PLAN_EDITOR_PTY_HELPER"
+	// Starting the external editor competes with every package when make test
+	// runs with coverage. The ready marker remains the synchronization point;
+	// this bound is process-start allowance, not a product latency budget.
+	p203PlanEditorStartTimeout = 20 * time.Second
+)
 
 func TestP203PlanEditorRoundTripPTY(t *testing.T) {
 	if os.Getenv(p203PlanEditorPTYHelperEnv) == "1" {
@@ -86,7 +92,14 @@ printf '\033[?1049lFAKE_VIM_DONE\n'
 
 	firstEditorMark := output.size()
 	writePTY(t, terminal, "\x07")
-	waitPTYContainsAfter(t, command, output, firstEditorMark, "FAKE_VIM_READY")
+	waitPTYContainsAfterWithin(
+		t,
+		command,
+		output,
+		firstEditorMark,
+		"FAKE_VIM_READY",
+		p203PlanEditorStartTimeout,
+	)
 	if err := pty.Setsize(
 		terminal,
 		&pty.Winsize{Cols: 100, Rows: 28},
@@ -138,7 +151,14 @@ printf '\033[?1049lFAKE_VIM_DONE\n'
 
 	secondEditorMark := output.size()
 	writePTY(t, terminal, "\x07")
-	waitPTYContainsAfter(t, command, output, secondEditorMark, "FAKE_VIM_READY")
+	waitPTYContainsAfterWithin(
+		t,
+		command,
+		output,
+		secondEditorMark,
+		"FAKE_VIM_READY",
+		p203PlanEditorStartTimeout,
+	)
 	writePTY(t, terminal, "q\n")
 	waitPTYContainsAfter(t, command, output, secondEditorMark, "Review · 7-19/84")
 	waitP203RawContainsAfter(
