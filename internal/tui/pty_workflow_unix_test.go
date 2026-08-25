@@ -688,7 +688,19 @@ func waitPTYContains(t *testing.T, command *exec.Cmd, output *lockedPTYOutput, n
 
 func waitPTYContainsAfter(t *testing.T, command *exec.Cmd, output *lockedPTYOutput, offset int, needle string) {
 	t.Helper()
-	deadline := time.Now().Add(8 * time.Second)
+	waitPTYContainsAfterWithin(t, command, output, offset, needle, 8*time.Second)
+}
+
+func waitPTYContainsAfterWithin(
+	t *testing.T,
+	command *exec.Cmd,
+	output *lockedPTYOutput,
+	offset int,
+	needle string,
+	timeout time.Duration,
+) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if output.size() > offset &&
 			(strings.Contains(output.plainAfter(offset), needle) ||
