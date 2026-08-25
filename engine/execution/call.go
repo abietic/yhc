@@ -11,7 +11,6 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/agenticclaude"
 	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
-	aclopenai "github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/abietic/yhc/engine/internal/providerorigin"
 	enginemodel "github.com/abietic/yhc/engine/model"
+	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 )
 
 const (
@@ -278,15 +278,9 @@ func buildProviderEffortOption(
 			ThinkingLevel: level,
 		}), true, nil
 	case enginemodel.ReasoningDialectDeepSeek:
-		extraFields := map[string]any{
-			"thinking": map[string]any{
-				"type": string(resolved.ThinkingMode),
-			},
-		}
-		if resolved.WireEffort != "" {
-			extraFields["reasoning_effort"] = resolved.WireEffort
-		}
-		return aclopenai.WithExtraFields(extraFields), true, nil
+		return agenticdeepseek.WithReasoningEffort(
+			agenticdeepseek.ReasoningEffort(resolved.WireEffort),
+		), true, nil
 	default:
 		return model.Option{}, false, fmt.Errorf(
 			"provider %q has unknown reasoning dialect %q",

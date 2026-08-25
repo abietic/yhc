@@ -8,7 +8,11 @@ import (
 func TestDeepSeekV4RequestCapabilitiesExposeOnlyExactEfforts(t *testing.T) {
 	t.Parallel()
 
-	for _, modelID := range []string{"deepseek-v4-flash", "deepseek-v4-pro"} {
+	for _, modelID := range []string{
+		"deepseek-v4-flash",
+		"deepseek-v4-pro",
+		"deepseek-v4-flash-vision-exp",
+	} {
 		efforts, ok := DefaultReasoningEfforts("agenticdeepseek", modelID)
 		if !ok {
 			t.Fatalf("%s reasoning capability is unknown", modelID)
@@ -43,13 +47,13 @@ func TestResolveAdapterReasoningEffortSeparatesIntentFromWireDialect(t *testing.
 		wantErr  bool
 	}{
 		{
-			name:     "deepseek none disables thinking",
+			name:     "deepseek none uses Responses effort",
 			provider: "deepseek",
 			effort:   "none",
 			want: ResolvedReasoningEffort{
 				CanonicalEffort: "none",
+				WireEffort:      "none",
 				Dialect:         ReasoningDialectDeepSeek,
-				ThinkingMode:    ReasoningModeDisabled,
 			},
 		},
 		{
@@ -60,7 +64,6 @@ func TestResolveAdapterReasoningEffortSeparatesIntentFromWireDialect(t *testing.
 				CanonicalEffort: "max",
 				WireEffort:      "max",
 				Dialect:         ReasoningDialectDeepSeek,
-				ThinkingMode:    ReasoningModeEnabled,
 			},
 		},
 		{

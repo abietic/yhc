@@ -492,7 +492,7 @@ func TestConfiguredRuntimeLowersNamedProfilesThroughSixAdapters(t *testing.T) {
 		{"anthropic", "claude-sonnet-4-6", ProviderAgenticClaude},
 		{"openai", "gpt-4o", ProviderAgenticOpenAI},
 		{"google", "gemini-2.5-flash", ProviderAgenticGemini},
-		{"deepseek", "deepseek-chat", ProviderAgenticDeepSeek},
+		{"deepseek", "deepseek-v4-flash", ProviderAgenticDeepSeek},
 		{"qwen", "qwen-max", ProviderAgenticQwen},
 		{"ark", "doubao-1.5-pro-32k", ProviderAgenticArk},
 	}

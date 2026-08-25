@@ -34,6 +34,7 @@ func TestDetectProvider_Prefixes(t *testing.T) {
 		{"deepseek v3", "deepseek-v3", ProviderDeepSeek},
 		{"deepseek r1", "deepseek-r1", ProviderDeepSeek},
 		{"deepseek v4 pro", "deepseek-v4-pro", ProviderDeepSeek},
+		{"deepseek v4 vision", "deepseek-v4-flash-vision-exp", ProviderDeepSeek},
 
 		// Qwen
 		{"qwen max", "qwen-max", ProviderQwen},

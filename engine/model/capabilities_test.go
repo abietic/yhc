@@ -67,6 +67,15 @@ func TestGetCapabilities_KnownModel(t *testing.T) {
 			wantFirstParty: false,
 		},
 		{
+			name:           "deepseek-v4-flash-vision-exp",
+			model:          "deepseek-v4-flash-vision-exp",
+			wantContext:    1000000,
+			wantMaxOutput:  384000,
+			wantImages:     true,
+			wantThinking:   true,
+			wantFirstParty: false,
+		},
+		{
 			name:           "claude-3-5-haiku-20241022",
 			model:          "claude-3-5-haiku-20241022",
 			wantContext:    200000,
@@ -179,8 +188,8 @@ func TestGetCapabilities_PartialNameMatching(t *testing.T) {
 		{
 			name:        "deepseek alias",
 			input:       "deepseek",
-			wantContext: 128000,
-			wantOutput:  8192,
+			wantContext: 1000000,
+			wantOutput:  384000,
 		},
 	}
 

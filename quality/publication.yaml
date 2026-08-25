@@ -12,6 +12,7 @@ privacy:
     - ai.google.dev
     - alignment.openai.com
     - api.anthropic.com
+    - api-docs.deepseek.com
     - api.deepseek.com
     - api.openai.com
     - ark.cn-beijing.volces.com
@@ -822,8 +823,8 @@ privacy:
       rule_id: bearer-token
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
-    - path: docs/architecture/platform/model-providers.md
-      line: 609
+    - path: "docs/architecture/platform/model-providers.md"
+      line: 634
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
@@ -3062,7 +3063,147 @@ privacy:
       rule_id: private-url
       match_sha256: 24300200fc206aed0fbc323730d422827d4d33e2d42db9fc14f789203a278b01
       purpose: synthetic-security-fixture
-    - path: engine/provider/configured_runtime.go
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 28
+      rule_id: private-url
+      match_sha256: 100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 28
+      rule_id: private-url
+      match_sha256: 6e35b76d2b6a8ce243035518f4d6929c7485e3c44de551c556e79314e50e0511
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 29
+      rule_id: private-url
+      match_sha256: 05f77b7649610525077160830b086cc2dde0845f10a0c0344a8a6c4c38d03437
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 29
+      rule_id: private-url
+      match_sha256: 98ad890abf96585ccc8495ce73c3ee4320d0ab5b22f0dc235f2d35114424b20d
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 30
+      rule_id: private-url
+      match_sha256: 678a816f60ef6bdb07e5abaa9decf3d5235b8a34cb8b88b03f6764525402dfcb
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 30
+      rule_id: private-url
+      match_sha256: bc76fe491b8dafa476388000aa5eaf5b95a465c1f0cd37855b32ea3f4e9f74cf
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 31
+      rule_id: private-email
+      match_sha256: 85b5c9aa53b0757610b1d4e6a5127f00c6dadbdd48269a1b0dd79bd6bf039a36
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 31
+      rule_id: private-url
+      match_sha256: 8d3331ee208c72c30fba199e4e2b8a65d69a5034e49875a2f20dbea3a4f2f976
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 32
+      rule_id: private-url
+      match_sha256: 8c5f773a8e9d20299f2ebcd253b3dbb3d8ffd53275cf49a4864e1ddd9f744129
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 33
+      rule_id: private-url
+      match_sha256: 5bef0ec17385a16e3ca475ee8b61a858f6d9f3c2af76318dbd042d0d98f8941b
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 67
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 134
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 185
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 212
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 218
+      rule_id: private-url
+      match_sha256: 99a19c215d3db74ae82c36fa43878f88c5e63830dc30799320b01a4f5aa341e4
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 245
+      rule_id: private-url
+      match_sha256: 99a19c215d3db74ae82c36fa43878f88c5e63830dc30799320b01a4f5aa341e4
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 258
+      rule_id: private-url
+      match_sha256: 0f115db062b7c0dd030b16878c99dea5c354b49dc37b38eb8846179c7783e9d7
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 280
+      rule_id: private-url
+      match_sha256: 99a19c215d3db74ae82c36fa43878f88c5e63830dc30799320b01a4f5aa341e4
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 297
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 328
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/contract_test.go"
+      line: 358
+      rule_id: credential-assignment
+      match_sha256: baf698c16450117dbe6aee29419e1553d1c39cce63a080adfedd229a1d9c9391
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 30
+      rule_id: bearer-token
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 64
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 229
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 297
+      rule_id: credential-assignment
+      match_sha256: baf698c16450117dbe6aee29419e1553d1c39cce63a080adfedd229a1d9c9391
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 339
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 350
+      rule_id: private-url
+      match_sha256: 99a19c215d3db74ae82c36fa43878f88c5e63830dc30799320b01a4f5aa341e4
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/model_test.go"
+      line: 378
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/configured_runtime.go"
       line: 527
       rule_id: credential-assignment
       match_sha256: 659e3f2ed1135a884931a84510ae0d708d6a99d100078b32755cdf16edcd5557
@@ -3132,12 +3273,22 @@ privacy:
       rule_id: private-url
       match_sha256: 29bbb267190d6b1a331640bed30f1728c2f117246b238c6bc4f294ac48a3e832
       purpose: synthetic-security-fixture
-    - path: engine/provider/deepseek_reasoning_test.go
-      line: 51
+    - path: "engine/provider/deepseek_reasoning_test.go"
+      line: 52
       rule_id: credential-assignment
       match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
       purpose: synthetic-security-fixture
-    - path: engine/provider/p29_0_characterization_test.go
+    - path: "engine/provider/deepseek_reasoning_test.go"
+      line: 115
+      rule_id: credential-assignment
+      match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/deepseek_reasoning_test.go"
+      line: 121
+      rule_id: private-url
+      match_sha256: 1924eb3c78692e187749ce96a1d9c5712099074d868c7831bf530cd2469382fa
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/p29_0_characterization_test.go"
       line: 99
       rule_id: credential-assignment
       match_sha256: e595ce1d9c48c0bf02c7f4c3f962a8ab811581a0a9b9c82c35ab96423552a021

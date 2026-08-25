@@ -2,11 +2,30 @@ package recovery
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 )
+
+type recoveryStatusError struct {
+	status int
+}
+
+func (e *recoveryStatusError) Error() string       { return "provider request failed" }
+func (e *recoveryStatusError) HTTPStatusCode() int { return e.status }
+
+func TestIsRecoverableErrorUsesTypedHTTPStatus(t *testing.T) {
+	t.Parallel()
+
+	if !IsRecoverableError(fmt.Errorf("wrapped: %w", &recoveryStatusError{status: 503})) {
+		t.Fatal("expected typed HTTP 503 to be recoverable")
+	}
+	if IsRecoverableError(&recoveryStatusError{status: 401}) {
+		t.Fatal("expected typed HTTP 401 to remain terminal")
+	}
+}
 
 func TestTryPTLRecoveryCascade(t *testing.T) {
 	messages := []*schema.Message{{Role: schema.User, Content: "large prompt"}}

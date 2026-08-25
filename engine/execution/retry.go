@@ -320,6 +320,9 @@ func IsOverloadedError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if statusCodeFromError(err) == 529 {
+		return true
+	}
 	msg := err.Error()
 	return strings.Contains(msg, "overloaded_error") ||
 		strings.Contains(msg, ": 529 ")
@@ -330,9 +333,22 @@ func IsRateLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if statusCodeFromError(err) == 429 {
+		return true
+	}
 	msg := err.Error()
 	return strings.Contains(msg, "rate_limit_error") ||
 		strings.Contains(msg, ": 429 ")
+}
+
+func statusCodeFromError(err error) int {
+	var statusCoder interface {
+		HTTPStatusCode() int
+	}
+	if errors.As(err, &statusCoder) {
+		return statusCoder.HTTPStatusCode()
+	}
+	return 0
 }
 
 // IsTransientAPIError returns true if the error is a transient API error
@@ -362,6 +378,14 @@ func ClassifyModelFailure(err error) ModelFailureClass {
 		return ModelFailureOverloaded
 	case IsRateLimitError(err):
 		return ModelFailureRateLimited
+	}
+	switch statusCodeFromError(err) {
+	case 400, 422:
+		return ModelFailureInvalidRequest
+	case 401:
+		return ModelFailureAuthentication
+	case 403:
+		return ModelFailureAuthorization
 	}
 	message := strings.ToLower(err.Error())
 	switch {

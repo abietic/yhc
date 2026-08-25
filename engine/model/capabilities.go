@@ -659,6 +659,20 @@ var modelTable = map[string]*ModelCapabilities{
 		CostPerInputToken:    0.00000014, // $0.14/Mtok cache miss
 		CostPerOutputToken:   0.00000028, // $0.28/Mtok
 	},
+	"deepseek-v4-flash-vision-exp": {
+		Name:                 "deepseek-v4-flash-vision-exp",
+		ContextWindow:        1000000,
+		MaxOutputTokens:      384000,
+		SupportsImages:       true,
+		SupportsPDFs:         false,
+		SupportsThinking:     true,
+		SupportsTools:        true,
+		SupportsStreaming:    true,
+		SupportsSystemPrompt: true,
+		IsFirstParty:         false,
+		CostPerInputToken:    0.00000014, // $0.14/Mtok; images use up to 384 tokens each
+		CostPerOutputToken:   0.00000028, // $0.28/Mtok
+	},
 	"deepseek-v3": {
 		Name:                 "deepseek-v3",
 		ContextWindow:        128000,
@@ -812,7 +826,7 @@ var aliases = map[string]string{
 	"claude-3-haiku":   "claude-3-haiku-20240307",
 
 	// Convenience short names
-	"deepseek": "deepseek-v3",
+	"deepseek": "deepseek-v4-flash",
 }
 
 // ResolveModelAlias returns the canonical identifier for a built-in model

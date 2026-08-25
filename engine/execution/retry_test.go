@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+type retryStatusError struct {
+	status int
+}
+
+func (e *retryStatusError) Error() string       { return "provider request failed" }
+func (e *retryStatusError) HTTPStatusCode() int { return e.status }
+
 func TestCallModelWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 	calls := 0
 	result, err := CallModelWithRetry(
@@ -319,6 +326,21 @@ func TestP294ClassifyModelFailureTaxonomy(t *testing.T) {
 			err:  errors.New("POST \"url\": 429 rate_limit_error"),
 			want: ModelFailureRateLimited,
 		},
+		{
+			name: "typed invalid request",
+			err:  fmt.Errorf("wrapped: %w", &retryStatusError{status: 422}),
+			want: ModelFailureInvalidRequest,
+		},
+		{
+			name: "typed authentication",
+			err:  fmt.Errorf("wrapped: %w", &retryStatusError{status: 401}),
+			want: ModelFailureAuthentication,
+		},
+		{
+			name: "typed authorization",
+			err:  fmt.Errorf("wrapped: %w", &retryStatusError{status: 403}),
+			want: ModelFailureAuthorization,
+		},
 		{name: "timeout", err: context.DeadlineExceeded, want: ModelFailureTimeout},
 		{
 			name: "transport",
@@ -489,6 +511,7 @@ func TestIsRateLimitError(t *testing.T) {
 		{"unrelated", fmt.Errorf("invalid_request_error"), false},
 		{"429 status", fmt.Errorf("POST \"url\": 429 Too Many Requests"), true},
 		{"rate_limit_error type", fmt.Errorf("model stream: rate_limit_error"), true},
+		{"typed wrapped status", fmt.Errorf("wrapped: %w", &retryStatusError{status: 429}), true},
 		{"529 status", fmt.Errorf("POST \"url\": 529 Overloaded"), false},
 	}
 	for _, tt := range tests {

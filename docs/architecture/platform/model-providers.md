@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-08-20
+**Last verified:** 2026-08-24
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -253,6 +253,30 @@ fields, tool-call chunks, and response conversion differ. `agenticChatModel`
 normalizes the Eino AgenticModel boundary without erasing provider construction
 or metadata semantics.
 
+DeepSeek uses the project-owned
+[`agenticdeepseek`](../../../engine/provider/agenticdeepseek/model.go) Eino adapter. It
+posts directly to DeepSeek's
+[Responses API](https://api-docs.deepseek.com/zh-cn/guides/responses_api/) with project-owned request,
+response, typed-error, and semantic-SSE types; it does not route through the
+OpenAI SDK or the former Eino OpenAI Chat Completions ACL. Responses calls are
+stateless, so the adapter sends the complete admitted history on every call and
+does not use `previous_response_id` or `store`. A stream succeeds only after a
+monotonically ordered `response.completed` or `response.incomplete` terminal
+event. `response.failed`, malformed events, a truncated stream, or the legacy
+`data: [DONE]` marker fail the attempt.
+
+[`deepseek-v4-flash-vision-exp`](https://api-docs.deepseek.com/zh-cn/news/news260821/)
+is the exact image-capable DeepSeek model. Following the official
+[vision contract](https://api-docs.deepseek.com/zh-cn/guides/vision/), the
+adapter preserves mixed text/image order and accepts HTTP(S), supported base64
+data URLs, and DeepSeek Files API `file_id` references in user input; Responses
+tool outputs may also carry images. Image input fails locally for every other
+DeepSeek model instead of relying on the provider's placeholder or downgrade
+behavior. Request size, per-image inline size, image count, URL scheme/length,
+MIME type, detail, and file-ID shape are bounded before dispatch. The classic
+YHC message bridge currently supplies URL and base64 images; direct Eino callers
+can use the adapter's typed file-ID block constructors.
+
 `engine/auth` supplies provider-default credentials and exact named
 credentials only at client construction. `engine/model` owns model aliases,
 context-window and deprecation metadata, profile override validation,
@@ -457,15 +481,16 @@ exact value and the selected adapter to support exact lowering:
 | Agentic OpenAI Responses | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | typed Responses reasoning |
 | Agentic Ark Responses | `minimal`, `low`, `medium`, `high` | typed Ark reasoning |
 | Agentic Gemini | `low`, `high` | typed Gemini thinking level |
-| Agentic DeepSeek V4 Pro/Flash | `none`, `high`, `max` | `thinking.type`; `high`/`max` also set exact `reasoning_effort` |
+| Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
 | Agentic Qwen | none | provider default only |
 
-For DeepSeek V4, `none` sends `thinking.type=disabled` and omits
-`reasoning_effort`; `high` and `max` send `thinking.type=enabled` plus the exact
-effort. Compatibility aliases such as `low`, `medium`, or `xhigh` are rejected
-instead of silently mapped. Empty effort emits no provider option. A profile
-default applies when the Session/call has no override, and `/effort default`
-restores that profile default or provider default.
+For DeepSeek V4, all three explicit values are emitted unchanged as Responses
+`reasoning.effort`; the old Chat Completions `thinking` and
+`reasoning_effort` fields are never sent. Compatibility aliases such as `low`,
+`medium`, or `xhigh` are rejected instead of silently mapped. Empty effort
+emits no provider option. A profile default applies when the Session/call has
+no override, and `/effort default` restores that profile default or provider
+default.
 
 An unsupported or unknown value fails before provider-usage admission and
 dispatch; no level is guessed, clamped, or converted to a boolean. Manually
@@ -580,7 +605,7 @@ the explicit startup preflight owns network/auth probing.
 | Legacy provider resolution | [`ResolveConfig`](../../../engine/provider/resolver.go) | Owns explicit, environment, settings, credential-store, and provider-default precedence for legacy routes. |
 | Portfolio compilation | [`CompilePortfolio`](../../../engine/config/portfolio.go) | Validates account/profile authority, metadata, roles, failover policy, and the immutable non-secret snapshot. |
 | Request capability policy | [`ResolveAdapterReasoningEffort`](../../../engine/model/reasoning_effort.go) | Separates canonical request intent, exact-model defaults, ordered adapter support, and provider wire dialects. |
-| Request lowering | [`buildProviderEffortOption`](../../../engine/execution/call.go) | Produces the final typed SDK option or DeepSeek wire fields immediately before provider admission and dispatch. |
+| Request lowering | [`buildProviderEffortOption`](../../../engine/execution/call.go) | Produces the final typed provider SDK option immediately before provider admission and dispatch. |
 | Named credentials | [`ResolveNamedCredential`](../../../engine/auth/auth.go) | Resolves opaque user-owned credential references only when a selected route is constructed. |
 | Configured runtime | [`NewConfiguredRuntime`](../../../engine/provider/configured_runtime.go) | Joins source-aware configuration with the single shared CLI/ACP provider runtime. |
 | Client isolation | [`NewRouteIdentity`](../../../engine/provider/route_identity.go) | Defines the complete non-secret identity used to isolate and reuse provider clients. |

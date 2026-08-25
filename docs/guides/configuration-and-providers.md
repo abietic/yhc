@@ -171,9 +171,16 @@ unchanged. Client construction for a newly selected valid route remains lazy.
 `/effort [level]` is shown only when the resolved active model metadata and its
 adapter share at least one exact reasoning value. Run `/effort` to see the
 current model's choices; the list is not a global enum. For example, DeepSeek
-V4 Pro/Flash currently expose `default`, `none`, `high`, and `max`. `none`
-disables thinking, while `high` and `max` enable thinking and send that exact
-effort.
+V4 Pro, Flash, and Flash Vision Exp currently expose `default`, `none`, `high`,
+and `max`. The three explicit values are sent unchanged as DeepSeek Responses
+`reasoning.effort`.
+
+DeepSeek defaults to `deepseek-v4-flash`; the former `deepseek-chat` and
+`deepseek-reasoner` compatibility names passed their announced deprecation date
+on 2026-07-24. Select `deepseek-v4-flash-vision-exp` for ordered image input.
+That experimental model supports URL and base64 images through the normal YHC
+multimodal input path; other DeepSeek models reject image input before provider
+dispatch.
 
 This controls provider request reasoning, not the local continuation token
 budget. The selected value is checkpointed with the active model binding. An
