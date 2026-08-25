@@ -1,8 +1,7 @@
 # P42 Host Execution Containment
 
-**Status:** active-plan
-**Completed slices:** P42.0, P51.1, P51.2 Core
-**Ready slice:** P51.3
+**Status:** historical
+**Completed slices:** P42.0, P51.1, P51.2 Core, P51.3
 **Adoption:** `project-native`
 **Gap:** G28
 
@@ -20,6 +19,13 @@ ordinary Auto Bash admission to that exact Guest proof and added a fresh
 deliberately ambient credential, hook/MCP, and hard-resource axes. AppServer,
 Desktop, and Web UI projection remains deferred without an executable queue
 row.
+
+P51.3 completed the prompt-approved Linux Guest subset through fixed
+bubblewrap, a real filesystem/network/descendant probe, immutable root
+identity, existing control-plane overlays, socket/io_uring seccomp, and a
+required Ubuntu integration job. It intentionally did not widen P51.2's
+Darwin-only automatic Bash admission, so G28 remains open without an accepted
+successor.
 
 ## P51.3 accepted Linux Guest bubblewrap subset
 

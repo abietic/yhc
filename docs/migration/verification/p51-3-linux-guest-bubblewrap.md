@@ -2,7 +2,7 @@
 
 **Status:** verification
 **Last verified:** 2026-08-26
-**Platform:** Darwin arm64 local checks; Linux amd64 remote check pending
+**Platform:** Darwin arm64 local checks; Linux amd64 GitHub-hosted Ubuntu
 
 > **Ownership:** reproducible evidence for the prompt-approved Linux Guest
 > bubblewrap subset and its explicit exclusion from automatic Bash admission
@@ -37,9 +37,9 @@ admission and is used only after another permission path approves execution.
 | Existing-only protected paths and symlink failure | `workspaceGuestRoots`, `pathCrossesSymlink` | `TestP513LinuxWorkspaceGuest*`, `TestP513PathCrossesSymlink` |
 | No Linux automatic Bash admission | `completeContainedAutoBashProof` | Linux-adapter mutation in P51.2 permission-action tests |
 
-## Current observed checks
+## Observed checks
 
-The Darwin implementation candidate passed the platform-neutral containment,
+The implementation passed the platform-neutral containment,
 tools, and engine suites, the focused ACP/engine checks, and Linux amd64/arm64
 test-binary cross-compilation. Those checks prove build and deterministic
 contract behavior; they do not prove Linux kernel enforcement.
@@ -52,9 +52,12 @@ AppArmor user-namespace gate when present, and runs:
 YHC_REQUIRE_LINUX_BWRAP=1 go test ./engine/containment -run '^TestBubblewrapLinuxIntegration$' -count=1
 ```
 
-That job must execute without a skip before P51.3 can be closed. Repository
-focused, merge, evidence-ready, and remote-CI results are appended only after
-they run on the corresponding committed tree.
+The required job passed without a skip for commit `3501ae2` in CI run
+[`32887604283`](https://github.com/abietic/yhc/actions/runs/32887604283), job
+[`97931665052`](https://github.com/abietic/yhc/actions/runs/32887604283/job/97931665052),
+in 31 seconds. The committed-tree focused and merge workflows were
+`evidence_ready` before push. Final PR-wide CI after closeout documentation
+remains a separate merge gate.
 
 ## Failure and skip interpretation
 

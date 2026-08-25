@@ -2,18 +2,7 @@ version: 1
 updated: "2026-08-26"
 ready_limit: 1
 
-slices:
-  - id: P51.3
-    state: ready
-    priority: 180
-    gaps: [G28]
-    promotion:
-      id: p51-3-linux-guest-bubblewrap-intake
-      state: satisfied
-      label: fixed-helper Linux Guest containment intake
-      link: plans/p42-host-execution-containment.md#p513-accepted-linux-guest-bubblewrap-subset
-    contract: plans/p42-host-execution-containment.md#p513-accepted-linux-guest-bubblewrap-subset
-    outcome: Enforce prompt-approved Linux Guest Bash through fixed bubblewrap filesystem, namespace, network, root, descendant, wall-time, and output boundaries without ambient fallback or proof-bound Auto admission.
+slices: []
 deferred:
   - id: P44
     gaps: [G14]
