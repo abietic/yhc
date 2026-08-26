@@ -24,9 +24,10 @@ ProjectGraph, Session persistence, ACP, and permissions are unchanged.
 
 This slice serves bounded scripts, CI, and process hosts. It adds no daemon,
 SDK, reconnect/replay protocol, business-record refresh contract, or new
-approval path. DeepSeek Harness's cancelled-tool settlement remains a separate
-candidate, and Pi's generic `AgentHarness` remains non-production evidence at
-the audited snapshot.
+approval path, and the later AppServer protocol remains a separate long-lived
+Desktop transport. DeepSeek Harness's cancelled-tool settlement remains a
+separate candidate, and Pi's generic `AgentHarness` remains non-production
+evidence at the audited snapshot.
 
 The retained [contract](../../plans/p52-1-headless-jsonl-lifecycle.md) owns the
 compatibility boundary. The

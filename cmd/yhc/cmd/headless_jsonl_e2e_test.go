@@ -5,9 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -139,6 +144,232 @@ func TestHeadlessJSONLPublicExecStreamsCommittedLifecycle(t *testing.T) {
 	if calls := script.calls.Load(); calls != 3 {
 		t.Fatalf("provider calls = %d, want 3", calls)
 	}
+}
+
+func TestHeadlessJSONLDeepSeekResponsesProjectsCanonicalLifecycle(t *testing.T) {
+	repo := prepareHeadlessJSONLProviderTest(t)
+	target := filepath.Join(repo, "deepseek-result.txt")
+	const (
+		assistantOutput = "deepseek-fixed"
+		reasoningMarker = "provider-private-reasoning-marker"
+		logProbMarker   = "provider-private-logprob-marker"
+	)
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/responses" {
+			http.Error(w, "unexpected endpoint", http.StatusNotFound)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+p430FakeKey {
+			t.Errorf("provider authorization = %q", got)
+			http.Error(w, "unexpected authorization", http.StatusUnauthorized)
+			return
+		}
+
+		var request p430ProviderRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode DeepSeek request: %v", err)
+			http.Error(w, "malformed request", http.StatusBadRequest)
+			return
+		}
+		if len(request.Tools) != 1 || request.Tools[0].Type != "function" || request.Tools[0].Name != "Write" {
+			t.Errorf("provider tools = %#v, want exactly one function Write", request.Tools)
+			http.Error(w, "unexpected tools", http.StatusBadRequest)
+			return
+		}
+
+		call := calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch call {
+		case 1:
+			item := p430Function("call-deepseek-write", target, "deepseek-write")
+			_, _ = fmt.Fprintf(w, strings.Join([]string{
+				"event: response.created\n",
+				`data: {"type":"response.created","sequence_number":0,"response":{"id":"resp-deepseek-tool","object":"response","status":"in_progress","model":"deepseek-v4-flash"}}` + "\n\n",
+				"event: response.output_item.added\n",
+				"data: {\"type\":\"response.output_item.added\",\"sequence_number\":1,\"output_index\":0,\"item\":%s}\n\n",
+				"event: response.output_item.done\n",
+				"data: {\"type\":\"response.output_item.done\",\"sequence_number\":2,\"output_index\":0,\"item\":%s}\n\n",
+				"event: response.completed\n",
+				"data: {\"type\":\"response.completed\",\"sequence_number\":3,\"response\":{\"id\":\"resp-deepseek-tool\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[%s],\"usage\":{\"input_tokens\":2,\"output_tokens\":2,\"total_tokens\":4}}}\n\n",
+			}, ""), item, item, item)
+		case 2:
+			output, ok, err := p430FunctionOutput(request.Input, "call-deepseek-write")
+			if err != nil || !ok || output != fmt.Sprintf("Wrote %d bytes to %s", len("deepseek-write"), target) {
+				t.Errorf("DeepSeek Write result = %q, present=%v, err=%v", output, ok, err)
+				http.Error(w, "missing function result", http.StatusBadRequest)
+				return
+			}
+			_, _ = fmt.Fprintf(w, strings.Join([]string{
+				"event: response.created\n",
+				`data: {"type":"response.created","sequence_number":0,"response":{"id":"resp-deepseek-final","object":"response","status":"in_progress","model":"deepseek-v4-flash"}}` + "\n\n",
+				"event: response.reasoning_text.delta\n",
+				"data: {\"type\":\"response.reasoning_text.delta\",\"sequence_number\":1,\"item_id\":\"reasoning-final\",\"output_index\":0,\"content_index\":0,\"delta\":%q}\n\n",
+				"event: response.output_text.delta\n",
+				"data: {\"type\":\"response.output_text.delta\",\"sequence_number\":2,\"item_id\":\"message-final\",\"output_index\":1,\"content_index\":0,\"delta\":%q}\n\n",
+				"event: response.completed\n",
+				"data: {\"type\":\"response.completed\",\"sequence_number\":3,\"response\":{\"id\":\"resp-deepseek-final\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[{\"type\":\"message\",\"id\":\"message-final\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":%q,\"logprobs\":[{\"token\":%q,\"logprob\":-0.1,\"bytes\":[]}]}]}],\"usage\":{\"input_tokens\":3,\"output_tokens\":2,\"output_tokens_details\":{\"reasoning_tokens\":1},\"total_tokens\":5}}}\n\n",
+			}, ""), reasoningMarker, assistantOutput, assistantOutput, logProbMarker)
+		default:
+			http.Error(w, "unexpected call count", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	stdout, stderr, err := executeDeepSeekHeadlessJSONL(t, server.URL, "2", "Write")
+	if err != nil {
+		t.Fatalf("DeepSeek headless JSONL exec: %v; stderr=%s", err, stderr)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("provider calls = %d, want 2", got)
+	}
+	if content, err := os.ReadFile(target); err != nil || string(content) != "deepseek-write" {
+		t.Fatalf("DeepSeek Write content = %q, err=%v", content, err)
+	}
+	for _, forbidden := range []string{reasoningMarker, logProbMarker, "logprobs"} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("provider-private field %q leaked into JSONL: %s", forbidden, stdout)
+		}
+	}
+
+	records := decodeHeadlessLifecycleRecords(t, stdout)
+	wantKinds := map[string]bool{
+		"assistant_delta": false,
+		"tool_start":      false,
+		"tool_input":      false,
+		"tool_terminal":   false,
+	}
+	resultCount := 0
+	for _, record := range records {
+		if record.Event != nil {
+			if _, ok := wantKinds[record.Event.Kind]; ok {
+				wantKinds[record.Event.Kind] = true
+			}
+		}
+		if record.Type == enginetransport.LifecycleRecordResult {
+			resultCount++
+		}
+	}
+	for kind, seen := range wantKinds {
+		if !seen {
+			t.Fatalf("missing DeepSeek canonical %s event: %#v", kind, records)
+		}
+	}
+	final := records[len(records)-1]
+	if resultCount != 1 || final.Type != enginetransport.LifecycleRecordResult || final.Result == nil ||
+		final.Result.Status != "completed" || final.Result.Output != assistantOutput || final.Result.ExitCode != ExitSuccess {
+		t.Fatalf("DeepSeek final lifecycle records = %#v", records)
+	}
+}
+
+func TestHeadlessJSONLDeepSeekFailedStreamCannotComplete(t *testing.T) {
+	prepareHeadlessJSONLProviderTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, strings.Join([]string{
+			"event: response.created\n",
+			`data: {"type":"response.created","sequence_number":0,"response":{"id":"resp-deepseek-failed","object":"response","status":"in_progress","model":"deepseek-v4-flash"}}` + "\n\n",
+			"event: response.failed\n",
+			`data: {"type":"response.failed","sequence_number":1,"response":{"id":"resp-deepseek-failed","object":"response","status":"failed","model":"deepseek-v4-flash","output":[],"error":{"code":"server_busy","message":"busy"}}}` + "\n\n",
+		}, ""))
+	}))
+	defer server.Close()
+
+	stdout, stderr, err := executeDeepSeekHeadlessJSONL(t, server.URL, "1", "")
+	if err == nil || ExitCode(err) != ExitFailure {
+		t.Fatalf("DeepSeek failed stream error = %v, exit=%d; stderr=%s", err, ExitCode(err), stderr)
+	}
+	records := decodeHeadlessLifecycleRecords(t, stdout)
+	resultCount := 0
+	for _, record := range records {
+		if record.Type == enginetransport.LifecycleRecordResult {
+			resultCount++
+		}
+	}
+	final := records[len(records)-1]
+	if resultCount != 1 || final.Result == nil || final.Result.Status != "failed" ||
+		final.Result.ExitCode != ExitFailure || final.Result.TerminalReason == string(engine.TerminalCompleted) {
+		t.Fatalf("DeepSeek failed lifecycle records = %#v", records)
+	}
+}
+
+func prepareHeadlessJSONLProviderTest(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	var err error
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(root, "repo")
+	p430CopyFixture(t, repo)
+	home := filepath.Join(root, "home")
+	for _, pair := range [][2]string{
+		{"HOME", home},
+		{"XDG_CONFIG_HOME", filepath.Join(home, "config")},
+		{"XDG_DATA_HOME", filepath.Join(home, "data")},
+		{"XDG_CACHE_HOME", filepath.Join(home, "cache")},
+	} {
+		t.Setenv(pair[0], pair[1])
+	}
+	for _, name := range []string{
+		"OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
+		"PROV", "PROV_API_KEY", "PROV_BASE_URL", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSH_AUTH_SOCK",
+	} {
+		t.Setenv(name, "")
+	}
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	return repo
+}
+
+func executeDeepSeekHeadlessJSONL(t *testing.T, baseURL, maxTurns, tools string) (string, string, error) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	rootCmd := newRootCommand()
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
+	args := []string{
+		"exec", "exercise DeepSeek Responses lifecycle", "--output-format", "jsonl",
+		"--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", baseURL,
+		"--api-key", p430FakeKey, "--max-turns", maxTurns, "--permission-mode", "acceptEdits",
+	}
+	if tools != "" {
+		args = append(args, "--tools", tools)
+	}
+	rootCmd.SetArgs(args)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	err := rootCmd.ExecuteContext(ctx)
+	return stdout.String(), stderr.String(), err
+}
+
+func decodeHeadlessLifecycleRecords(t *testing.T, output string) []enginetransport.LifecycleRecord {
+	t.Helper()
+	decoder := json.NewDecoder(strings.NewReader(output))
+	var records []enginetransport.LifecycleRecord
+	for {
+		var record enginetransport.LifecycleRecord
+		err := decoder.Decode(&record)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("decode lifecycle record: %v; output=%s", err, output)
+		}
+		records = append(records, record)
+	}
+	if len(records) == 0 {
+		t.Fatalf("no lifecycle records: %s", output)
+	}
+	return records
 }
 
 func TestHeadlessJSONLPreTurnFailureClosesWithSessionIdentity(t *testing.T) {

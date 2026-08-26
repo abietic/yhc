@@ -18,7 +18,8 @@ not change. The compatibility `yhc -p` route uses the same headless owner.
 
 This is the first accepted implementation from the 2026-08-24 Codex platform,
 DeepSeek Harness, and Pi audit. It solves bounded script and CI observation;
-it does not introduce a daemon, SDK, second Session store, or second agent
+on the current master it complements, but does not modify, `yhc serve app`.
+It does not introduce a general SDK, second Session store, or second agent
 loop.
 
 ## Intake evidence
@@ -26,8 +27,11 @@ loop.
 Before this slice, headless JSON exposed only a final object even though
 `QueryEngine` already published ordered event identities and an engine-owned
 canonical assistant/tool projection. ACP consumed part of that lifecycle, but
-its wire and Session ownership are IDE-specific. `engine/transport` compiled
-outside the released CLI closure.
+its wire and Session ownership are IDE-specific. At the accepted snapshot,
+`engine/transport` compiled outside the released CLI closure. The later
+AppServer entrypoint added a separate authenticated replay and interaction
+protocol; it does not replace the bounded `exec` gap or become JSONL's schema
+owner.
 
 OpenAI's
 [Codex as a platform](https://developers.openai.com/blog/codex-as-a-platform)
@@ -85,7 +89,8 @@ The embedded event sequence remains the ordering authority.
 
 ## Non-goals and deferred candidates
 
-- No app-server, HTTP, JSON-RPC, or in-process public Host Session API.
+- No change to `yhc serve app`, AppServer protocol version 2, HTTP/SSE, or its
+  replay and interaction-settlement owners; no new general Host Session API.
 - No replay cursor, reconnect, acknowledgement, or long-lived subscriber.
 - No ACP schema change and no expansion of permission authority.
 - No adoption of DeepSeek Harness's Cordis composition or experimental Agent
@@ -99,9 +104,12 @@ The embedded event sequence remains the ordering authority.
 
 Focused tests cover projection validation and UTF-8 rejection, duplicate
 terminal exclusion, one final result, safe error redaction, output-format
-compatibility, and a public `exec` run through a loopback Responses provider,
-real tool permission decisions, and an actual Write. Repository-owned focused
-and committed-tree gates remain the completion authority.
+compatibility, and public `exec` runs through loopback OpenAI and DeepSeek
+Responses providers. The DeepSeek fixture crosses provider semantic SSE,
+canonical assistant/tool projection, a real Write, and JSONL; it also proves a
+`response.failed` stream cannot close as completed and provider-private
+reasoning/logprobs do not enter schema version 1. Repository-owned focused and
+committed-tree gates remain the completion authority.
 
 Rollback removes the `jsonl` option, headless observer, and active transport
 projection together. It leaves the pre-existing canonical engine projection,

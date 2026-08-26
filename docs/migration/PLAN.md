@@ -19,9 +19,9 @@ P52.1 completed the accepted `adapt` slice from the Codex platform,
 DeepSeek Harness, and Pi audit. `yhc exec --output-format jsonl` now exposes a
 versioned stream of committed canonical lifecycle facts followed by one
 classified result, while existing text/JSON output, QueryEngine, permissions,
-Sessions, and ACP remain unchanged. A Host Session daemon/SDK and cancelled-
-tool settlement stay unaccepted until a real consumer and cancellation
-deadline semantics are frozen.
+Sessions, ACP, and AppServer remain unchanged. A new general-purpose Host
+Session SDK/second daemon and cancelled-tool settlement stay unaccepted until
+a real consumer and cancellation deadline semantics are frozen.
 
 P49 completed the approved budget-optional Goal repair, closed G21 and G47,
 and removed the superseded deferred P45 numeric-default proposal. Saved-root

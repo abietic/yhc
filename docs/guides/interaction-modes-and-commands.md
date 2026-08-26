@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-26
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 

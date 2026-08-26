@@ -1,7 +1,7 @@
 # Production Code Map
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-26
 
 > **Ownership:** released-CLI package reachability, wiring labels, and owning
 > architecture documents
@@ -17,10 +17,11 @@ The reproducible scope is:
 go list -deps ./cmd/yhc
 ```
 
-Filtering that result to this module yields **52 module-local packages in the
-released CLI dependency closure**. The closure already includes both supported
-server implementations because the Cobra tree wires `serve acp` and `serve
-mcp`. Reachability still does not make every exported capability active.
+Filtering that result to this module yields **55 module-local packages in the
+released CLI dependency closure**. The closure already includes all three
+supported server implementations because the Cobra tree wires `serve acp`,
+`serve mcp`, and `serve app`. Reachability still does not make every exported
+capability active.
 
 Comparing the same result with `go list ./...` yields 22 module-local packages
 outside the closure: 11 runtime/library surfaces and 11 development or

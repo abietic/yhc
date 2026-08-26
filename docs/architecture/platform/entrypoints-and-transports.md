@@ -2,7 +2,7 @@
 
 **Status:** current
 **Wiring:** supported composition roots are active; legacy structured and remote transport surfaces remain inactive
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-26
 
 > **Ownership:** This file owns executable entrypoints, process-level protocol
 > surfaces, and whether transport packages are production-wired. MCP client and
@@ -112,6 +112,12 @@ the same headless redaction owner as JSON. JSONL does not make headless
 interactive: permission and Plan requests still fail closed without a live
 adapter, and `-y` retains its existing explicit bypass meaning.
 
+This bounded process stream is deliberately separate from AppServer protocol
+version 2. JSONL has no replay ID, reconnect cursor, interaction settlement, or
+Desktop session lease; AppServer keeps those long-lived concerns in its
+`WireEvent` and snapshot owners. Both transports consume engine-owned facts,
+but neither wire schema embeds or versions the other.
+
 `sessions` applies the same text/JSON and exit taxonomy to durable session
 administration. List supports bounded current-workspace search and cursor
 pagination; resume restores and reports the exact durable session then exits;
@@ -212,6 +218,7 @@ entrypoint.
 | ACP per-session engine identity | [`server/acp.Agent.createEngine`](../../../server/acp/agent.go) |
 | ACP event, Plan resolution, and canonical tool lifecycle projection | [`server/acp.Agent.resolveProjectGraphPermission`](../../../server/acp/agent.go), [`server/acp.Agent.streamEvent`](../../../server/acp/agent.go), [`acpToolLifecycleLedger`](../../../server/acp/tool_lifecycle.go) |
 | negotiated ACP Goal extension | [`server/acp.Agent.handleGoalExtension`](../../../server/acp/goal_extension.go) |
+| AppServer long-lived wire protocol | [`appserver.WireEvent`](../../../server/appserver/protocol.go), [`appserver.ProtocolVersion`](../../../server/appserver/protocol.go) |
 | MCP stdio bootstrap and safe default hook | [`newServeMCPCommand`](../../../cmd/yhc/cmd/serve_mcp.go), [`DefaultMCPToolHook`](../../../server/mcp/server.go) |
 | headless JSONL projection and writer | [`ProjectLifecycleEvent`](../../../engine/transport/lifecycle_jsonl.go), [`LifecycleWriter.WriteEvent`](../../../engine/transport/lifecycle_jsonl.go), [`LifecycleWriter.WriteResult`](../../../engine/transport/lifecycle_jsonl.go) |
 | disconnected legacy structured I/O | [`engine/transport/structured_io.go`](../../../engine/transport/structured_io.go) |

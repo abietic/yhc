@@ -20,6 +20,14 @@ This page must be refreshed when either pinned commit changes, when Pi wires
 its generic `AgentHarness` into the coding agent, or when YHC changes its
 production composition roots.
 
+**Current-source note (2026-08-26):** YHC master now includes `yhc serve app`
+and an authenticated AppServer protocol for the Desktop workbench. That later
+entrypoint does not invalidate this snapshot's bounded-consumer finding:
+headless JSONL remains a one-process projection without replay, interaction
+settlement, or Desktop leases. A new general-purpose Host Session SDK or second
+daemon remains deferred; the existing AppServer is current behavior owned by
+the [entrypoint architecture](../../../architecture/platform/entrypoints-and-transports.md).
+
 ## Three systems choose different ownership boundaries
 
 | Boundary | DeepSeek Harness | Pi production coding agent | YHC consequence |
@@ -135,7 +143,7 @@ long-running server.
 | `project-native` | Opaque business-record revision and refresh hints | Host must remain system-of-record owner; only consider after a real consumer defines refresh behavior |
 | `reject` | DSH Cordis/profile/HMR composition replacing Go/Eino construction | It introduces a second composition authority without removing a YHC owner |
 | `reject` | Pi generic `AgentHarness` as a working recovery implementation | The named runtime is an explicit scaffold at this snapshot |
-| `defer` | New Host Session daemon/SDK and DSH experimental Agent Team | Public API, concurrency, persistence, permission, and recovery contracts are not yet frozen by a consumer |
+| `defer` | New general-purpose Host Session SDK/second daemon and DSH experimental Agent Team | Public API, concurrency, persistence, permission, and recovery contracts are not yet frozen by a consumer; this does not describe the existing Desktop AppServer |
 
 P52.1 deliberately emits explicit assistant text because the caller requested
 an output stream and existing text/JSON modes already expose the final answer.
@@ -171,6 +179,6 @@ commit may invalidate those facts.
 
 **`adapt`: keep P52.1 as the only accepted implementation from this audit.**
 It supplies the smallest useful platform seam without changing the agent loop,
-permissions, persistence, ACP, or public daemon lifecycle. A Host Session API
-or cancelled-tool settlement slice requires a separate reproduced outcome and
-contract.
+permissions, persistence, ACP, or the existing AppServer lifecycle. A new
+general-purpose Host Session API or cancelled-tool settlement slice requires a
+separate reproduced outcome and contract.

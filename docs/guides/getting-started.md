@@ -1,7 +1,7 @@
 # Getting Started
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-26
 
 > **Ownership:** prerequisites, build outputs, first provider setup, and first run
 

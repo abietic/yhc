@@ -17,20 +17,20 @@ Product scope and adoption rules are owned by
 
 ## Current Snapshot
 
-Generated with `go run ./scripts/migration_scan -json` on 2026-08-24:
+Generated with `go run ./scripts/migration_scan -json` on 2026-08-26:
 
 | Metric | Value |
 |---|---:|
-| Production Go files | 607 |
-| Production Go lines | 245,603 |
-| Product test Go files | 612 |
-| Product test Go lines | 234,072 |
-| Product Go packages | 66 |
+| Production Go files | 636 |
+| Production Go lines | 256,223 |
+| Product test Go files | 642 |
+| Product test Go lines | 245,130 |
+| Product Go packages | 69 |
 | Tool constructors | 44 |
 | Command files | 21 |
 | Canonical compatibility traces | 12 |
-| TUI production files / lines | 101 / 51,168 |
-| TUI test files / lines | 141 / 40,164 |
+| TUI production files / lines | 102 / 51,403 |
+| TUI test files / lines | 142 / 40,489 |
 | Reference files | 1,884 |
 
 Counts are a dated inventory, not a quality score. Refresh them after source,

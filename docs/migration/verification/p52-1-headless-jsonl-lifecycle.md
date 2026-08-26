@@ -1,7 +1,7 @@
 # P52.1 Headless JSONL Lifecycle Verification
 
 **Status:** verification
-**Verified:** 2026-08-24
+**Verified:** 2026-08-26
 **Platform:** Darwin arm64
 
 > **Ownership:** reproducible local evidence for the versioned bounded
@@ -26,6 +26,8 @@ long-lived reconnect, replay cursor, SDK, daemon, or Host Session API.
 | Validated canonical payload and UTF-8 fail-closed behavior | `ProjectLifecycleEvent` | `TestLifecycleWriterProjectsOnlyValidatedSafePayloads` |
 | Engine terminal skipped; one final result | headless observer and renderer | `TestHeadlessJSONLLifecycleStreamClosesWithOneResult` |
 | Public CLI composition and model-order identity | `runHeadless` | `TestHeadlessJSONLPublicExecStreamsCommittedLifecycle` |
+| DeepSeek semantic SSE through canonical lifecycle | DeepSeek adapter, QueryEngine, and `runHeadless` | `TestHeadlessJSONLDeepSeekResponsesProjectsCanonicalLifecycle` |
+| DeepSeek failed stream cannot report completion | DeepSeek adapter terminal error and headless classifier | `TestHeadlessJSONLDeepSeekFailedStreamCannotComplete` |
 | Pre-turn failure does not invent turn identity | early `SubmitMessage` terminal and headless renderer | `TestHeadlessJSONLPreTurnFailureClosesWithSessionIdentity` |
 | Pre-engine usage failure has no runtime identity | headless failure renderer | `TestHeadlessJSONLUsageFailureHasNoRuntimeIdentity` |
 | Cancellation closes after the last committed event | headless classifier and result renderer | `TestHeadlessJSONLCancellationClosesAfterLastCommittedEvent` |
@@ -42,10 +44,13 @@ go test ./engine/transport ./cmd/yhc/cmd -run 'TestLifecycle|TestHeadlessJSONL' 
 go test ./engine/transport ./cmd/yhc/cmd -count=1
 ```
 
-The focused public-entrypoint test uses a loopback OpenAI Responses fixture.
-It exercises an outside-root Write denial, an in-root Write success, committed
-tool start/input/terminal events, assistant delta, monotonic event identity,
-and one final result. It makes no network call to a live provider.
+The focused public-entrypoint tests use loopback OpenAI and DeepSeek Responses
+fixtures. The OpenAI fixture exercises an outside-root Write denial, an in-root
+Write success, committed tool start/input/terminal events, assistant delta,
+monotonic event identity, and one final result. The DeepSeek fixture additionally
+exercises semantic SSE sequence validation, a real Write result on the complete
+stateless request, provider-private reasoning/logprobs exclusion, and
+`response.failed` classification. They make no network call to a live provider.
 
 ## Failure interpretation
 

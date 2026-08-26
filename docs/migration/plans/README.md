@@ -12,8 +12,9 @@
 
 P52.1 completed the accepted bounded headless platform seam. Versioned JSONL
 records now expose committed canonical lifecycle facts and one final process
-result without creating a daemon, SDK, second Session authority, or approval
-path. The Host Session and cancelled-tool candidates remain deferred pending
+result without changing the existing AppServer protocol or creating a general
+SDK, second Session authority, or approval path. Any additional platform-neutral
+Host Session API and the cancelled-tool candidate remain deferred pending
 separate observable contracts.
 
 P50.1 completed the ProjectGraph rebuilt-revision fence and closed G48. P50.2
