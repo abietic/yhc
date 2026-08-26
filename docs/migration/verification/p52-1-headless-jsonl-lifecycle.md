@@ -28,6 +28,7 @@ long-lived reconnect, replay cursor, SDK, daemon, or Host Session API.
 | Public CLI composition and model-order identity | `runHeadless` | `TestHeadlessJSONLPublicExecStreamsCommittedLifecycle` |
 | DeepSeek semantic SSE through canonical lifecycle | DeepSeek adapter, QueryEngine, and `runHeadless` | `TestHeadlessJSONLDeepSeekResponsesProjectsCanonicalLifecycle` |
 | DeepSeek failed stream cannot report completion | DeepSeek adapter terminal error and headless classifier | `TestHeadlessJSONLDeepSeekFailedStreamCannotComplete` |
+| DeepSeek stream without terminal cannot report completion | DeepSeek semantic-SSE terminal requirement and headless classifier | `TestHeadlessJSONLDeepSeekMissingTerminalCannotComplete` |
 | Pre-turn failure does not invent turn identity | early `SubmitMessage` terminal and headless renderer | `TestHeadlessJSONLPreTurnFailureClosesWithSessionIdentity` |
 | Pre-engine usage failure has no runtime identity | headless failure renderer | `TestHeadlessJSONLUsageFailureHasNoRuntimeIdentity` |
 | Cancellation closes after the last committed event | headless classifier and result renderer | `TestHeadlessJSONLCancellationClosesAfterLastCommittedEvent` |
@@ -50,7 +51,8 @@ Write success, committed tool start/input/terminal events, assistant delta,
 monotonic event identity, and one final result. The DeepSeek fixture additionally
 exercises semantic SSE sequence validation, a real Write result on the complete
 stateless request, provider-private reasoning/logprobs exclusion, and
-`response.failed` classification. They make no network call to a live provider.
+`response.failed` plus missing-terminal classification. They make no network
+call to a live provider.
 
 ## Failure interpretation
 

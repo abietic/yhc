@@ -107,9 +107,10 @@ terminal exclusion, one final result, safe error redaction, output-format
 compatibility, and public `exec` runs through loopback OpenAI and DeepSeek
 Responses providers. The DeepSeek fixture crosses provider semantic SSE,
 canonical assistant/tool projection, a real Write, and JSONL; it also proves a
-`response.failed` stream cannot close as completed and provider-private
-reasoning/logprobs do not enter schema version 1. Repository-owned focused and
-committed-tree gates remain the completion authority.
+`response.failed` or truncated stream cannot close as completed and
+provider-private reasoning/logprobs do not enter schema version 1.
+Repository-owned focused and committed-tree gates remain the completion
+authority.
 
 Rollback removes the `jsonl` option, headless observer, and active transport
 projection together. It leaves the pre-existing canonical engine projection,

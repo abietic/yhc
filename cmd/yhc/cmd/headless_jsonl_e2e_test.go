@@ -294,6 +294,37 @@ func TestHeadlessJSONLDeepSeekFailedStreamCannotComplete(t *testing.T) {
 	}
 }
 
+func TestHeadlessJSONLDeepSeekMissingTerminalCannotComplete(t *testing.T) {
+	prepareHeadlessJSONLProviderTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, strings.Join([]string{
+			"event: response.created\n",
+			`data: {"type":"response.created","sequence_number":0,"response":{"id":"resp-deepseek-truncated","object":"response","status":"in_progress","model":"deepseek-v4-flash"}}` + "\n\n",
+			"event: response.output_text.delta\n",
+			`data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"message-partial","output_index":0,"content_index":0,"delta":"partial"}` + "\n\n",
+		}, ""))
+	}))
+	defer server.Close()
+
+	stdout, stderr, err := executeDeepSeekHeadlessJSONL(t, server.URL, "1", "")
+	if err == nil || ExitCode(err) != ExitFailure {
+		t.Fatalf("DeepSeek truncated stream error = %v, exit=%d; stderr=%s", err, ExitCode(err), stderr)
+	}
+	records := decodeHeadlessLifecycleRecords(t, stdout)
+	resultCount := 0
+	for _, record := range records {
+		if record.Type == enginetransport.LifecycleRecordResult {
+			resultCount++
+		}
+	}
+	final := records[len(records)-1]
+	if resultCount != 1 || final.Result == nil || final.Result.Status != "failed" ||
+		final.Result.ExitCode != ExitFailure || final.Result.TerminalReason == string(engine.TerminalCompleted) {
+		t.Fatalf("DeepSeek truncated lifecycle records = %#v", records)
+	}
+}
+
 func prepareHeadlessJSONLProviderTest(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
