@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-26
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > renderer/server trust boundaries, and user-visible interaction projections.
@@ -288,15 +288,19 @@ identity observation from process termination, so they are best-effort
 PID-reuse defenses rather than atomic process-handle or Job Object ownership.
 Last-window restoration remains outside the Windows row.
 
-Backend shutdown is a Host-owned, per-child single-flight lifecycle. The
-[`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L143) stops event
+Backend shutdown is a Host-owned, per-child single-flight lifecycle. The first
+Electron `before-quit` event is prevented, and
+[`createQuitRequestScheduler`](../../desktop/lifecycle.cjs#L50) defers the
+single quit decision until that event handler has returned; this avoids a
+reentrant `app.quit()` when the backend has already exited. The
+[`createBackendStopCoordinator`](../../desktop/lifecycle.cjs#L239) stops event
 streams, sends `SIGINT`, and waits 17 seconds before escalating once to
 `SIGKILL`. That graceful window covers the app-server's 15-second bounded
 session, engine, transcript, and HTTP cleanup with a two-second scheduling
 margin. After actually sending `SIGKILL`, the Host starts a separate three-second
 window for the child `exit` event. For a normally bootstrapped backend, provider
 replacement and Electron quit proceed only after that exact exit is observed;
-otherwise [`requestQuit`](../../desktop/main.cjs#L228) keeps the app open with
+otherwise [`requestQuit`](../../desktop/main.cjs#L232) keeps the app open with
 fixed retry guidance. Startup-failure cleanup is a separate lifecycle. This
 ordering protects cleanup time but does not promise that an interrupted model
 turn completes, that every provider responds during shutdown, or that a

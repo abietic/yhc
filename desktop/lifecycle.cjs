@@ -47,6 +47,31 @@ function backendStopFailurePrompt() {
   };
 }
 
+function createQuitRequestScheduler({
+  requestQuit,
+  schedule = globalThis.setImmediate,
+} = {}) {
+  if (typeof requestQuit !== 'function' || typeof schedule !== 'function') {
+    throw new TypeError('Desktop quit scheduler dependencies required');
+  }
+  let pending = false;
+  return Object.freeze({
+    request() {
+      if (pending) return;
+      pending = true;
+      try {
+        schedule(() => {
+          pending = false;
+          void requestQuit();
+        });
+      } catch (error) {
+        pending = false;
+        throw error;
+      }
+    },
+  });
+}
+
 async function startDesktopHost({
   prepareWindow,
   startBackend,
@@ -254,6 +279,7 @@ module.exports = {
   activeTurnQuitPrompt,
   backendStopFailurePrompt,
   createBackendStopCoordinator,
+  createQuitRequestScheduler,
   createWindowRestoreCoordinator,
   quitInspectionFailurePrompt,
   startDesktopHost,

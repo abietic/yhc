@@ -11,6 +11,7 @@ const {
   activeTurnSessions,
   backendStopFailurePrompt,
   createBackendStopCoordinator,
+  createQuitRequestScheduler,
   createWindowRestoreCoordinator,
   quitInspectionFailurePrompt,
   startDesktopHost,
@@ -46,6 +47,7 @@ const backendStopCoordinator = createBackendStopCoordinator({
   unmarkStopping: (child) => stoppingBackends.delete(child),
   stopEventStreams: () => stopAllEventStreams(),
 });
+const quitRequestScheduler = createQuitRequestScheduler({ requestQuit });
 
 function executableName() {
   return process.platform === 'win32' ? 'yhc.exe' : 'yhc';
@@ -588,6 +590,6 @@ if (!hasSingleInstanceLock) {
   app.on('before-quit', (event) => {
     if (quitAllowed) return;
     event.preventDefault();
-    void requestQuit();
+    quitRequestScheduler.request();
   });
 }
