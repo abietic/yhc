@@ -149,12 +149,12 @@ privacy:
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 307
+      line: 312
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
     - path: Makefile
-      line: 309
+      line: 314
       rule_id: credential-assignment
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
@@ -824,7 +824,7 @@ privacy:
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
     - path: "docs/architecture/platform/model-providers.md"
-      line: 634
+      line: 644
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
@@ -922,6 +922,11 @@ privacy:
       line: 147
       rule_id: high-entropy-token
       match_sha256: 5d7c4cb77a8e9606c8df07be152ac39ffdb1a4dbf4fd3372f20823341c9612f8
+      purpose: documentation-example
+    - path: docs/guides/configuration-and-providers.md
+      line: 198
+      rule_id: credential-assignment
+      match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
     - path: docs/guides/getting-started.md
       line: 19
@@ -3177,6 +3182,61 @@ privacy:
       line: 358
       rule_id: credential-assignment
       match_sha256: baf698c16450117dbe6aee29419e1553d1c39cce63a080adfedd229a1d9c9391
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 22
+      rule_id: bearer-token
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 75
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 140
+      rule_id: private-email
+      match_sha256: 85b5c9aa53b0757610b1d4e6a5127f00c6dadbdd48269a1b0dd79bd6bf039a36
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 140
+      rule_id: private-url
+      match_sha256: 8d3331ee208c72c30fba199e4e2b8a65d69a5034e49875a2f20dbea3a4f2f976
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 205
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 226
+      rule_id: private-url
+      match_sha256: 100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 226
+      rule_id: private-url
+      match_sha256: 31459f016ab4e0015d9fd5f34619f79b3ecc582931daa9225bb20f08b6be320c
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 227
+      rule_id: private-url
+      match_sha256: 98ad890abf96585ccc8495ce73c3ee4320d0ab5b22f0dc235f2d35114424b20d
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 227
+      rule_id: private-url
+      match_sha256: ebfb7fa831d525d9689a666dc9fcff7602baa9684a50afc402a3a048404547ec
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 228
+      rule_id: private-url
+      match_sha256: 2abafe3821ac8d796f14ab555cccd7b0b5cc84bc36be749e99780a4d747f6574
+      purpose: synthetic-security-fixture
+    - path: "engine/provider/agenticdeepseek/files_test.go"
+      line: 228
+      rule_id: private-url
+      match_sha256: d17d3d9ccd71001518be1b631e6cb8aadda00571506addcb4363b80bfb365e16
       purpose: synthetic-security-fixture
     - path: "engine/provider/agenticdeepseek/model_test.go"
       line: 30
