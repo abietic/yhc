@@ -296,6 +296,11 @@ test-pty-deep:
 run:
 	PROV=$(PROV) PROV_API_KEY=$(PROV_API_KEY) PROV_MODEL=$(PROV_MODEL) $(GO) run ./cmd/yhc/
 
+.PHONY: test-deepseek-live
+test-deepseek-live:
+	@if [[ -z "$$DEEPSEEK_API_KEY" ]]; then echo "DEEPSEEK_API_KEY is required" >&2; exit 1; fi
+	DEEPSEEK_LIVE_TEST=1 $(GO) test ./engine/provider/agenticdeepseek -run '^TestLiveDeepSeekResponsesAndFilesLifecycle$$' -count=1 -timeout=4m
+
 # ── Debug ───────────────────────────────────────────────
 # Launches the agent under delve in headless mode so any IDE can attach.
 # Connect from VSCode / GoLand / Trae via "Go Remote" or "Attach to Process"

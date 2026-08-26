@@ -1,7 +1,7 @@
 # DeepSeek Responses Eino Adapter Audit
 
 **Status:** reference-snapshot
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-25
 
 > **Ownership:** this report records comparative evidence and the adoption
 > decision for the DeepSeek Eino adapter. Current behavior belongs to
@@ -73,7 +73,7 @@ DeepSeek contracts.
 | Exact vision admission | `combine` | Reuse YHC's canonical ordered media bridge, then enforce DeepSeek model and image limits in the adapter. |
 | Eino representation of Files API image IDs | `project-native` | Typed block constructors carry the missing `file_id` through reserved adapter metadata without changing Eino globally. |
 | Automatic protocol fallback or model downgrade | `reject` | A successful request with weaker semantics would publish a false capability. |
-| Files upload lifecycle | `defer` | This slice accepts existing `file_id` values but does not own upload/storage credentials or lifecycle. |
+| Files upload lifecycle | `project-native` | A separate bounded client owns upload/list/retrieve/delete without making remote files conversation or Session state. |
 | DeepSeek server web search and custom `apply_patch` tools | `defer` | YHC currently dispatches client function tools; server-tool product semantics need a separate owner and acceptance contract. |
 
 The aggregate recommendation is **`adapt`**: retain Eino's immutable
@@ -94,6 +94,9 @@ The project-owned adapter:
   and reasoning effort without emitting Chat Completions fields;
 - preserves text/image order, supports URL/base64/`file_id` image input and
   image-bearing function output, and fails locally for a non-vision model;
+- exposes a separate Files client for exact-size `user_data` upload, cursor
+  listing, retrieval, explicit deletion, and optional one-hour-to-30-day
+  expiry without persisting credentials or remote file IDs in Sessions;
 - parses multiline semantic SSE and keep-alive comments, requires increasing
   sequence numbers and a terminal response event, and retains terminal usage
   and incomplete/failure metadata;
@@ -111,13 +114,14 @@ The project-owned adapter:
 ## Verification boundary
 
 Local HTTP fixtures cover the actual `/responses` request body, URL and base64
-vision input, Files API IDs, image-bearing tool results, function tools and
-choice, non-stream output/usage, semantic SSE reasoning/text/tool deltas,
-terminal usage, typed provider failures, cancellation, request-size and image
-admission, malformed/truncated streams, and rejection of Chat Completions
-`[DONE]`.
+vision input, Files API multipart upload/list/retrieve/delete and IDs,
+image-bearing tool results, function tools and choice, non-stream output/usage,
+semantic SSE reasoning/text/tool deltas, terminal usage, typed provider
+failures, cancellation, request-size and image admission, malformed/truncated
+streams, and rejection of Chat Completions `[DONE]`.
 
 These fixtures prove local conversion and transport behavior. They do not
 prove current account entitlement, provider availability, billing, external
-image fetch behavior, or physical UI presentation. A live API-key canary and
-interactive image acceptance remain separate evidence.
+image fetch behavior, or physical UI presentation. `make test-deepseek-live`
+is an explicit billable upload-to-vision-to-delete canary; interactive image
+acceptance remains separate evidence.

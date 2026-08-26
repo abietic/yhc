@@ -277,6 +277,16 @@ MIME type, detail, and file-ID shape are bounded before dispatch. The classic
 YHC message bridge currently supplies URL and base64 images; direct Eino callers
 can use the adapter's typed file-ID block constructors.
 
+The same package exposes a separate project-owned DeepSeek
+[`FilesClient`](../../../engine/provider/agenticdeepseek/files.go) for image
+resource lifecycle. It appends `/files` to the validated API root and supports
+bounded `user_data` upload, cursor listing, metadata retrieval, and deletion.
+Uploads require the exact reader size, reject files above 64 MiB before
+dispatch, and optionally set a creation-anchored lifetime from one hour to 30
+days. This resource client shares typed, bounded, redacted API and transport
+failures with the Responses adapter but does not become conversation or Session
+state; callers remain responsible for deleting files they no longer need.
+
 `engine/auth` supplies provider-default credentials and exact named
 credentials only at client construction. `engine/model` owns model aliases,
 context-window and deprecation metadata, profile override validation,

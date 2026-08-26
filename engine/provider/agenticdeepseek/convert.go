@@ -422,7 +422,7 @@ func convertImage(image *schema.UserInputImage, extra map[string]any) (contentPa
 	}
 	part := contentPart{Type: "input_image", Detail: detail}
 	if hasFileID {
-		if !strings.HasPrefix(fileID, "file-api-") {
+		if !validFileID(fileID) {
 			return contentPart{}, fmt.Errorf("image_file_id_invalid")
 		}
 		part.FileID = fileID
