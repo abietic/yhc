@@ -59,11 +59,18 @@ process and its descendants can affect. Changing to Auto, bypass, or `--yolo`
 does not disable or broaden the Guest binding.
 
 On Darwin amd64/arm64, model-issued Bash defaults to the real Seatbelt
-`workspace-write` profile. It can read/write the canonical workspace and
-approved runtime/temp roots, cannot connect to TCP/UDP or unapproved Unix
-sockets, and cannot write protected project/user settings, skills, Agent
-definitions, Git configuration, or hooks. Shell hooks and configured stdio MCP
-remain ambient and are reported separately.
+`workspace-write` profile. On Linux amd64/arm64 it uses the fixed
+`/usr/bin/bwrap` adapter when the binary and its real capability probe are
+available. Both profiles expose only declared filesystem roots, deny network
+and unapproved Unix sockets, bind the canonical workspace identity, and keep
+shell hooks plus configured stdio MCP ambient and separately reported.
+
+The Linux profile protects only control-plane paths that already exist when
+the immutable policy is built. A workspace-local denied path that crosses a
+symlink fails closed, but an absent protected path is not reserved against
+later creation. Therefore Linux Guest Bash remains prompt-approved only: its
+proof does not activate Default/Auto's automatic Bash admission. Darwin is the
+only platform currently admitted by that shortcut.
 
 Select the profile explicitly for one invocation:
 
@@ -89,11 +96,12 @@ select ambient execution or add roots. Extra roots must be absolute, existing,
 canonical directories and cannot be a broad system or home ancestor.
 
 `danger-full-access` is an explicit ambient rollback and prints a warning. On
-an unsupported platform, missing `/usr/bin/sandbox-exec`, failed real probe, or
-changed workspace identity, the default Guest binding is unavailable: the app
+an unsupported platform, missing fixed platform executable
+(`/usr/bin/sandbox-exec` or `/usr/bin/bwrap`), failed real probe, or changed
+workspace identity, the default Guest binding is unavailable: the app
 continues running, but Bash fails before spawn and never retries ambient.
 
-The Darwin Guest still inherits `os.Environ()` byte-for-byte and has no hard
+The contained Guest still inherits `os.Environ()` byte-for-byte and has no hard
 memory, file-descriptor, or process-count limit. Its aggregate state is
 therefore `degraded`, not fully contained. P51.2 checks the exact granular
 proof instead of treating this aggregate label as authority.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -73,13 +74,17 @@ func TestP511ACPEmitsOneDangerDiagnostic(t *testing.T) {
 }
 
 func TestP511ACPEngineUsesServerOwnedBindingMatrix(t *testing.T) {
+	defaultAdapter := containment.AdapterDarwinSeatbelt
+	if runtime.GOOS == "linux" {
+		defaultAdapter = containment.AdapterLinuxBubblewrap
+	}
 	for _, test := range []struct {
 		name    string
 		config  Config
 		profile containment.Profile
 		adapter containment.AdapterFamily
 	}{
-		{name: "default workspace", config: Config{}, profile: containment.ProfileWorkspaceWrite, adapter: containment.AdapterDarwinSeatbelt},
+		{name: "default workspace", config: Config{}, profile: containment.ProfileWorkspaceWrite, adapter: defaultAdapter},
 		{name: "explicit danger", config: Config{SandboxProfileFlag: "danger-full-access", SandboxProfileFlagSet: true}, profile: containment.ProfileDangerFullAccess, adapter: containment.AdapterAmbientHost},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -254,5 +259,5 @@ func p512ACPEntrypointSession(
 		t.Fatalf("Guest entrypoint = %q, want ACP", guest.Policy().Spec().Entrypoint)
 	}
 	return conn, client, agent, session.SessionId, root,
-		guest.Availability() == containment.BindingAvailable
+		guest.Availability() == containment.BindingAvailable && guest.AdapterFamily() == containment.AdapterDarwinSeatbelt
 }

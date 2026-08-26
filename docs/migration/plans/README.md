@@ -1,7 +1,7 @@
 # Detailed Product Evolution Contracts
 
 **Status:** current
-**Last verified:** 2026-08-19
+**Last verified:** 2026-08-26
 
 > **Ownership:** index and authoring rules for detailed accepted contracts.
 > Machine queue state belongs in [`queue.yaml`](../queue.yaml), its human
@@ -27,6 +27,11 @@ authority. G28 stays open for ambient credentials, hooks/MCP, and missing hard
 resource limits; AppServer, Desktop, and Web UI projection is deferred without
 an active queue row.
 
+P51.3 completed the prompt-approved Linux Guest bubblewrap subset with a real
+Ubuntu enforcement job while preserving Darwin-only automatic Bash admission.
+G28 remains open for retained ambient/resource axes and absent Linux
+protected-path creation fencing; no successor is queued.
+
 P49 completed the approved budget-optional Goal and restart-attribution repair,
 closing G21/G47. P47.1-P47.7 completed the approved Task Explorer program and
 closed G38-G41. P48.1-P48.5 completed the approved ACP boundary program and
@@ -41,7 +46,7 @@ G36/G37; earlier intake groups have these terminal outcomes:
 | [`p38-provider-reasoning-origin.md`](p38-provider-reasoning-origin.md) | P38.0 completed under `adapt`, closed G34, and retained conservative public exclusion. |
 | [`p39-workspace-recovery-contract.md`](p39-workspace-recovery-contract.md) | P39.0 completed the test-backed characterization contract; G2 remains open because no production writer or command was added. |
 | [`p38-p45-next-product-intake.md`](p38-p45-next-product-intake.md) | P40.1, P41.1, and P41.2 completed and closed G12, G25, and G26; P44/P45 record `defer` for G14/G21. |
-| [`p42-host-execution-containment.md`](p42-host-execution-containment.md) | P42.0 completed the immutable compatibility seam, P51.1 delivered the Darwin Guest binding, and P51.2 Core completed proof-bound Auto Bash admission; G28 remains open. |
+| [`p42-host-execution-containment.md`](p42-host-execution-containment.md) | Historical contract: P42.0 completed the immutable seam, P51.1 delivered Darwin Guest containment, P51.2 completed Darwin proof-bound Auto Bash, and P51.3 delivered prompt-approved Linux bubblewrap; G28 remains open. |
 | [`p43-real-repository-evaluation.md`](p43-real-repository-evaluation.md) | P43.0 completed the opt-in non-authoritative baseline and closed G29. |
 | [`p46-model-failover-repair.md`](p46-model-failover-repair.md) | P46.1 completed complete-request context admission and P46.2 completed explicit disposal plus safe cross-entrypoint fallback visibility; G36/G37 are closed. |
 | [`p47-task-explorer-remediation.md`](p47-task-explorer-remediation.md) | Historical approved contract; P47.1-P47.7 completed and closed G38-G41. |

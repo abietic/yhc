@@ -487,7 +487,7 @@ func newQueryEngineWithOptions(
 	} else if err := shellManager.BindGuestBinding(guestBinding); err != nil {
 		panic(fmt.Sprintf("engine: bind Guest shell identity: %v", err))
 	}
-	if guestBinding.Availability() == containment.BindingAvailable && guestBinding.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+	if guestBinding.Availability() == containment.BindingAvailable && containment.IsContainedAdapter(guestBinding.AdapterFamily()) {
 		proof := shellManager.GuestExecutionProof()
 		if proof.BindingDigest != guestBinding.Digest() || proof.PolicyDigest != guestBinding.PolicyDigest() {
 			panic("engine: Guest execution proof does not match binding")

@@ -92,7 +92,11 @@ func TestP511WorkspaceSelectionResolvesOrthogonalProcessBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	guest, hookBinding, mcpBinding := bindings.Guest(), bindings.ShellHooks(), bindings.StdioMCP()
-	if guest.AdapterFamily() != containment.AdapterDarwinSeatbelt || guest.ProcessClass() != containment.ProcessClassGuest {
+	wantGuestAdapter := containment.AdapterDarwinSeatbelt
+	if runtime.GOOS == "linux" {
+		wantGuestAdapter = containment.AdapterLinuxBubblewrap
+	}
+	if guest.AdapterFamily() != wantGuestAdapter || guest.ProcessClass() != containment.ProcessClassGuest {
 		t.Fatalf("Guest binding = %#v", guest.Diagnostic())
 	}
 	for _, extension := range []*containment.Binding{hookBinding, mcpBinding} {
@@ -106,6 +110,10 @@ func TestP511WorkspaceSelectionResolvesOrthogonalProcessBindings(t *testing.T) {
 	if runtime.GOOS == "darwin" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
 		if info, statErr := os.Lstat("/usr/bin/sandbox-exec"); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 && guest.Availability() != containment.BindingAvailable {
 			t.Fatalf("real Darwin Guest binding = %#v", guest.Diagnostic())
+		}
+	} else if runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
+		if guest.Availability() == containment.BindingUnavailable && guest.ReasonCode() == containment.ReasonUnsupportedPlatform {
+			t.Fatalf("supported Linux host was classified unsupported: %#v", guest.Diagnostic())
 		}
 	} else if guest.Availability() != containment.BindingUnavailable || guest.ReasonCode() != containment.ReasonUnsupportedPlatform {
 		t.Fatalf("unsupported-host Guest binding = %#v", guest.Diagnostic())
@@ -272,6 +280,12 @@ func TestP511WorkspaceGuestIncludesRuntimeRootsAndControlPlaneDenies(t *testing.
 		filepath.Join(canonicalRoot, ".git", "config"),
 		filepath.Join(canonicalRoot, ".git", "hooks"),
 	} {
+		if runtime.GOOS == "linux" {
+			if slices.Contains(spec.DeniedRoots, denied) {
+				t.Fatalf("absent Linux control-plane deny %q unexpectedly mounted: %#v", denied, spec.DeniedRoots)
+			}
+			continue
+		}
 		if !slices.Contains(spec.DeniedRoots, denied) {
 			t.Fatalf("control-plane deny %q missing from %#v", denied, spec.DeniedRoots)
 		}
@@ -285,6 +299,63 @@ func TestP511WorkspaceGuestIncludesRuntimeRootsAndControlPlaneDenies(t *testing.
 	}
 	if !slices.Contains(spec.TempRoots, tempRoot) {
 		t.Fatalf("temporary root %q missing from writable temp roots %#v", tempRoot, spec.TempRoots)
+	}
+}
+
+func TestP513PathCrossesSymlink(t *testing.T) {
+	root := t.TempDir()
+	direct := filepath.Join(root, ".eino-agent")
+	if err := os.Mkdir(direct, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if pathCrossesSymlink(root, direct) {
+		t.Fatal("direct control-plane path reported a symlink crossing")
+	}
+	target := t.TempDir()
+	linked := filepath.Join(root, ".claude")
+	if err := os.Symlink(target, linked); err != nil {
+		t.Fatal(err)
+	}
+	if !pathCrossesSymlink(root, filepath.Join(linked, "settings.json")) {
+		t.Fatal("control-plane path through a workspace symlink was accepted")
+	}
+	if pathCrossesSymlink(root, filepath.Join(root, "absent", "settings.json")) {
+		t.Fatal("absent path reported a symlink crossing")
+	}
+}
+
+func TestP513LinuxWorkspaceGuestIncludesOnlyExistingControlPlaneDenies(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux denied-root projection only")
+	}
+	root := t.TempDir()
+	existing := filepath.Join(root, ".eino-agent")
+	if err := os.Mkdir(existing, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	readRoots, tempRoots, deniedRoots, err := workspaceGuestRoots(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readRoots) == 0 || len(tempRoots) == 0 || !slices.Contains(deniedRoots, existing) {
+		t.Fatalf("Linux Guest roots read=%#v temp=%#v denied=%#v", readRoots, tempRoots, deniedRoots)
+	}
+	absent := filepath.Join(root, ".claude", "settings.local.json")
+	if slices.Contains(deniedRoots, absent) {
+		t.Fatalf("absent Linux denied root %q was projected", absent)
+	}
+}
+
+func TestP513LinuxWorkspaceGuestRejectsExistingDeniedRootSymlink(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux denied-root projection only")
+	}
+	root := t.TempDir()
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, ".eino-agent")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := workspaceGuestRoots(root, nil); err == nil || !strings.Contains(err.Error(), "crosses a symlink") {
+		t.Fatalf("workspaceGuestRoots symlink error = %v", err)
 	}
 }
 

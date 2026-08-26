@@ -64,7 +64,7 @@ func (e *QueryEngine) prepareResumedGuestExecution(
 	if err != nil {
 		return nil, fmt.Errorf("restore Guest shell binding: %w", err)
 	}
-	if guest := bindings.Guest(); guest.Availability() == containment.BindingAvailable && guest.AdapterFamily() == containment.AdapterDarwinSeatbelt {
+	if guest := bindings.Guest(); guest.Availability() == containment.BindingAvailable && containment.IsContainedAdapter(guest.AdapterFamily()) {
 		proof := manager.GuestExecutionProof()
 		if proof.BindingDigest != guest.Digest() || proof.PolicyDigest != guest.PolicyDigest() {
 			return nil, fmt.Errorf("restore Guest execution proof does not match binding")

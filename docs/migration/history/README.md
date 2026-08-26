@@ -1,7 +1,7 @@
 # Runtime Migration History
 
 **Status:** historical
-**Last verified:** 2026-08-19
+**Last verified:** 2026-08-26
 
 > **Ownership:** this file indexes completed migration stages and their closeout
 > evidence. It does not own current status, active order, or backlog. Current
@@ -572,6 +572,15 @@ explicit authority, critical literal `rm`/`rmdir` requires fresh `AllowOnce`,
 ProjectGraph and supported Core clients preserve the constraint, and final
 dispatch/submission drift fails closed. AppServer, Desktop, and Web UI
 projection remains deferred, and G28 stays open.
+
+## P51.3 Linux Guest Bubblewrap
+
+[`p51-3-linux-guest-bubblewrap.md`](runtime/p51-3-linux-guest-bubblewrap.md)
+records the completed `adapt` Linux Guest subset: fixed bubblewrap, strict
+mount projection, namespace and seccomp network denial, immutable root and
+child/restore binding, existing control-plane overlays, fail-closed
+unavailability, and a required real Ubuntu integration. Linux proof remains
+outside automatic Bash admission, and G28 stays open.
 
 ## P36 ACP Provider-Rich Assistant Replay
 

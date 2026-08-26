@@ -238,10 +238,10 @@ func resolveWorkspaceGuestBinding(
 	entrypoint containment.Entrypoint,
 	selection *SandboxSelection,
 ) (*containment.Binding, error) {
-	adapter := containment.NewDarwinSeatbeltAdapter()
+	adapter := workspaceGuestAdapter()
 	reason := containment.ReasonCode("")
 	root := containment.RootIdentity{Path: cwd}
-	if runtime.GOOS != "darwin" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
+	if !workspaceGuestPlatformSupported(adapter.Family()) {
 		reason = containment.ReasonUnsupportedPlatform
 	} else {
 		captured, err := containment.CaptureRootIdentity(cwd)
@@ -263,7 +263,7 @@ func resolveWorkspaceGuestBinding(
 			root = containment.RootIdentity{Path: cwd}
 		}
 	}
-	spec := workspaceGuestSpec(cwd, entrypoint, selection.Source, adapter.CapabilityGeneration(), state, root, readRoots, []string{cwd}, tempRoots, deniedRoots)
+	spec := workspaceGuestSpec(cwd, entrypoint, selection.Source, adapter.Family(), adapter.CapabilityGeneration(), state, root, readRoots, []string{cwd}, tempRoots, deniedRoots)
 	policy, err := containment.NewExecutionPolicySnapshot(&spec)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace Guest policy: %w", err)
@@ -284,10 +284,26 @@ func resolveWorkspaceGuestBinding(
 	return containment.NewUnavailableBinding(containment.ProcessClassGuest, unavailablePolicy, adapter, probe.ReasonCode)
 }
 
+func workspaceGuestAdapter() containment.SpawnAdapter {
+	if runtime.GOOS == "linux" {
+		return containment.NewLinuxBubblewrapAdapter()
+	}
+	return containment.NewDarwinSeatbeltAdapter()
+}
+
+func workspaceGuestPlatformSupported(adapter containment.AdapterFamily) bool {
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+		return false
+	}
+	return (adapter == containment.AdapterDarwinSeatbelt && runtime.GOOS == "darwin") ||
+		(adapter == containment.AdapterLinuxBubblewrap && runtime.GOOS == "linux")
+}
+
 func workspaceGuestSpec(
 	cwd string,
 	entrypoint containment.Entrypoint,
 	source containment.SelectionSource,
+	adapter containment.AdapterFamily,
 	generation string,
 	state containment.State,
 	root containment.RootIdentity,
@@ -295,7 +311,7 @@ func workspaceGuestSpec(
 ) containment.Spec {
 	return containment.Spec{
 		Version: containment.PolicyVersion, Profile: containment.ProfileWorkspaceWrite, State: state,
-		SelectionSource: source, Adapter: containment.AdapterDarwinSeatbelt,
+		SelectionSource: source, Adapter: adapter,
 		Platform: runtime.GOOS, Architecture: runtime.GOARCH, CapabilityGeneration: generation,
 		CWD: cwd, Root: root, ReadRoots: readRoots, WriteRoots: writeRoots, TempRoots: tempRoots, DeniedRoots: deniedRoots,
 		Network:     containment.NetworkPolicy{Mode: containment.NetworkDenied, ProjectionID: guestNetworkIdentity},
@@ -317,10 +333,11 @@ func workspaceGuestRoots(cwd string, extraReadRoots []string) ([]string, []strin
 		return nil, nil, nil, fmt.Errorf("sandbox home directory is unavailable")
 	}
 	readRoots := append([]string{cwd}, extraReadRoots...)
-	for _, candidate := range []string{
-		"/System", "/usr", "/bin", "/sbin", "/Library", "/opt/homebrew", "/usr/local",
-		goToolchainRoot(), filepath.Join(home, "go", "pkg", "mod"),
-	} {
+	runtimeRoots := []string{"/System", "/usr", "/bin", "/sbin", "/Library", "/opt/homebrew", "/usr/local"}
+	if runtime.GOOS == "linux" {
+		runtimeRoots = []string{"/bin", "/sbin", "/usr", "/lib", "/lib64", "/etc", "/nix/store", "/run/current-system/sw"}
+	}
+	for _, candidate := range append(runtimeRoots, goToolchainRoot(), filepath.Join(home, "go", "pkg", "mod")) {
 		if root, rootErr := canonicalExistingDirectory(candidate); rootErr == nil {
 			readRoots = append(readRoots, root)
 		}
@@ -337,10 +354,11 @@ func workspaceGuestRoots(cwd string, extraReadRoots []string) ([]string, []strin
 		}
 	}
 	tempRoots := make([]string, 0, 2)
-	for _, candidate := range []string{
-		os.TempDir(),
-		filepath.Join(home, "Library", "Caches", "go-build"),
-	} {
+	cacheRoot := filepath.Join(home, "Library", "Caches", "go-build")
+	if runtime.GOOS == "linux" {
+		cacheRoot = filepath.Join(home, ".cache", "go-build")
+	}
+	for _, candidate := range []string{os.TempDir(), cacheRoot} {
 		if root, rootErr := canonicalExistingDirectory(candidate); rootErr == nil {
 			tempRoots = append(tempRoots, root)
 		}
@@ -367,10 +385,41 @@ func workspaceGuestRoots(cwd string, extraReadRoots []string) ([]string, []strin
 		filepath.Join(cwd, ".git", "hooks"),
 	}
 	deniedRoots = append(deniedRoots, gitConfigRoots...)
+	if runtime.GOOS == "linux" {
+		existing := deniedRoots[:0]
+		for _, root := range deniedRoots {
+			if _, statErr := os.Lstat(root); statErr == nil {
+				if pathWithinAny(root, []string{cwd}) && pathCrossesSymlink(cwd, root) {
+					return nil, nil, nil, fmt.Errorf("sandbox denied root crosses a symlink")
+				}
+				existing = append(existing, root)
+			}
+		}
+		deniedRoots = existing
+	}
 	sort.Strings(readRoots)
 	sort.Strings(tempRoots)
 	sort.Strings(deniedRoots)
 	return compactPaths(readRoots), compactPaths(tempRoots), compactPaths(deniedRoots), nil
+}
+
+func pathCrossesSymlink(root, target string) bool {
+	relative, err := filepath.Rel(root, target)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	current := root
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, statErr := os.Lstat(current)
+		if statErr != nil {
+			return false
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func goToolchainRoot() string {
@@ -450,6 +499,8 @@ func DeriveChildExecutionBindings(
 		childGuest, err = deriveAmbientChildGuest(parentGuest, cwd, childIdentity)
 	case containment.AdapterDarwinSeatbelt:
 		childGuest, err = deriveSeatbeltChildGuest(ctx, parentGuest, cwd, childIdentity)
+	case containment.AdapterLinuxBubblewrap:
+		childGuest, err = deriveContainedChildGuest(ctx, parentGuest, cwd, childIdentity)
 	default:
 		err = fmt.Errorf("parent Guest adapter is unsupported")
 	}
@@ -485,14 +536,14 @@ func DeriveRestoredExecutionBindings(
 	switch parentGuest.AdapterFamily() {
 	case containment.AdapterAmbientHost:
 		restoredGuest, err = deriveAmbientRestoredGuest(parentGuest, canonicalCWD, restoreIdentity)
-	case containment.AdapterDarwinSeatbelt:
+	case containment.AdapterDarwinSeatbelt, containment.AdapterLinuxBubblewrap:
 		parentSpec := parentGuest.Policy().Spec()
 		if canonicalCWD == parentSpec.CWD && parentSpec.Root.Device != 0 && parentSpec.Root.Inode != 0 {
 			if err := containment.RevalidateRootIdentity(parentSpec.Root); err != nil {
 				return nil, fmt.Errorf("restored Guest root identity changed")
 			}
 		}
-		restoredGuest, err = deriveSeatbeltGuest(
+		restoredGuest, err = deriveContainedGuest(
 			ctx,
 			parentGuest,
 			canonicalCWD,
@@ -541,7 +592,7 @@ func deriveAmbientRestoredGuest(parent *containment.Binding, cwd, restoreIdentit
 }
 
 func deriveSeatbeltChildGuest(ctx context.Context, parent *containment.Binding, cwd, childIdentity string) (*containment.Binding, error) {
-	return deriveSeatbeltGuest(
+	return deriveContainedGuest(
 		ctx,
 		parent,
 		cwd,
@@ -551,7 +602,18 @@ func deriveSeatbeltChildGuest(ctx context.Context, parent *containment.Binding, 
 	)
 }
 
-func deriveSeatbeltGuest(
+func deriveContainedChildGuest(ctx context.Context, parent *containment.Binding, cwd, childIdentity string) (*containment.Binding, error) {
+	return deriveContainedGuest(
+		ctx,
+		parent,
+		cwd,
+		containment.EntrypointChildAgent,
+		containment.SelectionChild,
+		childIdentity,
+	)
+}
+
+func deriveContainedGuest(
 	ctx context.Context,
 	parent *containment.Binding,
 	cwd string,
@@ -564,12 +626,15 @@ func deriveSeatbeltGuest(
 	if err != nil {
 		return nil, fmt.Errorf("child Guest write root is invalid")
 	}
-	adapter := containment.NewDarwinSeatbeltAdapter()
+	adapter, err := containedAdapterForFamily(parent.AdapterFamily())
+	if err != nil {
+		return nil, err
+	}
 	if adapter.CapabilityGeneration() != parent.CapabilityGeneration() {
 		return nil, fmt.Errorf("child Guest adapter generation mismatch")
 	}
 	root := containment.RootIdentity{Path: canonicalCWD}
-	if parent.Availability() == containment.BindingAvailable || runtime.GOOS == "darwin" {
+	if parent.Availability() == containment.BindingAvailable || workspaceGuestPlatformSupported(parent.AdapterFamily()) {
 		captured, captureErr := containment.CaptureRootIdentity(canonicalCWD)
 		if captureErr != nil {
 			return nil, fmt.Errorf("child Guest root identity is unavailable")
@@ -618,6 +683,17 @@ func deriveSeatbeltGuest(
 		return nil, fmt.Errorf("derive unavailable child Guest policy: %w", err)
 	}
 	return containment.NewUnavailableBinding(containment.ProcessClassGuest, unavailablePolicy, adapter, probe.ReasonCode)
+}
+
+func containedAdapterForFamily(family containment.AdapterFamily) (containment.SpawnAdapter, error) {
+	switch family {
+	case containment.AdapterDarwinSeatbelt:
+		return containment.NewDarwinSeatbeltAdapter(), nil
+	case containment.AdapterLinuxBubblewrap:
+		return containment.NewLinuxBubblewrapAdapter(), nil
+	default:
+		return nil, fmt.Errorf("contained Guest adapter is unsupported")
+	}
 }
 
 func pathWithinAny(path string, roots []string) bool {
@@ -738,7 +814,8 @@ func (e *QueryEngine) ExecutionBindingMatrix() *containment.Bindings {
 }
 
 // GuestExecutionProof returns the adapter/runtime axis proof for available
-// Seatbelt Guest execution. Ambient and unavailable Guests return zero proof.
+// platform-contained Guest execution. Ambient and unavailable Guests return
+// zero proof.
 func (e *QueryEngine) GuestExecutionProof() containment.ExecutionProof {
 	if e == nil || e.shellManager == nil {
 		return containment.ExecutionProof{}
@@ -765,6 +842,12 @@ func (e *QueryEngine) ExecutionContainmentStartupDiagnostic() (string, string) {
 			return "sandbox-guest-unavailable", "Guest Bash containment proof is unavailable; no ambient fallback will be attempted"
 		}
 		return "sandbox-workspace-write-degraded", "Guest Bash is confined by Darwin Seatbelt for filesystem, network, root identity, and descendants; environment credentials plus hard memory, file-descriptor, and process-count limits remain ambient"
+	case guest.AdapterFamily() == containment.AdapterLinuxBubblewrap:
+		proof := e.GuestExecutionProof()
+		if proof.BindingDigest != guest.Digest() || proof.PolicyDigest != guest.PolicyDigest() {
+			return "sandbox-guest-unavailable", "Guest Bash containment proof is unavailable; no ambient fallback will be attempted"
+		}
+		return "sandbox-workspace-write-degraded", "Guest Bash is confined by Linux bubblewrap for declared filesystem roots, network, root identity, and descendants; automatic Bash admission, absent control-plane path fencing, environment credentials, and hard resource limits remain unavailable"
 	default:
 		return "sandbox-guest-unavailable", "Guest Bash containment is unavailable; no ambient fallback will be attempted"
 	}

@@ -50,8 +50,7 @@ func TestP512ContainedAutoBashOrder(t *testing.T) {
 		map[string]any{"command": "go test ./engine"},
 		nil,
 	)
-	available := engine.ExecutionBindingMatrix().Guest().Availability() ==
-		containment.BindingAvailable
+	available := darwinAutoProofAvailable(engine)
 	if available {
 		if !ordinary.Allowed || ordinary.Decision != invocationPolicyAllow ||
 			prompts.Load() != 0 {
@@ -242,8 +241,7 @@ func TestP512ContainedAutoBashEntrypointMatrix(t *testing.T) {
 				map[string]any{"command": "git status --short"},
 				nil,
 			)
-			available := engine.ExecutionBindingMatrix().Guest().Availability() ==
-				containment.BindingAvailable
+			available := darwinAutoProofAvailable(engine)
 			if available {
 				if !ordinary.Allowed || ordinaryAction == nil ||
 					ordinaryAction.admission != permissionAdmissionProofBoundBash ||
@@ -511,8 +509,7 @@ func TestP512ContainedAutoBashDispatch(t *testing.T) {
 		map[string]any{"command": "printf p512"},
 		nil,
 	)
-	available := engine.ExecutionBindingMatrix().Guest().Availability() ==
-		containment.BindingAvailable
+	available := darwinAutoProofAvailable(engine)
 	if !available {
 		if outcome.Allowed || settled == nil || settled.admission != permissionAdmissionNone {
 			t.Fatalf("unsupported host outcome=%#v settled=%#v", outcome, settled)
@@ -535,6 +532,14 @@ func TestP512ContainedAutoBashDispatch(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Fatalf("non-Darwin host unexpectedly satisfied Seatbelt proof")
 	}
+}
+
+func darwinAutoProofAvailable(engine *QueryEngine) bool {
+	if engine == nil || engine.ExecutionBindingMatrix() == nil || engine.ExecutionBindingMatrix().Guest() == nil {
+		return false
+	}
+	guest := engine.ExecutionBindingMatrix().Guest()
+	return guest.Availability() == containment.BindingAvailable && guest.AdapterFamily() == containment.AdapterDarwinSeatbelt
 }
 
 func TestP512ContainedAutoBashDispatchRejectsBindingDrift(t *testing.T) {

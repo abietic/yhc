@@ -938,6 +938,11 @@ privacy:
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
+    - path: docs/migration/REMAINING.md
+      line: 23
+      rule_id: high-entropy-token
+      match_sha256: 56098ee08edbfa2944efd065178f8232c1148b91aaeea7ab56c5b0c6418174c5
+      purpose: documentation-example
     - path: docs/migration/history/README.md
       line: 146
       rule_id: high-entropy-token
@@ -1022,6 +1027,11 @@ privacy:
       line: 56
       rule_id: high-entropy-token
       match_sha256: eec45c0e3c9f0f1e16009915b70008c0d8bcca79adb117fcdac049e1cba78c7c
+      purpose: historical-trace-identifier
+    - path: docs/migration/history/runtime/p51-3-linux-guest-bubblewrap.md
+      line: 47
+      rule_id: high-entropy-token
+      match_sha256: a86a8586712833f2ada01392df4d2888e23c195a3628652c2ec06b9c4a8f0b8d
       purpose: historical-trace-identifier
     - path: docs/migration/history/runtime/post-parity.md
       line: 2509
@@ -2899,7 +2909,7 @@ privacy:
       match_sha256: 4e403245578fcd9d817ab05091180c141b353749b06806e89b6ba94f062ebf08
       purpose: historical-trace-identifier
     - path: "engine/permission_action_test.go"
-      line: 671
+      line: 672
       rule_id: private-url
       match_sha256: f1e2c7da767e6e0fc3eac0819fdd3a622967f18748c6f0a875c3a5b0a165031e
       purpose: synthetic-security-fixture
@@ -3709,17 +3719,17 @@ privacy:
       match_sha256: 83fc305ef3a20bc2291aa8387c053a528458471d431acd715da3c498d5040360
       purpose: synthetic-security-fixture
     - path: "engine/query_engine_permission_test.go"
-      line: 1276
+      line: 1281
       rule_id: private-url
       match_sha256: c8625da9ea7fe881c93425825ab7b5fde3df1c95dd31b45c2f45d3650de0f09f
       purpose: synthetic-security-fixture
     - path: "engine/query_engine_permission_test.go"
-      line: 1393
+      line: 1398
       rule_id: private-url
       match_sha256: f0e6a6a97042a4f1f1c87f5f7d44315b2d852c2df5c7991cc66241bf7072d1c4
       purpose: synthetic-security-fixture
     - path: "engine/query_engine_permission_test.go"
-      line: 1555
+      line: 1560
       rule_id: private-url
       match_sha256: 100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9
       purpose: synthetic-security-fixture

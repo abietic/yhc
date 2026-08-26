@@ -1,9 +1,9 @@
 # Product Evolution Plan
 
 **Created:** 2026-06-15
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-26
 **Status:** active-plan
-**Current stage:** no slice is `Ready`; P44 remains deferred.
+**Current stage:** no executable slice; P44 remains deferred.
 
 > **Ownership:** accepted future work, dependency-safe execution order, and
 > the next executable slice. [`queue.yaml`](queue.yaml) is the machine-readable
@@ -45,7 +45,12 @@ now binds ordinary Auto Bash admission to the exact complete Guest proof,
 requires a fresh live `AllowOnce` for narrow critical literal `rm`/`rmdir`,
 persists the constraint through ProjectGraph and supported Core clients, and
 revalidates the exact identity before dispatch and ShellManager submission.
-AppServer, Desktop, and Web UI projection remains outside that delivery.
+AppServer, Desktop, and Web UI projection remains outside that delivery. P51.3
+now completes the next narrow G28 subset: prompt-approved Linux Guest Bash uses
+a fixed bubblewrap adapter with a restricted filesystem view, isolated
+user/PID/IPC/network namespaces, dropped capabilities, a socket-denial seccomp
+filter, root revalidation, and the existing descendant, wall-time, and output
+owners. It deliberately does not let Default or Auto consume Linux proof.
 
 P48 records five approved ACP boundary repairs for Session-root deletion, Plan
 tool identity, replay output type, Windows MCP environment identity, and unsafe
@@ -61,9 +66,10 @@ public Session and sanitized export owners, and closed G46. P48 is complete.
 G14 remains reproduced under P44 `defer`. The historical P24.6 evidence still
 explains why no numeric Goal default was justified, while P49 closed the user
 problem through optional-budget semantics instead. G2 has no accepted
-successor. G28 remains open after P51.2 because environment credentials, shell
-hooks, configured stdio MCP, and hard memory/file-descriptor/process-count
-limits are still ambient. G48-G50 are closed. No successor slice is admitted.
+successor. G28 remains open after P51.3 because environment credentials, shell
+hooks, configured stdio MCP, hard memory/file-descriptor/process-count limits,
+and absent Linux control-plane path creation fencing remain outside the
+enforced subset. G48-G50 are closed. No G28 successor is admitted.
 
 ## Execution Topology
 
@@ -79,7 +85,7 @@ Three relationships are intentionally separate:
 <!-- migration-queue:begin -->
 > Generated from [`queue.yaml`](queue.yaml). Run `go run ./scripts/migration_queue render` after changing queue data; `make docs-check` rejects drift.
 
-**Snapshot:** 2026-08-19; 0 `Ready`, 0 `Queued`, 0 `Blocked`, 1 deferred decisions.
+**Snapshot:** 2026-08-26; 0 `Ready`, 0 `Queued`, 0 `Blocked`, 1 deferred decisions.
 
 ```mermaid
 flowchart LR

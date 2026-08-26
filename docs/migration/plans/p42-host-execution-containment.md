@@ -1,8 +1,7 @@
 # P42 Host Execution Containment
 
-**Status:** active-plan
-**Completed slices:** P42.0, P51.1, P51.2 Core
-**Ready slice:** none
+**Status:** historical
+**Completed slices:** P42.0, P51.1, P51.2 Core, P51.3
 **Adoption:** `project-native`
 **Gap:** G28
 
@@ -20,6 +19,44 @@ ordinary Auto Bash admission to that exact Guest proof and added a fresh
 deliberately ambient credential, hook/MCP, and hard-resource axes. AppServer,
 Desktop, and Web UI projection remains deferred without an executable queue
 row.
+
+P51.3 completed the prompt-approved Linux Guest subset through fixed
+bubblewrap, a real filesystem/network/descendant probe, immutable root
+identity, existing control-plane overlays, socket/io_uring seccomp, and a
+required Ubuntu integration job. It intentionally did not widen P51.2's
+Darwin-only automatic Bash admission, so G28 remains open without an accepted
+successor.
+
+## P51.3 accepted Linux Guest bubblewrap subset
+
+P51.3 adapts the current upstream Codex/bubblewrap primitive family to the
+project-owned binding and ShellManager lifecycle. On Linux amd64/arm64 only,
+the fixed `/usr/bin/bwrap` may supply a Guest `workspace-write` binding after a
+real probe. The process view starts from an empty root, mounts only declared
+read roots, binds the canonical workspace and approved temporary roots for
+write, reapplies every existing denied control-plane root read-only, mounts a
+fresh `/dev` and `/proc`, and enters new user, PID, IPC, and network namespaces.
+All capabilities are dropped, a classic seccomp filter rejects socket creation
+and io_uring setup, and `--new-session` plus `--die-with-parent` remain defense
+in depth around the existing process-group owner.
+
+The probe must execute the real fixed helper and prove allowed workspace
+read/write, outside-root read/write denial, network denial, canonical root
+identity, and nested descendant confinement. Missing or mutable helper
+identity, unsupported architecture, namespace/mount/seccomp failure, changed
+root identity, or any failed behavior produces an unavailable Guest binding.
+An attempted Guest launch fails before the requested Bash starts and never
+retries ambient.
+
+P51.3 deliberately omits absent-path creation fencing for control-plane names.
+Only existing denied roots enter the Linux policy and are proven read-only;
+unmounted host paths remain unreadable. Because that authority is not
+equivalent to the Darwin proof consumed by P51.2, Default and Auto must not use
+the Linux binding for automatic Bash admission. Explicit permission outcomes
+may start the contained Linux Guest; permission cannot select or relax the
+adapter. Shell hooks, configured stdio MCP, environment credentials, hard
+memory/file-descriptor/process-count limits, Windows, application helpers, and
+HTTP hooks remain outside this slice, so G28 stays open.
 
 ## Problem
 

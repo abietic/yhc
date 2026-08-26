@@ -23,7 +23,7 @@ func TestSeatbeltAdapterRejectsUnsupportedPlatformWithoutIdentity(t *testing.T) 
 	if proof := result.Proof; proof != (AdapterProof{}) {
 		t.Fatalf("unsupported probe proof = %#v", proof)
 	}
-	if runtimeGOOS() != "darwin" {
+	if runtimeGOOS() != "darwin" && runtimeGOOS() != "linux" {
 		if _, err := CaptureRootIdentity(t.TempDir()); err == nil {
 			t.Fatal("non-Darwin root identity was fabricated")
 		}

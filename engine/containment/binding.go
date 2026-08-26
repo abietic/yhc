@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 )
 
 // EnforcementAxes identifies independently-owned enforcement claims.
@@ -149,6 +150,7 @@ type SpawnSpec struct {
 	Dir           string
 	Env           []string
 	BindingDigest string
+	ExtraFiles    []*os.File
 }
 
 // Binding is an immutable policy-to-adapter association for one process class.
@@ -190,8 +192,8 @@ func NewBinding(class ProcessClass, policy *Snapshot, adapter SpawnAdapter, proo
 	if proof.Enforced&^adapterAllowedAxes != 0 {
 		return nil, invalid("proof", "adapter claimed an unowned axis")
 	}
-	if policy.spec.Adapter == AdapterDarwinSeatbelt && (class != ProcessClassGuest || policy.spec.State != StateDegraded || proof.Enforced != adapterAllowedAxes) {
-		return nil, invalid("proof", "darwin binding requires all adapter axes")
+	if isContainedAdapter(policy.spec.Adapter) && (class != ProcessClassGuest || policy.spec.State != StateDegraded || proof.Enforced != adapterAllowedAxes) {
+		return nil, invalid("proof", "contained binding requires all adapter axes")
 	}
 	return newBinding(class, policy, adapter, proof, BindingAvailable, ""), nil
 }
@@ -200,8 +202,8 @@ func NewUnavailableBinding(class ProcessClass, policy *Snapshot, adapter SpawnAd
 	if err := validateClassPolicyAdapter(class, policy, adapter); err != nil {
 		return nil, err
 	}
-	if class != ProcessClassGuest || policy.spec.State != StateUnavailable || policy.spec.Adapter != AdapterDarwinSeatbelt {
-		return nil, invalid("binding", "unavailable requires unavailable darwin policy")
+	if class != ProcessClassGuest || policy.spec.State != StateUnavailable || !isContainedAdapter(policy.spec.Adapter) {
+		return nil, invalid("binding", "unavailable requires unavailable contained policy")
 	}
 	if !validUnavailableReasonCode(reason) {
 		return nil, invalid("reason", "must be bounded non-empty code")
@@ -323,9 +325,11 @@ func (b *Binding) Prepare(ctx context.Context, request SpawnRequest) (SpawnSpec,
 		return SpawnSpec{}, err
 	}
 	if spec.BindingDigest != b.digest {
+		closeSpawnExtraFiles(spec.ExtraFiles)
 		return SpawnSpec{}, invalid("binding", "adapter returned mismatched digest")
 	}
 	spec.Args, spec.Env = append([]string(nil), spec.Args...), append([]string(nil), spec.Env...)
+	spec.ExtraFiles = append([]*os.File(nil), spec.ExtraFiles...)
 	return spec, nil
 }
 
@@ -347,8 +351,9 @@ func NewExecutionProof(binding *Binding, runtime EnforcementAxes) (ExecutionProo
 }
 
 // ExecutionIdentityFor detaches Guest containment facts from a Binding. It
-// accepts only complete, binding-owned Seatbelt proofs; ambient and unavailable
-// Guest bindings deliberately project zero proof axes so consumers reject them.
+// accepts only complete, binding-owned platform containment proofs; ambient and
+// unavailable Guest bindings deliberately project zero proof axes so consumers
+// reject them.
 func ExecutionIdentityFor(binding *Binding, proof ExecutionProof) (ExecutionIdentity, error) {
 	if binding == nil || binding.processClass != ProcessClassGuest || binding.policy == nil {
 		return ExecutionIdentity{}, invalid("execution_identity", "guest binding required")
@@ -366,7 +371,7 @@ func ExecutionIdentityFor(binding *Binding, proof ExecutionProof) (ExecutionIden
 		}
 		return identity, nil
 	}
-	if binding.adapterFamily != AdapterDarwinSeatbelt {
+	if !isContainedAdapter(binding.adapterFamily) {
 		return ExecutionIdentity{}, invalid("execution_identity", "unsupported guest adapter")
 	}
 	if binding.availability == BindingUnavailable {
@@ -383,6 +388,17 @@ func ExecutionIdentityFor(binding *Binding, proof ExecutionProof) (ExecutionIden
 	}
 	identity.AdapterAxes, identity.RuntimeAxes, identity.Enforced = proof.AdapterAxes, proof.RuntimeAxes, proof.Enforced
 	return identity, nil
+}
+
+// IsContainedAdapter reports the platform adapters that may produce the fixed
+// workspace-write proof axes. Permission consumers still decide which exact
+// adapter families they admit automatically.
+func IsContainedAdapter(adapter AdapterFamily) bool {
+	return isContainedAdapter(adapter)
+}
+
+func isContainedAdapter(adapter AdapterFamily) bool {
+	return adapter == AdapterDarwinSeatbelt || adapter == AdapterLinuxBubblewrap
 }
 
 type Bindings struct{ guest, shellHooks, stdioMCP *Binding }

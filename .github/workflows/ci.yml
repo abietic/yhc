@@ -373,6 +373,43 @@ jobs:
       - name: Run publication policy and scanner gates
         run: make publication-safety
 
+  linux-sandbox:
+    name: Linux bubblewrap sandbox
+    if: needs.changes.outputs.docs_only != 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up minimum supported Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install fixed sandbox helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+
+      - name: Enable hosted-runner user namespaces
+        run: |
+          current_userns="$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null || true)"
+          if [[ -n "$current_userns" && "$current_userns" != "1" ]]; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          current_apparmor="$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || true)"
+          if [[ -n "$current_apparmor" && "$current_apparmor" != "0" ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Run real Linux containment integration
+        env:
+          YHC_REQUIRE_LINUX_BWRAP: '1'
+        run: go test ./engine/containment -run '^TestBubblewrapLinuxIntegration$' -count=1
+
   desktop:
     name: Desktop supply chain
     if: needs.changes.outputs.docs_only != 'true'
@@ -472,6 +509,7 @@ jobs:
       - quality
       - test
       - build
+      - linux-sandbox
       - publication-safety
       - desktop
       - desktop-native-packages
@@ -484,6 +522,7 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          LINUX_SANDBOX_RESULT: ${{ needs.linux-sandbox.result }}
           PUBLICATION_SAFETY_RESULT: ${{ needs.publication-safety.result }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
           DESKTOP_NATIVE_PACKAGES_RESULT: ${{ needs.desktop-native-packages.result }}
@@ -494,13 +533,13 @@ jobs:
             exit 1
           fi
           if [[ "$DOCS_ONLY" == "true" ]]; then
-            if [[ "$TEST_RESULT" != "skipped" || "$BUILD_RESULT" != "skipped" || "$DESKTOP_RESULT" != "skipped" || "$DESKTOP_NATIVE_PACKAGES_RESULT" != "skipped" ]]; then
-              echo "docs-only run unexpectedly executed code gates: test=$TEST_RESULT build=$BUILD_RESULT desktop=$DESKTOP_RESULT desktop-native-packages=$DESKTOP_NATIVE_PACKAGES_RESULT" >&2
+            if [[ "$TEST_RESULT" != "skipped" || "$BUILD_RESULT" != "skipped" || "$LINUX_SANDBOX_RESULT" != "skipped" || "$DESKTOP_RESULT" != "skipped" || "$DESKTOP_NATIVE_PACKAGES_RESULT" != "skipped" ]]; then
+              echo "docs-only run unexpectedly executed code gates: test=$TEST_RESULT build=$BUILD_RESULT linux-sandbox=$LINUX_SANDBOX_RESULT desktop=$DESKTOP_RESULT desktop-native-packages=$DESKTOP_NATIVE_PACKAGES_RESULT" >&2
               exit 1
             fi
             exit 0
           fi
-          if [[ "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "success" || "$DESKTOP_RESULT" != "success" || "$DESKTOP_NATIVE_PACKAGES_RESULT" != "success" ]]; then
-            echo "test=$TEST_RESULT build=$BUILD_RESULT desktop=$DESKTOP_RESULT desktop-native-packages=$DESKTOP_NATIVE_PACKAGES_RESULT" >&2
+          if [[ "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "success" || "$LINUX_SANDBOX_RESULT" != "success" || "$DESKTOP_RESULT" != "success" || "$DESKTOP_NATIVE_PACKAGES_RESULT" != "success" ]]; then
+            echo "test=$TEST_RESULT build=$BUILD_RESULT linux-sandbox=$LINUX_SANDBOX_RESULT desktop=$DESKTOP_RESULT desktop-native-packages=$DESKTOP_NATIVE_PACKAGES_RESULT" >&2
             exit 1
           fi
