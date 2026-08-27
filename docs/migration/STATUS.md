@@ -3,7 +3,7 @@
 **Status:** current
 **Reference ledger:** `claude-code-ripe` (TypeScript)
 **Target:** `eino-agent` (Go)
-**Last verified:** 2026-08-26
+**Last verified:** 2026-08-27
 
 > **Ownership:** current verified evolution facts and volatile repository
 > counts. Future work belongs in [`PLAN.md`](PLAN.md), unresolved behavior in
@@ -17,14 +17,14 @@ Product scope and adoption rules are owned by
 
 ## Current Snapshot
 
-Generated with `go run ./scripts/migration_scan -json` on 2026-08-26:
+Generated with `go run ./scripts/migration_scan -json` on 2026-08-27:
 
 | Metric | Value |
 |---|---:|
-| Production Go files | 636 |
-| Production Go lines | 256,223 |
-| Product test Go files | 642 |
-| Product test Go lines | 245,130 |
+| Production Go files | 637 |
+| Production Go lines | 256,663 |
+| Product test Go files | 644 |
+| Product test Go lines | 245,572 |
 | Product Go packages | 69 |
 | Tool constructors | 44 |
 | Command files | 21 |
