@@ -1,7 +1,7 @@
 # P52.1 Headless JSONL Lifecycle Verification
 
 **Status:** verification
-**Verified:** 2026-08-26
+**Verified:** 2026-08-27
 **Platform:** Darwin arm64
 
 > **Ownership:** reproducible local evidence for the versioned bounded
@@ -14,6 +14,11 @@ from committed engine projections and finishes with one classified result.
 The projection rejects malformed canonical data and invalid UTF-8, does not
 emit a duplicate engine terminal, and retains existing text/JSON and
 permission behavior.
+
+The 2026-08-27 forward-port base also includes the project-owned DeepSeek Files
+API lifecycle. File upload, polling, deletion, and file-ID conversion remain
+provider-owned; JSONL still exposes only QueryEngine canonical lifecycle facts
+and does not add a provider-file payload or second wire contract.
 
 This evidence does not claim a live provider, remote CI, PTY or physical UI,
 long-lived reconnect, replay cursor, SDK, daemon, or Host Session API.
