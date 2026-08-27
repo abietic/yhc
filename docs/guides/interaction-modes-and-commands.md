@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-08-26
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -35,10 +35,19 @@ explicit `<stdin>` block. Root `-p`/`--print` remains compatible with the same
 runtime, but a root positional prompt without `-p` is now a usage error instead
 of being ignored.
 
-Use `--output-format text` for human output or `--output-format json` for one
-schema-versioned result object. Stdout has one renderer owner; progress and
-redacted diagnostics stay on stderr. Exit codes are `0` complete, `1` runtime
-failure, `2` usage/validation, and `130` cancelled.
+Use `--output-format text` for human output, `--output-format json` for one
+schema-versioned result object, or `--output-format jsonl` for ordered
+lifecycle events followed by one final result. Stdout has one renderer owner;
+progress and redacted diagnostics stay on stderr. Exit codes are `0` complete,
+`1` runtime failure, `2` usage/validation, and `130` cancelled.
+
+JSONL event records expose the bounded Session/thread/turn identity and
+sequence plus committed assistant deltas, redacted canonical tool lifecycle,
+command output, compaction, max-turn, or interruption facts. They do not expose
+reasoning, provider responses, raw noncanonical tool events, or an interactive
+approval channel. Consumers should branch on `schema_version`, `type`, and
+`event.kind`, ignore unknown additive fields, and treat the single `result`
+record as process closure.
 
 Runtime flags are command-local. Put them after the selected subcommand, for
 example `yhc exec --provider openai "prompt"` or

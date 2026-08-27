@@ -1,8 +1,8 @@
 # Entrypoints and Transports
 
 **Status:** current
-**Wiring:** supported composition roots are active; some transport libraries remain inactive
-**Last verified:** 2026-08-07
+**Wiring:** supported composition roots are active; legacy structured and remote transport surfaces remain inactive
+**Last verified:** 2026-08-26
 
 > **Ownership:** This file owns executable entrypoints, process-level protocol
 > surfaces, and whether transport packages are production-wired. MCP client and
@@ -37,7 +37,7 @@ flowchart TD
 |---|---|---|
 | `yhc` | terminal UI | Creates one `QueryEngine`; Bubble Tea projects engine events and snapshots. |
 | `yhc --plain` | line-oriented stdin/stdout | Creates one `QueryEngine`; the REPL dispatches engine-owned slash commands and submits prompts. |
-| `yhc exec [prompt]` | prompt argument and/or stdin; text or one versioned JSON object on stdout | Creates one `QueryEngine`; consumes its event channel until terminal completion. |
+| `yhc exec [prompt]` | prompt argument and/or stdin; text, one versioned JSON object, or a versioned JSONL lifecycle stream on stdout | Creates one `QueryEngine`; consumes its event channel until terminal completion. |
 | `yhc -p [prompt]` | compatibility route to the same headless owner | Preserves existing scripts while `exec` is the canonical non-interactive entrypoint. |
 | `yhc goal run --resume <id>` | bounded continuation driver; text or one versioned JSON object on stdout | Resumes one exact saved root Goal and invokes only the dedicated continuation claim/submission boundary; it does not dispatch slash input or create/edit Goal state. |
 | `yhc resume <id>` / `--resume` | same surface as selected mode | Resumes the configured session before accepting new input. |
@@ -78,8 +78,9 @@ composition roots default it on for saved-root TUI and Plain, with no default
 token budget; `goal.enabled: false` disables it. They expose typed `/goal`
 controls, dynamic root-Goal-turn tools, progress, and the dedicated continuation
 consumer. ACP exposes Goal only after private version-1 negotiation and only
-through its extension methods; it does not make `/goal` a protocol command. A
-direct low-level engine with nil `GoalCapability`, ordinary headless,
+through its extension methods; it does not make `/goal` a protocol command.
+
+Direct low-level engines with nil `GoalCapability`, ordinary headless,
 unnegotiated or disabled ACP, child/review, ephemeral/administration, disabled
 TUI/Plain, and standalone MCP expose no Goal command, model tool, or claim
 capability. The separate `goal run` process continues an already-created Goal
@@ -90,9 +91,32 @@ with the explicit `-` sentinel, it reads stdin. When both a prompt and piped
 stdin are present, stdin is appended inside an explicit `<stdin>` block rather
 than discarded. `--output-format text` writes only assistant/command output to
 stdout; diagnostics go to stderr. `--output-format json` writes exactly one
-schema-versioned result object containing status and exit code. Process exits
-are `0` for completion, `1` for runtime failure, `2` for usage/validation, and
-`130` for cancellation.
+schema-versioned result object containing status and exit code.
+
+`--output-format jsonl` writes a version-1 stream of `event` records followed
+by exactly one `result` record. Event records keep only bounded
+Session/thread/turn identity, sequence, UTC timestamp, causation, and a closed
+payload union: validated canonical assistant/tool lifecycle, typed command
+result, compact boundary, max-turn status, or user interruption.
+
+Legacy assistant/stream/tool-result events are skipped rather than duplicating
+the canonical facts. Invalid canonical payload or invalid UTF-8 fails the output
+boundary. Process exits remain `0` for completion, `1` for runtime failure,
+`2` for usage/validation, and `130` for cancellation.
+
+The JSONL caller explicitly requests assistant and command output, matching the
+content already visible in text/JSON modes. Tool input, progress, and output
+come only from the engine's validated canonical projection, which redacts
+credential-like values before the transport. The final error passes through
+the same headless redaction owner as JSON. JSONL does not make headless
+interactive: permission and Plan requests still fail closed without a live
+adapter, and `-y` retains its existing explicit bypass meaning.
+
+This bounded process stream is deliberately separate from AppServer protocol
+version 2. JSONL has no replay ID, reconnect cursor, interaction settlement, or
+Desktop session lease; AppServer keeps those long-lived concerns in its
+`WireEvent` and snapshot owners. Both transports consume engine-owned facts,
+but neither wire schema embeds or versions the other.
 
 `sessions` applies the same text/JSON and exit taxonomy to durable session
 administration. List supports bounded current-workspace search and cursor
@@ -101,7 +125,9 @@ rename and export use the same durable service as interactive `/sessions`; and
 fork commits the child before activation validation and compensates only its
 own child on failure. Administration construction skips provider resolution,
 MCP connection, plugins, shell hooks, and long-lived settings services, and
-does not compile ProjectGraph merely to list sessions. Resume/fork activation
+does not compile ProjectGraph merely to list sessions.
+
+Resume/fork activation
 validates the selected durable kernel and preserves its canonical target
 checkpoint while skipping project runtime reload; close adds neither a second
 target checkpoint nor a synthetic source transcript. Archive/delete remain
@@ -129,10 +155,13 @@ Runtime semantics for Graph interrupts belong to
 an unresolved permission, question, or Plan approval
 returns a durable `waiting_input` boundary rather than retaining a transport
 callback as runtime truth. The TUI can answer the reprojected owner-scoped
-request and schedule its typed decision immediately. ACP drives the same
+request and schedule its typed decision immediately.
+
+ACP drives the same
 interrupt inside a Prompt: it requests protocol permission, enqueues the
 targeted decision, and continues that Graph turn. On ACP Resume/Load, a pending
 durable request is resolved and resumed before a new user prompt is accepted.
+
 The plain REPL now does the same: its event driver renders the exact request,
 enqueues the typed response, claims the one decision item, and continues the
 same turn; after resume it settles a pending request before accepting new
@@ -157,18 +186,20 @@ forced writer. The notice never enters assistant history, transcripts, or
 structured headless output. Detailed admission and disposal semantics belong
 to [`model-providers.md`](model-providers.md#bounded-overload-failover).
 
-## Inactive Libraries
+## Inactive transport surfaces
 
-`engine/transport` and `engine/remote` compile and have focused tests, but no
-production entrypoint imports them.
+P52.1 production-wires only `engine/transport`'s versioned lifecycle projector
+and writer to headless `exec`. Its older bidirectional `StructuredIO` and
+`StreamAdapter` remain disconnected, as does all of `engine/remote`.
 
 | Package | Implemented surface | Wiring status |
 |---|---|---|
-| `engine/transport` | JSON `StructuredIO` and a `QueryEvent` output adapter | Disconnected from CLI, ACP, and MCP bootstrap. |
+| `engine/transport` legacy surface | JSON `StructuredIO` and the unversioned `StreamAdapter` | Disconnected; only `LifecycleWriter` and `ProjectLifecycleEvent` are active through headless JSONL. |
 | `engine/remote` | stdio/TCP newline-delimited JSON transports and `SessionServer` | Disconnected; the type named `WebSocketTransport` uses `net.Conn` TCP framing, not a WebSocket protocol. |
 
-These libraries must not be described as the transport used by IDEs or the
-current SDK path. ACP stdio is the production IDE-facing protocol entrypoint.
+These inactive surfaces must not be described as the transport used by IDEs or
+the current SDK path. ACP stdio remains the production IDE-facing protocol
+entrypoint.
 
 ## Code References
 
@@ -187,8 +218,10 @@ current SDK path. ACP stdio is the production IDE-facing protocol entrypoint.
 | ACP per-session engine identity | [`server/acp.Agent.createEngine`](../../../server/acp/agent.go) |
 | ACP event, Plan resolution, and canonical tool lifecycle projection | [`server/acp.Agent.resolveProjectGraphPermission`](../../../server/acp/agent.go), [`server/acp.Agent.streamEvent`](../../../server/acp/agent.go), [`acpToolLifecycleLedger`](../../../server/acp/tool_lifecycle.go) |
 | negotiated ACP Goal extension | [`server/acp.Agent.handleGoalExtension`](../../../server/acp/goal_extension.go) |
+| AppServer long-lived wire protocol | [`appserver.WireEvent`](../../../server/appserver/protocol.go), [`appserver.ProtocolVersion`](../../../server/appserver/protocol.go) |
 | MCP stdio bootstrap and safe default hook | [`newServeMCPCommand`](../../../cmd/yhc/cmd/serve_mcp.go), [`DefaultMCPToolHook`](../../../server/mcp/server.go) |
-| disconnected structured I/O | [`engine/transport/structured_io.go`](../../../engine/transport/structured_io.go) |
+| headless JSONL projection and writer | [`ProjectLifecycleEvent`](../../../engine/transport/lifecycle_jsonl.go), [`LifecycleWriter.WriteEvent`](../../../engine/transport/lifecycle_jsonl.go), [`LifecycleWriter.WriteResult`](../../../engine/transport/lifecycle_jsonl.go) |
+| disconnected legacy structured I/O | [`engine/transport/structured_io.go`](../../../engine/transport/structured_io.go) |
 | disconnected remote transport | [`engine/remote/transport.go`](../../../engine/remote/transport.go), [`engine/remote/transport.go`](../../../engine/remote/transport.go) |
 
 ## Example
@@ -196,6 +229,9 @@ current SDK path. ACP stdio is the production IDE-facing protocol entrypoint.
 ```bash
 # Canonical non-interactive execution with one JSON result:
 yhc exec --output-format json "summarize this repository"
+
+# Versioned lifecycle events followed by one process result:
+yhc exec --output-format jsonl "summarize this repository"
 
 # Continue an existing Goal with an explicit process bound:
 yhc goal run --resume SESSION_ID --max-continuations 8

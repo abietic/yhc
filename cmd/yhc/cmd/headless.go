@@ -17,6 +17,7 @@ import (
 	engineerrors "github.com/abietic/yhc/engine/errors"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/session"
+	enginetransport "github.com/abietic/yhc/engine/transport"
 )
 
 const headlessEnvelopeSchemaVersion = 1
@@ -26,8 +27,9 @@ var errMaxTurnsReached = errors.New("max turns reached")
 type outputFormat string
 
 const (
-	outputFormatText outputFormat = "text"
-	outputFormatJSON outputFormat = "json"
+	outputFormatText  outputFormat = "text"
+	outputFormatJSON  outputFormat = "json"
+	outputFormatJSONL outputFormat = "jsonl"
 )
 
 type headlessOptions struct {
@@ -44,6 +46,7 @@ type headlessResult struct {
 	Output         string
 	SessionID      string
 	TerminalReason string
+	TerminalEvent  engine.RuntimeEventEnvelope
 	ErrorCode      string
 	Err            error
 	ExitCode       int
@@ -85,7 +88,7 @@ func newExecCommand() *cobra.Command {
 	}
 	bindRuntimeFlags(command.Flags(), &options.Runtime)
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
-	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text or json)")
+	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
 	return command
 }
 
@@ -95,8 +98,10 @@ func parseOutputFormat(value string) (outputFormat, error) {
 		return outputFormatText, nil
 	case outputFormatJSON:
 		return outputFormatJSON, nil
+	case outputFormatJSONL:
+		return outputFormatJSONL, nil
 	default:
-		return "", usageErrorf("unsupported output format %q (expected text or json)", value)
+		return "", usageErrorf("unsupported output format %q (expected text, json, or jsonl)", value)
 	}
 }
 
@@ -138,8 +143,35 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		return renderHeadlessFailure(format, options, err, errorCodeForFailure(err, "session_error"), ExitCode(err))
 	}
 
-	events, _ := eng.SubmitMessage(ctx, prompt)
-	result := collectHeadlessEvents(ctx, options.Stderr, events)
+	queryCtx := ctx
+	cancelQuery := func() {}
+	if format == outputFormatJSONL {
+		queryCtx, cancelQuery = context.WithCancel(ctx)
+		defer cancelQuery()
+	}
+	events, _ := eng.SubmitMessage(queryCtx, prompt)
+	var result headlessResult
+	if format == outputFormatJSONL {
+		writer := enginetransport.NewLifecycleWriter(options.Stdout)
+		var streamErr error
+		result, streamErr = collectHeadlessEventsWithObserver(
+			queryCtx,
+			options.Stderr,
+			events,
+			func(event engine.QueryEvent) error {
+				_, err := writer.WriteEvent(event)
+				if err != nil {
+					cancelQuery()
+				}
+				return err
+			},
+		)
+		if streamErr != nil {
+			return fmt.Errorf("write headless lifecycle event: %w", streamErr)
+		}
+	} else {
+		result = collectHeadlessEvents(queryCtx, options.Stderr, events)
+	}
 	result.SessionID = eng.SessionID()
 	result.Err = sanitizeHeadlessError(result.Err, options.Runtime.apiKey)
 	if err := renderHeadlessResult(format, options.Stdout, options.Stderr, result); err != nil {
@@ -220,10 +252,26 @@ func configureHeadlessPermissions(engineCfg *engine.QueryEngineConfig, stderr io
 	}
 }
 
+type headlessEventObserver func(engine.QueryEvent) error
+
 func collectHeadlessEvents(ctx context.Context, stderr io.Writer, events <-chan engine.QueryEvent) headlessResult {
+	result, _ := collectHeadlessEventsWithObserver(ctx, stderr, events, nil)
+	return result
+}
+
+func collectHeadlessEventsWithObserver(
+	ctx context.Context,
+	stderr io.Writer,
+	events <-chan engine.QueryEvent,
+	observer headlessEventObserver,
+) (headlessResult, error) {
 	result := headlessResult{Status: "completed", ExitCode: ExitSuccess}
 	var output strings.Builder
+	var observerErr error
 	for event := range events {
+		if observer != nil && observerErr == nil {
+			observerErr = observer(event)
+		}
 		switch event.Type {
 		case engine.EventAssistant:
 			if event.AssistantMessage != nil {
@@ -258,6 +306,7 @@ func collectHeadlessEvents(ctx context.Context, stderr io.Writer, events <-chan 
 				fmt.Fprintf(stderr, "[%s]\n", notice)
 			}
 		case engine.EventTerminal:
+			result.TerminalEvent = event.RuntimeEventEnvelope
 			if event.TerminalInfo != nil {
 				result.TerminalReason = string(event.TerminalInfo.Reason)
 				if event.TerminalInfo.Err != nil {
@@ -269,7 +318,7 @@ func collectHeadlessEvents(ctx context.Context, stderr io.Writer, events <-chan 
 	}
 	result.Output = output.String()
 	classifyHeadlessResult(ctx, &result)
-	return result
+	return result, observerErr
 }
 
 func headlessToolResultMetadata(event engine.QueryEvent) (string, int) {
@@ -358,6 +407,26 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 		encoder.SetEscapeHTML(false)
 		return encoder.Encode(envelope)
 	}
+	if format == outputFormatJSONL {
+		identity := enginetransport.LifecycleIdentityFromEnvelope(result.TerminalEvent)
+		if identity.SessionID == "" {
+			identity.SessionID = result.SessionID
+		}
+		lifecycleResult := enginetransport.LifecycleResult{
+			LifecycleIdentity: identity,
+			Status:            result.Status,
+			Output:            result.Output,
+			TerminalReason:    result.TerminalReason,
+			ExitCode:          result.ExitCode,
+		}
+		if result.Err != nil {
+			lifecycleResult.Error = &enginetransport.LifecycleError{
+				Code:    result.ErrorCode,
+				Message: result.Err.Error(),
+			}
+		}
+		return enginetransport.NewLifecycleWriter(stdout).WriteResult(lifecycleResult)
+	}
 	if result.Output != "" {
 		if _, err := io.WriteString(stdout, result.Output); err != nil {
 			return fmt.Errorf("write headless output: %w", err)
@@ -406,6 +475,9 @@ func errorCodeForFailure(err error, fallback string) string {
 func formatForError(value string) outputFormat {
 	if strings.EqualFold(strings.TrimSpace(value), string(outputFormatJSON)) {
 		return outputFormatJSON
+	}
+	if strings.EqualFold(strings.TrimSpace(value), string(outputFormatJSONL)) {
+		return outputFormatJSONL
 	}
 	return outputFormatText
 }
