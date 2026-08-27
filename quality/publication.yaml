@@ -159,52 +159,52 @@ privacy:
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 287
+      line: 288
       rule_id: credential-assignment
       match_sha256: 6a34e9cf66e854e6e1b79ceebaac12897fd6845a57d2cf367ca33a74fdbc1afb
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 301
+      line: 302
       rule_id: private-email
       match_sha256: 97fb39eeaf641d39fbda4c75f86492b170ca0e6d092c4c2f77ce8003caddafa9
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 301
+      line: 302
       rule_id: private-url
       match_sha256: 39cf564bf452dc4fd00bc67b0774a305b716054286d430ebbcddc51f7e076b34
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 331
+      line: 422
       rule_id: credential-assignment
       match_sha256: 2dea7caa1c9deb76558a14c00d323e5e41626f1591fb0ec19b67fb84b7fabf6a
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 427
+      line: 518
       rule_id: credential-assignment
       match_sha256: 2dea7caa1c9deb76558a14c00d323e5e41626f1591fb0ec19b67fb84b7fabf6a
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 461
+      line: 552
       rule_id: bearer-token
       match_sha256: 1cdeae9426f0d6e5dd83de184e4b4833a3cc537fd904b3d8be1dcaf315e3c748
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 461
+      line: 552
       rule_id: credential-assignment
       match_sha256: 8653284d8b4d83e09bce5e5a7847e9009451fb68b4b8fd269f3bbf03b03233bd
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 461
+      line: 552
       rule_id: private-email
       match_sha256: 97fb39eeaf641d39fbda4c75f86492b170ca0e6d092c4c2f77ce8003caddafa9
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 461
+      line: 552
       rule_id: private-url
       match_sha256: 2692162a1902914bd2abb1197056b5bfd258e8ab6b9ba6720c74179701657412
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/cli_contract_test.go
-      line: 478
+      line: 569
       rule_id: credential-assignment
       match_sha256: 85b8be18b5cd05ba923643be9b7a76a51693d4e0d1fc332d7e4c2fcda628094f
       purpose: synthetic-security-fixture
@@ -934,7 +934,7 @@ privacy:
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
     - path: docs/guides/getting-started.md
-      line: 82
+      line: 84
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
