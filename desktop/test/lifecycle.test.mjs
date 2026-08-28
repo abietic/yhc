@@ -12,6 +12,7 @@ const {
   activeTurnSessions,
   backendStopFailurePrompt,
   createBackendStopCoordinator,
+  createQuitRequestScheduler,
   createWindowRestoreCoordinator,
   quitInspectionFailurePrompt,
   startDesktopHost,
@@ -131,6 +132,26 @@ test('inspection failure prompt keeps working by default', () => {
     noLink: true,
     message: 'Unable to verify active turns',
   });
+});
+
+test('quit requests start only after the before-quit handler returns', () => {
+  const order = [];
+  const pending = [];
+  const scheduler = createQuitRequestScheduler({
+    requestQuit: () => order.push('request-quit'),
+    schedule: (callback) => {
+      order.push('schedule');
+      pending.push(callback);
+    },
+  });
+
+  scheduler.request();
+  scheduler.request();
+  assert.deepEqual(order, ['schedule']);
+  assert.equal(pending.length, 1);
+
+  pending.shift()();
+  assert.deepEqual(order, ['schedule', 'request-quit']);
 });
 
 test('Desktop startup prepares the hidden host before backend secure-storage work', async () => {

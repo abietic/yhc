@@ -202,6 +202,7 @@ test('main process waits for observed backend exit before quitting or restarting
     source.indexOf("app.on('activate'"),
   );
   assert.match(source, /createBackendStopCoordinator\(\{/);
+  assert.match(source, /createQuitRequestScheduler\(\{ requestQuit \}\)/);
   assert.match(source, /unmarkStopping:\s*\(child\)\s*=>\s*stoppingBackends\.delete\(child\)/);
   assert.match(source, /stopBackend:\s*\(\)\s*=>\s*stopBackend\(\)/);
   assert.match(
@@ -215,6 +216,10 @@ test('main process waits for observed backend exit before quitting or restarting
   );
   assert.doesNotMatch(source, /if \(!backend \|\| !bootstrap\)/);
   assert.doesNotMatch(source, /STOP_TIMEOUT_MS/);
+  assert.match(
+    source,
+    /app\.on\('before-quit', \(event\) => \{[\s\S]*?event\.preventDefault\(\);[\s\S]*?quitRequestScheduler\.request\(\);/,
+  );
 });
 
 test('macOS window restoration has one target-owned composition path', async () => {
