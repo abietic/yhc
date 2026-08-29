@@ -184,7 +184,7 @@ func TestRunTargetDoesNotEchoProviderCredential(t *testing.T) {
 set -eu
 test "${PROV:-}" = "agenticdeepseek"
 test "${PROV_API_KEY:-}" = "sentinel-provider-credential"
-test "${PROV_MODEL:-}" = "deepseek-v4-flash-vision-exp"
+test "${PROV_MODEL:-}" = "test-vision-model"
 test "$#" -eq 2
 test "$1" = "run"
 test "$2" = "./cmd/yhc/"
@@ -198,7 +198,7 @@ test "$2" = "./cmd/yhc/"
 		"GO="+fakeGo,
 		"PROV=agenticdeepseek",
 		"PROV_API_KEY=sentinel-provider-credential",
-		"PROV_MODEL=deepseek-v4-flash-vision-exp",
+		"PROV_MODEL=test-vision-model",
 		"run",
 	)
 	cmd.Dir = repositoryRoot

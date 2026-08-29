@@ -41,7 +41,8 @@ privacy:
     - www.contributor-covenant.org
     - www.jsonrpc.org
     - www.w3.org
-  test_sentinels: []
+  test_sentinels:
+    - sentinel-provider-credential
   reviewed_findings:
     - path: ".agents/skill-runtime/skill_log.py"
       line: 81
@@ -149,14 +150,9 @@ privacy:
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 312
+      line: 317
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
-      purpose: build-metadata
-    - path: Makefile
-      line: 314
-      rule_id: credential-assignment
-      match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: cmd/yhc/cmd/cli_contract_test.go
       line: 288
