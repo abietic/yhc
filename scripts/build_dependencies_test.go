@@ -165,6 +165,52 @@ func TestBuildDependencies(t *testing.T) {
 	}
 }
 
+func TestRunTargetDoesNotEchoProviderCredential(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Makefile uses a POSIX shell")
+	}
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Fatalf("make is required to validate the run target: %v", err)
+	}
+
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(workingDir, ".."))
+	makefile := filepath.Join(repositoryRoot, "Makefile")
+	fakeGo := filepath.Join(t.TempDir(), "go")
+	const fakeGoScript = `#!/bin/sh
+set -eu
+test "${PROV:-}" = "agenticdeepseek"
+test "${PROV_API_KEY:-}" = "sentinel-provider-credential"
+test "${PROV_MODEL:-}" = "test-vision-model"
+test "$#" -eq 2
+test "$1" = "run"
+test "$2" = "./cmd/yhc/"
+`
+	if err := os.WriteFile(fakeGo, []byte(fakeGoScript), 0o700); err != nil {
+		t.Fatalf("write fake go: %v", err)
+	}
+
+	cmd := exec.Command(
+		"make", "--no-print-directory", "--file", makefile,
+		"GO="+fakeGo,
+		"PROV=agenticdeepseek",
+		"PROV_API_KEY=sentinel-provider-credential",
+		"PROV_MODEL=test-vision-model",
+		"run",
+	)
+	cmd.Dir = repositoryRoot
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run target failed: %v: %s", err, output)
+	}
+	if strings.Contains(string(output), "sentinel-provider-credential") {
+		t.Fatalf("run target rendered the provider credential")
+	}
+}
+
 func TestDesktopBackendsRebuildWhenBuildIdentityChanges(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Makefile uses a POSIX shell")
