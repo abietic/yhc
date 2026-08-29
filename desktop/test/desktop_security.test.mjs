@@ -50,7 +50,7 @@ test('platform package resources match each staged desktop backend name', async 
   ]);
   const build = manifest.build;
 
-  assert.equal(manifest.devDependencies?.['@electron/asar'], '3.4.1');
+  assert.equal(manifest.devDependencies?.['@electron/asar'], '4.3.0');
   assert.match(manifest.version, /^[0-9][0-9A-Za-z.+-]{0,63}$/);
 
   assert.deepEqual(build.files, [

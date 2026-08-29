@@ -9,6 +9,10 @@ dependencies:
     version: "3.4.1"
     license: "MIT"
     decision: allow
+  - package: "@electron/asar"
+    version: "4.3.0"
+    license: "MIT"
+    decision: allow
   - package: "@electron/fuses"
     version: "1.8.0"
     license: "MIT"
@@ -498,6 +502,10 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "glob"
+    version: "13.0.6"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "glob"
     version: "7.2.3"
     license: "ISC"
     decision: allow
@@ -650,6 +658,10 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "lru-cache"
+    version: "11.5.2"
+    license: "BlueOak-1.0.0"
+    decision: allow
+  - package: "lru-cache"
     version: "6.0.0"
     license: "ISC"
     decision: allow
@@ -764,6 +776,10 @@ dependencies:
   - package: "path-key"
     version: "3.1.1"
     license: "MIT"
+    decision: allow
+  - package: "path-scurry"
+    version: "2.0.2"
+    license: "BlueOak-1.0.0"
     decision: allow
   - package: "pe-library"
     version: "0.4.1"
