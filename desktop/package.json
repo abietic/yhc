@@ -14,7 +14,7 @@
     "package:win": "electron-builder --win"
   },
   "devDependencies": {
-    "@electron/asar": "3.4.1",
+    "@electron/asar": "4.3.0",
     "electron": "41.10.4",
     "electron-builder": "26.15.7"
   },
