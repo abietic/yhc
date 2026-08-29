@@ -230,6 +230,7 @@ func executeScheduleWakeup(input string) (string, error) {
 
 	// Start the background timer goroutine.
 	go func() {
+		defer cancel()
 		delay := time.Duration(params.DelaySeconds) * time.Second
 		select {
 		case <-time.After(delay):

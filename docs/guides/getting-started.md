@@ -7,7 +7,7 @@
 
 ## Prerequisites
 
-- Go 1.26.5, as declared by `go.mod`.
+- Go 1.27.0, as declared by `go.mod`.
 - An API key for one supported provider.
 - A terminal for the default full-screen TUI.
 

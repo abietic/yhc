@@ -235,10 +235,7 @@ func (s *SearchOverlay) Render(width int) string {
 	bar := "  " + searchIcon + inputView + matchDisplay + navHint
 
 	// Style the entire bar with a bottom border to separate from content
-	barStyle := lipgloss.NewStyle()
-	if bg := s.styles.Element.GetBackground(); bg != nil {
-		barStyle = barStyle.Background(bg)
-	}
+	barStyle := lipgloss.NewStyle().Background(s.styles.Element.GetBackground())
 
 	profile := s.environment.normalized().profile
 	bar = profile.padAligned(bar, max(width, 1), "left", 0)

@@ -339,9 +339,9 @@ func TestScenarioAgentFailureAndRetry(t *testing.T) {
 	runner := NewAgentRunner(4)
 	runner.SetOutputDir(t.TempDir())
 
-	var attempts int32
+	var attempts atomic.Int32
 	runner.SetExecutor(fakeAgentExecutor{onExecute: func(ctx context.Context, opts AgentExecOptions) (*AgentExecResult, error) {
-		attempt := atomic.AddInt32(&attempts, 1)
+		attempt := attempts.Add(1)
 		if attempt <= 2 {
 			return nil, fmt.Errorf("transient error on attempt %d", attempt)
 		}

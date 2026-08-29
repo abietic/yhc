@@ -39,9 +39,7 @@ func toolNameStyled(styles Styles, name string) string {
 	if foreground != nil {
 		style = style.Foreground(foreground)
 	}
-	if background := styles.Element.GetBackground(); background != nil {
-		style = style.Background(background)
-	}
+	style = style.Background(styles.Element.GetBackground())
 	return style.Render(name)
 }
 

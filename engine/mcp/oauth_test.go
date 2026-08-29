@@ -585,9 +585,9 @@ func TestOAuthManager_GetValidToken_NoToken(t *testing.T) {
 
 func TestOAuthManager_ConcurrentRefresh(t *testing.T) {
 	// The token server should only be called once even with concurrent requests.
-	var callCount int32
+	var callCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&callCount, 1)
+		callCount.Add(1)
 		// Simulate slow refresh.
 		time.Sleep(100 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
@@ -633,7 +633,7 @@ func TestOAuthManager_ConcurrentRefresh(t *testing.T) {
 	}
 
 	// Token server should have been called exactly once.
-	if count := atomic.LoadInt32(&callCount); count != 1 {
+	if count := callCount.Load(); count != 1 {
 		t.Fatalf("expected 1 refresh call, got %d", count)
 	}
 }
@@ -707,9 +707,9 @@ func TestOAuthTransport_401TriggersRefresh(t *testing.T) {
 	defer tokenServer.Close()
 
 	// Target server: returns 401 for old token, 200 for new token.
-	var requestCount int32
+	var requestCount atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := atomic.AddInt32(&requestCount, 1)
+		count := requestCount.Add(1)
 		auth := r.Header.Get("Authorization")
 		if count == 1 && auth == "Bearer old-token" {
 			w.WriteHeader(http.StatusUnauthorized)

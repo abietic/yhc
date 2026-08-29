@@ -79,11 +79,11 @@ func TestStreamingExecutorFullLifecycle(t *testing.T) {
 // TestStreamingExecutorSiblingCancelOnBashError verifies that Bash errors
 // cancel queued siblings but allow executing tools to finish.
 func TestStreamingExecutorSiblingCancelOnBashError(t *testing.T) {
-	var executionStarted int32
+	var executionStarted atomic.Int32
 
 	exec := NewStreamingToolExecutor(StreamingToolExecutorConfig{
 		Execute: func(tc *schema.ToolCall) *ToolResult {
-			atomic.AddInt32(&executionStarted, 1)
+			executionStarted.Add(1)
 			if tc.Function.Name == "Bash" {
 				return &ToolResult{
 					ToolCallID: tc.ID,
@@ -298,10 +298,10 @@ func TestConcurrentExecutorContextCancelPropagation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	executor := NewConcurrentExecutor(ctx, 5)
 
-	var ctxCancelled int32
+	var ctxCancelled atomic.Int32
 	executor.Submit(&PendingToolCall{ID: "ctx_test", Name: "CtxTest"}, func(ctx context.Context, name, args string) (string, error) {
 		<-ctx.Done()
-		atomic.StoreInt32(&ctxCancelled, 1)
+		ctxCancelled.Store(1)
 		return "", ctx.Err()
 	})
 
@@ -318,7 +318,7 @@ func TestConcurrentExecutorContextCancelPropagation(t *testing.T) {
 	if call.Status != "aborted" {
 		t.Errorf("expected 'aborted' on context cancel, got %q", call.Status)
 	}
-	if atomic.LoadInt32(&ctxCancelled) != 1 {
+	if ctxCancelled.Load() != 1 {
 		t.Error("expected executor to observe context cancellation")
 	}
 }

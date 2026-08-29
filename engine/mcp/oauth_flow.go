@@ -116,7 +116,8 @@ func AuthorizationCodeFlow(ctx context.Context, opts AuthFlowOptions) (*AuthFlow
 		listenAddr = "127.0.0.1:0"
 	}
 
-	listener, err := net.Listen("tcp", listenAddr)
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("oauth: failed to start callback server: %w", err)
 	}
