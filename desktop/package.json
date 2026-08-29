@@ -16,7 +16,7 @@
   "devDependencies": {
     "@electron/asar": "3.4.1",
     "electron": "41.10.4",
-    "electron-builder": "26.15.6"
+    "electron-builder": "26.15.7"
   },
     "build": {
     "appId": "com.abietic.yhc.desktop",
