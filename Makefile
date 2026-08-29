@@ -292,9 +292,14 @@ test-pty-deep:
 	fi
 
 # ── Run ────────────────────────────────────────────────
+# Keep provider credentials in the child environment, not the shell command text.
+run debug: export PROV := $(PROV)
+run debug: export PROV_API_KEY := $(PROV_API_KEY)
+run debug: export PROV_MODEL := $(PROV_MODEL)
+
 .PHONY: run
 run:
-	PROV=$(PROV) PROV_API_KEY=$(PROV_API_KEY) PROV_MODEL=$(PROV_MODEL) $(GO) run ./cmd/yhc/
+	@$(GO) run ./cmd/yhc/
 
 .PHONY: test-deepseek-live
 test-deepseek-live:
@@ -311,8 +316,7 @@ test-deepseek-live:
 #   make debug DLV_PORT=2345              # headless server on port 2345
 #   make debug PROV=claude PROV_API_KEY=sk-ant-...  # with provider config
 debug: prepare-dlv build/debug/yhc
-	PROV=$(PROV) PROV_API_KEY=$(PROV_API_KEY) PROV_MODEL=$(PROV_MODEL) \
-		$(DLV) exec ./build/debug/yhc \
+	@$(DLV) exec ./build/debug/yhc \
 			--headless \
 			--listen=:$(DLV_PORT) \
 			--api-version=2 \
