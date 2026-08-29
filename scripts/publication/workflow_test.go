@@ -71,8 +71,8 @@ func TestCodeQLAnalyzesGoAndDesktopJavaScript(t *testing.T) {
 		"languages: ${{ matrix.language }}",
 		"build-mode: ${{ matrix.build-mode }}",
 		"category: '/language:${{ matrix.language }}'",
-		"github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6",
-		"github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6",
+		"github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9",
+		"github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9",
 	} {
 		if !strings.Contains(codeQL, contract) {
 			t.Fatalf("CodeQL workflow lacks multi-language contract %q", contract)
