@@ -58,11 +58,11 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "@noble/hashes"
-    version: "2.2.0"
+    version: "2.3.0"
     license: "MIT"
     decision: allow
   - package: "@peculiar/asn1-schema"
-    version: "2.8.0"
+    version: "2.9.4"
     license: "MIT"
     decision: allow
   - package: "@peculiar/json-schema"
@@ -118,7 +118,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "@xmldom/xmldom"
-    version: "0.8.13"
+    version: "0.8.15"
     license: "MIT"
     decision: allow
   - package: "abbrev"
@@ -142,7 +142,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "app-builder-lib"
-    version: "26.15.6"
+    version: "26.15.7"
     license: "MIT"
     decision: allow
   - package: "argparse"
@@ -334,7 +334,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "dmg-builder"
-    version: "26.15.6"
+    version: "26.15.7"
     license: "MIT"
     decision: allow
   - package: "dotenv"
@@ -362,11 +362,11 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "electron-builder"
-    version: "26.15.6"
+    version: "26.15.7"
     license: "MIT"
     decision: allow
   - package: "electron-builder-squirrel-windows"
-    version: "26.15.6"
+    version: "26.15.7"
     license: "MIT"
     decision: allow
   - package: "electron-publish"
@@ -434,7 +434,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "fast-uri"
-    version: "3.1.5"
+    version: "3.1.6"
     license: "BSD-3-Clause"
     decision: allow
   - package: "fdir"
@@ -682,7 +682,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "minimatch"
-    version: "10.2.5"
+    version: "10.2.6"
     license: "BlueOak-1.0.0"
     decision: allow
   - package: "minimatch"
@@ -718,7 +718,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "node-abi"
-    version: "4.33.0"
+    version: "4.34.0"
     license: "MIT"
     decision: allow
   - package: "node-api-version"
@@ -774,7 +774,7 @@ dependencies:
     license: "ISC"
     decision: allow
   - package: "picomatch"
-    version: "4.0.5"
+    version: "4.0.7"
     license: "MIT"
     decision: allow
   - package: "pkijs"
@@ -818,7 +818,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "pvutils"
-    version: "1.1.5"
+    version: "1.2.0"
     license: "MIT"
     decision: allow
   - package: "quick-lru"
