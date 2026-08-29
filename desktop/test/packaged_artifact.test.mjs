@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 
@@ -19,8 +18,9 @@ const {
 } = require('../scripts/verify_packaged_notices.cjs');
 
 async function createArchive(source, destination) {
-  const output = await asar.createPackage(source, destination);
-  if (!output.writableFinished) await once(output, 'finish');
+  await asar.createPackage(source, destination);
+  const archive = fs.statSync(destination);
+  assert.ok(archive.isFile() && archive.size > 0, 'ASAR archive must be a non-empty file');
   asar.uncache(destination);
 }
 
