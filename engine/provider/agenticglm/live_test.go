@@ -1,6 +1,7 @@
 package agenticglm
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -100,11 +101,15 @@ func TestLiveGLM53FlashAndFilesLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	const fileBody = "YHC-GLM-FILE-CANARY"
+	docxBytes, err := makeGLMLiveCanaryDOCX(fileBody)
+	if err != nil {
+		t.Fatal(err)
+	}
 	uploaded, err := files.Upload(ctx, UploadFileParams{
-		Filename: "yhc-glm-live-canary.txt",
-		Content:  strings.NewReader(fileBody),
-		Size:     int64(len(fileBody)),
-		Purpose:  FilePurposeAgent,
+		Filename: "yhc-glm-live-canary.docx",
+		Content:  bytes.NewReader(docxBytes),
+		Size:     int64(len(docxBytes)),
+		Purpose:  FilePurposeUserData,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +125,7 @@ func TestLiveGLM53FlashAndFilesLifecycle(t *testing.T) {
 			t.Errorf("delete live canary file: %v", cleanupErr)
 		}
 	})
-	listed, err := files.List(ctx, &ListFilesOptions{Purpose: FilePurposeAgent, Limit: 20, Order: FileOrderCreatedAt})
+	listed, err := files.List(ctx, &ListFilesOptions{Purpose: FilePurposeUserData, Limit: 20, Order: FileOrderCreatedAt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,6 +180,51 @@ func makeGLMLiveCanaryPNG() ([]byte, error) {
 	}
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, img); err != nil {
+		return nil, err
+	}
+	return encoded.Bytes(), nil
+}
+
+func makeGLMLiveCanaryDOCX(marker string) ([]byte, error) {
+	var encoded bytes.Buffer
+	writer := zip.NewWriter(&encoded)
+	files := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "[Content_Types].xml",
+			body: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+				`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+				`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+				`<Default Extension="xml" ContentType="application/xml"/>` +
+				`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+				`</Types>`,
+		},
+		{
+			name: "_rels/.rels",
+			body: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+				`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+				`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+				`</Relationships>`,
+		},
+		{
+			name: "word/document.xml",
+			body: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+				`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+				`<w:body><w:p><w:r><w:t>` + marker + `</w:t></w:r></w:p></w:body></w:document>`,
+		},
+	}
+	for _, file := range files {
+		part, err := writer.Create(file.name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(part, file.body); err != nil {
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
 		return nil, err
 	}
 	return encoded.Bytes(), nil

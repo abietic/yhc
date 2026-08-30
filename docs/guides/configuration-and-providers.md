@@ -235,9 +235,11 @@ ZAI_API_KEY='replace-me' make run PROV=glm PROV_MODEL=glm-5.3-flash
 ```
 
 The dedicated adapter supports ordered text, image, video, and file input. Its
-Files client implements `purpose=agent` upload, listing, and
-deletion for reusable `file_id` input. The external canary exercises streaming
-text, inline vision, and the complete upload-to-model-to-delete file lifecycle:
+Files client implements bounded `agent` and `user_data` upload, listing, and
+deletion. Use `user_data` with a supported document format for reusable Chat
+Completions `file_id` input; `agent` resources belong to the separate Agent API.
+The external canary exercises streaming text, inline vision, and the complete
+DOCX upload-to-model-to-delete file lifecycle:
 
 ```bash
 ZAI_API_KEY='replace-me' make test-glm-live

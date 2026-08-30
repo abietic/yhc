@@ -362,9 +362,12 @@ finish reason fail locally or fail the attempt rather than downgrading.
 The same package exposes a bounded
 [`FilesClient`](../../../engine/provider/agenticglm/files.go) for the official
 [`/files`](https://docs.bigmodel.cn/api-reference/%E6%96%87%E4%BB%B6-api/%E4%B8%8A%E4%BC%A0%E6%96%87%E4%BB%B6)
-resource lifecycle needed by model `file_id` input. The implemented scope is
-`purpose=agent`: exact-size upload up to 20 MiB, purpose-filtered cursor listing,
-and explicit deletion. Remote file IDs are caller
+resource lifecycle. It implements exact-size upload up to a conservative 20
+MiB, purpose-filtered cursor listing, and explicit deletion for the official
+`agent` and `user_data` purposes. `agent` resources belong to the Agent API;
+Chat Completions `file_id` input uses `user_data` and one of that purpose's
+document formats. The upload client sends a deterministic MIME type and rejects
+purpose/extension mismatches before dispatch. Remote file IDs are caller
 resources and are not persisted as conversation or Session state.
 
 `engine/auth` supplies provider-default credentials and exact named

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"path"
 	"strconv"
@@ -28,8 +30,11 @@ type FilePurpose string
 
 const (
 	// FilePurposeAgent is the exact purpose implemented for reusable
-	// GLM-5.3-Flash model input.
+	// GLM Agent API input.
 	FilePurposeAgent FilePurpose = "agent"
+	// FilePurposeUserData is the official reusable user-file purpose used by
+	// Chat Completions file_id input.
+	FilePurposeUserData FilePurpose = "user_data"
 )
 
 // FileOrder is the only ordering key currently documented by GLM Files API.
@@ -46,7 +51,8 @@ type FilesConfig struct {
 }
 
 // UploadFileParams describes one bounded upload. PurposeAgent is the purpose
-// intended for model/agent input and has a documented 20 MiB per-file limit.
+// intended for model/agent input. This client applies a conservative 20 MiB
+// per-file bound to every supported purpose.
 type UploadFileParams struct {
 	Filename string
 	Content  io.Reader
@@ -133,7 +139,17 @@ func (c *FilesClient) Upload(ctx context.Context, params UploadFileParams) (*Fil
 	if err := writer.WriteField("purpose", string(params.Purpose)); err != nil {
 		return nil, &ProtocolError{ReasonCode: "files_multipart_build_failed"}
 	}
-	part, err := writer.CreateFormFile("file", params.Filename)
+	contentType, ok := uploadFileContentType(params.Purpose, params.Filename)
+	if !ok {
+		return nil, filesValidationError("file_type_unsupported")
+	}
+	partHeader := make(textproto.MIMEHeader)
+	partHeader.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{
+		"name":     "file",
+		"filename": params.Filename,
+	}))
+	partHeader.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(partHeader)
 	if err != nil {
 		return nil, &ProtocolError{ReasonCode: "files_multipart_build_failed"}
 	}
@@ -314,7 +330,7 @@ func filesEndpoint(baseURL string) (string, error) {
 func validateUploadFileParams(params UploadFileParams) error {
 	filename := strings.TrimSpace(params.Filename)
 	if filename == "" || filename != params.Filename || strings.ContainsAny(filename, "/\\\x00") ||
-		!utf8.ValidString(filename) || utf8.RuneCountInString(filename) > maxFileNameRunes {
+		!utf8.ValidString(filename) || utf8.RuneCountInString(filename) > maxFileNameRunes || containsControl(filename) {
 		return filesValidationError("filename_invalid")
 	}
 	if params.Content == nil {
@@ -326,7 +342,48 @@ func validateUploadFileParams(params UploadFileParams) error {
 	if !validFilePurpose(params.Purpose) {
 		return filesValidationError("purpose_invalid")
 	}
+	if _, ok := uploadFileContentType(params.Purpose, filename); !ok {
+		return filesValidationError("file_type_unsupported")
+	}
 	return nil
+}
+
+func uploadFileContentType(purpose FilePurpose, filename string) (string, bool) {
+	switch strings.ToLower(path.Ext(filename)) {
+	case ".pdf":
+		return "application/pdf", true
+	case ".doc":
+		return "application/msword", true
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document", true
+	case ".xls":
+		return "application/vnd.ms-excel", true
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", true
+	case ".txt":
+		return "text/plain; charset=utf-8", purpose == FilePurposeAgent
+	case ".png":
+		return "image/png", purpose == FilePurposeAgent
+	case ".jpg", ".jpeg":
+		return "image/jpeg", purpose == FilePurposeAgent
+	case ".csv":
+		return "text/csv; charset=utf-8", purpose == FilePurposeAgent
+	case ".ppt":
+		return "application/vnd.ms-powerpoint", purpose == FilePurposeUserData
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation", purpose == FilePurposeUserData
+	default:
+		return "", false
+	}
+}
+
+func containsControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func listFilesQuery(options *ListFilesOptions) (url.Values, error) {
@@ -356,7 +413,7 @@ func listFilesQuery(options *ListFilesOptions) (url.Values, error) {
 }
 
 func validFilePurpose(purpose FilePurpose) bool {
-	return purpose == FilePurposeAgent
+	return purpose == FilePurposeAgent || purpose == FilePurposeUserData
 }
 
 func validFileID(fileID string) bool {

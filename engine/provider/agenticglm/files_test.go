@@ -39,6 +39,9 @@ func TestFilesClientLifecycleUsesOfficialGLMEndpoints(t *testing.T) {
 			if header.Filename != "canary.txt" || string(body) != "glm-file" {
 				t.Errorf("file = %q %q", header.Filename, body)
 			}
+			if got := header.Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+				t.Errorf("file content type = %q", got)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"id":"file-glm-1","object":"file","bytes":8,"created_at":1700000000,"filename":"canary.txt","purpose":"agent"}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/files":
@@ -109,6 +112,8 @@ func TestFilesClientRejectsInvalidInputsBeforeDispatch(t *testing.T) {
 	for _, params := range []UploadFileParams{
 		{},
 		{Filename: "../x.txt", Content: strings.NewReader("x"), Size: 1, Purpose: FilePurposeAgent},
+		{Filename: "x\nheader.txt", Content: strings.NewReader("x"), Size: 1, Purpose: FilePurposeAgent},
+		{Filename: "x.exe", Content: strings.NewReader("x"), Size: 1, Purpose: FilePurposeAgent},
 		{Filename: "x.txt", Content: strings.NewReader("x"), Size: 1},
 		{Filename: "x.txt", Content: strings.NewReader("x"), Size: maxAgentFileUploadBytes + 1, Purpose: FilePurposeAgent},
 		{Filename: "x.txt", Content: strings.NewReader("too long"), Size: 1, Purpose: FilePurposeAgent},
@@ -133,8 +138,42 @@ func TestFilesClientRejectsInvalidInputsBeforeDispatch(t *testing.T) {
 			t.Fatalf("List accepted %#v", options)
 		}
 	}
+	if !validFilePurpose(FilePurposeUserData) {
+		t.Fatal("user_data purpose should be admitted")
+	}
 	if calls.Load() != 0 {
 		t.Fatalf("provider calls = %d", calls.Load())
+	}
+}
+
+func TestUploadFilePurposeEnforcesOfficialFormats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		purpose  FilePurpose
+		filename string
+		wantOK   bool
+	}{
+		{name: "agent text", purpose: FilePurposeAgent, filename: "input.txt", wantOK: true},
+		{name: "agent image", purpose: FilePurposeAgent, filename: "input.png", wantOK: true},
+		{name: "agent rejects presentation", purpose: FilePurposeAgent, filename: "input.pptx"},
+		{name: "user data document", purpose: FilePurposeUserData, filename: "input.docx", wantOK: true},
+		{name: "user data presentation", purpose: FilePurposeUserData, filename: "input.pptx", wantOK: true},
+		{name: "user data rejects text", purpose: FilePurposeUserData, filename: "input.txt"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateUploadFileParams(UploadFileParams{
+				Filename: test.filename,
+				Content:  strings.NewReader("x"),
+				Size:     1,
+				Purpose:  test.purpose,
+			})
+			if (err == nil) != test.wantOK {
+				t.Fatalf("validation error = %v, wantOK=%t", err, test.wantOK)
+			}
+		})
 	}
 }
 
