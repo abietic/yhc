@@ -1146,12 +1146,12 @@ dependencies:
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/crypto
-    version: v0.52.0
-    source_url: https://pkg.go.dev/golang.org/x/crypto@v0.52.0
+    version: v0.55.0
+    source_url: https://pkg.go.dev/golang.org/x/crypto@v0.55.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/crypto@v0.52.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/crypto@v0.55.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed
@@ -1176,12 +1176,12 @@ dependencies:
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/net
-    version: v0.55.0
-    source_url: https://pkg.go.dev/golang.org/x/net@v0.55.0
+    version: v0.57.0
+    source_url: https://pkg.go.dev/golang.org/x/net@v0.57.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/net@v0.55.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/net@v0.57.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed
@@ -1196,42 +1196,42 @@ dependencies:
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/sync
-    version: v0.21.0
-    source_url: https://pkg.go.dev/golang.org/x/sync@v0.21.0
+    version: v0.22.0
+    source_url: https://pkg.go.dev/golang.org/x/sync@v0.22.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/sync@v0.21.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/sync@v0.22.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/sys
-    version: v0.46.0
-    source_url: https://pkg.go.dev/golang.org/x/sys@v0.46.0
+    version: v0.47.0
+    source_url: https://pkg.go.dev/golang.org/x/sys@v0.47.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/sys@v0.46.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/sys@v0.47.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/term
-    version: v0.43.0
-    source_url: https://pkg.go.dev/golang.org/x/term@v0.43.0
+    version: v0.45.0
+    source_url: https://pkg.go.dev/golang.org/x/term@v0.45.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/term@v0.43.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/term@v0.45.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed
   - module: golang.org/x/text
-    version: v0.39.0
-    source_url: https://pkg.go.dev/golang.org/x/text@v0.39.0
+    version: v0.41.0
+    source_url: https://pkg.go.dev/golang.org/x/text@v0.41.0
     licenses:
       - spdx: BSD-3-Clause
         license_file: LICENSE
-        license_url: https://pkg.go.dev/golang.org/x/text@v0.39.0?tab=licenses
+        license_url: https://pkg.go.dev/golang.org/x/text@v0.41.0?tab=licenses
     compatibility: allow
     notice: retain
     detector_override: detector-spdx-classification-reviewed
