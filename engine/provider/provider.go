@@ -18,6 +18,7 @@ import (
 
 	enginemessages "github.com/abietic/yhc/engine/messages"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
+	"github.com/abietic/yhc/engine/provider/agenticglm"
 )
 
 // Provider enumerates supported model providers.
@@ -25,6 +26,7 @@ type Provider string
 
 const (
 	ProviderAgenticDeepSeek Provider = "agenticdeepseek"
+	ProviderAgenticGLM      Provider = "agenticglm"
 	ProviderAgenticClaude   Provider = "agenticclaude"
 	ProviderAgenticGemini   Provider = "agenticgemini"
 	ProviderAgenticOpenAI   Provider = "agenticopenai"
@@ -59,6 +61,8 @@ func newAgenticModel(ctx context.Context, cfg Config) (model.AgenticModel, error
 	switch cfg.Provider {
 	case ProviderAgenticDeepSeek:
 		return newAgenticDeepSeek(ctx, cfg)
+	case ProviderAgenticGLM:
+		return newAgenticGLM(ctx, cfg)
 	case ProviderAgenticClaude:
 		return newAgenticClaude(ctx, cfg)
 	case ProviderAgenticGemini:
@@ -70,8 +74,31 @@ func newAgenticModel(ctx context.Context, cfg Config) (model.AgenticModel, error
 	case ProviderAgenticQwen:
 		return newAgenticQwen(ctx, cfg)
 	default:
-		return nil, fmt.Errorf("unknown provider: %q (supported: agenticdeepseek, agenticclaude, agenticgemini, agenticopenai, agenticark, agenticqwen)", cfg.Provider)
+		return nil, fmt.Errorf("unknown provider: %q (supported: agenticdeepseek, agenticglm, agenticclaude, agenticgemini, agenticopenai, agenticark, agenticqwen)", cfg.Provider)
 	}
+}
+
+func newAgenticGLM(ctx context.Context, cfg Config) (model.AgenticModel, error) {
+	if cfg.APIKey == "" {
+		cfg.APIKey = os.Getenv("ZAI_API_KEY")
+	}
+	if cfg.APIKey == "" {
+		cfg.APIKey = os.Getenv("ZHIPUAI_API_KEY")
+	}
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("API key required for Agentic GLM. Set PROV_API_KEY, ZAI_API_KEY, or ZHIPUAI_API_KEY env var")
+	}
+	if cfg.Model == "" {
+		cfg.Model = agenticglm.ModelGLM53Flash
+	}
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = os.Getenv("ZAI_BASE_URL")
+	}
+	return agenticglm.New(ctx, &agenticglm.Config{
+		BaseURL: cfg.BaseURL,
+		APIKey:  cfg.APIKey,
+		Model:   cfg.Model,
+	})
 }
 
 func newAgenticDeepSeek(ctx context.Context, cfg Config) (model.AgenticModel, error) {
@@ -905,10 +932,17 @@ func agenticFinishReason(am *schema.AgenticMessage) string {
 		if ext, ok := meta.Extension.(*agenticdeepseek.ResponseMetaExtension); ok && ext != nil {
 			return ext.FinishReason
 		}
+		if ext, ok := meta.Extension.(*agenticglm.ResponseMetaExtension); ok && ext != nil {
+			return ext.FinishReason
+		}
 	}
 	for _, value := range am.Extra {
 		switch ext := value.(type) {
 		case *agenticdeepseek.ResponseMetaExtension:
+			if ext != nil && ext.FinishReason != "" {
+				return ext.FinishReason
+			}
+		case *agenticglm.ResponseMetaExtension:
 			if ext != nil && ext.FinishReason != "" {
 				return ext.FinishReason
 			}

@@ -314,6 +314,11 @@ test-deepseek-live:
 	@if [[ -z "$$DEEPSEEK_API_KEY" ]]; then echo "DEEPSEEK_API_KEY is required" >&2; exit 1; fi
 	DEEPSEEK_LIVE_TEST=1 $(GO) test ./engine/provider/agenticdeepseek -run '^TestLiveDeepSeek(ResponsesAndFilesLifecycle|FlashVisionStream)$$' -count=1 -timeout=6m
 
+.PHONY: test-glm-live
+test-glm-live:
+	@if [[ -z "$$ZAI_API_KEY" && -z "$$ZHIPUAI_API_KEY" ]]; then echo "ZAI_API_KEY or ZHIPUAI_API_KEY is required" >&2; exit 1; fi
+	GLM_LIVE_TEST=1 $(GO) test ./engine/provider/agenticglm -run '^TestLiveGLM53FlashAndFilesLifecycle$$' -count=1 -timeout=4m
+
 # ── Debug ───────────────────────────────────────────────
 # Launches the agent under delve in headless mode so any IDE can attach.
 # Connect from VSCode / GoLand / Trae via "Go Remote" or "Attach to Process"

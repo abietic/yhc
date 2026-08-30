@@ -22,12 +22,14 @@ import (
 	"github.com/abietic/yhc/engine/internal/providerorigin"
 	enginemodel "github.com/abietic/yhc/engine/model"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
+	"github.com/abietic/yhc/engine/provider/agenticglm"
 )
 
 const (
 	claudeAnthropicBetaHeader   = "anthropic-beta"
 	claudeTaskBudgetsBetaHeader = "task-budgets-2026-03-13"
 	providerAgenticDeepSeek     = "agenticdeepseek"
+	providerAgenticGLM          = "agenticglm"
 	providerAgenticClaude       = "agenticclaude"
 	providerAgenticGemini       = "agenticgemini"
 	providerAgenticOpenAI       = "agenticopenai"
@@ -280,6 +282,10 @@ func buildProviderEffortOption(
 	case enginemodel.ReasoningDialectDeepSeek:
 		return agenticdeepseek.WithReasoningEffort(
 			agenticdeepseek.ReasoningEffort(resolved.WireEffort),
+		), true, nil
+	case enginemodel.ReasoningDialectGLM:
+		return agenticglm.WithReasoningEffort(
+			agenticglm.ReasoningEffort(resolved.WireEffort),
 		), true, nil
 	default:
 		return model.Option{}, false, fmt.Errorf(

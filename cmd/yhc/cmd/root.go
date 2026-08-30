@@ -148,7 +148,7 @@ func newResumeCommand() *cobra.Command {
 }
 
 func bindRuntimeFlags(flags *pflag.FlagSet, values *runtimeFlags) {
-	flags.StringVar(&values.provider, "provider", "", "Model provider (anthropic/claude, openai, google/gemini, deepseek, qwen, ark)")
+	flags.StringVar(&values.provider, "provider", "", "Model provider (anthropic/claude, openai, google/gemini, deepseek, glm/zhipu/zai, qwen, ark)")
 	flags.StringVar(&values.model, "model", "", "Model name")
 	flags.StringVar(&values.modelProfile, "model-profile", "", "Configured user model profile")
 	flags.StringVar(&values.apiKey, "api-key", "", "API key")
@@ -1219,7 +1219,7 @@ func buildEngineConfigForCWD(
 	if err != nil {
 		safeErr := redactSensitiveText(err.Error(), flags.apiKey)
 		fmt.Fprintf(stderr, "Model init error: %s\n", safeErr)
-		fmt.Fprintln(stderr, "\nSupported providers: anthropic/claude, openai, google/gemini, deepseek, qwen, ark")
+		fmt.Fprintln(stderr, "\nSupported providers: anthropic/claude, openai, google/gemini, deepseek, glm/zhipu/zai, qwen, ark")
 		fmt.Fprintln(stderr, "Set provider-specific variables or PROV, PROV_API_KEY, PROV_MODEL; flags have highest priority")
 		return engine.QueryEngineConfig{}, provider.ResolvedConfig{}, appConfig, errors.New(safeErr)
 	}

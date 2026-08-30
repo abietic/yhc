@@ -230,6 +230,9 @@ func buildDefaultEntries() []RegistryEntry {
 		{modelID: "deepseek-flash", provider: "DeepSeek", displayName: "DeepSeek V4.1 Flash", toolCalls: true, streaming: true},
 		{modelID: "deepseek-v4-pro", provider: "DeepSeek", displayName: "DeepSeek V4 Pro", toolCalls: true, streaming: true},
 
+		// GLM
+		{modelID: "glm-5.3-flash", provider: "GLM", displayName: "GLM 5.3 Flash", toolCalls: true, streaming: true},
+
 		// Qwen
 		{modelID: "qwen-max", provider: "Qwen", displayName: "Qwen Max", toolCalls: true, streaming: true},
 		{modelID: "qwen-plus", provider: "Qwen", displayName: "Qwen Plus", toolCalls: true, streaming: true},

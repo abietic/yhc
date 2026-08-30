@@ -445,10 +445,11 @@ func TestP290TargetRouteCacheConstructsOnceConcurrently(t *testing.T) {
 	}
 }
 
-func TestP290CurrentErrorsAndSixProviderConstructorsDoNotExposeSecret(t *testing.T) {
+func TestP290CurrentErrorsAndSevenProviderConstructorsDoNotExposeSecret(t *testing.T) {
 	ctx := context.Background()
 	providers := []Provider{
 		ProviderAgenticDeepSeek,
+		ProviderAgenticGLM,
 		ProviderAgenticClaude,
 		ProviderAgenticGemini,
 		ProviderAgenticOpenAI,
@@ -457,9 +458,13 @@ func TestP290CurrentErrorsAndSixProviderConstructorsDoNotExposeSecret(t *testing
 	}
 	for _, provider := range providers {
 		t.Run(string(provider), func(t *testing.T) {
+			modelID := "p290-construction-only-model"
+			if provider == ProviderAgenticGLM {
+				modelID = "glm-5.3-flash"
+			}
 			constructed, err := newAgenticModel(ctx, Config{
 				Provider: provider,
-				Model:    "p290-construction-only-model",
+				Model:    modelID,
 				APIKey:   p290SecretSentinel,
 				BaseURL:  "https://provider.example.invalid/v1",
 			})

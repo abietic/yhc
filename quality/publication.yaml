@@ -26,6 +26,7 @@ privacy:
     - developers.openai.com
     - diataxis.fr
     - docs.github.com
+    - docs.bigmodel.cn
     - generativelanguage.googleapis.com
     - github.com
     - go.dev
@@ -33,6 +34,7 @@ privacy:
     - learn.chatgpt.com
     - mermaid.js.org
     - openai.com
+    - open.bigmodel.cn
     - pkg.go.dev
     - platform.claude.com
     - proxy.golang.org

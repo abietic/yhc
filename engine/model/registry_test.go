@@ -24,6 +24,7 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 		{"OpenAI", 4},
 		{"Google", 2},
 		{"DeepSeek", 2},
+		{"GLM", 1},
 		{"Qwen", 2},
 	}
 
@@ -39,6 +40,18 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDefaultRegistryPublishesExactGLM53Flash(t *testing.T) {
+	t.Parallel()
+
+	models := DefaultRegistry().ByProvider("GLM")
+	if len(models) != 1 || models[0].ModelID != "glm-5.3-flash" {
+		t.Fatalf("GLM registry = %#v", models)
+	}
+	if !models[0].SupportsMedia || !models[0].SupportsThinking || !models[0].SupportsToolCalls {
+		t.Fatalf("GLM registry capability projection = %#v", models[0])
 	}
 }
 

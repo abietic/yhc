@@ -482,7 +482,7 @@ func TestConfiguredRuntimeRedactsNamedConstructionFailure(t *testing.T) {
 	}
 }
 
-func TestConfiguredRuntimeLowersNamedProfilesThroughSixAdapters(t *testing.T) {
+func TestConfiguredRuntimeLowersNamedProfilesThroughSevenAdapters(t *testing.T) {
 	t.Setenv("PORTFOLIO_ADAPTER_TEST_KEY", portfolioRuntimeSecret)
 	cases := []struct {
 		provider string
@@ -493,6 +493,7 @@ func TestConfiguredRuntimeLowersNamedProfilesThroughSixAdapters(t *testing.T) {
 		{"openai", "gpt-4o", ProviderAgenticOpenAI},
 		{"google", "gemini-2.5-flash", ProviderAgenticGemini},
 		{"deepseek", "deepseek-v4-flash", ProviderAgenticDeepSeek},
+		{"glm", "glm-5.3-flash", ProviderAgenticGLM},
 		{"qwen", "qwen-max", ProviderAgenticQwen},
 		{"ark", "doubao-1.5-pro-32k", ProviderAgenticArk},
 	}

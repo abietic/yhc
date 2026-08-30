@@ -149,6 +149,7 @@ of the diagnosis.
 | OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | Gemini | `GOOGLE_API_KEY`, `GEMINI_API_KEY` | `GOOGLE_BASE_URL` |
 | DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
+| GLM | `ZAI_API_KEY`, `ZHIPUAI_API_KEY` | `ZAI_BASE_URL` |
 | Qwen | `DASHSCOPE_API_KEY`, `QWEN_API_KEY` | `QWEN_BASE_URL` |
 | Ark | `ARK_API_KEY` | `ARK_BASE_URL` |
 
@@ -223,6 +224,27 @@ default DeepSeek clients allow up to 30 seconds for TLS establishment, still bou
 cancellation; this does not retry a billable request or fix an unavailable
 network. A history-snip notice reports a
 separate local context transformation, not the cause of a network failure.
+
+GLM defaults to the exact `glm-5.3-flash` model and accepts the public aliases
+`glm`, `zhipu`, and `zai`. It exposes `default`, `low`, `high`, and `max`
+reasoning choices; the three explicit values are sent unchanged to GLM's
+native `reasoning_effort` field. For a local source run:
+
+```bash
+ZAI_API_KEY='replace-me' make run PROV=glm PROV_MODEL=glm-5.3-flash
+```
+
+The dedicated adapter supports ordered text, image, video, and file input. Its
+Files client implements `purpose=agent` upload, listing, and
+deletion for reusable `file_id` input. The external canary exercises streaming
+text, inline vision, and the complete upload-to-model-to-delete file lifecycle:
+
+```bash
+ZAI_API_KEY='replace-me' make test-glm-live
+```
+
+The canary uses a real provider account and may consume provider quota.
+Ordinary repository tests never enable it.
 
 This controls provider request reasoning, not the local continuation token
 budget. The selected value is checkpointed with the active model binding. An

@@ -73,6 +73,7 @@ For example, on Apple silicon:
 | `openai` | `gpt-4o` | `OPENAI_API_KEY` |
 | `google`, `gemini` | `gemini-2.5-flash` | `GOOGLE_API_KEY`, `GEMINI_API_KEY` |
 | `deepseek` | `deepseek-flash` | `DEEPSEEK_API_KEY` |
+| `glm`, `zhipu`, `zai` | `glm-5.3-flash` | `ZAI_API_KEY`, `ZHIPUAI_API_KEY` |
 | `qwen`, `dashscope` | `qwen-max` | `DASHSCOPE_API_KEY`, `QWEN_API_KEY` |
 | `ark`, `volcengine` | `doubao-1.5-pro-32k` | `ARK_API_KEY` |
 
