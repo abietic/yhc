@@ -71,6 +71,14 @@ type QueuedPromptSnapshot struct {
 	Unavailable bool
 }
 
+// QueuedPromptState binds one presentation-safe pending queue snapshot to the
+// coordinator revision observed under the same lock. Entrypoint adapters use
+// the revision to reject out-of-order transport projections.
+type QueuedPromptState struct {
+	Revision uint64
+	Items    []QueuedPromptSnapshot
+}
+
 // QueuedPromptDraftImage is a detached, ephemeral queue-edit result. Data is
 // copied from the session MediaStore and never aliases the durable record.
 type QueuedPromptDraftImage struct {
@@ -131,7 +139,9 @@ func (e *QueryEngine) EnqueuePromptInput(
 		queued, enqueueErr := e.enqueueUserInputWithOwner(
 			coordinator,
 			scope,
+			generateUUID(),
 			UserTurnInput{Display: display, Prompt: prompt},
+			false,
 		)
 		if enqueueErr != nil {
 			return QueuedPromptSnapshot{}, enqueueErr
@@ -243,29 +253,108 @@ func (e *QueryEngine) EnqueueUserInput(input UserTurnInput) (QueuedUserInput, er
 	if err != nil {
 		return QueuedUserInput{}, err
 	}
-	return e.enqueueUserInputWithOwner(coordinator, scope, input)
+	return e.enqueueUserInputWithOwner(coordinator, scope, generateUUID(), input, false)
+}
+
+// EnqueueUserInputWithID durably admits one text prompt under a caller-owned
+// stable identity. Repeating the same identity and payload is idempotent;
+// reusing the identity for different input fails closed. Entrypoint adapters
+// use this only after validating their public request identity.
+func (e *QueryEngine) EnqueueUserInputWithID(
+	id string,
+	input UserTurnInput,
+) (QueuedUserInput, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return QueuedUserInput{}, fmt.Errorf("queued input ID is required")
+	}
+	if len(input.Images) > 0 {
+		return QueuedUserInput{}, fmt.Errorf(
+			"ID-bound queued rich input requires typed prompt admission",
+		)
+	}
+	e.goalProviderBoundary.RLock()
+	defer e.goalProviderBoundary.RUnlock()
+	coordinator, scope, err := e.runtimeInputOwner()
+	if err != nil {
+		return QueuedUserInput{}, err
+	}
+	return e.enqueueUserInputWithOwner(coordinator, scope, id, input, true)
+}
+
+// HasQueuedUserInputAdmission reports whether one exact ID-bound text request
+// was already accepted. It never creates or requeues work; a payload mismatch
+// returns RuntimeInputConflictError.
+func (e *QueryEngine) HasQueuedUserInputAdmission(
+	id string,
+	input UserTurnInput,
+) (bool, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false, fmt.Errorf("queued input ID is required")
+	}
+	if len(input.Images) > 0 {
+		return false, fmt.Errorf(
+			"ID-bound queued rich input requires typed prompt admission",
+		)
+	}
+	e.goalProviderBoundary.RLock()
+	defer e.goalProviderBoundary.RUnlock()
+	coordinator, scope, err := e.runtimeInputOwner()
+	if err != nil {
+		return false, err
+	}
+	item, err := queuedUserRuntimeItem(scope, id, input)
+	if err != nil {
+		return false, err
+	}
+	return coordinator.HasAdmissionReceipt(item)
 }
 
 func (e *QueryEngine) enqueueUserInputWithOwner(
 	coordinator *RuntimeInputCoordinator,
 	scope RuntimeInputScope,
+	itemID string,
 	input UserTurnInput,
+	retryStable bool,
 ) (QueuedUserInput, error) {
+	item, err := queuedUserRuntimeItem(scope, itemID, input)
+	if err != nil {
+		return QueuedUserInput{}, err
+	}
+	if retryStable {
+		item, err = coordinator.EnqueueBoundedWithAdmissionReceipt(
+			item,
+			maxQueuedUserInputs,
+		)
+	} else {
+		item, err = coordinator.EnqueueBounded(item, maxQueuedUserInputs)
+	}
+	if err != nil {
+		return QueuedUserInput{}, err
+	}
+	return queuedUserInput(item), nil
+}
+
+func queuedUserRuntimeItem(
+	scope RuntimeInputScope,
+	itemID string,
+	input UserTurnInput,
+) (RuntimeItem, error) {
 	input.Prompt = strings.TrimSpace(input.Prompt)
 	input.Display = strings.TrimSpace(input.Display)
 	if input.Prompt == "" {
-		return QueuedUserInput{}, fmt.Errorf("queued input is empty")
+		return RuntimeItem{}, fmt.Errorf("queued input is empty")
 	}
 	if len(input.Images) > 0 {
-		return QueuedUserInput{}, fmt.Errorf(
+		return RuntimeItem{}, fmt.Errorf(
 			"queued rich input requires typed prompt admission",
 		)
 	}
 	if input.Display == "" {
 		input.Display = input.Prompt
 	}
-	itemID := generateUUID()
-	item := RuntimeItem{
+	return RuntimeItem{
 		ID:         itemID,
 		Kind:       RuntimeItemUserPrompt,
 		Priority:   RuntimePriorityNext,
@@ -277,22 +366,24 @@ func (e *QueryEngine) enqueueUserInputWithOwner(
 			Display: input.Display,
 			Prompt:  input.Prompt,
 		},
-	}
-	item, err := coordinator.EnqueueBounded(item, maxQueuedUserInputs)
-	if err != nil {
-		return QueuedUserInput{}, err
-	}
-	return queuedUserInput(item), nil
+	}, nil
 }
 
 // QueuedPromptInputs returns ordered, presentation-safe pending prompt
 // snapshots. It never materializes media bytes.
 func (e *QueryEngine) QueuedPromptInputs() ([]QueuedPromptSnapshot, error) {
+	state, err := e.QueuedPromptState()
+	return state.Items, err
+}
+
+// QueuedPromptState returns the same pending prompt projection plus its
+// atomic engine-owned coordinator revision. It never materializes media bytes.
+func (e *QueryEngine) QueuedPromptState() (QueuedPromptState, error) {
 	coordinator, scope, err := e.runtimeInputOwner()
 	if err != nil {
-		return nil, err
+		return QueuedPromptState{}, err
 	}
-	items := coordinator.Snapshot(scope)
+	items, revision := coordinator.snapshotWithRevision(scope)
 	result := make([]QueuedPromptSnapshot, 0, len(items))
 	for _, item := range items {
 		if item.Kind != RuntimeItemUserPrompt {
@@ -309,7 +400,7 @@ func (e *QueryEngine) QueuedPromptInputs() ([]QueuedPromptSnapshot, error) {
 		}
 		result = append(result, snapshot)
 	}
-	return result, nil
+	return QueuedPromptState{Revision: revision, Items: result}, nil
 }
 
 // QueuedUserInputs returns defensive snapshots of pending user inputs for this

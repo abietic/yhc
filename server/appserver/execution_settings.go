@@ -225,7 +225,12 @@ func (s *session) updateExecutionSettings(
 		}
 		return ExecutionSettingsResponse{}, fmt.Errorf("execution setting rejected")
 	}
-	return s.executionSettings(ctx)
+	settings, err := s.executionSettings(ctx)
+	if err == nil {
+		s.unblockRuntimeDrain()
+		s.signalRuntimeDrain()
+	}
+	return settings, err
 }
 
 func containsExecutionOption(options []string, candidate string) bool {

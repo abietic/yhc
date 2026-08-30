@@ -1,6 +1,7 @@
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const UUID_PATTERN = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const ATTACH_TURN_FIELDS = new Set(['sessionID', 'prompt', 'clientTurnID']);
+const QUEUE_PROMPT_FIELDS = new Set(['sessionID', 'prompt', 'clientQueueID']);
 const DURABLE_IMPORT_FIELDS = new Set(['sessionID', 'confirmLegacyStopped']);
 const EXECUTION_FIELDS = new Set([
   'model',
@@ -31,13 +32,25 @@ function requireAttachTurn(payload) {
     }
   }
   requireSessionID(payload.sessionID);
-  if (typeof payload.clientTurnID !== 'string' || !UUID_PATTERN.test(payload.clientTurnID)) {
-    throw new TypeError('client turn id must be a UUID');
+  const clientTurnID = requireUUID(payload.clientTurnID, 'client turn id');
+  return {
+    prompt: requirePrompt(payload.prompt),
+    client_turn_id: clientTurnID,
+  };
+}
+
+function requireUUID(value, label) {
+  if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
+    throw new TypeError(`${label} must be a UUID`);
   }
-  if (typeof payload.prompt !== 'string') {
+  return value.toLowerCase();
+}
+
+function requirePrompt(value) {
+  if (typeof value !== 'string') {
     throw new TypeError('prompt must be a string');
   }
-  const prompt = payload.prompt.trim();
+  const prompt = value.trim();
   if (prompt === '') {
     throw new TypeError('prompt is required');
   }
@@ -55,9 +68,22 @@ function requireAttachTurn(payload) {
   if (new TextEncoder().encode(prompt).byteLength > 262144) {
     throw new TypeError('prompt exceeds 262144 bytes');
   }
+  return prompt;
+}
+
+function requireQueuePrompt(payload) {
+  if (payload === null || typeof payload !== 'object') {
+    throw new TypeError('queue prompt payload required');
+  }
+  for (const field of Object.keys(payload)) {
+    if (!QUEUE_PROMPT_FIELDS.has(field)) {
+      throw new TypeError('unsupported queue prompt field');
+    }
+  }
+  requireSessionID(payload.sessionID);
   return {
-    prompt,
-    client_turn_id: payload.clientTurnID,
+    prompt: requirePrompt(payload.prompt),
+    client_queue_id: requireUUID(payload.clientQueueID, 'client queue id'),
   };
 }
 
@@ -174,6 +200,18 @@ function operationPath(operation, payload = {}) {
         prompt: payload.prompt,
         client_turn_id: payload.clientTurnID,
       }];
+    case 'listQueuedPrompts':
+      return [`/v1/sessions/${id()}/queued-prompts`, 'GET'];
+    case 'queuePrompt':
+      return [
+        `/v1/sessions/${id()}/queued-prompts`,
+        'POST',
+        requireQueuePrompt(payload),
+      ];
+    case 'cancelQueuedPrompt': {
+      const queueID = encodeURIComponent(requireUUID(payload.queueID, 'queue id'));
+      return [`/v1/sessions/${id()}/queued-prompts/${queueID}`, 'DELETE'];
+    }
     case 'attachTurn':
       return [
         `/v1/durable-sessions/${id()}/attach-turn`,

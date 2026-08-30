@@ -2,6 +2,8 @@ package engine
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,8 +22,11 @@ import (
 )
 
 const (
-	runtimeInputEnvelopeVersion          = 1
+	runtimeInputEnvelopeLegacyVersion    = 1
+	runtimeInputEnvelopeVersion          = 2
 	runtimeItemVersion                   = 1
+	runtimeInputAdmissionReceiptVersion  = 1
+	runtimeInputAdmissionDigestAlgorithm = "sha256-v1"
 	runtimeGoalContinuationLegacyVersion = 1
 	runtimeGoalContinuationVersion       = 2
 	runtimeItemRejectionVersion          = 1
@@ -61,6 +66,24 @@ const (
 	RuntimeItemProcessing RuntimeItemState = "processing"
 	RuntimeItemRejected   RuntimeItemState = "rejected"
 )
+
+// RuntimeInputConflictError reports reuse of one durable runtime-item identity
+// with a different payload. Callers must not retry the conflicting payload
+// under a fresh identity automatically because the original request may have
+// crossed the delivery boundary already.
+type RuntimeInputConflictError struct {
+	ID string
+}
+
+func (e *RuntimeInputConflictError) Error() string {
+	if e == nil || strings.TrimSpace(e.ID) == "" {
+		return "runtime input coordinator: item identity conflicts with an existing payload"
+	}
+	return fmt.Sprintf(
+		"runtime input coordinator: item ID %q conflicts with an existing payload",
+		e.ID,
+	)
+}
 
 // RuntimeStopMode distinguishes a safe-boundary stop from an immediate
 // cancellation request. Immediate still relies on the active model/tool
@@ -219,31 +242,48 @@ type RuntimeInputCoordinatorConfig struct {
 }
 
 type runtimeInputEnvelope struct {
-	Version      int           `json:"version"`
-	Revision     uint64        `json:"revision"`
-	NextSequence uint64        `json:"next_sequence"`
-	Items        []RuntimeItem `json:"items"`
+	Version           int                            `json:"version"`
+	Revision          uint64                         `json:"revision"`
+	NextSequence      uint64                         `json:"next_sequence"`
+	Items             []RuntimeItem                  `json:"items"`
+	AdmissionReceipts []runtimeInputAdmissionReceipt `json:"admission_receipts,omitempty"`
+}
+
+// runtimeInputAdmissionReceipt is a durable acknowledgement tombstone for one
+// retry-stable caller identity. It retains only a versioned payload digest and
+// original ordering metadata; the prompt remains owned by the runtime ledger
+// while pending and by the transcript after delivery.
+type runtimeInputAdmissionReceipt struct {
+	Version         int               `json:"version"`
+	ID              string            `json:"id"`
+	Kind            RuntimeItemKind   `json:"kind"`
+	Scope           RuntimeInputScope `json:"scope"`
+	DigestAlgorithm string            `json:"digest_algorithm"`
+	PayloadDigest   string            `json:"payload_digest"`
+	Sequence        uint64            `json:"sequence"`
+	EnqueuedAt      time.Time         `json:"enqueued_at"`
 }
 
 // RuntimeInputCoordinator is the single live buffer around query-kernel runs.
 // File state is committed before memory state, so callers never observe an
 // enqueue, claim, cancellation, or settlement that was not durably accepted.
 type RuntimeInputCoordinator struct {
-	mu              sync.Mutex
-	scope           RuntimeInputScope
-	path            string
-	clock           func() time.Time
-	revision        uint64
-	nextSequence    uint64
-	items           []RuntimeItem
-	delivered       map[string]struct{}
-	deliveryLookup  func([]string) (map[string]struct{}, error)
-	mediaStore      *mediastore.Store
-	promptWriter    *runtimePromptWriter
-	submitting      map[string]struct{}
-	recoveryPending bool
-	notify          chan struct{}
-	goalNotify      chan struct{}
+	mu                sync.Mutex
+	scope             RuntimeInputScope
+	path              string
+	clock             func() time.Time
+	revision          uint64
+	nextSequence      uint64
+	items             []RuntimeItem
+	admissionReceipts map[string]runtimeInputAdmissionReceipt
+	delivered         map[string]struct{}
+	deliveryLookup    func([]string) (map[string]struct{}, error)
+	mediaStore        *mediastore.Store
+	promptWriter      *runtimePromptWriter
+	submitting        map[string]struct{}
+	recoveryPending   bool
+	notify            chan struct{}
+	goalNotify        chan struct{}
 }
 
 // NewRuntimeInputCoordinator constructs and recovers one coordinator. Delivered
@@ -264,15 +304,16 @@ func NewRuntimeInputCoordinator(
 			ThreadID:  strings.TrimSpace(config.ThreadID),
 			AgentID:   strings.TrimSpace(config.AgentID),
 		},
-		path:           strings.TrimSpace(config.Path),
-		clock:          clock,
-		delivered:      make(map[string]struct{}, len(deliveredIDs)),
-		deliveryLookup: config.DeliveryLookup,
-		mediaStore:     config.mediaStore,
-		promptWriter:   &runtimePromptWriter{},
-		submitting:     make(map[string]struct{}),
-		notify:         make(chan struct{}, 1),
-		goalNotify:     make(chan struct{}, 1),
+		path:              strings.TrimSpace(config.Path),
+		clock:             clock,
+		admissionReceipts: make(map[string]runtimeInputAdmissionReceipt),
+		delivered:         make(map[string]struct{}, len(deliveredIDs)),
+		deliveryLookup:    config.DeliveryLookup,
+		mediaStore:        config.mediaStore,
+		promptWriter:      &runtimePromptWriter{},
+		submitting:        make(map[string]struct{}),
+		notify:            make(chan struct{}, 1),
+		goalNotify:        make(chan struct{}, 1),
 	}
 	for id := range deliveredIDs {
 		coordinator.delivered[id] = struct{}{}
@@ -287,6 +328,44 @@ func NewRuntimeInputCoordinator(
 	coordinator.revision = envelope.Revision
 	coordinator.nextSequence = envelope.NextSequence
 	coordinator.items = cloneRuntimeItems(envelope.Items)
+	receiptSequences := make(map[uint64]string, len(envelope.AdmissionReceipts))
+	for _, receipt := range envelope.AdmissionReceipts {
+		if err := validateRuntimeInputAdmissionReceipt(receipt); err != nil {
+			return nil, fmt.Errorf(
+				"runtime input coordinator: recover admission receipt %q: %w",
+				receipt.ID,
+				err,
+			)
+		}
+		if !runtimeScopesEqual(receipt.Scope, coordinator.scope) {
+			return nil, fmt.Errorf(
+				"runtime input coordinator: admission receipt %q has invalid scope",
+				receipt.ID,
+			)
+		}
+		if receipt.Sequence > coordinator.nextSequence {
+			return nil, fmt.Errorf(
+				"runtime input coordinator: admission receipt %q exceeds next sequence",
+				receipt.ID,
+			)
+		}
+		if previousID, duplicate := receiptSequences[receipt.Sequence]; duplicate {
+			return nil, fmt.Errorf(
+				"runtime input coordinator: admission receipts %q and %q share sequence %d",
+				previousID,
+				receipt.ID,
+				receipt.Sequence,
+			)
+		}
+		if _, duplicate := coordinator.admissionReceipts[receipt.ID]; duplicate {
+			return nil, fmt.Errorf(
+				"runtime input coordinator: duplicate admission receipt %q",
+				receipt.ID,
+			)
+		}
+		receiptSequences[receipt.Sequence] = receipt.ID
+		coordinator.admissionReceipts[receipt.ID] = receipt
+	}
 	ledgerIDs := make([]string, 0, len(coordinator.items))
 	for _, item := range coordinator.items {
 		ledgerIDs = append(ledgerIDs, item.ID)
@@ -300,7 +379,7 @@ func NewRuntimeInputCoordinator(
 	}
 
 	recovered := make([]RuntimeItem, 0, len(coordinator.items))
-	changed := false
+	changed := envelope.Version != runtimeInputEnvelopeVersion
 	for _, item := range coordinator.items {
 		if item.UserPrompt != nil && item.UserPrompt.durablePrompt != nil {
 			item.UserPrompt.writer = coordinator.promptWriter
@@ -311,6 +390,22 @@ func NewRuntimeInputCoordinator(
 		}
 		if err := coordinator.validateItem(item); err != nil {
 			return nil, fmt.Errorf("runtime input coordinator: recover item %q: %w", item.ID, err)
+		}
+		if receipt, exists := coordinator.admissionReceipts[item.ID]; exists {
+			matches, receiptErr := runtimeInputAdmissionReceiptMatches(receipt, item)
+			if receiptErr != nil || !matches ||
+				receipt.Sequence != item.Sequence ||
+				!receipt.EnqueuedAt.Equal(item.EnqueuedAt) {
+				return nil, fmt.Errorf(
+					"runtime input coordinator: item %q does not match its admission receipt",
+					item.ID,
+				)
+			}
+		} else {
+			if receipt, receiptErr := runtimeInputAdmissionReceiptFor(item); receiptErr == nil {
+				coordinator.admissionReceipts[item.ID] = receipt
+				changed = true
+			}
 		}
 		if item.State == RuntimeItemRejected {
 			changed = true
@@ -412,7 +507,13 @@ func (c *RuntimeInputCoordinator) EnqueueBounded(
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	items, err := c.enqueueBatchLocked([]RuntimeItem{item}, item.Kind, maxPending, true)
+	items, err := c.enqueueBatchLocked(
+		[]RuntimeItem{item},
+		item.Kind,
+		maxPending,
+		true,
+		false,
+	)
 	if err != nil {
 		return RuntimeItem{}, err
 	}
@@ -420,6 +521,67 @@ func (c *RuntimeInputCoordinator) EnqueueBounded(
 		return RuntimeItem{}, fmt.Errorf("runtime input coordinator: enqueue returned %d items", len(items))
 	}
 	return items[0], nil
+}
+
+// EnqueueBoundedWithAdmissionReceipt atomically persists one plain text user
+// prompt and its retry acknowledgement. The receipt outlives cancellation and
+// settlement so a lost transport ACK cannot create duplicate work.
+func (c *RuntimeInputCoordinator) EnqueueBoundedWithAdmissionReceipt(
+	item RuntimeItem,
+	maxPending int,
+) (RuntimeItem, error) {
+	if c == nil {
+		return RuntimeItem{}, fmt.Errorf("runtime input coordinator is unavailable")
+	}
+	if maxPending <= 0 {
+		return RuntimeItem{}, fmt.Errorf("runtime input coordinator: max pending must be positive")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	items, err := c.enqueueBatchLocked(
+		[]RuntimeItem{item},
+		RuntimeItemUserPrompt,
+		maxPending,
+		true,
+		true,
+	)
+	if err != nil {
+		return RuntimeItem{}, err
+	}
+	if len(items) != 1 {
+		return RuntimeItem{}, fmt.Errorf("runtime input coordinator: enqueue returned %d items", len(items))
+	}
+	return items[0], nil
+}
+
+// HasAdmissionReceipt reports whether one exact retry-stable plain text item
+// was previously accepted. Payload reuse under the same identity fails closed.
+func (c *RuntimeInputCoordinator) HasAdmissionReceipt(
+	item RuntimeItem,
+) (bool, error) {
+	if c == nil {
+		return false, fmt.Errorf("runtime input coordinator is unavailable")
+	}
+	item = cloneRuntimeItem(item)
+	item.ID = strings.TrimSpace(item.ID)
+	normalizeRuntimeItemPayload(&item)
+	item.Version = runtimeItemVersion
+	item.Priority = normalizedRuntimePriority(item.Priority)
+	item.Scope = c.normalizeScope(item.Scope)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	receipt, ok := c.admissionReceipts[item.ID]
+	if !ok {
+		return false, nil
+	}
+	matches, err := runtimeInputAdmissionReceiptMatches(receipt, item)
+	if err != nil {
+		return false, err
+	}
+	if !matches {
+		return false, &RuntimeInputConflictError{ID: item.ID}
+	}
+	return true, nil
 }
 
 // enqueueDormantGoalContinuation durably accepts one Goal continuation without
@@ -442,6 +604,7 @@ func (c *RuntimeInputCoordinator) enqueueDormantGoalContinuation(
 		[]RuntimeItem{item},
 		RuntimeItemGoalContinuation,
 		1,
+		false,
 		false,
 	)
 	if err != nil {
@@ -468,7 +631,7 @@ func (c *RuntimeInputCoordinator) EnqueueBatch(items []RuntimeItem) ([]RuntimeIt
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.enqueueBatchLocked(items, "", 0, true)
+	return c.enqueueBatchLocked(items, "", 0, true, false)
 }
 
 func (c *RuntimeInputCoordinator) enqueueBatchLocked(
@@ -476,8 +639,10 @@ func (c *RuntimeInputCoordinator) enqueueBatchLocked(
 	boundedKind RuntimeItemKind,
 	maxPending int,
 	publishSignal bool,
+	recordAdmission bool,
 ) ([]RuntimeItem, error) {
 	candidate := cloneRuntimeItems(c.items)
+	candidateReceipts := cloneRuntimeInputAdmissionReceipts(c.admissionReceipts)
 	nextSequence := c.nextSequence
 	accepted := make([]RuntimeItem, 0, len(items))
 	changed := false
@@ -491,13 +656,47 @@ func (c *RuntimeInputCoordinator) enqueueBatchLocked(
 		if item.UserPrompt != nil && len(item.UserPrompt.Images) > 0 {
 			return nil, errors.New(runtimeInlineImagesDecodeOnly)
 		}
+		item.Version = runtimeItemVersion
+		item.Priority = normalizedRuntimePriority(item.Priority)
+		item.Scope = c.normalizeScope(item.Scope)
+		if recordAdmission {
+			if receipt, ok := candidateReceipts[item.ID]; ok {
+				matches, err := runtimeInputAdmissionReceiptMatches(receipt, item)
+				if err != nil {
+					return nil, err
+				}
+				if !matches {
+					return nil, &RuntimeInputConflictError{ID: item.ID}
+				}
+				if existing, exists := runtimeItemByID(candidate, item.ID); exists {
+					normalized := item
+					normalized.Version = existing.Version
+					normalized.Sequence = existing.Sequence
+					normalized.EnqueuedAt = existing.EnqueuedAt
+					normalized.State = existing.State
+					if !runtimeItemsEqual(existing, normalized) {
+						return nil, &RuntimeInputConflictError{ID: item.ID}
+					}
+					accepted = append(accepted, cloneRuntimeItem(existing))
+					continue
+				}
+				item.Sequence = receipt.Sequence
+				item.EnqueuedAt = receipt.EnqueuedAt
+				item.State = RuntimeItemProcessing
+				if err := c.validateItem(item); err != nil {
+					return nil, err
+				}
+				accepted = append(accepted, item)
+				continue
+			}
+		}
 		if _, delivered := c.delivered[item.ID]; delivered {
+			if recordAdmission {
+				return nil, &RuntimeInputConflictError{ID: item.ID}
+			}
 			if err := validateRuntimeItemUserImages(item); err != nil {
 				return nil, err
 			}
-			item.Version = runtimeItemVersion
-			item.Priority = normalizedRuntimePriority(item.Priority)
-			item.Scope = c.normalizeScope(item.Scope)
 			item.State = RuntimeItemProcessing
 			accepted = append(accepted, item)
 			continue
@@ -509,19 +708,19 @@ func (c *RuntimeInputCoordinator) enqueueBatchLocked(
 			normalized.EnqueuedAt = existing.EnqueuedAt
 			normalized.State = existing.State
 			if !runtimeItemsEqual(existing, normalized) {
-				return nil, fmt.Errorf(
-					"runtime input coordinator: item ID %q conflicts with an existing payload",
-					item.ID,
-				)
+				return nil, &RuntimeInputConflictError{ID: item.ID}
+			}
+			if recordAdmission {
+				receipt, err := runtimeInputAdmissionReceiptFor(existing)
+				if err != nil {
+					return nil, err
+				}
+				candidateReceipts[item.ID] = receipt
+				changed = true
 			}
 			accepted = append(accepted, cloneRuntimeItem(existing))
 			continue
 		}
-		item.Version = runtimeItemVersion
-		if item.Priority == "" {
-			item.Priority = RuntimePriorityNext
-		}
-		item.Scope = c.normalizeScope(item.Scope)
 		if boundedKind != "" && item.Kind == boundedKind {
 			pending := 0
 			for _, candidateItem := range candidate {
@@ -548,6 +747,13 @@ func (c *RuntimeInputCoordinator) enqueueBatchLocked(
 		if err := c.validateItem(item); err != nil {
 			return nil, err
 		}
+		if recordAdmission {
+			receipt, err := runtimeInputAdmissionReceiptFor(item)
+			if err != nil {
+				return nil, err
+			}
+			candidateReceipts[item.ID] = receipt
+		}
 		candidate = append(candidate, item)
 		accepted = append(accepted, cloneRuntimeItem(item))
 		changed = true
@@ -556,10 +762,16 @@ func (c *RuntimeInputCoordinator) enqueueBatchLocked(
 		return accepted, nil
 	}
 	revision := c.revision + 1
-	if err := c.persistLocked(candidate, nextSequence, revision); err != nil {
+	if err := c.persistStateLocked(
+		candidate,
+		nextSequence,
+		revision,
+		candidateReceipts,
+	); err != nil {
 		return nil, err
 	}
 	c.items = candidate
+	c.admissionReceipts = candidateReceipts
 	c.nextSequence = nextSequence
 	c.revision = revision
 	if publishSignal && hasTransportEligiblePending(candidate) {
@@ -1104,8 +1316,15 @@ func (c *RuntimeInputCoordinator) editPendingUserPrompt(
 
 // Snapshot returns detached pending items in scheduling order.
 func (c *RuntimeInputCoordinator) Snapshot(scope RuntimeInputScope) []RuntimeItem {
+	items, _ := c.snapshotWithRevision(scope)
+	return items
+}
+
+func (c *RuntimeInputCoordinator) snapshotWithRevision(
+	scope RuntimeInputScope,
+) ([]RuntimeItem, uint64) {
 	if c == nil {
-		return nil
+		return nil, 0
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1122,7 +1341,7 @@ func (c *RuntimeInputCoordinator) Snapshot(scope RuntimeInputScope) []RuntimeIte
 		}
 		return items[i].Sequence < items[j].Sequence
 	})
-	return items
+	return items, c.revision
 }
 
 func queuedPromptDraft(item RuntimeItem) (QueuedPromptDraft, error) {
@@ -1594,14 +1813,29 @@ func (c *RuntimeInputCoordinator) persistLocked(
 	nextSequence uint64,
 	revision uint64,
 ) error {
+	return c.persistStateLocked(
+		items,
+		nextSequence,
+		revision,
+		c.admissionReceipts,
+	)
+}
+
+func (c *RuntimeInputCoordinator) persistStateLocked(
+	items []RuntimeItem,
+	nextSequence uint64,
+	revision uint64,
+	admissionReceipts map[string]runtimeInputAdmissionReceipt,
+) error {
 	if c.path == "" {
 		return nil
 	}
 	envelope := runtimeInputEnvelope{
-		Version:      runtimeInputEnvelopeVersion,
-		Revision:     revision,
-		NextSequence: nextSequence,
-		Items:        cloneRuntimeItems(items),
+		Version:           runtimeInputEnvelopeVersion,
+		Revision:          revision,
+		NextSequence:      nextSequence,
+		Items:             cloneRuntimeItems(items),
+		AdmissionReceipts: orderedRuntimeInputAdmissionReceipts(admissionReceipts),
 	}
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
@@ -1695,7 +1929,8 @@ func loadRuntimeInputEnvelope(path string) (runtimeInputEnvelope, error) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return runtimeInputEnvelope{}, fmt.Errorf("runtime input coordinator: decode ledger: %w", err)
 	}
-	if envelope.Version != runtimeInputEnvelopeVersion {
+	if envelope.Version != runtimeInputEnvelopeLegacyVersion &&
+		envelope.Version != runtimeInputEnvelopeVersion {
 		return runtimeInputEnvelope{}, fmt.Errorf(
 			"runtime input coordinator: unsupported ledger version %d",
 			envelope.Version,
@@ -1737,6 +1972,150 @@ func runtimeItemByID(items []RuntimeItem, id string) (RuntimeItem, bool) {
 		}
 	}
 	return RuntimeItem{}, false
+}
+
+type runtimeInputAdmissionPayload struct {
+	Version    int                  `json:"version"`
+	Kind       RuntimeItemKind      `json:"kind"`
+	Priority   RuntimeInputPriority `json:"priority"`
+	Scope      RuntimeInputScope    `json:"scope"`
+	IsMeta     bool                 `json:"is_meta,omitempty"`
+	Origin     string               `json:"origin,omitempty"`
+	Provenance string               `json:"provenance,omitempty"`
+	Display    string               `json:"display,omitempty"`
+	Prompt     string               `json:"prompt"`
+}
+
+func runtimeInputAdmissionDigest(item RuntimeItem) (string, error) {
+	if item.Kind != RuntimeItemUserPrompt || item.UserPrompt == nil ||
+		len(item.UserPrompt.Images) != 0 ||
+		item.UserPrompt.durablePrompt != nil ||
+		item.UserPrompt.materializedInput != nil {
+		return "", fmt.Errorf("admission receipt requires one plain text user prompt")
+	}
+	prompt := strings.TrimSpace(item.UserPrompt.Prompt)
+	if prompt == "" {
+		return "", fmt.Errorf("admission receipt prompt is required")
+	}
+	display := strings.TrimSpace(item.UserPrompt.Display)
+	if display == "" {
+		display = prompt
+	}
+	payload, err := json.Marshal(runtimeInputAdmissionPayload{
+		Version:    runtimeInputAdmissionReceiptVersion,
+		Kind:       item.Kind,
+		Priority:   normalizedRuntimePriority(item.Priority),
+		Scope:      item.Scope,
+		IsMeta:     item.IsMeta,
+		Origin:     strings.TrimSpace(item.Origin),
+		Provenance: strings.TrimSpace(item.Provenance),
+		Display:    display,
+		Prompt:     prompt,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal admission payload: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func runtimeInputAdmissionReceiptFor(
+	item RuntimeItem,
+) (runtimeInputAdmissionReceipt, error) {
+	digest, err := runtimeInputAdmissionDigest(item)
+	if err != nil {
+		return runtimeInputAdmissionReceipt{}, err
+	}
+	if item.Sequence == 0 || item.EnqueuedAt.IsZero() {
+		return runtimeInputAdmissionReceipt{}, fmt.Errorf(
+			"admission receipt requires original ordering metadata",
+		)
+	}
+	receipt := runtimeInputAdmissionReceipt{
+		Version:         runtimeInputAdmissionReceiptVersion,
+		ID:              strings.TrimSpace(item.ID),
+		Kind:            item.Kind,
+		Scope:           item.Scope,
+		DigestAlgorithm: runtimeInputAdmissionDigestAlgorithm,
+		PayloadDigest:   digest,
+		Sequence:        item.Sequence,
+		EnqueuedAt:      item.EnqueuedAt.UTC(),
+	}
+	if err := validateRuntimeInputAdmissionReceipt(receipt); err != nil {
+		return runtimeInputAdmissionReceipt{}, err
+	}
+	return receipt, nil
+}
+
+func validateRuntimeInputAdmissionReceipt(
+	receipt runtimeInputAdmissionReceipt,
+) error {
+	if receipt.Version != runtimeInputAdmissionReceiptVersion {
+		return fmt.Errorf("unsupported version %d", receipt.Version)
+	}
+	if strings.TrimSpace(receipt.ID) == "" {
+		return fmt.Errorf("identity is required")
+	}
+	if receipt.Kind != RuntimeItemUserPrompt {
+		return fmt.Errorf("unsupported kind %q", receipt.Kind)
+	}
+	if strings.TrimSpace(receipt.Scope.SessionID) == "" {
+		return fmt.Errorf("session scope is required")
+	}
+	if receipt.DigestAlgorithm != runtimeInputAdmissionDigestAlgorithm {
+		return fmt.Errorf("unsupported digest algorithm %q", receipt.DigestAlgorithm)
+	}
+	decoded, err := hex.DecodeString(receipt.PayloadDigest)
+	if err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("payload digest is invalid")
+	}
+	if receipt.Sequence == 0 || receipt.EnqueuedAt.IsZero() {
+		return fmt.Errorf("original ordering metadata is required")
+	}
+	return nil
+}
+
+func runtimeInputAdmissionReceiptMatches(
+	receipt runtimeInputAdmissionReceipt,
+	item RuntimeItem,
+) (bool, error) {
+	if err := validateRuntimeInputAdmissionReceipt(receipt); err != nil {
+		return false, err
+	}
+	digest, err := runtimeInputAdmissionDigest(item)
+	if err != nil {
+		return false, err
+	}
+	return receipt.ID == strings.TrimSpace(item.ID) &&
+		receipt.Kind == item.Kind &&
+		runtimeScopesEqual(receipt.Scope, item.Scope) &&
+		receipt.PayloadDigest == digest, nil
+}
+
+func cloneRuntimeInputAdmissionReceipts(
+	receipts map[string]runtimeInputAdmissionReceipt,
+) map[string]runtimeInputAdmissionReceipt {
+	cloned := make(map[string]runtimeInputAdmissionReceipt, len(receipts))
+	for id, receipt := range receipts {
+		cloned[id] = receipt
+	}
+	return cloned
+}
+
+func orderedRuntimeInputAdmissionReceipts(
+	receipts map[string]runtimeInputAdmissionReceipt,
+) []runtimeInputAdmissionReceipt {
+	ordered := make([]runtimeInputAdmissionReceipt, 0, len(receipts))
+	for _, receipt := range receipts {
+		ordered = append(ordered, receipt)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].Sequence != ordered[j].Sequence {
+			return ordered[i].Sequence < ordered[j].Sequence
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
+	return ordered
 }
 
 func runtimeItemsEqual(left, right RuntimeItem) bool {

@@ -1018,6 +1018,51 @@ summary:focus-visible {
   outline: none;
 }
 
+.queued-prompts {
+  display: grid;
+  gap: 6px;
+  margin: 0 4px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.queued-prompt {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  background: var(--canvas-subtle);
+  font-size: 12px;
+}
+
+.queued-prompt::before {
+  content: "Queued";
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.queued-prompt-text {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-prompt .quiet {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
 .composer-bar {
   display: flex;
   flex-wrap: wrap;

@@ -10,6 +10,7 @@ import {
   buildRepeatedToolResolution,
   canImportDurableSession,
   canEditDraft,
+  canQueuePrompt,
   canSubmitTurn,
   descriptors,
   initialState,
@@ -18,6 +19,7 @@ import {
   modelRebindSelector,
   reducer,
   retainedClosedDescriptor,
+  sameQueueAttempt,
   sessionMatchesQuery,
   unverifiedPersistedDescriptor,
 } from '../../internal/webui/assets/state.mjs';
@@ -100,6 +102,11 @@ test('runtime snapshot replaces stale projection and advances its cursor', () =>
         { request_id: 'permission-1', kind: 'permission' },
         { request_id: 'permission-1', kind: 'permission' },
       ],
+      queued_prompts: [{
+        id: 'queue-1', display: 'run focused tests', state: 'pending',
+        enqueued_at: '2026-08-30T04:00:00Z',
+      }],
+      queued_prompts_revision: 3,
     },
   });
 
@@ -107,6 +114,155 @@ test('runtime snapshot replaces stale projection and advances its cursor', () =>
   assert.equal(state.sessions.s1.messages[0].content, 'restored');
   assert.equal(state.sessions.s1.interactions.length, 1);
   assert.equal(state.sessions.s1.attention, true);
+  assert.equal(state.sessions.s1.queuedPromptRevision, 3);
+  assert.deepEqual(state.sessions.s1.queuedPrompts, [{
+    id: 'queue-1',
+    display: 'run focused tests',
+    state: 'pending',
+    enqueuedAt: '2026-08-30T04:00:00Z',
+    unavailable: false,
+  }]);
+});
+
+test('queue projection is server-owned across SSE refresh and replay snapshots', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_UPSERT',
+    session: { id: 's1', live: true, queuedPrompts: [{ id: 'stale' }] },
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(1, 'queue.updated', { revision: 1, items: [
+      {
+        id: 'queue-1', display: 'next task', state: 'pending',
+        enqueued_at: '2026-08-30T04:00:00Z', secret: 'not projected',
+      },
+      { id: '../unsafe', display: 'ignored', state: 'pending' },
+      {
+        id: 'queue-2', display: '', state: 'pending', unavailable: true,
+        enqueued_at: '2026-08-30T04:01:00Z',
+      },
+    ] }, 's1', ''),
+  });
+  assert.deepEqual(state.sessions.s1.queuedPrompts, [
+    {
+      id: 'queue-1', display: 'next task', state: 'pending',
+      enqueuedAt: '2026-08-30T04:00:00Z', unavailable: false,
+    },
+    {
+      id: 'queue-2', display: '', state: 'pending',
+      enqueuedAt: '2026-08-30T04:01:00Z', unavailable: true,
+    },
+  ]);
+  state = reducer(state, {
+    type: 'SESSION_SNAPSHOT', id: 's1', snapshot: {
+      session: { id: 's1', live: true, status: 'idle' },
+      event_cursor: 2, messages: [], interactions: [], activity: [],
+      queued_prompts: [],
+      queued_prompts_revision: 2,
+    },
+  });
+  assert.deepEqual(state.sessions.s1.queuedPrompts, []);
+  assert.equal(state.sessions.s1.queuedPromptRevision, 2);
+});
+
+test('started queued commands promote one user row before queue removal', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_UPSERT',
+    session: {
+      id: 's1', live: true, status: 'running', active_turn_id: 'turn-1',
+      queuedPrompts: [{
+        id: 'queue-1', display: 'steer now', state: 'pending',
+        enqueuedAt: '2026-08-30T04:00:00Z', unavailable: false,
+      }],
+      queuedPromptRevision: 1,
+    },
+  });
+  const started = event(1, 'command_lifecycle', {
+    CommandUUID: 'queue-1', Phase: 'started',
+  }, 's1', 'turn-1');
+  state = reducer(state, { type: 'EVENT', event: started });
+  assert.equal(state.sessions.s1.queuedPrompts.length, 0);
+  assert.deepEqual(
+    state.sessions.s1.messages.map((message) => [message.role, message.content]),
+    [['user', 'steer now']],
+  );
+
+  state = reducer(state, { type: 'EVENT', event: started });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(2, 'queue.updated', { revision: 2, items: [] }, 's1', 'turn-1'),
+  });
+  assert.equal(state.sessions.s1.messages.length, 1);
+  assert.equal(state.sessions.s1.queuedPrompts.length, 0);
+  assert.equal(state.sessions.s1.queuedPromptRevision, 2);
+});
+
+test('queue projections reject stale mutation responses and snapshots', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_UPSERT',
+    session: { id: 's1', live: true },
+  });
+  state = reducer(state, {
+    type: 'SESSION_QUEUE_SYNC', id: 's1', revision: 5,
+    items: [{
+      id: 'queue-new', display: 'newer', state: 'pending',
+      enqueued_at: '2026-08-30T04:00:00Z',
+    }],
+  });
+  state = reducer(state, {
+    type: 'SESSION_QUEUE_SYNC', id: 's1', revision: 4,
+    items: [{
+      id: 'queue-old', display: 'older', state: 'pending',
+      enqueued_at: '2026-08-30T03:00:00Z',
+    }],
+  });
+  state = reducer(state, {
+    type: 'SESSION_SNAPSHOT', id: 's1', snapshot: {
+      session: { id: 's1', live: true, status: 'running' },
+      event_cursor: 9, messages: [], interactions: [], activity: [],
+      queued_prompts_revision: 3, queued_prompts: [],
+    },
+  });
+  assert.equal(state.sessions.s1.queuedPromptRevision, 5);
+  assert.equal(state.sessions.s1.queuedPrompts[0].id, 'queue-new');
+});
+
+test('runtime queue claim failures project a bounded error and exact recovery', () => {
+  let state = reducer(initialState(), {
+    type: 'SESSION_UPSERT',
+    session: { id: 's1', live: true, status: 'idle' },
+  });
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(1, 'queue.rewake_blocked', {
+      code: 'runtime_queue_blocked', secret: 'not rendered',
+    }, 's1', ''),
+  });
+  assert.equal(state.sessions.s1.status, 'error');
+  assert.equal(
+    state.sessions.s1.last_error,
+    'Queued work needs attention before it can continue.',
+  );
+  assert.equal(state.sessions.s1.notice, state.sessions.s1.last_error);
+
+  state = reducer(state, {
+    type: 'EVENT',
+    event: event(2, 'queue.rewake_ready', {
+      code: 'runtime_queue_ready', secret: 'not rendered',
+    }, 's1', ''),
+  });
+  assert.equal(state.sessions.s1.status, 'idle');
+  assert.equal(state.sessions.s1.last_error, '');
+  assert.equal(state.sessions.s1.notice, 'Ready.');
+});
+
+test('queue attempt identity prevents a late response from owning a newer draft', () => {
+  const first = { prompt: 'first', clientQueueID: 'queue-a' };
+  assert.equal(sameQueueAttempt(first, { ...first }), true);
+  assert.equal(sameQueueAttempt(
+    { prompt: 'second', clientQueueID: 'queue-b' }, first,
+  ), false);
+  assert.equal(sameQueueAttempt(undefined, first), false);
 });
 
 test('runtime snapshot replaces Activity with a safe coalesced server projection', () => {
@@ -1280,6 +1436,20 @@ test('send admission blocks engine and settings ownership but not context-only r
   assert.equal(canSubmitTurn({ ...session, active_turn_id: 'turn-1' }), false);
   for (const status of ['offline', 'restoring', 'saved', 'stopping']) {
     assert.equal(canSubmitTurn({ ...session, status }), false, status);
+  }
+});
+
+test('queue admission is available only for one live active turn', () => {
+  const active = {
+    live: true, activation: 'live', status: 'running', active_turn_id: 'turn-1',
+  };
+  assert.equal(canQueuePrompt(active), true);
+  assert.equal(canQueuePrompt({ ...active, status: 'waiting' }), true);
+  assert.equal(canQueuePrompt({ ...active, status: 'stopping' }), true);
+  assert.equal(canQueuePrompt({ ...active, active_turn_id: '' }), false);
+  assert.equal(canQueuePrompt({ ...active, live: false }), false);
+  for (const status of ['idle', 'offline', 'restoring', 'saved', 'error']) {
+    assert.equal(canQueuePrompt({ ...active, status }), false, status);
   }
 });
 

@@ -92,8 +92,10 @@ type EngineFactory func(context.Context, EngineOptions) (SessionEngine, error)
 
 type session struct {
 	mu              sync.Mutex
+	turnAdmissionMu sync.Mutex
 	cancelRequestMu sync.Mutex
 	closeOnce       sync.Once
+	runtimePumpOnce sync.Once
 	wg              sync.WaitGroup
 	closeDone       chan struct{}
 	closeErr        error
@@ -116,11 +118,13 @@ type session struct {
 	transcript  *transcriptPager
 	rootCtx     context.Context
 	rootCancel  context.CancelFunc
+	runtimeWake chan struct{}
 
 	activeTurnID          string
 	activePrompt          string
 	activeCancel          context.CancelFunc
 	immediateCancelTurnID string
+	runtimeDrainBlocked   bool
 	closed                bool
 }
 
@@ -184,7 +188,7 @@ func newSession(
 	if title == "" {
 		title = baseName(cwd)
 	}
-	s := &session{id: sessionID, threadID: threadID, cwd: cwd, title: title, workspaceLabel: workspaceLabel(cwd), createdAt: now, updatedAt: now, status: "idle", engine: runtime, lease: lease, events: newEventLog(eventBuffer), activity: newActivityLog(), permissions: permissions, transcript: newTranscriptPager(runtime.TranscriptPath()), rootCtx: sessionCtx, rootCancel: sessionCancel, closeDone: make(chan struct{})}
+	s := &session{id: sessionID, threadID: threadID, cwd: cwd, title: title, workspaceLabel: workspaceLabel(cwd), createdAt: now, updatedAt: now, status: "idle", engine: runtime, lease: lease, events: newEventLog(eventBuffer), activity: newActivityLog(), permissions: permissions, transcript: newTranscriptPager(runtime.TranscriptPath()), rootCtx: sessionCtx, rootCancel: sessionCancel, runtimeWake: make(chan struct{}, 1), closeDone: make(chan struct{})}
 	s.startAsyncHookPump()
 	s.publishSynthetic("session.created", "", map[string]any{"workspace_label": s.workspaceLabel, "resumed": input.Resume})
 	return s, nil
@@ -334,7 +338,9 @@ func (s *session) snapshot() SessionSnapshot {
 			known[snapshot.ID] = struct{}{}
 		}
 	}
-	return SessionSnapshot{Session: s.summary(), EventCursor: s.events.latestCursor(), Messages: messages, Interactions: s.permissions.interactions(), Activity: s.activity.snapshot()}
+	eventCursor := s.events.latestCursor()
+	queued, _ := s.readQueuedPrompts()
+	return SessionSnapshot{Session: s.summary(), EventCursor: eventCursor, Messages: messages, Interactions: s.permissions.interactions(), Activity: s.activity.snapshot(), QueuedPrompts: queued.Items, QueuedPromptsRevision: queued.Revision}
 }
 
 func snapshotConversationMessage(message *schema.Message, sequence uint64) SnapshotMessage {
@@ -402,15 +408,9 @@ func truncateSnapshotText(value string, maxRunes int) string {
 }
 
 func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
-	prompt := strings.TrimSpace(input.Prompt)
-	if prompt == "" {
-		return StartTurnResponse{}, fmt.Errorf("prompt is required")
-	}
-	if !utf8.ValidString(prompt) {
-		return StartTurnResponse{}, fmt.Errorf("prompt must be valid UTF-8")
-	}
-	if len(prompt) > maxPromptBytes {
-		return StartTurnResponse{}, fmt.Errorf("prompt exceeds %d bytes", maxPromptBytes)
+	prompt, err := validatePromptText(input.Prompt)
+	if err != nil {
+		return StartTurnResponse{}, err
 	}
 	turnID := strings.TrimSpace(input.ClientTurnID)
 	if turnID == "" {
@@ -419,6 +419,8 @@ func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
 		return StartTurnResponse{}, fmt.Errorf("client_turn_id must be a UUID: %w", err)
 	}
 
+	s.turnAdmissionMu.Lock()
+	defer s.turnAdmissionMu.Unlock()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -654,6 +656,8 @@ func (s *session) finishTurn(
 	reason engine.TerminalReason,
 	err error,
 ) {
+	s.turnAdmissionMu.Lock()
+	defer s.turnAdmissionMu.Unlock()
 	ownedImmediateCancel := s.ownsImmediateCancel(turnID)
 	status := "idle"
 	errText := terminalErrorText(reason, err, ownedImmediateCancel)
@@ -682,6 +686,9 @@ func (s *session) finishTurn(
 		"reason": reason,
 		"error":  errText,
 	})
+	if status == "idle" {
+		s.startNextRuntimeItemLocked()
+	}
 }
 
 func (s *session) cancelTurn(input CancelTurnRequest) error {
@@ -814,6 +821,7 @@ func (s *session) closeResources() {
 			s.closeErr = err
 		}
 	}()
+	s.turnAdmissionMu.Lock()
 	s.mu.Lock()
 	s.closed = true
 	s.status = "closed"
@@ -821,6 +829,7 @@ func (s *session) closeResources() {
 	s.activeCancel = nil
 	s.updatedAt = time.Now().UTC()
 	s.mu.Unlock()
+	s.turnAdmissionMu.Unlock()
 
 	s.permissions.close()
 	s.rootCancel()
@@ -934,6 +943,11 @@ func (s *session) publishEngine(event engine.QueryEvent, fallbackTurnID string) 
 	}
 	if entry, ok := projectEngineActivity(event, fallbackTurnID); ok {
 		s.publishActivity(entry)
+	}
+	if event.Type == engine.EventCommandLifecycle &&
+		event.CommandLifecycle != nil &&
+		event.CommandLifecycle.Phase == engine.CommandLifecycleStarted {
+		s.publishCurrentQueuedPrompts()
 	}
 }
 

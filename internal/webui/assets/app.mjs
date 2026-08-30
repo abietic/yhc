@@ -9,6 +9,7 @@ import {
   buildRepeatedToolResolution,
   canImportDurableSession,
   canEditDraft,
+  canQueuePrompt,
   canSubmitTurn,
   descriptors,
   initialState,
@@ -17,6 +18,7 @@ import {
   modelRebindSelector,
   reducer,
   retainedClosedDescriptor,
+  sameQueueAttempt,
   sessionMatchesQuery,
   unverifiedPersistedDescriptor,
 } from './state.mjs';
@@ -60,6 +62,7 @@ const TRANSCRIPT_LIMIT = 100;
 const streams = new Map();
 const transcriptLoads = new Set();
 const attachAttempts = new Map();
+const queueAttempts = new Map();
 let state = initialState();
 let transport;
 let surface = '';
@@ -242,6 +245,7 @@ function render() {
   renderReview(current);
   renderInteraction(current);
   renderLegacyImport(current);
+  renderQueuedPrompts(current);
 
   const loadEarlier = $('load-earlier');
   loadEarlier.hidden = !current?.transcriptHasMore;
@@ -264,6 +268,7 @@ function render() {
     $('prompt').value = '';
     $('prompt').disabled = true;
     $('send').disabled = true;
+    $('send').querySelector('span').textContent = 'Send';
     $('cancel').disabled = true;
     renderExecutionControls(null);
     return;
@@ -284,7 +289,10 @@ function render() {
     $('prompt').value = current.draft || '';
   }
   $('prompt').disabled = !backendReady || !canEditDraft(current);
-  $('send').disabled = !backendReady || !canSubmitTurn(current);
+  const queueAdmission = canQueuePrompt(current);
+  $('send').disabled = !backendReady || !(canSubmitTurn(current) || canQueuePrompt(current));
+  $('send').querySelector('span').textContent = queueAdmission ? 'Queue' : 'Send';
+  $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (⌘⏎)`;
   $('cancel').disabled = !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
 
@@ -301,6 +309,31 @@ function render() {
   } else {
     timeline.replaceChildren(...current.messages.map(renderMessage));
   }
+}
+
+function renderQueuedPrompts(current) {
+  const list = $('queued-prompts');
+  const items = current?.live && Array.isArray(current.queuedPrompts)
+    ? current.queuedPrompts
+    : [];
+  list.hidden = items.length === 0;
+  list.replaceChildren(...items.map((item) => {
+    const row = element('div', 'queued-prompt');
+    row.setAttribute('role', 'listitem');
+    row.dataset.queueId = item.id;
+    row.append(element(
+      'span',
+      'queued-prompt-text',
+      item.unavailable ? 'Queued prompt unavailable' : item.display,
+    ));
+    const remove = element('button', 'quiet', 'Remove');
+    remove.type = 'button';
+    remove.disabled = !backendAvailable(state);
+    remove.setAttribute('aria-label', `Remove queued prompt ${item.id.slice(0, 8)}`);
+    remove.onclick = () => cancelQueuedPrompt(current.id, item.id).catch(showError);
+    row.append(remove);
+    return row;
+  }));
 }
 
 function renderLegacyImport(session) {
@@ -1578,6 +1611,7 @@ async function closeSession(session) {
     await api('closeSession', { sessionID: session.id });
   }
   attachAttempts.delete(session.id);
+  queueAttempts.delete(session.id);
   stopStream(session.id);
   const retained = retainedClosedDescriptor(session);
   if (retained) {
@@ -1594,6 +1628,7 @@ function updateDraft(value) {
   const current = activeSession(state);
   if (!current) return;
   attachAttempts.delete(current.id);
+  queueAttempts.delete(current.id);
   state = reducer(state, {
     type: 'SESSION_DRAFT',
     id: current.id,
@@ -1606,8 +1641,43 @@ async function send(event) {
   event.preventDefault();
   const current = activeSession(state);
   const prompt = $('prompt').value.trim();
-  if (!current || !prompt || !canSubmitTurn(current)) return;
+  if (!current || !prompt ||
+    !(canSubmitTurn(current) || canQueuePrompt(current))) return;
   if (current.live) {
+    if (canQueuePrompt(current)) {
+      let attempt = queueAttempts.get(current.id);
+      if (!attempt || attempt.prompt !== prompt) {
+        attempt = { prompt, clientQueueID: crypto.randomUUID() };
+        queueAttempts.set(current.id, attempt);
+      }
+      try {
+        const response = await api('queuePrompt', {
+          sessionID: current.id,
+          prompt: attempt.prompt,
+          clientQueueID: attempt.clientQueueID,
+        });
+        if (response?.session_id !== current.id ||
+          response.accepted_id !== attempt.clientQueueID ||
+          typeof response.pending !== 'boolean' ||
+          !Number.isSafeInteger(response.revision) || response.revision < 0 ||
+          !Array.isArray(response.items)) {
+          throw new Error('Queue admission returned an invalid response.');
+        }
+        dispatch({
+          type: 'SESSION_QUEUE_SYNC', id: current.id,
+          revision: response.revision, items: response.items,
+        });
+        if (sameQueueAttempt(queueAttempts.get(current.id), attempt)) {
+          if (state.sessions[current.id]?.draft.trim() === attempt.prompt) {
+            dispatch({ type: 'SESSION_DRAFT', id: current.id, draft: '' });
+          }
+          queueAttempts.delete(current.id);
+        }
+      } catch (error) {
+        throw sessionScopedError(error, current.id);
+      }
+      return;
+    }
     try {
       await api('startTurn', {
         sessionID: current.id,
@@ -1660,6 +1730,18 @@ async function send(event) {
     dispatch({ type: 'ATTACH_FAILED', id: current.id, error: error.message });
     throw sessionScopedError(error, current.id);
   }
+}
+
+async function cancelQueuedPrompt(sessionID, queueID) {
+  const response = await api('cancelQueuedPrompt', { sessionID, queueID });
+  if (!Number.isSafeInteger(response?.revision) || response.revision < 0 ||
+    !Array.isArray(response?.items)) {
+    throw new Error('Queue cancellation returned an invalid response.');
+  }
+  dispatch({
+    type: 'SESSION_QUEUE_SYNC', id: sessionID,
+    revision: response.revision, items: response.items,
+  });
 }
 
 async function refreshImportedDurableSession(sessionID) {

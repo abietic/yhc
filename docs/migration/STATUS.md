@@ -3,7 +3,7 @@
 **Status:** current
 **Reference ledger:** `claude-code-ripe` (TypeScript)
 **Target:** `eino-agent` (Go)
-**Last verified:** 2026-08-27
+**Last verified:** 2026-08-30
 
 > **Ownership:** current verified evolution facts and volatile repository
 > counts. Future work belongs in [`PLAN.md`](PLAN.md), unresolved behavior in
@@ -17,19 +17,19 @@ Product scope and adoption rules are owned by
 
 ## Current Snapshot
 
-Generated with `go run ./scripts/migration_scan -json` on 2026-08-27:
+Generated with `go run ./scripts/migration_scan -json` on 2026-08-30:
 
 | Metric | Value |
 |---|---:|
-| Production Go files | 637 |
-| Production Go lines | 256,663 |
-| Product test Go files | 644 |
-| Product test Go lines | 245,572 |
+| Production Go files | 638 |
+| Production Go lines | 257,631 |
+| Product test Go files | 645 |
+| Product test Go lines | 246,861 |
 | Product Go packages | 69 |
 | Tool constructors | 44 |
 | Command files | 21 |
 | Canonical compatibility traces | 12 |
-| TUI production files / lines | 102 / 51,403 |
+| TUI production files / lines | 102 / 51,389 |
 | TUI test files / lines | 142 / 40,489 |
 | Reference files | 1,884 |
 
@@ -47,7 +47,7 @@ test, registration, or reference changes.
 | Providers | Six provider-specific Eino adapters share route identity, capability admission, canonical rounds, complete-request context admission, explicit failed-attempt disposal, cross-entrypoint bounded overload notices, redacted diagnostics, and exact private Agentic reasoning-origin proof. See [`model-providers.md`](../architecture/platform/model-providers.md). | External SDK drift and live-provider modality remain release-time risks, not accepted backlog by default. |
 | Goal lifecycle | Supported saved-root TUI and Plain composition roots default-enable Goal without a numeric cap. Explicit create/resume drives version-4 optional-budget state, exact provider-attempt accounting across restart, durable continuation, bounded headless execution, and negotiated ACP control. See [`query-engine.md`](../architecture/runtime/query-engine.md) and [`sessions.md`](../architecture/state/sessions.md). | No accepted Goal gap remains. Deterministic tests do not claim live-provider cost, representative adoption, remote CI, or physical-terminal evidence. |
 | TUI | Bubble Tea projects engine state through App-owned layout, theme, notification, selection, display-cell, transcript, bounded Markdown-renderer, and terminal-lifecycle owners. Ctrl+T now combines exact mixed rows, local filters/focus, defensive cached WorkItem/execution overview/activity, and execution-only lazy transcript/output/lineage tabs whose results remain bound to exact selection, generation, request, tab, and cursor identity. See [`architecture/tui/`](../architecture/tui/README.md). | No accepted Task Explorer gap remains; PTY evidence proves protocol/process behavior, not physical font or pixel layout. |
-| Desktop workbench | `yhc serve app` and the Electron host provide an authenticated loopback session workbench: selection replays durable chat history without resuming runtime, while first send activates the selected session. The renderer receives opaque workspace handles, safe Markdown text, typed interactions, and semantic Activity entries. See [`desktop-workbench.md`](../architecture/desktop-workbench.md). | Local package QA does not establish code signing, notarization, remote CI, or compatibility of an arbitrary external provider endpoint/tool dialect. |
+| Desktop workbench | `yhc serve app` and the Electron host provide an authenticated loopback session workbench: selection replays durable chat history without resuming runtime, while first send activates the selected session. Live Sessions expose model, reasoning-effort, and ordinary permission controls plus an engine-owned text runtime queue with durable retry receipts across settlement/restart, exact pending cancellation, monotonic snapshot/SSE reconciliation, attach-first resume ordering, bounded claim-failure visibility, and app-server-owned idle re-wake. The renderer receives opaque workspace handles, safe Markdown text, typed interactions, and semantic Activity entries. See [`desktop-workbench.md`](../architecture/desktop-workbench.md). | Rich queued media, Goal controls, Task Explorer, command discovery, and ghost suggestions are outside this Desktop slice rather than implied backlog. Admission receipts retain a digest for the Session-ledger lifetime; deleting the Session ledger is the privacy cleanup boundary. Local package QA does not establish code signing, notarization, remote CI, physical UI acceptance, or compatibility of an arbitrary external provider endpoint/tool dialect. |
 | ACP | ACP v1 supports staged load/replay, bounded listing, process-local observed-root inactive deletion, exact Plan tool-call identity across permission rounds, string-valued exact tool `rawOutput` on live and replay paths, OS-aware stdio-MCP environment identity, command/config/mode projection, permission/tool lifecycle, rich user ingress, public assistant replay, and negotiated Goal control. The former private migration names are rejected as ordinary unknown methods. See [`acp-adapter.md`](../architecture/platform/acp-adapter.md). | No accepted ACP gap remains; ACP v2 and assistant media are unaccepted, not hidden backlog. |
 | MCP | Project and ACP session managers publish exact tool generations; standalone MCP retains its intentionally narrow allowlist and policy. See [`mcp.md`](../architecture/capabilities/mcp.md). | Plugin-bundled activation and live management need separate accepted outcomes. |
 | Evaluation | The opt-in P43.0 harness drives the public headless binary through a loopback scripted provider against two fresh Git repositories and grades task outcome, writes, policy, usage, residual state, cleanup, and redacted publication. | It is non-authoritative, outside `verify`/required CI, and does not prove live providers, recovery, OS containment, or other entrypoints. |

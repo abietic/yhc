@@ -110,6 +110,16 @@ export function reducer(state, action) {
         ...session,
         draft: action.draft,
       }));
+    case 'SESSION_QUEUE_SYNC':
+      return updateSession(state, action.id, (session) => {
+        const revision = queueProjectionRevision(action.revision);
+        if (revision < session.queuedPromptRevision) return session;
+        return {
+          ...session,
+          queuedPromptRevision: revision,
+          queuedPrompts: queuedPromptQueue(action.items),
+        };
+      });
     case 'INTERACTION_DRAFT_UPDATE':
       if (!hasPendingInteraction(state.sessions[action.id], action.requestID)) return state;
       return updateSession(state, action.id, (session) => ({
@@ -197,6 +207,8 @@ function projectBackendUnavailableSession(session) {
     status: 'offline',
     active_turn_id: '',
     interactions: [],
+    queuedPrompts: [],
+    queuedPromptRevision: 0,
     interactionForms: {},
     attention: false,
     replaying: false,
@@ -239,6 +251,8 @@ function sessionDefaults(session) {
     settledTurnIDs: [],
     messages: [],
     interactions: [],
+    queuedPrompts: [],
+    queuedPromptRevision: 0,
     interactionForms: {},
     activity: [],
     cursor: 0,
@@ -266,6 +280,8 @@ function sessionDefaults(session) {
   return {
     ...normalized,
     import_required: Boolean(normalized.import_required),
+    queuedPrompts: queuedPromptQueue(normalized.queuedPrompts),
+    queuedPromptRevision: Math.max(0, queueProjectionRevision(normalized.queuedPromptRevision)),
     settledTurnIDs,
     activation: sessionActivation(normalized),
   };
@@ -691,6 +707,11 @@ function applySnapshot(state, id, snapshot) {
   const current = sessionDefaults(state.sessions[id] || { id });
   const interactions = interactionQueue(snapshot.interactions);
   const activity = activityQueue(snapshot.activity);
+  const queuedPromptRevision = queueProjectionRevision(snapshot.queued_prompts_revision);
+  const acceptQueuedPrompts = queuedPromptRevision >= current.queuedPromptRevision;
+  const queuedPrompts = acceptQueuedPrompts
+    ? queuedPromptQueue(snapshot.queued_prompts)
+    : current.queuedPrompts;
   const interactionForms = pruneInteractionForms(current.interactionForms, interactions);
   const snapshotMessages = Array.isArray(snapshot.messages)
     ? snapshot.messages.map(snapshotMessage)
@@ -717,6 +738,10 @@ function applySnapshot(state, id, snapshot) {
         interactions,
         interactionForms,
         activity,
+        queuedPrompts,
+        queuedPromptRevision: acceptQueuedPrompts
+          ? queuedPromptRevision
+          : current.queuedPromptRevision,
         settledTurnIDs,
         attention: interactions.length > 0,
         activation: interactions.length > 0 ? 'interaction_required' : 'live',
@@ -924,6 +949,8 @@ function applyEvent(state, event) {
       next.active_turn_id = '';
       next.live = false;
       next.activation = 'detached';
+      next.queuedPrompts = [];
+      next.queuedPromptRevision = 0;
       break;
     case 'user_message':
       next.messages = [
@@ -965,6 +992,49 @@ function applyEvent(state, event) {
     case 'turn.finished':
       applyTerminal(next, data, event.turn_id);
       break;
+    case 'command_lifecycle': {
+      const phase = data.phase ?? data.Phase;
+      const commandID = data.command_uuid ?? data.CommandUUID;
+      const queued = phase === 'started' && typeof commandID === 'string'
+        ? current.queuedPrompts.find((item) => item.id === commandID)
+        : null;
+      if (queued) {
+        next.queuedPrompts = current.queuedPrompts.filter((item) => item.id !== commandID);
+        if (!queued.unavailable && queued.display) {
+          next.messages = [
+            ...current.messages,
+            wireMessage(
+              { content: queued.display, source: 'runtime_queue' },
+              'user',
+              event.turn_id,
+              event.engine_sequence,
+            ),
+          ];
+          next.durable = true;
+          next.resumable = true;
+        }
+      }
+      break;
+    }
+    case 'queue.updated':
+      if (queueProjectionRevision(data.revision) >= current.queuedPromptRevision) {
+        next.queuedPromptRevision = queueProjectionRevision(data.revision);
+        next.queuedPrompts = queuedPromptQueue(data.items);
+      }
+      break;
+    case 'queue.rewake_blocked':
+      next.status = 'error';
+      next.last_error = 'Queued work needs attention before it can continue.';
+      next.notice = next.last_error;
+      break;
+    case 'queue.rewake_ready':
+      if (current.status === 'error' &&
+        current.last_error === 'Queued work needs attention before it can continue.') {
+        next.status = 'idle';
+        next.last_error = '';
+        next.notice = 'Ready.';
+      }
+      break;
     case 'interaction_requested': {
       next.interactions = mergeInteractions(current.interactions, data.interaction || data);
       next.status = 'waiting';
@@ -997,6 +1067,57 @@ function applyEvent(state, event) {
     activeID: state.activeID || event.session_id,
     sessions: { ...state.sessions, [event.session_id]: next },
   };
+}
+
+function normalizeQueuedPrompt(value) {
+  if (!value || typeof value !== 'object') return null;
+  const id = typeof value.id === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value.id)
+    ? value.id
+    : '';
+  const display = typeof value.display === 'string' && value.display.length <= 4096
+    ? value.display
+    : '';
+  const unavailable = Boolean(value.unavailable);
+  const state = value.state === 'pending' ? value.state : '';
+  const timestamp = value.enqueued_at ?? value.enqueuedAt;
+  const enqueuedAt = typeof timestamp === 'string' &&
+    timestamp.length <= 64 && Number.isFinite(Date.parse(timestamp))
+    ? timestamp
+    : '';
+  if (!id || (!display && !unavailable) || !state || !enqueuedAt) return null;
+  return {
+    id,
+    display,
+    state,
+    enqueuedAt,
+    unavailable,
+  };
+}
+
+function queuedPromptQueue(items) {
+  const seen = new Set();
+  const queued = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    const normalized = normalizeQueuedPrompt(item);
+    if (!normalized || seen.has(normalized.id)) continue;
+    seen.add(normalized.id);
+    queued.push(normalized);
+  }
+  return queued.slice(0, 32);
+}
+
+function queueProjectionRevision(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : -1;
+}
+
+export function sameQueueAttempt(current, expected) {
+  return Boolean(
+    current && expected &&
+    typeof current.clientQueueID === 'string' && current.clientQueueID &&
+    current.clientQueueID === expected.clientQueueID &&
+    current.prompt === expected.prompt,
+  );
 }
 
 function interactionQueue(items) {
@@ -1194,6 +1315,13 @@ export function canSubmitTurn(session) {
   const execution = executionDefaults(session.execution);
   if (['loading', 'updating'].includes(execution.status)) return false;
   return Boolean(execution.dispatchBlock?.context_only) || !execution.dispatchBlock;
+}
+
+export function canQueuePrompt(session) {
+  return Boolean(
+    session?.live && session.active_turn_id &&
+    ['running', 'waiting', 'stopping'].includes(session.status),
+  );
 }
 
 export function canEditDraft(session) {

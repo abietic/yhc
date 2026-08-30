@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-30
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -12,7 +12,9 @@
 The Desktop workbench gives one local three-panel view of sessions, chat, and
 semantic activity. It starts a loopback YHC app-server, keeps the renderer out
 of direct filesystem and process access, and sends normal coding turns through
-the existing `QueryEngine` only after the user submits a prompt.
+the existing `QueryEngine` only after the user submits a prompt. While one Turn
+is active, the same composer can durably queue later text prompts without
+interrupting it.
 
 ## Prerequisites
 
@@ -204,10 +206,20 @@ yhc serve app --web
 3. Type a request and send it. The center panel renders assistant Markdown,
    code, lists, tables, and safe links; untrusted HTML and unsafe URL schemes
    are not injected into the page.
-4. Use the right Activity panel to follow meaningful lifecycle changes such as
+4. While that Turn is running, waiting, or stopping, the button reads
+   **Queue**. Submit later text prompts there. Accepted items appear below the
+   composer in execution order. **Remove** cancels an item only while it is
+   still pending; once processing starts, use the normal active-Turn **Cancel**
+   control instead. A failed or uncertain queue request keeps the draft so the
+   same admission can be retried safely, including after the active Turn has
+   already ended: the durable admission receipt acknowledges the original
+   request without running it twice. Queue updates carry a server revision, so
+   a late response cannot replace a newer list or clear text typed for a later
+   attempt.
+5. Use the right Activity panel to follow meaningful lifecycle changes such as
    a turn, tool, task, Agent, or waiting interaction. It is deliberately not a
    raw streaming-event log.
-5. When a decision is needed, use the card in the conversation: permissions,
+6. When a decision is needed, use the card in the conversation: permissions,
    questions, Plan approval, and repeated-tool calls each have their own typed
    controls. Do not answer one kind of card by pasting JSON into chat.
 
@@ -278,6 +290,8 @@ configuration is no longer valid.
 | A saved session fails when first sent | Read the safe turn error, then choose a compatible provider/model or create a new session. The app cannot infer that one provider's credential or HTTP dialect is safe for another. |
 | Legacy history cannot continue | Stop every older producer, then use **Import and continue**. A failed import keeps history and the draft available for retry and does not modify the legacy bytes. |
 | A decision card has no actionable control | Reload session state. The server fails closed when it cannot project a safe typed interaction. |
+| A queued prompt can no longer be removed | It has already started or is no longer pending. Use **Cancel** only if it is the active Turn; otherwise refresh the Session snapshot. |
+| Desktop says queued work needs attention | Automatic idle draining stopped after a durable claim failed. Remove the exact still-pending row if it is no longer wanted, or correct an execution setting and retry that update; either successful mutation explicitly re-enables draining. Reloading alone does not claim the item. |
 | Desktop reports that the backend stopped unexpectedly | Close and reopen the complete YHC app. Existing projected history and drafts remain read-only until a fresh backend passes bootstrap; the interrupted turn and its old decisions are not resumed. |
 | Desktop app will not start | Run `make desktop-check`, then rebuild and stage the paired backend with `make desktop-dev`. A `YHC_BIN` override or stale staged binary whose version does not match the Electron shell is intentionally rejected. |
 

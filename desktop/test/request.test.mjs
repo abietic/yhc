@@ -38,6 +38,22 @@ test('desktop request map preserves every trusted operation', () => {
         prompt: 'hello', client_turn_id: 'client-1',
       },
     ]],
+    ['listQueuedPrompts', { sessionID }, [
+      `/v1/sessions/${sessionID}/queued-prompts`, 'GET',
+    ]],
+    ['queuePrompt', {
+      sessionID, prompt: 'after this', clientQueueID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479',
+    }, [
+      `/v1/sessions/${sessionID}/queued-prompts`, 'POST', {
+        prompt: 'after this', client_queue_id: 'a47ac10b-58cc-4372-a567-0e02b2c3d479',
+      },
+    ]],
+    ['cancelQueuedPrompt', {
+      sessionID, queueID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479',
+    }, [
+      `/v1/sessions/${sessionID}/queued-prompts/a47ac10b-58cc-4372-a567-0e02b2c3d479`,
+      'DELETE',
+    ]],
     ['attachTurn', {
       sessionID, prompt: 'hello', clientTurnID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479',
     }, [
@@ -132,6 +148,18 @@ test('desktop operation map rejects invalid session ids and arbitrary operations
   assert.throws(() => desktopOperation('attachTurn', {
     sessionID, prompt: 'hello', clientTurnID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479', title: 'nope',
   }), /unsupported attach turn field/);
+  assert.throws(() => desktopOperation('queuePrompt', {
+    sessionID, prompt: 'hello', clientQueueID: 'not-a-uuid',
+  }), /client queue id must be a UUID/);
+  assert.throws(() => desktopOperation('queuePrompt', {
+    sessionID, prompt: '', clientQueueID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479',
+  }), /prompt is required/);
+  assert.throws(() => desktopOperation('queuePrompt', {
+    sessionID, prompt: 'hello', clientQueueID: 'a47ac10b-58cc-4372-a567-0e02b2c3d479', extra: true,
+  }), /unsupported queue prompt field/);
+  assert.throws(() => desktopOperation('cancelQueuedPrompt', {
+    sessionID, queueID: '../escape',
+  }), /queue id must be a UUID/);
   assert.throws(() => desktopOperation('importDurableSession', {
     sessionID, confirmLegacyStopped: false,
   }), /stopped producer attestation required/);
