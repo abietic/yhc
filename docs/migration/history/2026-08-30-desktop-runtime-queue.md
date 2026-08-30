@@ -47,7 +47,11 @@ interaction, before starting the generic runtime-input pump.
   the race detector; and
 - `make desktop-check` covers renderer state replacement, active-Turn control
   admission, host/browser transport validation, safe queue rendering, and Node
-  syntax.
+  syntax; and
+- `make publication-scan-expression PUBLICATION_ROOT=.` matched 1,002 exact
+  reviewed findings and zero unresolved findings on the delivery tree. Queue
+  UUID and token fixtures remained individually reviewed; no sentinel,
+  allowlist, directory, or rule exemption was added.
 
 ## Exclusions at closeout
 
