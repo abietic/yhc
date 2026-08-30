@@ -10,12 +10,12 @@ dependencies:
     compatibility: allow
     notice: none
   - module: charm.land/bubbletea/v2
-    version: v2.0.8
-    source_url: https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.8
+    version: v2.0.9
+    source_url: https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.9
     licenses:
       - spdx: MIT
         license_file: LICENSE
-        license_url: https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.8?tab=licenses
+        license_url: https://pkg.go.dev/charm.land/bubbletea/v2@v2.0.9?tab=licenses
     compatibility: allow
     notice: none
   - module: charm.land/glamour/v2
