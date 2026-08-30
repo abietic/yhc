@@ -41,7 +41,7 @@ start with the [architecture guide](docs/architecture/README.md).
 
 ## Requirements
 
-- Go 1.26.5
+- Go 1.27.0
 
 ## Quick Start
 

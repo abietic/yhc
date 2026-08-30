@@ -466,8 +466,8 @@ func TestScenario_ConcurrencyLimitWithVerification(t *testing.T) {
 	const numTools = 10
 	const maxConcurrency = 3
 
-	var peak int32
-	var current int32
+	var peak atomic.Int32
+	var current atomic.Int32
 
 	items := make([]ToolBatchItem, numTools)
 	for i := 0; i < numTools; i++ {
@@ -482,18 +482,18 @@ func TestScenario_ConcurrencyLimitWithVerification(t *testing.T) {
 				},
 			},
 			Execute: func(ctx context.Context) (string, error) {
-				cur := atomic.AddInt32(&current, 1)
+				cur := current.Add(1)
 				for {
-					p := atomic.LoadInt32(&peak)
+					p := peak.Load()
 					if cur <= p {
 						break
 					}
-					if atomic.CompareAndSwapInt32(&peak, p, cur) {
+					if peak.CompareAndSwap(p, cur) {
 						break
 					}
 				}
 				time.Sleep(5 * time.Millisecond)
-				atomic.AddInt32(&current, -1)
+				current.Add(-1)
 				return fmt.Sprintf(`{"content":"file_%d contents","path":"/tmp/file_%d.txt"}`, idx, idx), nil
 			},
 		}
@@ -504,7 +504,7 @@ func TestScenario_ConcurrencyLimitWithVerification(t *testing.T) {
 	})
 
 	// Verify concurrency was respected.
-	observedPeak := atomic.LoadInt32(&peak)
+	observedPeak := peak.Load()
 	if observedPeak > int32(maxConcurrency) {
 		t.Errorf("peak concurrency %d exceeded limit %d", observedPeak, maxConcurrency)
 	}
@@ -543,7 +543,7 @@ func TestScenario_CancellationDuringExecution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var started int32
+	var started atomic.Int32
 	items := make([]ToolBatchItem, 5)
 	for i := 0; i < 5; i++ {
 		idx := i
@@ -557,7 +557,7 @@ func TestScenario_CancellationDuringExecution(t *testing.T) {
 				},
 			},
 			Execute: func(ctx context.Context) (string, error) {
-				n := atomic.AddInt32(&started, 1)
+				n := started.Add(1)
 				// First tool triggers cancellation after starting.
 				if n == 1 {
 					cancel()

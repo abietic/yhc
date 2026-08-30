@@ -114,9 +114,9 @@ func TestQueryConcurrentSafeToolsRunInParallelPreserveOrder(t *testing.T) {
 		},
 	}}
 
-	var current int32
-	var maxConcurrent int32
-	var started int32
+	var current atomic.Int32
+	var maxConcurrent atomic.Int32
+	var started atomic.Int32
 	bothStarted := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
@@ -137,15 +137,15 @@ func TestQueryConcurrentSafeToolsRunInParallelPreserveOrder(t *testing.T) {
 				if toolName != "Read" {
 					return "", fmt.Errorf("unexpected tool %s", toolName)
 				}
-				inFlight := atomic.AddInt32(&current, 1)
-				defer atomic.AddInt32(&current, -1)
+				inFlight := current.Add(1)
+				defer current.Add(-1)
 				for {
-					prev := atomic.LoadInt32(&maxConcurrent)
-					if inFlight <= prev || atomic.CompareAndSwapInt32(&maxConcurrent, prev, inFlight) {
+					prev := maxConcurrent.Load()
+					if inFlight <= prev || maxConcurrent.CompareAndSwap(prev, inFlight) {
 						break
 					}
 				}
-				if atomic.AddInt32(&started, 1) == 2 {
+				if started.Add(1) == 2 {
 					close(bothStarted)
 				}
 				select {
@@ -176,8 +176,8 @@ func TestQueryConcurrentSafeToolsRunInParallelPreserveOrder(t *testing.T) {
 	if terminal.Reason != TerminalCompleted {
 		t.Fatalf("expected terminal completed, got %q", terminal.Reason)
 	}
-	if atomic.LoadInt32(&maxConcurrent) < 2 {
-		t.Fatalf("expected concurrent read execution, max concurrency = %d", atomic.LoadInt32(&maxConcurrent))
+	if maxConcurrent.Load() < 2 {
+		t.Fatalf("expected concurrent read execution, max concurrency = %d", maxConcurrent.Load())
 	}
 
 	var results []*schema.Message
@@ -218,8 +218,8 @@ func TestQueryUnsafeToolsRunSerially(t *testing.T) {
 		},
 	}}
 
-	var current int32
-	var maxConcurrent int32
+	var current atomic.Int32
+	var maxConcurrent atomic.Int32
 	maxTurns := 4
 	terminal := Query(ctx, QueryParams{
 		Messages:     []*schema.Message{{Role: schema.User, Content: "run two commands"}},
@@ -229,11 +229,11 @@ func TestQueryUnsafeToolsRunSerially(t *testing.T) {
 		ChatModel:    model,
 		ToolRegistry: reg,
 		ToolExecutor: func(ctx context.Context, toolName, jsonInput string) (string, error) {
-			inFlight := atomic.AddInt32(&current, 1)
-			defer atomic.AddInt32(&current, -1)
+			inFlight := current.Add(1)
+			defer current.Add(-1)
 			for {
-				prev := atomic.LoadInt32(&maxConcurrent)
-				if inFlight <= prev || atomic.CompareAndSwapInt32(&maxConcurrent, prev, inFlight) {
+				prev := maxConcurrent.Load()
+				if inFlight <= prev || maxConcurrent.CompareAndSwap(prev, inFlight) {
 					break
 				}
 			}
@@ -245,7 +245,7 @@ func TestQueryUnsafeToolsRunSerially(t *testing.T) {
 	if terminal.Reason != TerminalCompleted {
 		t.Fatalf("expected terminal completed, got %q", terminal.Reason)
 	}
-	if atomic.LoadInt32(&maxConcurrent) != 1 {
-		t.Fatalf("expected unsafe tools to run serially, max concurrency = %d", atomic.LoadInt32(&maxConcurrent))
+	if maxConcurrent.Load() != 1 {
+		t.Fatalf("expected unsafe tools to run serially, max concurrency = %d", maxConcurrent.Load())
 	}
 }

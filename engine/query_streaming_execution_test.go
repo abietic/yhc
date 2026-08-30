@@ -49,8 +49,8 @@ func TestQueryStreamingExecutionRunsToolOnlyOnce(t *testing.T) {
 	}}
 
 	maxTurns := 4
-	var callCount int32
-	var resultEvents int32
+	var callCount atomic.Int32
+	var resultEvents atomic.Int32
 	terminal := Query(ctx, QueryParams{
 		Messages:     []*schema.Message{{Role: schema.User, Content: "run a command"}},
 		SystemPrompt: &schema.Message{Role: schema.System, Content: "You are helpful."},
@@ -58,22 +58,22 @@ func TestQueryStreamingExecutionRunsToolOnlyOnce(t *testing.T) {
 		MaxTurns:     &maxTurns,
 		ChatModel:    model,
 		ToolExecutor: func(ctx context.Context, toolName, jsonInput string) (string, error) {
-			atomic.AddInt32(&callCount, 1)
+			callCount.Add(1)
 			return "ok", nil
 		},
 	}, func(evt QueryEvent) {
 		if evt.Type == EventToolResult && evt.ToolResultMessage != nil {
-			atomic.AddInt32(&resultEvents, 1)
+			resultEvents.Add(1)
 		}
 	})
 
 	if terminal.Reason != TerminalCompleted {
 		t.Fatalf("expected terminal completed, got %q", terminal.Reason)
 	}
-	if got := atomic.LoadInt32(&callCount); got != 1 {
+	if got := callCount.Load(); got != 1 {
 		t.Fatalf("expected exactly one streamed tool execution, got %d", got)
 	}
-	if got := atomic.LoadInt32(&resultEvents); got != 1 {
+	if got := resultEvents.Load(); got != 1 {
 		t.Fatalf("expected exactly one tool_result event, got %d", got)
 	}
 }
@@ -103,9 +103,9 @@ func TestQueryStreamingConcurrentSafeToolsRunInParallelAndKeepOrder(t *testing.T
 		{{Role: schema.Assistant, Content: "done"}},
 	}}
 
-	var current int32
-	var maxConcurrent int32
-	var started int32
+	var current atomic.Int32
+	var maxConcurrent atomic.Int32
+	var started atomic.Int32
 	bothStarted := make(chan struct{})
 	release := make(chan struct{})
 	var results []*schema.Message
@@ -124,15 +124,15 @@ func TestQueryStreamingConcurrentSafeToolsRunInParallelAndKeepOrder(t *testing.T
 				if toolName != "Read" {
 					return "", fmt.Errorf("unexpected tool %s", toolName)
 				}
-				inFlight := atomic.AddInt32(&current, 1)
-				defer atomic.AddInt32(&current, -1)
+				inFlight := current.Add(1)
+				defer current.Add(-1)
 				for {
-					prev := atomic.LoadInt32(&maxConcurrent)
-					if inFlight <= prev || atomic.CompareAndSwapInt32(&maxConcurrent, prev, inFlight) {
+					prev := maxConcurrent.Load()
+					if inFlight <= prev || maxConcurrent.CompareAndSwap(prev, inFlight) {
 						break
 					}
 				}
-				if atomic.AddInt32(&started, 1) == 2 {
+				if started.Add(1) == 2 {
 					close(bothStarted)
 				}
 				select {
@@ -167,8 +167,8 @@ func TestQueryStreamingConcurrentSafeToolsRunInParallelAndKeepOrder(t *testing.T
 	if terminal.Reason != TerminalCompleted {
 		t.Fatalf("expected terminal completed, got %q", terminal.Reason)
 	}
-	if atomic.LoadInt32(&maxConcurrent) < 2 {
-		t.Fatalf("expected concurrent streaming read execution, max concurrency = %d", atomic.LoadInt32(&maxConcurrent))
+	if maxConcurrent.Load() < 2 {
+		t.Fatalf("expected concurrent streaming read execution, max concurrency = %d", maxConcurrent.Load())
 	}
 	if len(results) != 2 {
 		t.Fatalf("expected 2 tool results, got %d", len(results))
@@ -200,7 +200,7 @@ func TestQueryStreamingWaitsForPatchedToolCallBeforeExecuting(t *testing.T) {
 	}}
 
 	maxTurns := 4
-	var executed int32
+	var executed atomic.Int32
 	terminal := Query(ctx, QueryParams{
 		Messages:     []*schema.Message{{Role: schema.User, Content: "run pwd"}},
 		SystemPrompt: &schema.Message{Role: schema.System, Content: "You are helpful."},
@@ -208,7 +208,7 @@ func TestQueryStreamingWaitsForPatchedToolCallBeforeExecuting(t *testing.T) {
 		MaxTurns:     &maxTurns,
 		ChatModel:    model,
 		ToolExecutor: func(ctx context.Context, toolName, jsonInput string) (string, error) {
-			atomic.AddInt32(&executed, 1)
+			executed.Add(1)
 			if jsonInput != `{"command":"pwd"}` {
 				t.Fatalf("expected finalized arguments, got %q", jsonInput)
 			}
@@ -219,7 +219,7 @@ func TestQueryStreamingWaitsForPatchedToolCallBeforeExecuting(t *testing.T) {
 	if terminal.Reason != TerminalCompleted {
 		t.Fatalf("expected terminal completed, got %q", terminal.Reason)
 	}
-	if got := atomic.LoadInt32(&executed); got != 1 {
+	if got := executed.Load(); got != 1 {
 		t.Fatalf("expected one execution after tool-call patching, got %d", got)
 	}
 }

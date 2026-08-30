@@ -298,21 +298,21 @@ dependencies:
     compatibility: allow
     notice: none
   - module: github.com/bytedance/sonic
-    version: v1.15.0
-    source_url: https://pkg.go.dev/github.com/bytedance/sonic@v1.15.0
+    version: v1.15.3
+    source_url: https://pkg.go.dev/github.com/bytedance/sonic@v1.15.3
     licenses:
       - spdx: Apache-2.0
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/bytedance/sonic@v1.15.0?tab=licenses
+        license_url: https://pkg.go.dev/github.com/bytedance/sonic@v1.15.3?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/bytedance/sonic/loader
-    version: v0.5.0
-    source_url: https://pkg.go.dev/github.com/bytedance/sonic/loader@v0.5.0
+    version: v0.5.2
+    source_url: https://pkg.go.dev/github.com/bytedance/sonic/loader@v0.5.2
     licenses:
       - spdx: Apache-2.0
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/bytedance/sonic/loader@v0.5.0?tab=licenses
+        license_url: https://pkg.go.dev/github.com/bytedance/sonic/loader@v0.5.2?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/cespare/xxhash/v2

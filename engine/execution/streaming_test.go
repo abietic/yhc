@@ -556,10 +556,10 @@ func TestStreamingToolExecutorBashErrorCancelsSiblings(t *testing.T) {
 }
 
 func TestStreamingToolExecutorNonBashErrorDoesNotCancelSiblings(t *testing.T) {
-	var callCount int32
+	var callCount atomic.Int32
 	exec := NewStreamingToolExecutor(StreamingToolExecutorConfig{
 		Execute: func(tc *schema.ToolCall) *ToolResult {
-			atomic.AddInt32(&callCount, 1)
+			callCount.Add(1)
 			if tc.Function.Name == "Read" {
 				return &ToolResult{
 					ToolCallID: tc.ID,
@@ -587,8 +587,8 @@ func TestStreamingToolExecutorNonBashErrorDoesNotCancelSiblings(t *testing.T) {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 	// Both should have been executed (no cancellation).
-	if atomic.LoadInt32(&callCount) < 2 {
-		t.Errorf("expected both tools to execute, but only %d executed", atomic.LoadInt32(&callCount))
+	if callCount.Load() < 2 {
+		t.Errorf("expected both tools to execute, but only %d executed", callCount.Load())
 	}
 	// Second result should NOT be cancelled.
 	if results[1].Result == "Cancelled: parallel tool call Read errored" {

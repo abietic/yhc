@@ -46,7 +46,7 @@ func TestQueryToolRefreshBetweenTurns(t *testing.T) {
 	mdl := &refreshTrackingModel{totalCalls: 2}
 	maxTurns := 5
 
-	var refreshCount int32
+	var refreshCount atomic.Int32
 	refreshedTools := []*schema.ToolInfo{
 		{Name: "Read", Desc: "read a file"},
 		{Name: "NewTool", Desc: "a new tool added mid-session"},
@@ -62,7 +62,7 @@ func TestQueryToolRefreshBetweenTurns(t *testing.T) {
 			Options: &ToolUseOptions{
 				Tools: []*schema.ToolInfo{{Name: "Read", Desc: "read a file"}},
 				RefreshTools: func() []*schema.ToolInfo {
-					atomic.AddInt32(&refreshCount, 1)
+					refreshCount.Add(1)
 					return refreshedTools
 				},
 			},
@@ -77,7 +77,7 @@ func TestQueryToolRefreshBetweenTurns(t *testing.T) {
 	}
 
 	// RefreshTools should be called between turns (after each tool use turn)
-	got := atomic.LoadInt32(&refreshCount)
+	got := refreshCount.Load()
 	if got < 1 {
 		t.Fatalf("expected RefreshTools to be called at least once between turns, got %d calls", got)
 	}

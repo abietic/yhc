@@ -67,10 +67,10 @@ func TestTeamRunnerParallelExecution(t *testing.T) {
 	runner := NewAgentRunner(4)
 	runner.SetOutputDir(t.TempDir())
 
-	var started int32
+	var started atomic.Int32
 	gate := make(chan struct{})
 	runner.SetExecutor(fakeAgentExecutor{onExecute: func(ctx context.Context, opts AgentExecOptions) (*AgentExecResult, error) {
-		atomic.AddInt32(&started, 1)
+		started.Add(1)
 		<-gate
 		return &AgentExecResult{Result: "done"}, nil
 	}})
@@ -96,10 +96,10 @@ func TestTeamRunnerParallelExecution(t *testing.T) {
 
 	// Wait for all agents to start.
 	deadline := time.After(2 * time.Second)
-	for atomic.LoadInt32(&started) != 3 {
+	for started.Load() != 3 {
 		select {
 		case <-deadline:
-			t.Fatalf("timed out waiting for parallel agents to start, got %d", atomic.LoadInt32(&started))
+			t.Fatalf("timed out waiting for parallel agents to start, got %d", started.Load())
 		default:
 			time.Sleep(time.Millisecond)
 		}

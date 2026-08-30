@@ -163,8 +163,8 @@ func TestExecuteToolBatch_ConcurrencyLimit(t *testing.T) {
 	const numTools = 10
 	const maxConcurrency = 3
 
-	var peak int32
-	var current int32
+	var peak atomic.Int32
+	var current atomic.Int32
 
 	items := make([]ToolBatchItem, numTools)
 	for i := 0; i < numTools; i++ {
@@ -179,19 +179,19 @@ func TestExecuteToolBatch_ConcurrencyLimit(t *testing.T) {
 				},
 			},
 			Execute: func(ctx context.Context) (string, error) {
-				cur := atomic.AddInt32(&current, 1)
+				cur := current.Add(1)
 				// Atomically update peak.
 				for {
-					p := atomic.LoadInt32(&peak)
+					p := peak.Load()
 					if cur <= p {
 						break
 					}
-					if atomic.CompareAndSwapInt32(&peak, p, cur) {
+					if peak.CompareAndSwap(p, cur) {
 						break
 					}
 				}
 				time.Sleep(10 * time.Millisecond) // simulate work
-				atomic.AddInt32(&current, -1)
+				current.Add(-1)
 				return "ok", nil
 			},
 		}
@@ -205,7 +205,7 @@ func TestExecuteToolBatch_ConcurrencyLimit(t *testing.T) {
 		t.Fatalf("expected %d results, got %d", numTools, len(results))
 	}
 
-	observedPeak := atomic.LoadInt32(&peak)
+	observedPeak := peak.Load()
 	if observedPeak > int32(maxConcurrency) {
 		t.Errorf("peak concurrency %d exceeded limit %d", observedPeak, maxConcurrency)
 	}
@@ -664,8 +664,8 @@ func TestStreamingToolExecutor_SiblingCancellationViaContext(t *testing.T) {
 func TestStreamingToolExecutor_MaxConcurrencyRespected(t *testing.T) {
 	const maxConcurrency = 2
 	const numTools = 6
-	var peak int32
-	var current int32
+	var peak atomic.Int32
+	var current atomic.Int32
 
 	exec := NewStreamingToolExecutor(StreamingToolExecutorConfig{
 		Ctx:            context.Background(),
@@ -674,18 +674,18 @@ func TestStreamingToolExecutor_MaxConcurrencyRespected(t *testing.T) {
 			return true
 		},
 		ExecuteWithContext: func(ctx context.Context, toolCall *schema.ToolCall) *ToolResult {
-			cur := atomic.AddInt32(&current, 1)
+			cur := current.Add(1)
 			for {
-				p := atomic.LoadInt32(&peak)
+				p := peak.Load()
 				if cur <= p {
 					break
 				}
-				if atomic.CompareAndSwapInt32(&peak, p, cur) {
+				if peak.CompareAndSwap(p, cur) {
 					break
 				}
 			}
 			time.Sleep(10 * time.Millisecond)
-			atomic.AddInt32(&current, -1)
+			current.Add(-1)
 			return newToolResult(toolCall.ID, toolCall.Function.Name, "ok", false)
 		},
 	})
@@ -701,7 +701,7 @@ func TestStreamingToolExecutor_MaxConcurrencyRespected(t *testing.T) {
 		t.Fatalf("expected %d results, got %d", numTools, len(results))
 	}
 
-	observedPeak := atomic.LoadInt32(&peak)
+	observedPeak := peak.Load()
 	if observedPeak > int32(maxConcurrency) {
 		t.Errorf("peak concurrency %d exceeded limit %d", observedPeak, maxConcurrency)
 	}

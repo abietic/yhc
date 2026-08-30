@@ -192,10 +192,7 @@ func (ms *MessageSelector) RenderHintBar(width int) string {
 
 	bar := fitLayoutColumnLine(profile, hint+controls+count, width, 0)
 
-	barStyle := lipgloss.NewStyle()
-	if bg := ms.styles.Element.GetBackground(); bg != nil {
-		barStyle = barStyle.Background(bg)
-	}
+	barStyle := lipgloss.NewStyle().Background(ms.styles.Element.GetBackground())
 
 	return barStyle.Render(bar)
 }
@@ -205,10 +202,7 @@ func (ms *MessageSelector) RenderHintBar(width int) string {
 func (ms *MessageSelector) RenderSelectedHighlight(rendered string, width int) string {
 	profile := ms.environment.normalized().profile
 	// Apply a selection indicator and distinct background
-	highlightStyle := lipgloss.NewStyle()
-	if bg := ms.styles.Selection.GetBackground(); bg != nil {
-		highlightStyle = highlightStyle.Background(bg)
-	}
+	highlightStyle := lipgloss.NewStyle().Background(ms.styles.Selection.GetBackground())
 
 	// Add a left-side selection indicator
 	lines := strings.Split(rendered, "\n")

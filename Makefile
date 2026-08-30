@@ -14,6 +14,7 @@ GOLINT_V2_DIR := $(abspath $(BUILD_DIR)/tools)
 GOLINT_V2 := $(GOLINT_V2_DIR)/golangci-lint-v2
 HOST_GOOS := $(shell $(GO) env GOHOSTOS)
 HOST_GOARCH := $(shell $(GO) env GOHOSTARCH)
+GO_TOOLCHAIN_VERSION := $(shell $(GO) env GOVERSION)
 DESKTOP_STAGE_DIR := desktop/resources/bin
 DESKTOP_HOST_EXT := $(if $(filter windows,$(HOST_GOOS)),.exe,)
 EVAL_OUTPUT_DIR ?= $(BUILD_DIR)/evaluation
@@ -25,7 +26,7 @@ E2E_BINARY ?= $(E2E_OUTPUT_DIR)/yhc$(if $(filter windows,$(shell $(GO) env GOHOS
 
 GOFUMPT_VERSION ?= v0.7.0
 GOLANGCI_LINT_VERSION ?= v1.64.8
-GOLANGCI_LINT_V2_VERSION ?= 2.12.2
+GOLANGCI_LINT_V2_VERSION ?= 2.13.2
 GOTESTSUM_VERSION ?= v1.13.0
 GOVULNCHECK_VERSION := v1.6.0
 # v8.30.1 is intentionally not used: its directory scanner can silently miss
@@ -356,11 +357,10 @@ fmt-check: prepare-gofumpt
 	fi
 
 # ── Lint ───────────────────────────────────────────────
-lint: prepare-golangci-lint
-	$(GOLINT) run ./...
+lint: prepare-golangci-lint-v2
+	$(GOLINT_V2) run --config .golangci.v2.yml ./...
 
-# v2 understands the current Go toolchain. It only rejects findings introduced
-# after master until the existing v1 baseline is deliberately remediated.
+# Pull requests additionally scope findings to changes introduced after master.
 lint-new: prepare-golangci-lint-v2
 	$(GOLINT_V2) run --config .golangci.v2.yml --new-from-merge-base=$(LINT_NEW_BASE) ./...
 
@@ -568,12 +568,12 @@ prepare-gofumpt:
 	@command -v $(GOFM) >/dev/null 2>&1 || $(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 
 prepare-golangci-lint:
-	@$(GOLINT) version 2>/dev/null | grep -q "version $(GOLANGCI_LINT_VERSION)" || GOTOOLCHAIN=local $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	@$(GOLINT) version 2>/dev/null | grep -q "version $(GOLANGCI_LINT_VERSION) built with $(GO_TOOLCHAIN_VERSION)" || GOTOOLCHAIN=auto $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 prepare-golangci-lint-v2:
 	@mkdir -p $(GOLINT_V2_DIR)
-	@if ! $(GOLINT_V2) version 2>/dev/null | grep -q "version $(GOLANGCI_LINT_V2_VERSION)"; then \
-		GOBIN=$(GOLINT_V2_DIR) GOTOOLCHAIN=local $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLANGCI_LINT_V2_VERSION); \
+	@if ! $(GOLINT_V2) version 2>/dev/null | grep -q "version $(GOLANGCI_LINT_V2_VERSION) built with $(GO_TOOLCHAIN_VERSION)"; then \
+		GOBIN=$(GOLINT_V2_DIR) GOTOOLCHAIN=auto $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$(GOLANGCI_LINT_V2_VERSION); \
 		mv $(GOLINT_V2_DIR)/golangci-lint $(GOLINT_V2); \
 	fi
 

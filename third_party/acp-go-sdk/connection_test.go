@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 )
 
 type connectionTestWire struct {
@@ -67,6 +68,8 @@ func (p *connectionTestPeer) notification(t *testing.T, method string, params an
 
 func (p *connectionTestPeer) response(t *testing.T, id string) map[string]any {
 	t.Helper()
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
 	if message := p.pending[id]; message != nil {
 		delete(p.pending, id)
 		return message
@@ -87,7 +90,7 @@ func (p *connectionTestPeer) response(t *testing.T, id string) map[string]any {
 					p.pending[messageID] = message
 				}
 			}
-		case <-t.Context().Done():
+		case <-timeout.C:
 			t.Fatalf("response %q did not arrive", id)
 		}
 	}
