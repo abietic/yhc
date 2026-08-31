@@ -158,6 +158,29 @@ test('execution settings use fixed session-scoped operations', () => {
   }), /supported execution setting required/);
 });
 
+test('runtime queue uses retry-stable typed session operations', () => {
+  const sessionID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+  const queueID = 'a47ac10b-58cc-4372-a567-0e02b2c3d479';
+  assert.deepEqual(operationPath('listQueuedPrompts', { sessionID }), [
+    `/v1/sessions/${sessionID}/queued-prompts`, 'GET',
+  ]);
+  assert.deepEqual(operationPath('queuePrompt', {
+    sessionID, prompt: ' after this ', clientQueueID: queueID,
+  }), [
+    `/v1/sessions/${sessionID}/queued-prompts`, 'POST',
+    { prompt: 'after this', client_queue_id: queueID },
+  ]);
+  assert.deepEqual(operationPath('cancelQueuedPrompt', { sessionID, queueID }), [
+    `/v1/sessions/${sessionID}/queued-prompts/${queueID}`, 'DELETE',
+  ]);
+  assert.throws(() => operationPath('queuePrompt', {
+    sessionID, prompt: 'queued', clientQueueID: 'not-a-uuid',
+  }), /client queue id must be a UUID/);
+  assert.throws(() => operationPath('cancelQueuedPrompt', {
+    sessionID, queueID: '../escape',
+  }), /queue id must be a UUID/);
+});
+
 test('browser transport accepts server-issued legacy durable session ids', () => {
   const sessionID = 'session-1785514608818950000';
   assert.deepEqual(operationPath('snapshot', { sessionID }), [

@@ -15,6 +15,7 @@ const {
   ACTIVE_TURN_SEED_PROMPT,
   NO_RESTART_OBSERVATION_MS,
   activeTurnCrashContainmentMatches,
+  activeTurnProjectionMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
   closePackagedDesktop,
@@ -718,6 +719,24 @@ test('active-turn provider completes only the seed and holds the active partial 
     assert.match(activeEvents, /response\.output_text\.delta/);
     assert.match(activeEvents, new RegExp(ACTIVE_TURN_PARTIAL));
     assert.doesNotMatch(activeEvents, /response\.completed/);
+    let heartbeatTimeout;
+    try {
+      const heartbeat = await Promise.race([
+        reader.read(),
+        new Promise((_, reject) => {
+          heartbeatTimeout = setTimeout(
+            () => reject(new Error('active-turn provider heartbeat timed out')),
+            2_000,
+          );
+        }),
+      ]);
+      assert.equal(heartbeat.done, false);
+      const heartbeatText = Buffer.from(heartbeat.value).toString('utf8');
+      assert.match(heartbeatText, /: keepalive\n/);
+      assert.doesNotMatch(heartbeatText, /: keepalive\n\n/);
+    } finally {
+      clearTimeout(heartbeatTimeout);
+    }
     await reader.cancel();
     assert.deepEqual(provider.requestCounts(), { active: 1, seed: 1, total: 4 });
   } finally {
@@ -891,6 +910,47 @@ test('active-turn crash oracle requires unfinished snapshot truth and preserved 
   ]) {
     assert.equal(activeTurnCrashContainmentMatches(changed), false);
   }
+});
+
+test('active-turn projection oracle requires the live Queue action', () => {
+  const result = {
+    activeSessionID: 'session-fixture-1',
+    activeTurnID: 'turn-fixture-1',
+    snapshotActiveTurnID: 'turn-fixture-1',
+    snapshotPartialTurnID: 'engine-turn-fixture-1',
+    snapshotPartialCount: 1,
+    snapshotPartialCompleted: false,
+    partialVisible: true,
+    activePromptVisible: true,
+    sessionTitle: 'Fixture session',
+    workspaceLabel: 'fixture-workspace',
+    status: 'running',
+    cancelEnabled: true,
+    sendDisabled: false,
+    sendAction: 'Queue',
+    busySession: true,
+  };
+  assert.equal(activeTurnProjectionMatches(result, result.activeSessionID), true);
+  for (const changed of [
+    { ...result, activeSessionID: 'session-other' },
+    { ...result, activeTurnID: '' },
+    { ...result, snapshotActiveTurnID: 'turn-other' },
+    { ...result, snapshotPartialTurnID: '' },
+    { ...result, snapshotPartialCount: 2 },
+    { ...result, snapshotPartialCompleted: true },
+    { ...result, partialVisible: false },
+    { ...result, activePromptVisible: false },
+    { ...result, sessionTitle: '' },
+    { ...result, workspaceLabel: '' },
+    { ...result, status: 'error' },
+    { ...result, cancelEnabled: false },
+    { ...result, sendDisabled: true },
+    { ...result, sendAction: 'Send' },
+    { ...result, busySession: false },
+  ]) {
+    assert.equal(activeTurnProjectionMatches(changed, result.activeSessionID), false);
+  }
+  assert.equal(activeTurnProjectionMatches(result, ''), false);
 });
 
 test('spawn observation handles an asynchronous error before PID validation', async () => {

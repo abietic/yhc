@@ -15,12 +15,14 @@ test('composer keeps draft admission separate and exposes explicit rebind', asyn
   ]);
 
   assert.match(html, /id="model-remediation"/);
+  assert.match(html, /id="queued-prompts"[^>]*role="list"/);
   assert.match(html, /id="legacy-import-remediation"/);
   assert.match(html, /id="legacy-import"[^>]*type="button"/s);
   assert.match(html, />Import and continue</);
   assert.match(html, /id="model-rebind"[^>]*type="button"/s);
   assert.match(html, />Rebind current model</);
   assert.match(app, /canEditDraft/);
+  assert.match(app, /canQueuePrompt/);
   assert.match(app, /canImportDurableSession/);
   assert.match(app, /async function importDurableSession/);
   assert.match(app, /confirmLegacyStopped: true/);
@@ -36,12 +38,17 @@ test('composer keeps draft admission separate and exposes explicit rebind', asyn
   );
   assert.match(
     app,
-    /\$\('send'\)\.disabled = !backendReady \|\| !canSubmitTurn\(current\)/,
+    /\$\('send'\)\.disabled = !backendReady \|\| !\(canSubmitTurn\(current\) \|\| canQueuePrompt\(current\)\)/,
   );
+  assert.match(app, /api\('queuePrompt'/);
+  assert.match(app, /typeof response\.pending !== 'boolean'/);
+  assert.match(app, /api\('cancelQueuedPrompt'/);
+  assert.doesNotMatch(app, /ClaimNextRuntimeItem|SubmitRuntimeItem/);
   assert.doesNotMatch(app, /\$\('prompt'\)\.disabled = !canSubmitTurn/);
   assert.match(
     app,
     /\$\('model-rebind'\)\.onclick[\s\S]*?field: 'model',[\s\S]*?value: selector/,
   );
   assert.match(css, /\.model-remediation\s*\{/);
+  assert.match(css, /\.queued-prompts\s*\{/);
 });

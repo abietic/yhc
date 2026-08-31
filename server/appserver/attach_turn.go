@@ -276,6 +276,7 @@ func (s *Server) activateAttach(
 		err = recoveredErr
 		return
 	} else if interaction != nil {
+		owned.startRuntimeInputPump()
 		response = AttachTurnResponse{
 			Status:       "interaction_required",
 			Session:      owned.summary(),
@@ -289,6 +290,7 @@ func (s *Server) activateAttach(
 		err = startErr
 		return
 	}
+	owned.startRuntimeInputPump()
 	response = AttachTurnResponse{
 		Status:       "turn_accepted",
 		Session:      owned.summary(),

@@ -17,6 +17,15 @@ first 30 lines, for example `**Closed gaps:** G22`. Multiple identities use
 history tree. Closeouts that resolve no root Gap omit the field. Sub-program
 identities such as `G11.F2` remain narrative text.
 
+## 2026-08-30 Desktop Runtime Queue
+
+[`2026-08-30-desktop-runtime-queue.md`](2026-08-30-desktop-runtime-queue.md)
+records the completed `adapt` delivery that exposed the existing engine-owned
+runtime queue through the app-server and Desktop renderer. Current behavior is
+owned by the
+[Desktop workbench architecture](../../architecture/desktop-workbench.md), not
+by that record.
+
 ## 2026-08-13 Desktop Workbench Forward-Port
 
 [`2026-08-13-desktop-workbench-forward-port.md`](2026-08-13-desktop-workbench-forward-port.md)

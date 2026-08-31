@@ -1,10 +1,11 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-26
+**Last verified:** 2026-08-30
 
 > **Ownership:** current Desktop composition, session activation ordering,
-> renderer/server trust boundaries, and user-visible interaction projections.
+> runtime-queue ownership, renderer/server trust boundaries, and user-visible
+> interaction projections.
 
 ## Decision and boundaries
 
@@ -162,6 +163,75 @@ server activity entries to stable lifecycle language such as turn started,
 command running, or question waiting. It rejects invalid category/state pairs;
 the Activity panel therefore remains an operator summary, while raw stream
 debugging stays outside the normal UI.
+
+### Busy-turn prompt queue
+
+When a live Session has an active Turn, the composer changes from **Send** to
+**Queue**. Desktop accepts text only on this path. The renderer retains one
+client-generated UUID for the unchanged draft until admission succeeds, while
+the app-server maps that identity into the existing engine-owned runtime input
+coordinator. The queue shown by the renderer is always replaced from a server
+response, snapshot, or `queue.updated` event; it is not an optimistic local
+execution queue. Every projection carries the coordinator's monotonic queue
+revision. The renderer ignores an older mutation response, SSE event, or
+Session snapshot instead of replacing newer queue state or clearing a newer
+draft.
+
+```mermaid
+sequenceDiagram
+    accTitle: Desktop busy-turn queue ownership
+    accDescr: The renderer supplies retry identity, QueryEngine owns durable admission, and the app-server starts queued work only after the current turn becomes idle.
+    participant User
+    participant Renderer as "Desktop renderer"
+    participant Server as "Loopback app-server"
+    participant Engine as "QueryEngine coordinator"
+    User->>Renderer: Queue text while a Turn is active
+    Renderer->>Server: prompt + stable client_queue_id
+    Server->>Engine: EnqueueUserInputWithID
+    Engine-->>Server: durable pending item
+    Server-->>Renderer: accepted queue snapshot
+    Engine-->>Server: current Turn reaches idle terminal
+    Server->>Engine: ClaimNextRuntimeItem
+    Server->>Engine: SubmitRuntimeItem
+    Engine-->>Server: normal events and terminal settlement
+    Server-->>Renderer: queue.updated and Turn events
+```
+
+Direct-Turn admission and idle queue claims share one session lock, so they
+cannot both acquire active-Turn ownership. A successful idle terminal may
+immediately claim the next generic runtime item; waiting or error terminals do
+not automatically drain another item. Engine preflight and settlement remain
+authoritative. The app-server never settles an item on behalf of the renderer,
+and the generic idle claim deliberately excludes Goal continuations. On durable
+attach, the explicit attach Turn (or a restored ProjectGraph interaction) owns
+admission before the runtime-input pump starts, so recovered queued work cannot
+preempt the user's resume request.
+
+Reusing one `client_queue_id` with the same normalized text is idempotent.
+Reusing it with different text fails with a conflict rather than guessing
+whether the first request crossed the transport boundary. QueryEngine writes a
+versioned SHA-256 admission receipt in the same atomic ledger replacement as
+the first pending item. The receipt retains identity, exact normalized-payload
+digest, scope, and original ordering metadata, but not prompt text. It survives
+claim, settlement, cancellation, and process restart, so an exact retry after a
+lost HTTP acknowledgement returns a historical acknowledgement without
+creating work; an unknown identity while idle still cannot create a Turn. The
+receipt remains for the lifetime of the Session runtime ledger. This preserves
+correct retry semantics at the cost of retaining an offline-guessable digest
+for low-entropy cancelled prompts until that Session ledger is deleted.
+
+Removing a queued row cancels only that exact pending identity; an
+already-processing or absent identity conflicts. A safe-point claim within the
+active Turn is projected through `command_lifecycle` and an authoritative
+`queue.updated` revision before later stale transport state can win. If an idle
+runtime claim fails, the server stops automatic draining and emits only the
+fixed, non-sensitive `queue.rewake_blocked` projection. A later successful
+queue mutation or execution-setting update clears that exact blocked state and
+emits `queue.rewake_ready`; arbitrary errors cannot clear it. Prompt text is
+UTF-8, capped by the existing request budget, and the queue projection is
+independently truncated for display.
+Rich media, queue editing, Goal controls, Task Explorer, command discovery,
+and ghost suggestions are outside this Desktop queue boundary.
 
 ### Unexpected backend exit containment
 
@@ -357,6 +427,19 @@ provider/tool dialect.
 - [`handleBackendExit` and `bootstrapApp`](../../internal/webui/assets/app.mjs)
   register the crash listener before asynchronous bootstrap and apply global
   control admission.
+- [`QueryEngine.EnqueueUserInputWithID`](../../engine/queued_input.go#L263)
+  owns retry-stable text admission; the admission receipt in
+  [`RuntimeInputCoordinator`](../../engine/input_coordinator.go) preserves
+  exact acknowledgement across settlement and restart, while
+  [`RuntimeInputConflictError`](../../engine/input_coordinator.go#L74) keeps
+  identity reuse fail closed.
+- [`session.enqueuePrompt`](../../server/appserver/runtime_queue.go#L114) and
+  [`session.startNextRuntimeItemLocked`](../../server/appserver/runtime_queue.go#L295)
+  own Desktop queue projection and serialized idle admission without taking
+  engine settlement authority.
+- [`send`](../../internal/webui/assets/app.mjs#L1640) and
+  [`canQueuePrompt`](../../internal/webui/assets/state.mjs#L1320) own the
+  retry-stable renderer request and active-Turn-only control projection.
 - [`unpacked_lifecycle_smoke.cjs`](../../desktop/scripts/unpacked_lifecycle_smoke.cjs)
   owns the isolated loopback fixture, canonical preseed, public snapshot
   oracle, identity-checked crash, and no-restart automation boundary.

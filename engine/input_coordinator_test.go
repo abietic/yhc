@@ -507,6 +507,198 @@ func TestRuntimeInputCoordinatorRejectsMismatchedThreadOnEnqueueAndRecovery(t *t
 			t.Fatal("recovery accepted a mismatched thread scope")
 		}
 	})
+	t.Run("admission receipt recovery", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "runtime-inputs.json")
+		item := RuntimeItem{
+			Version:    runtimeItemVersion,
+			ID:         "wrong-receipt-thread",
+			Kind:       RuntimeItemUserPrompt,
+			Priority:   RuntimePriorityNext,
+			Scope:      RuntimeInputScope{SessionID: "thread-session", ThreadID: "thread-other"},
+			Sequence:   1,
+			EnqueuedAt: time.Unix(1, 0).UTC(),
+			State:      RuntimeItemPending,
+			UserPrompt: &RuntimeUserPrompt{Display: "queued", Prompt: "queued"},
+		}
+		receipt, err := runtimeInputAdmissionReceiptFor(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(runtimeInputEnvelope{
+			Version:           runtimeInputEnvelopeVersion,
+			Revision:          1,
+			NextSequence:      1,
+			AdmissionReceipts: []runtimeInputAdmissionReceipt{receipt},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		recoveryConfig := config
+		recoveryConfig.Path = path
+		if _, err := NewRuntimeInputCoordinator(recoveryConfig, nil); err == nil {
+			t.Fatal("recovery accepted a mismatched admission receipt scope")
+		}
+	})
+	t.Run("admission receipt item mismatch", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "runtime-inputs.json")
+		item := RuntimeItem{
+			Version:    runtimeItemVersion,
+			ID:         "receipt-item-mismatch",
+			Kind:       RuntimeItemUserPrompt,
+			Priority:   RuntimePriorityNext,
+			Scope:      RuntimeInputScope{SessionID: "thread-session", ThreadID: "thread-owner"},
+			Sequence:   1,
+			EnqueuedAt: time.Unix(1, 0).UTC(),
+			State:      RuntimeItemPending,
+			UserPrompt: &RuntimeUserPrompt{Display: "queued", Prompt: "queued"},
+		}
+		receipt, err := runtimeInputAdmissionReceiptFor(item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		receipt.PayloadDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+		data, err := json.Marshal(runtimeInputEnvelope{
+			Version:           runtimeInputEnvelopeVersion,
+			Revision:          1,
+			NextSequence:      1,
+			Items:             []RuntimeItem{item},
+			AdmissionReceipts: []runtimeInputAdmissionReceipt{receipt},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		recoveryConfig := config
+		recoveryConfig.Path = path
+		if _, err := NewRuntimeInputCoordinator(recoveryConfig, nil); err == nil {
+			t.Fatal("recovery accepted a receipt that disagreed with its pending item")
+		}
+	})
+}
+
+func TestRuntimeInputCoordinatorMigratesV1AdmissionReceiptAndKeepsHistoricalACK(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime-inputs.json")
+	scope := RuntimeInputScope{SessionID: "receipt-v1", ThreadID: "receipt-v1"}
+	enqueuedAt := time.Unix(42, 0).UTC()
+	item := RuntimeItem{
+		Version:    runtimeItemVersion,
+		ID:         "44444444-4444-4444-8444-444444444444",
+		Kind:       RuntimeItemUserPrompt,
+		Priority:   RuntimePriorityNext,
+		Scope:      scope,
+		Sequence:   7,
+		EnqueuedAt: enqueuedAt,
+		State:      RuntimeItemPending,
+		Origin:     "entrypoint",
+		Provenance: "desktop-runtime-queue",
+		UserPrompt: &RuntimeUserPrompt{Display: "legacy preview", Prompt: "legacy prompt"},
+	}
+	data, err := json.Marshal(runtimeInputEnvelope{
+		Version:      runtimeInputEnvelopeLegacyVersion,
+		Revision:     9,
+		NextSequence: 7,
+		Items:        []RuntimeItem{item},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := RuntimeInputCoordinatorConfig{
+		SessionID: scope.SessionID,
+		ThreadID:  scope.ThreadID,
+		Path:      path,
+	}
+	coordinator, err := NewRuntimeInputCoordinator(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admitted, err := coordinator.HasAdmissionReceipt(item); err != nil || !admitted {
+		t.Fatalf("migrated receipt: admitted=%v err=%v", admitted, err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var migrated runtimeInputEnvelope
+	if err := json.Unmarshal(persisted, &migrated); err != nil {
+		t.Fatal(err)
+	}
+	if migrated.Version != runtimeInputEnvelopeVersion ||
+		len(migrated.AdmissionReceipts) != 1 ||
+		migrated.AdmissionReceipts[0].Sequence != item.Sequence ||
+		!migrated.AdmissionReceipts[0].EnqueuedAt.Equal(enqueuedAt) {
+		t.Fatalf("migrated envelope = %#v", migrated)
+	}
+	if err := coordinator.Settle(item.ID); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewRuntimeInputCoordinator(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items := reopened.Snapshot(scope); len(items) != 0 {
+		t.Fatalf("settled v1 item replayed: %#v", items)
+	}
+	if admitted, err := reopened.HasAdmissionReceipt(item); err != nil || !admitted {
+		t.Fatalf("settled migrated receipt: admitted=%v err=%v", admitted, err)
+	}
+	conflicting := cloneRuntimeItem(item)
+	conflicting.UserPrompt.Prompt = "different prompt"
+	_, err = reopened.HasAdmissionReceipt(conflicting)
+	var conflict *RuntimeInputConflictError
+	if !errors.As(err, &conflict) || conflict.ID != item.ID {
+		t.Fatalf("migrated receipt conflict = %#v", err)
+	}
+}
+
+func TestRuntimeInputAdmissionReceiptPersistenceFailureIsAtomic(t *testing.T) {
+	root := t.TempDir()
+	blockedParent := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(blockedParent, []byte("block ledger parent"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scope := RuntimeInputScope{SessionID: "receipt-persist-failure"}
+	coordinator, err := NewRuntimeInputCoordinator(RuntimeInputCoordinatorConfig{
+		SessionID: scope.SessionID,
+		Path:      filepath.Join(blockedParent, "runtime-inputs.json"),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := RuntimeItem{
+		ID:       "55555555-5555-4555-8555-555555555555",
+		Kind:     RuntimeItemUserPrompt,
+		Priority: RuntimePriorityNext,
+		Scope:    scope,
+		UserPrompt: &RuntimeUserPrompt{
+			Display: "must stay atomic",
+			Prompt:  "must stay atomic",
+		},
+	}
+	if _, err := coordinator.EnqueueBoundedWithAdmissionReceipt(item, 1); err == nil {
+		t.Fatal("receipt admission unexpectedly survived a blocked ledger path")
+	}
+	if items := coordinator.Snapshot(scope); len(items) != 0 {
+		t.Fatalf("failed receipt admission mutated items: %#v", items)
+	}
+	if coordinator.revision != 0 || coordinator.nextSequence != 0 || len(coordinator.admissionReceipts) != 0 {
+		t.Fatalf(
+			"failed receipt admission mutated coordinator: revision=%d sequence=%d receipts=%#v",
+			coordinator.revision,
+			coordinator.nextSequence,
+			coordinator.admissionReceipts,
+		)
+	}
+	if admitted, err := coordinator.HasAdmissionReceipt(item); err != nil || admitted {
+		t.Fatalf("failed receipt became visible: admitted=%v err=%v", admitted, err)
+	}
 }
 
 func TestQueryEngineFailsClosedWhenRuntimeInputLedgerIsCorrupt(t *testing.T) {

@@ -558,6 +558,30 @@ function activeTurnCrashContainmentMatches(result) {
     result.terminalEventCount === 0;
 }
 
+function activeTurnProjectionMatches(result, expectedSessionID) {
+  return typeof expectedSessionID === 'string' &&
+    expectedSessionID.length > 0 &&
+    result?.activeSessionID === expectedSessionID &&
+    typeof result.activeTurnID === 'string' &&
+    result.activeTurnID.length > 0 &&
+    result.snapshotActiveTurnID === result.activeTurnID &&
+    typeof result.snapshotPartialTurnID === 'string' &&
+    result.snapshotPartialTurnID.length > 0 &&
+    result.snapshotPartialCount === 1 &&
+    result.snapshotPartialCompleted === false &&
+    result.partialVisible === true &&
+    result.activePromptVisible === true &&
+    typeof result.sessionTitle === 'string' &&
+    result.sessionTitle.length > 0 &&
+    typeof result.workspaceLabel === 'string' &&
+    result.workspaceLabel.length > 0 &&
+    result.status === 'running' &&
+    result.cancelEnabled === true &&
+    result.sendDisabled === false &&
+    result.sendAction === 'Queue' &&
+    result.busySession === true;
+}
+
 function requireLoopbackProviderURL(candidate) {
   let parsed;
   try {
@@ -755,7 +779,10 @@ async function startActiveTurnProvider({ createServer = http.createServer } = {}
         return;
       }
       writeProviderDelta(response, ACTIVE_TURN_PARTIAL, 'active');
-      const keepAlive = setInterval(() => response.write(': keepalive\n\n'), 500);
+      // openai-go decodes a comment-only block terminated by an empty line as
+      // an empty JSON event. Keep transport traffic flowing without dispatching
+      // that empty block while the response remains intentionally unfinished.
+      const keepAlive = setInterval(() => response.write(': keepalive\n'), 500);
       const settle = () => clearInterval(keepAlive);
       request.once('aborted', settle);
       response.once('close', settle);
@@ -1648,26 +1675,14 @@ async function prepareActiveTurnCrash(
         status: document.querySelector('#status')?.textContent || '',
         cancelEnabled: document.querySelector('#cancel')?.disabled === false,
         sendDisabled: document.querySelector('#send')?.disabled === true,
+        sendAction: document.querySelector('#send span')?.textContent?.trim() || '',
         busySession: Boolean(document.querySelector(
           '#session-list > .session-row.active > .session-dot.is-busy',
         )),
       };
       })()`);
       lastProjection = result;
-      return result?.activeSessionID === activeSessionID &&
-        result.activeTurnID &&
-        result.snapshotActiveTurnID === result.activeTurnID &&
-        result.snapshotPartialTurnID &&
-        result.snapshotPartialCount === 1 &&
-        result.snapshotPartialCompleted === false &&
-        result.partialVisible === true &&
-        result.activePromptVisible === true &&
-        result.sessionTitle &&
-        result.workspaceLabel &&
-        result.status === 'running' &&
-        result.cancelEnabled === true &&
-        result.sendDisabled === true &&
-        result.busySession === true
+      return activeTurnProjectionMatches(result, activeSessionID)
         ? result
         : null;
     }, RENDERER_TIMEOUT_MS, 'active-turn renderer projection');
@@ -2176,6 +2191,7 @@ module.exports = {
   ACTIVE_TURN_SEED_PROMPT,
   NO_RESTART_OBSERVATION_MS,
   activeTurnCrashContainmentMatches,
+  activeTurnProjectionMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
   closePackagedDesktop,

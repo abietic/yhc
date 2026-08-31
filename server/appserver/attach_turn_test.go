@@ -34,6 +34,77 @@ type recoveredProjectGraphEngine struct {
 	submitMessageCalls atomic.Int32
 }
 
+type recoveredRuntimeQueueEngine struct {
+	*queueSessionEngine
+
+	claimed          atomic.Bool
+	pendingChecks    atomic.Int32
+	restoreWaitTimed atomic.Bool
+	runtimeSubmitted chan struct{}
+	runtimeOnce      sync.Once
+}
+
+func newRecoveredRuntimeQueueEngine(input EngineOptions) *recoveredRuntimeQueueEngine {
+	base := newQueueSessionEngine(input)
+	base.ready <- struct{}{}
+	return &recoveredRuntimeQueueEngine{
+		queueSessionEngine: base,
+		runtimeSubmitted:   make(chan struct{}),
+	}
+}
+
+func (e *recoveredRuntimeQueueEngine) PendingProjectGraphPermissionRequest() (
+	engine.PermissionRequestEvent,
+	bool,
+) {
+	if e.pendingChecks.Add(1) != 1 {
+		return engine.PermissionRequestEvent{}, false
+	}
+	// A constructor-started pump has subscribed before attach can reserve its
+	// explicit first turn. Waiting for its runtime submission makes that bad
+	// ordering deterministic instead of relying on goroutine scheduling.
+	select {
+	case <-e.subscribed:
+		select {
+		case <-e.runtimeSubmitted:
+		case <-time.After(2 * time.Second):
+			e.restoreWaitTimed.Store(true)
+		}
+	default:
+	}
+	return engine.PermissionRequestEvent{}, false
+}
+
+func (e *recoveredRuntimeQueueEngine) ClaimNextRuntimeItem() (
+	engine.RuntimeItem,
+	bool,
+	error,
+) {
+	if !e.claimed.CompareAndSwap(false, true) {
+		return engine.RuntimeItem{}, false, nil
+	}
+	return engine.RuntimeItem{
+		ID:         "recovered-generic",
+		Kind:       engine.RuntimeItemAgentNotification,
+		Priority:   engine.RuntimePriorityNext,
+		State:      engine.RuntimeItemProcessing,
+		EnqueuedAt: time.Now().UTC(),
+		AgentNotification: &engine.RuntimeAgentNotification{
+			AgentID: "recovered-agent",
+			Status:  "completed",
+			Message: "recovered runtime event",
+		},
+	}, true, nil
+}
+
+func (e *recoveredRuntimeQueueEngine) SubmitRuntimeItem(
+	ctx context.Context,
+	item engine.RuntimeItem,
+) (<-chan engine.QueryEvent, engine.Terminal) {
+	e.runtimeOnce.Do(func() { close(e.runtimeSubmitted) })
+	return e.queueSessionEngine.SubmitRuntimeItem(ctx, item)
+}
+
 func (e *recoveredProjectGraphEngine) SubmitMessage(
 	context.Context,
 	string,
@@ -175,6 +246,115 @@ func TestAttachTurnCoalescesAndReplaysReceipt(t *testing.T) {
 		t.Fatalf("replay = %d: %s", replay.StatusCode, readBody(t, replay))
 	}
 	_ = replay.Body.Close()
+}
+
+func TestAttachTurnAdmitsExplicitPromptBeforeRecoveredRuntimeQueue(t *testing.T) {
+	catalogDir, root := t.TempDir(), t.TempDir()
+	catalog := filepath.Join(catalogDir, "roots.json")
+	const sessionID = "21212121-2121-4121-8121-212121212121"
+	transcriptDir := filepath.Join(root, ".yhc", "transcripts")
+	writeDurableSession(t, transcriptDir, sessionID, root, "saved", "main")
+	if err := enginesession.RegisterSessionRoot(catalog, root, transcriptDir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var created *recoveredRuntimeQueueEngine
+	server, err := New(Config{
+		Token:              "test-token",
+		SessionCatalogPath: catalog,
+		DiscoveryCWD:       catalogDir,
+		ValidateResume:     func(context.Context, EngineOptions) error { return nil },
+		Factory: func(_ context.Context, input EngineOptions) (SessionEngine, error) {
+			created = newRecoveredRuntimeQueueEngine(input)
+			return created, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+	t.Cleanup(func() { shutdownTestServer(t, server) })
+
+	const clientTurnID = "22222222-2222-4222-8222-222222222223"
+	response := doJSON(
+		t,
+		httpServer.URL+"/v1/durable-sessions/"+sessionID+"/attach-turn",
+		"test-token",
+		http.MethodPost,
+		AttachTurnRequest{Prompt: "explicit attach prompt", ClientTurnID: clientTurnID},
+	)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("attach = %d: %s", response.StatusCode, readBody(t, response))
+	}
+	var attached AttachTurnResponse
+	decodeResponse(t, response, &attached)
+	if attached.Status != "turn_accepted" || attached.TurnID != clientTurnID ||
+		attached.Session.ActiveTurnID != clientTurnID {
+		t.Fatalf("attach response = %#v", attached)
+	}
+	if created.restoreWaitTimed.Load() {
+		t.Fatal("attach waited for a constructor-started runtime pump")
+	}
+	select {
+	case <-created.directStarted:
+	case <-time.After(time.Second):
+		t.Fatal("explicit attach prompt did not start")
+	}
+	if created.claimed.Load() {
+		t.Fatal("recovered runtime item was claimed before explicit attach terminal")
+	}
+	select {
+	case item := <-created.runtimeStarted:
+		t.Fatalf("recovered runtime item started before explicit attach terminal: %#v", item)
+	default:
+	}
+
+	owned, ok := server.getSession(sessionID)
+	if !ok {
+		t.Fatal("attached session disappeared")
+	}
+	_, updates, unsubscribe, _, err := owned.events.subscribe(owned.events.latestCursor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unsubscribe()
+	close(created.directRelease)
+	select {
+	case item := <-created.runtimeStarted:
+		if item.ID != "recovered-generic" || item.Kind != engine.RuntimeItemAgentNotification {
+			t.Fatalf("recovered runtime item = %#v", item)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("recovered runtime item did not start after explicit attach terminal")
+	}
+	close(created.runtimeRelease)
+
+	directFinished := false
+	runtimeTurnID := ""
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case event, open := <-updates:
+			if !open {
+				t.Fatal("event stream closed before recovered runtime item settled")
+			}
+			if event.Type == "turn.finished" && event.TurnID == clientTurnID {
+				directFinished = true
+			}
+			if event.Type == "turn.accepted" && event.TurnID != clientTurnID {
+				if !directFinished {
+					t.Fatal("recovered runtime turn was accepted before explicit attach terminal")
+				}
+				runtimeTurnID = event.TurnID
+			}
+			if runtimeTurnID != "" && event.Type == "turn.finished" && event.TurnID == runtimeTurnID {
+				return
+			}
+		case <-timer.C:
+			t.Fatalf("recovered runtime turn did not settle: %#v", owned.summary())
+		}
+	}
 }
 
 func TestAttachTurnCountsConcurrentSessionCreationAgainstCapacity(t *testing.T) {

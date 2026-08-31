@@ -422,6 +422,9 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /v1/sessions/{session_id}/review-diff", s.handleReviewDiff)
 	api.HandleFunc("GET /v1/sessions/{session_id}/execution-settings", s.handleGetExecutionSettings)
 	api.HandleFunc("PATCH /v1/sessions/{session_id}/execution-settings", s.handleUpdateExecutionSettings)
+	api.HandleFunc("GET /v1/sessions/{session_id}/queued-prompts", s.handleQueuedPrompts)
+	api.HandleFunc("POST /v1/sessions/{session_id}/queued-prompts", s.handleQueuePrompt)
+	api.HandleFunc("DELETE /v1/sessions/{session_id}/queued-prompts/{queue_id}", s.handleCancelQueuedPrompt)
 	api.HandleFunc("GET /v1/sessions/{session_id}/events", s.handleEvents)
 	api.HandleFunc("POST /v1/sessions/{session_id}/turns", s.handleStartTurn)
 	api.HandleFunc("POST /v1/sessions/{session_id}/cancel", s.handleCancelTurn)
@@ -802,6 +805,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessions[owned.id] = owned
+	owned.startRuntimeInputPump()
 	s.mu.Unlock()
 	s.settleWorkspaceHandle(handle, true)
 	writeJSON(w, http.StatusCreated, owned.summary())

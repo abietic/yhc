@@ -130,6 +130,40 @@ type StartTurnResponse struct {
 	Accepted  bool   `json:"accepted"`
 }
 
+// QueuePromptRequest durably queues one text prompt under a retry-stable
+// renderer identity. Queue admission never interrupts an active turn.
+type QueuePromptRequest struct {
+	Prompt        string `json:"prompt"`
+	ClientQueueID string `json:"client_queue_id"`
+}
+
+// QueuedPrompt is the bounded presentation projection of one still-pending
+// engine-owned prompt. It deliberately excludes dispatch payloads and media
+// identity.
+type QueuedPrompt struct {
+	ID          string    `json:"id"`
+	Display     string    `json:"display"`
+	EnqueuedAt  time.Time `json:"enqueued_at"`
+	State       string    `json:"state"`
+	Unavailable bool      `json:"unavailable,omitempty"`
+}
+
+// QueuedPromptsResponse is the authoritative current queue projection.
+type QueuedPromptsResponse struct {
+	Revision uint64         `json:"revision"`
+	Items    []QueuedPrompt `json:"items"`
+}
+
+// QueuePromptResponse acknowledges one retry-stable admission and returns the
+// same authoritative projection used by snapshot and SSE recovery.
+type QueuePromptResponse struct {
+	SessionID  string         `json:"session_id"`
+	AcceptedID string         `json:"accepted_id"`
+	Pending    bool           `json:"pending"`
+	Revision   uint64         `json:"revision"`
+	Items      []QueuedPrompt `json:"items"`
+}
+
 // AttachTurnRequest atomically resumes one durable session and admits its first turn.
 type AttachTurnRequest struct {
 	Prompt       string `json:"prompt"`
@@ -293,11 +327,13 @@ type ReviewDiffSource struct {
 // SessionSnapshot is the stable Desktop recovery projection. It deliberately
 // avoids exposing engine reducer structs as a public transport contract.
 type SessionSnapshot struct {
-	Session      SessionSummary        `json:"session"`
-	EventCursor  uint64                `json:"event_cursor"`
-	Messages     []SnapshotMessage     `json:"messages"`
-	Interactions []InteractionSnapshot `json:"interactions"`
-	Activity     []ActivityEntry       `json:"activity"`
+	Session               SessionSummary        `json:"session"`
+	EventCursor           uint64                `json:"event_cursor"`
+	Messages              []SnapshotMessage     `json:"messages"`
+	Interactions          []InteractionSnapshot `json:"interactions"`
+	Activity              []ActivityEntry       `json:"activity"`
+	QueuedPrompts         []QueuedPrompt        `json:"queued_prompts"`
+	QueuedPromptsRevision uint64                `json:"queued_prompts_revision"`
 }
 
 // ActivityEntry is a bounded, display-safe operational projection. It is not
