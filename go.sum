@@ -125,8 +125,8 @@ github.com/cloudwego/eino v0.9.13 h1:iD/ETS+lxnNp1VeNPqWVGPWdND6Dbf4LyINbLUlDRcM
 github.com/cloudwego/eino v0.9.13/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
 github.com/cloudwego/eino-ext/components/model/agenticark v0.2.4 h1:FmaUVKF5bm/HcQNutM2tsoinNaRo24GrFIWz3bBWOb4=
 github.com/cloudwego/eino-ext/components/model/agenticark v0.2.4/go.mod h1:PcENOsx1rnTpUfPIYkF/lg/X3IYGTyg8DoRpKDvDDKM=
-github.com/cloudwego/eino-ext/components/model/agenticclaude v0.1.3 h1:nfO9jUPhIKTHDPyL7rso6y7Mx8cAmrIgkeJC6KqTuXI=
-github.com/cloudwego/eino-ext/components/model/agenticclaude v0.1.3/go.mod h1:/dX1P7HNC7D3/nYLDoXBvdKAFnGS4tBbtJ8NrkaXuUk=
+github.com/cloudwego/eino-ext/components/model/agenticclaude v0.1.4 h1:wMm9+0wIx/EcVKQBezAnVJHbXiyBDFhf/C7VCq9uauo=
+github.com/cloudwego/eino-ext/components/model/agenticclaude v0.1.4/go.mod h1:/dX1P7HNC7D3/nYLDoXBvdKAFnGS4tBbtJ8NrkaXuUk=
 github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.2 h1:HRNeEWqmptl9jy7SGexdSzi1RfFWoXG72xFCt58TgYM=
 github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.2/go.mod h1:wxTrojnx3uRRS2gji9FcbzRo9QCmdH7fNBc9CRLbzbQ=
 github.com/cloudwego/eino-ext/components/model/agenticopenai v0.2.2 h1:ypI5PDFKcITXkZ58NLx5aWQXVTRbg9jYjSq6H2HEPjs=
