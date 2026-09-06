@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"charm.land/bubbles/v2/textarea"
@@ -3083,6 +3084,15 @@ func (a *App) renderEditor() string {
 		editorModel.Placeholder = suggestion
 	}
 	content := editorModel.View()
+	if hint := a.commandArgumentGhostHint(); hint != "" {
+		content = renderCommandArgumentGhost(
+			a.renderEnvironment.normalized().profile,
+			content,
+			editorModel.Width(),
+			2+a.renderEnvironment.normalized().profile.measure(a.textarea.Value(), 2)+1,
+			a.styles.Subtle.Render(hint),
+		)
+	}
 	inner := content
 
 	// Multiline indicator: show line count when input spans multiple lines
@@ -4064,47 +4074,37 @@ func (a *App) updateCommandHints() {
 		a.fileHintIdx = -1
 		return
 	}
-	value := strings.TrimSpace(a.textarea.Value())
+	value := strings.TrimLeftFunc(a.textarea.Value(), unicode.IsSpace)
 	query := strings.TrimPrefix(value, "/")
-	fields := strings.Fields(query)
-
-	// If we have a full command name + space → switch to file path hints
-	if (len(fields) >= 1 && strings.HasSuffix(value, " ")) || len(fields) >= 2 {
-		cmdName := strings.ToLower(fields[0])
-		// Check if this is a valid command that accepts file args
-		if a.commandRegistry.GetForContext(
-			contextPkg.Background(),
-			commands.EntrypointTUI,
-			a.commandCapabilityContext(),
-			cmdName,
-		) != nil {
-			// Extract the partial path (everything after command name)
-			var partial string
-			if len(fields) >= 2 {
-				partial = fields[len(fields)-1]
-			}
-			a.commandHints = nil
-			a.commandHintIdx = -1
-			a.updateFileHints(partial)
-			return
+	commandName, argumentText, hasArgumentSeparator := splitSlashCommandInput(query)
+	if hasArgumentSeparator {
+		cmd := a.commandForInput(commandName)
+		a.commandHints = nil
+		a.commandHintIdx = -1
+		if commandSupportsFileHints(cmd) {
+			a.updateFileHints(lastCommandArgument(argumentText))
+		} else {
+			a.fileHints = nil
+			a.fileHintIdx = -1
 		}
+		return
 	}
 
 	// Standard command name matching
-	var cmdQuery string
-	if len(fields) > 0 {
-		cmdQuery = strings.ToLower(fields[0])
-	}
+	cmdQuery := strings.ToLower(commandName)
 	var hints []*commands.Command
 	for _, cmd := range a.commandRegistry.ListForContext(
 		contextPkg.Background(),
 		commands.EntrypointTUI,
 		a.commandCapabilityContext(),
 	) {
-		if cmdQuery == "" || strings.HasPrefix(cmd.Name, cmdQuery) {
+		if commandNameMatches(cmd, cmdQuery) {
 			hints = append(hints, cmd)
 		}
 	}
+	sort.SliceStable(hints, func(left, right int) bool {
+		return commandMatchRank(hints[left], cmdQuery) < commandMatchRank(hints[right], cmdQuery)
+	})
 	a.commandHints = hints
 	a.fileHints = nil
 	a.fileHintIdx = -1
@@ -4144,7 +4144,7 @@ func (a *App) updateFileHints(partial string) {
 
 	// Resolve relative to CWD
 	if !filepath.IsAbs(dir) {
-		if cwd, err := os.Getwd(); err == nil {
+		if cwd := a.cwd(); cwd != "" {
 			dir = filepath.Join(cwd, dir)
 		}
 	}
@@ -4266,7 +4266,11 @@ func (a *App) renderCommandHints() string {
 		if labelWidth := profile.measure(label, 1); labelWidth > maxName {
 			maxName = labelWidth
 		}
-		entries = append(entries, entry{label: label, desc: cmd.Description, idx: i})
+		desc := cmd.Description
+		if hint := strings.Join(strings.Fields(cmd.ArgumentHint()), " "); hint != "" {
+			desc += " " + hint
+		}
+		entries = append(entries, entry{label: label, desc: desc, idx: i})
 	}
 
 	var sb strings.Builder

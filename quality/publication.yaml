@@ -2345,7 +2345,7 @@ privacy:
       match_sha256: ac76767037a950d94b148509cbf489349f6012fd29dc622947cac657d15274aa
       purpose: synthetic-security-fixture
     - path: engine/commands/registry.go
-      line: 2085
+      line: 2098
       rule_id: credential-assignment
       match_sha256: 4690f6483df28ae664680214d84ababf73f7c2619fcbac001f00a2b25eb2c2fa
       purpose: documentation-example

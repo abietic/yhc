@@ -180,6 +180,7 @@ func (e *QueryEngine) reloadResumedExecutionContext(
 	e.permissionRules = permission.NewRulesEngine(rules)
 	if registry != nil {
 		e.skillRegistry = registry
+		e.ensureCommandRegistry()
 		if e.toolRegistry != nil {
 			e.toolRegistry.Register(tools.SkillToolForRegistry(registry))
 		}
