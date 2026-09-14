@@ -724,11 +724,14 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	// Drain any existing stderr before our command
 	_, _ = shell.getStderrBuffer()
 
-	// Keep stderr merged with stdout as before. The terminal protocol carries
-	// both the persistent Bash CWD and exit status, so Guest execution never
-	// needs an unbounded follow-up pwd round trip.
-	wrappedCmd := fmt.Sprintf("echo '%s'; %s 2>&1; __eino_status=$?; printf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
-		startMarker, command, cwdMarker, endMarker)
+	// Parse command input separately from the protocol suffix. This preserves
+	// multiline option/alias changes and keeps trailing comments or heredoc
+	// delimiters from consuming protocol syntax. eval runs in the persistent
+	// shell and merges stderr for the complete command, without a subshell.
+	quotedCommand := "'" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'"
+	wrappedCmd := fmt.Sprintf("echo '%s'; builtin eval -- %s 2>&1\n__eino_status=$?\nprintf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
+		startMarker, quotedCommand, cwdMarker, endMarker)
+
 	if shell.binding != nil && containment.IsContainedAdapter(shell.binding.AdapterFamily()) {
 		if beforeSubmission := m.beforeGuestCommandSubmissionForTest; beforeSubmission != nil {
 			beforeSubmission()
