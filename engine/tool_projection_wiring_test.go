@@ -137,6 +137,18 @@ func TestCanonicalProjectionWiringProjectsProgressAndNormalizedTerminal(
 			},
 		},
 		{
+			name: "external bytes and split rune progress",
+			execute: func(ctx context.Context) (string, error) {
+				for _, content := range []string{"before\xff\xfeafter", "·\xc2", "中文🙂"} {
+					tools.EmitProgress(ctx, tools.ToolProgressEvent{Content: content})
+				}
+				return "complete output", nil
+			},
+			wantOutcome:  CanonicalToolOutcomeCompleted,
+			wantOutput:   "complete output",
+			wantProgress: []string{"before�after", "·�", "中文🙂"},
+		},
+		{
 			name: "failed execution",
 			execute: func(context.Context) (string, error) {
 				return "", errors.New("dispatch failed")
@@ -194,6 +206,20 @@ func TestCanonicalProjectionWiringProjectsProgressAndNormalizedTerminal(
 						projection,
 						want,
 					)
+				}
+			}
+			var legacyProgress []string
+			for _, event := range events {
+				if event.Type == EventToolProgress && event.ToolProgress != nil {
+					legacyProgress = append(legacyProgress, event.ToolProgress.Content)
+				}
+			}
+			if len(legacyProgress) != len(test.wantProgress) {
+				t.Fatalf("legacy progress count = %d, want %d", len(legacyProgress), len(test.wantProgress))
+			}
+			for index, want := range test.wantProgress {
+				if legacyProgress[index] != want {
+					t.Fatalf("legacy progress %d = %q, want %q", index, legacyProgress[index], want)
 				}
 			}
 			terminal := projections[len(projections)-1]
