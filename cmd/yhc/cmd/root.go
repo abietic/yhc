@@ -20,6 +20,7 @@ import (
 	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/engine/config"
 	"github.com/abietic/yhc/engine/containment"
+	promptctx "github.com/abietic/yhc/engine/context"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/notify"
 	"github.com/abietic/yhc/engine/permission"
@@ -1278,7 +1279,7 @@ func buildEngineConfigForCWD(
 
 	permMode := resolvePermissionMode(appConfig, flags)
 
-	systemPrompt := "You are a helpful AI assistant with access to tools. Use the available tools to accomplish tasks. When a tool would help answer a question or complete a task, call it directly rather than describing what you would do."
+	systemPrompt := promptctx.BaseIdentityPrompt
 	if appConfig.CustomSystemPrompt != "" {
 		systemPrompt = appConfig.CustomSystemPrompt
 	}
