@@ -20,7 +20,6 @@ type MicroCompactResult struct {
 // MicroCompact applies targeted trimming to individual messages to reduce
 // context size without full compaction. It targets:
 // - Long tool results (truncate to first/last N chars with "..." separator)
-// - Repeated whitespace in content
 // - Large base64 image data (replace with placeholder)
 // - Very long assistant reasoning (trim middle)
 //
@@ -56,13 +55,6 @@ func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroComp
 	if totalFreed < targetTokensToFree {
 		var freed int
 		current, freed = TrimLongThinking(current, 4000)
-		totalFreed += freed
-	}
-
-	// Strategy 4: Compress whitespace
-	if totalFreed < targetTokensToFree {
-		var freed int
-		current, freed = CompressWhitespace(current)
 		totalFreed += freed
 	}
 
@@ -237,89 +229,6 @@ func TrimLongThinking(messages []*schema.Message, maxLen int) ([]*schema.Message
 	}
 
 	return result, totalFreed
-}
-
-// multiNewlinePattern matches runs of 3+ newlines.
-var multiNewlinePattern = regexp.MustCompile(`\n{3,}`)
-
-// multiSpacePattern matches runs of 3+ spaces (not newlines).
-var multiSpacePattern = regexp.MustCompile(`[^\S\n]{3,}`)
-
-// CompressWhitespace normalizes excessive whitespace in all messages.
-// It collapses runs of 3+ newlines to 2 newlines, and runs of 3+ spaces
-// to a single space. Returns the modified messages and an estimate of
-// tokens freed.
-func CompressWhitespace(messages []*schema.Message) ([]*schema.Message, int) {
-	totalFreed := 0
-	result := make([]*schema.Message, len(messages))
-
-	for i, msg := range messages {
-		if msg == nil {
-			result[i] = msg
-			continue
-		}
-
-		contentChanged := false
-		newContent := msg.Content
-		reasoningChanged := false
-		newReasoning := msg.ReasoningContent
-
-		if newContent != "" {
-			compressed := compressWS(newContent)
-			if compressed != newContent {
-				contentChanged = true
-				newContent = compressed
-			}
-		}
-
-		if newReasoning != "" {
-			compressed := compressWS(newReasoning)
-			if compressed != newReasoning {
-				reasoningChanged = true
-				newReasoning = compressed
-			}
-		}
-
-		if !contentChanged && !reasoningChanged {
-			result[i] = msg
-			continue
-		}
-
-		originalTokens := roughTextTokens(msg.Content) + roughTextTokens(msg.ReasoningContent)
-		newTokens := roughTextTokens(newContent) + roughTextTokens(newReasoning)
-		freed := originalTokens - newTokens
-		if freed < 0 {
-			freed = 0
-		}
-		totalFreed += freed
-
-		clone := *msg
-		if contentChanged {
-			clone.Content = newContent
-		}
-		if reasoningChanged {
-			clone.ReasoningContent = newReasoning
-		}
-		if msg.Extra != nil {
-			clone.Extra = make(map[string]any, len(msg.Extra))
-			for k, v := range msg.Extra {
-				clone.Extra[k] = v
-			}
-		}
-		if len(msg.ToolCalls) > 0 {
-			clone.ToolCalls = append([]schema.ToolCall(nil), msg.ToolCalls...)
-		}
-		result[i] = &clone
-	}
-
-	return result, totalFreed
-}
-
-// compressWS collapses runs of 3+ newlines to 2, and runs of 3+ spaces to 1.
-func compressWS(s string) string {
-	s = multiNewlinePattern.ReplaceAllString(s, "\n\n")
-	s = multiSpacePattern.ReplaceAllString(s, " ")
-	return s
 }
 
 // Snip performs the lightweight pre-compact pass that trims obvious
