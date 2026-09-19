@@ -229,13 +229,15 @@ type AgentExecOutcome string
 
 const (
 	AgentExecOutcomeCompleted    AgentExecOutcome = "completed"
+	AgentExecOutcomeFailed       AgentExecOutcome = "failed"
 	AgentExecOutcomeBackgrounded AgentExecOutcome = "backgrounded"
 )
 
 // AgentExecResult holds the output of a sub-agent execution or the structured
-// result of releasing a foreground wait.
+// result of releasing a foreground wait. Callers must check the accompanying
+// error before treating the output as a completed task.
 type AgentExecResult struct {
-	Result         string   // Final assistant response
+	Result         string   // Assistant output, possibly partial when execution also returns an error
 	TurnCount      int      // Number of turns consumed
 	TokensUsed     int      // Approximate token usage
 	ToolsUsed      []string // Names of tools invoked during execution
@@ -1578,6 +1580,9 @@ func (r *AgentRunner) settleForegroundWait(
 	}
 	if result != nil {
 		result.Outcome = AgentExecOutcomeCompleted
+		if err != nil {
+			result.Outcome = AgentExecOutcomeFailed
+		}
 		result.AgentID = running.ID
 		result.SessionID = running.SessionID
 		result.ThreadID = running.ThreadID
@@ -1777,36 +1782,32 @@ func finishAgentExecution(agentCtx context.Context, running *RunningAgent, gener
 	if wasAborted && err == nil {
 		err = context.Canceled
 	}
+	// Findings and resume history belong to the execution, including a failed
+	// one. Persist them before publishing its truthful terminal status.
+	if result != nil {
+		mergeResultProgress(&running.Progress, result)
+		if len(result.Messages) > 0 {
+			running.Messages = cloneSchemaMessages(result.Messages)
+		} else if result.Result != "" {
+			running.Messages = append(running.Messages, &schema.Message{
+				Role: schema.Assistant, Content: result.Result,
+			})
+		}
+		running.Result = result.Result
+		if writeErr := running.persistOutput(result.Result); writeErr != nil {
+			err = errors.Join(err, writeErr)
+		}
+	} else if err == nil {
+		err = fmt.Errorf("agent_runner: sub-agent returned nil result")
+	}
 	if err != nil {
 		running.Status = "failed"
 		running.Error = err
-		// Check if it was a context cancellation (abort).
 		if agentCtx.Err() != nil || wasAborted {
 			running.Status = "aborted"
 		}
 	} else {
-		if result == nil {
-			err = fmt.Errorf("agent_runner: sub-agent returned nil result")
-			running.Status = "failed"
-			running.Error = err
-		} else if writeErr := running.persistOutput(result.Result); writeErr != nil {
-			err = writeErr
-			running.Status = "failed"
-			running.Error = writeErr
-		} else {
-			running.Status = "completed"
-			running.Result = result.Result
-			mergeResultProgress(&running.Progress, result)
-			if len(result.Messages) > 0 {
-				running.Messages = cloneSchemaMessages(result.Messages)
-			} else {
-				// Record the final assistant message in conversation history.
-				running.Messages = append(running.Messages, &schema.Message{
-					Role:    schema.Assistant,
-					Content: result.Result,
-				})
-			}
-		}
+		running.Status = "completed"
 	}
 	if worktreeErr := finalizeAgentWorktreeLocked(
 		agentCtx,
@@ -1849,7 +1850,7 @@ func finishAgentExecution(agentCtx context.Context, running *RunningAgent, gener
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("agent_runner: sub-agent execution failed: %w", err)
+		return result, fmt.Errorf("agent_runner: sub-agent execution failed: %w", err)
 	}
 	return result, nil
 }

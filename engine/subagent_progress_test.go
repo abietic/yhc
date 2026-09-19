@@ -279,6 +279,7 @@ func (m *failingSubagentProgressModel) Stream(context.Context, []*schema.Message
 	if call == 1 {
 		return schema.StreamReaderFromArray([]*schema.Message{{
 			Role:         schema.Assistant,
+			Content:      "Requirement B failed: expected two outputs, observed one.\n",
 			ToolCalls:    []schema.ToolCall{{ID: "read-before-failure", Function: schema.FunctionCall{Name: "Read", Arguments: `{"file_path":"failure.go"}`}}},
 			ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 10, CompletionTokens: 3}},
 		}}), nil
