@@ -79,7 +79,7 @@ func TestACPRecoveryCascade(t *testing.T) {
 	history := make([]*schema.Message, 0, 8)
 	for i := 0; i < 4; i++ {
 		history = append(history, &schema.Message{Role: schema.User, Content: fmt.Sprintf("history user %d", i)})
-		history = append(history, &schema.Message{Role: schema.Assistant, Content: fmt.Sprintf("history assistant %d", i)})
+		history = append(history, &schema.Message{Role: schema.Assistant, Content: fmt.Sprintf("history assistant %d: %s", i, strings.Repeat("discardable investigation detail ", 100))})
 	}
 	acpSess.Engine.SetResumedMessages(history)
 
