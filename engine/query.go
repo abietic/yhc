@@ -484,6 +484,36 @@ func stripSignatureBlocks(messages []*schema.Message) []*schema.Message {
 	return result
 }
 
+// mergeUserMessages preserves the authoritative ordered rich parts when either
+// input is multimodal. Content remains the text-only compatibility projection.
+// Allocate a fresh parts slice so normalization never appends into history.
+func mergeUserMessages(first, second *schema.Message) *schema.Message {
+	merged := *first
+	if first.Content != "" && second.Content != "" {
+		merged.Content = first.Content + "\n\n" + second.Content
+	} else if second.Content != "" {
+		merged.Content = second.Content
+	}
+	if len(first.UserInputMultiContent) == 0 && len(second.UserInputMultiContent) == 0 {
+		return &merged
+	}
+	parts := make([]schema.MessageInputPart, 0, len(first.UserInputMultiContent)+len(second.UserInputMultiContent)+3)
+	appendInput := func(message *schema.Message) {
+		if len(message.UserInputMultiContent) > 0 {
+			parts = append(parts, message.UserInputMultiContent...)
+		} else if message.Content != "" {
+			parts = append(parts, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: message.Content})
+		}
+	}
+	appendInput(first)
+	if len(parts) > 0 && (len(second.UserInputMultiContent) > 0 || second.Content != "") {
+		parts = append(parts, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: "\n\n"})
+	}
+	appendInput(second)
+	merged.UserInputMultiContent = parts
+	return &merged
+}
+
 // normalizeMessagesForAPI prepares the message list for API submission.
 // Implements the full normalization pipeline ported from
 // src/utils/messages.ts:normalizeMessagesForAPI:
@@ -543,14 +573,7 @@ func normalizeMessagesForAPI(messages []*schema.Message) []*schema.Message {
 			// when either message has special metadata (compact boundaries, etc.).
 			if len(result) > 0 && result[len(result)-1].Role == schema.User &&
 				!hasSpecialSubtype(result[len(result)-1]) && !hasSpecialSubtype(converted) {
-				last := result[len(result)-1]
-				merged := *last
-				if merged.Content != "" && converted.Content != "" {
-					merged.Content = merged.Content + "\n\n" + converted.Content
-				} else if converted.Content != "" {
-					merged.Content = converted.Content
-				}
-				result[len(result)-1] = &merged
+				result[len(result)-1] = mergeUserMessages(result[len(result)-1], converted)
 			} else {
 				result = append(result, converted)
 			}
@@ -573,13 +596,7 @@ func normalizeMessagesForAPI(messages []*schema.Message) []*schema.Message {
 		if msg.Role == schema.User && len(result) > 0 {
 			last := result[len(result)-1]
 			if last.Role == schema.User && !hasSpecialSubtype(last) && !hasSpecialSubtype(msg) {
-				merged := *last
-				if merged.Content != "" && msg.Content != "" {
-					merged.Content = merged.Content + "\n\n" + msg.Content
-				} else if msg.Content != "" {
-					merged.Content = msg.Content
-				}
-				result[len(result)-1] = &merged
+				result[len(result)-1] = mergeUserMessages(last, msg)
 				continue
 			}
 		}
