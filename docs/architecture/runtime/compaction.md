@@ -1,7 +1,7 @@
 # Compaction
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-09-19
 
 > **Ownership:** canonical ProjectGraph preparation/reconciliation ordering;
 > `engine/compact` transformations
@@ -56,6 +56,21 @@ model call because it is stateful and records newly persisted replacements.
   silently disable hard-limit enforcement.
 - The summary model is optional. Without a usable summary path, cheap
   transformations and terminal recovery still apply.
+- Deterministic automatic compaction, reactive prompt-too-long recovery, and
+  stateless overflow drain retain every real user request in the active history
+  with its original role, text, and order. They also retain the recent tail,
+  expanding it to include owners of retained tool results. Historical metadata
+  is not pinned as a request, and retired history is not reloaded. Provider
+  compatibility normalization may still combine adjacent user messages while
+  retaining their text in order. Model-backed summaries keep their existing
+  policy.
+- These deterministic transformations decline when the result would not reduce
+  estimated tokens. Large user requests therefore establish an irreducible
+  context floor; hard-limit enforcement can terminate instead of dropping
+  requirements to report recovery.
+- Microcompaction does not normalize whitespace in message content or reasoning:
+  indentation and spaces inside literals carry meaning. Explicit policies for
+  long tool results, thinking blocks, and media remain bounded transformations.
 
 ## Small example
 
@@ -81,6 +96,10 @@ physical prompt records or repeat the boundary.
 - [`ApplyCollapsesIfNeeded`](../../../engine/compact/collapse.go)
 - [`SanitizeMediaForCompaction`](../../../engine/compact/strip.go)
 - [`AutoCompact`](../../../engine/compact/auto.go)
+- [`splitDeterministicContext`](../../../engine/compact/requirements.go) owns
+  request retention and complete recent tool groups.
+- [Deterministic compaction restart test](../../../engine/query_compact_requirements_test.go)
+  checks durable request retention through the next provider call.
 - [`BuildPostCompactMessages`](../../../engine/compact/auto.go)
 - [`ApplyPostCompact`](../../../engine/compact/post_compact.go)
 

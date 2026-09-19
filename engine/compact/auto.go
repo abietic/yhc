@@ -368,6 +368,10 @@ func AutoCompact(
 
 	// Fallback: deterministic compaction
 	result := buildDeterministicAutoCompact(messages, tokenCount)
+	if result == nil {
+		tracking.Compacted = false
+		return nil, tracking.ConsecutiveFailures, tracking
+	}
 	tracking.Compacted = true
 	tracking.TurnCounter = 0
 	tracking.ConsecutiveFailures = 0
@@ -375,7 +379,7 @@ func AutoCompact(
 }
 
 func buildDeterministicAutoCompact(messages []*schema.Message, preCompactTokens int) *AutoCompactResult {
-	preserved := buildAutoCompactPreservedTail(messages)
+	_, preserved := splitDeterministicContext(messages, autoCompactPreservedTailMessages)
 	boundary := &schema.Message{
 		Role:    schema.System,
 		Content: "",
@@ -397,6 +401,9 @@ func buildDeterministicAutoCompact(messages []*schema.Message, preCompactTokens 
 	postMessages = append(postMessages, boundary, summary)
 	postMessages = append(postMessages, preserved...)
 	postCompactTokens := EstimateTokenCount(postMessages)
+	if postCompactTokens >= preCompactTokens {
+		return nil
+	}
 
 	return &AutoCompactResult{
 		PreCompactTokenCount:      preCompactTokens,
