@@ -1,6 +1,7 @@
 """Contract tests against real Harbor types; no provider calls or Docker needed."""
 
 import asyncio
+import hashlib
 import json
 import tempfile
 import unittest
@@ -73,6 +74,7 @@ class AgentTests(AgentFixture, unittest.TestCase):
             self.assertNotIn("private-key", command)
             self.assertNotIn("UNRELATED_SECRET", env)
             self.assertNotIn("HOME", env)
+            self.assertNotIn("SSL_CERT_FILE", env)
             self.assertNotIn("cd ", command)
             self.assertIn("--sandbox danger-full-access", command)
             self.assertIn("--max-turns 0", command)
@@ -192,6 +194,32 @@ class InstallTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
             rg.write_bytes(data)
             with self.subTest(data=data[:20]), self.assertRaises(ValueError):
                 self.agent(ripgrep_path=str(rg))
+
+    async def test_ca_bundle_is_scoped_to_agent_and_attested(self):
+        ca = Path(__file__).with_name("testdata") / "ca.pem"
+        agent = self.agent(ca_bundle_path=str(ca))
+        self.mock_commands(agent, True)
+        await agent.install(self.environment)
+        remote_ca = agent.remote_dir + "/ca-certificates.crt"
+        self.environment.upload_file.assert_any_await(ca.resolve(), remote_ca)
+        self.assertEqual(agent.execution_env()["SSL_CERT_FILE"], remote_ca)
+        self.assertNotIn("SSL_CERT_FILE", agent.execution_command())
+        for call in agent.exec_as_root.await_args_list:
+            self.assertNotIn("/etc/ssl", call.kwargs["command"])
+        context = AgentContext()
+        agent.populate_context_post_run(context)
+        self.assertEqual(context.metadata["yhc"]["ca_bundle_sha256"],
+                         hashlib.sha256(ca.read_bytes()).hexdigest())
+
+    def test_invalid_or_private_key_bundle_is_rejected_before_provisioning(self):
+        ca = self.root / "bad-ca.pem"
+        public = (Path(__file__).with_name("testdata") / "ca.pem").read_bytes()
+        for data in (b"not a certificate", b"-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----",
+                     public + b"\n-----BEGIN PRIVATE KEY-----\nnot-for-upload\n-----END PRIVATE KEY-----"):
+            with self.subTest(data=data[:20]):
+                ca.write_bytes(data)
+                with self.assertRaises(ValueError):
+                    self.agent(ca_bundle_path=str(ca))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Run the production YHC agent inside a Harbor task's Linux environment.
 
-Only the agent binary, an optional ripgrep binary, and task instruction are
-uploaded. Host settings, credentials files, repository contents, and
+Only the agent binary, optional ripgrep and public CA bundle, and task
+instruction are uploaded. Host settings, credentials files, repository contents, and
 verifier/oracle data are never copied.
 """
 
@@ -9,6 +9,7 @@ import hashlib
 import json
 import shlex
 import shutil
+import ssl
 import tempfile
 import uuid
 from pathlib import Path
@@ -61,7 +62,8 @@ class YHCAgent(BaseInstalledAgent):
 
     def __init__(self, logs_dir: Path, model_name: str | None = None,
                  binary_path: str = "build/linux-amd64/yhc", provider: str | None = None,
-                 max_turns: int = 0, ripgrep_path: str | None = None, **kwargs):
+                 max_turns: int = 0, ripgrep_path: str | None = None,
+                 ca_bundle_path: str | None = None, **kwargs):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         if not model_name or not model_name.strip():
             raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
@@ -75,6 +77,20 @@ class YHCAgent(BaseInstalledAgent):
             rg_arch, self.ripgrep_sha256 = inspect_linux_binary(self.ripgrep_path)
             if rg_arch != self.arch:
                 raise ValueError("ripgrep_path architecture must match the YHC binary")
+        self.ca_bundle_path = Path(ca_bundle_path).expanduser().resolve(strict=True) if ca_bundle_path else None
+        self.ca_bundle_sha256 = None
+        if self.ca_bundle_path:
+            bundle = self.ca_bundle_path.read_bytes()
+            if b"PRIVATE KEY" in bundle or b"-----BEGIN CERTIFICATE-----" not in bundle:
+                raise ValueError("ca_bundle_path must contain public PEM certificates only")
+            try:
+                trust = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                trust.load_verify_locations(cadata=bundle.decode("ascii"))
+            except (UnicodeError, ssl.SSLError) as exc:
+                raise ValueError("ca_bundle_path is not a valid public PEM certificate bundle") from exc
+            if not trust.cert_store_stats()["x509"]:
+                raise ValueError("ca_bundle_path contains no certificates")
+            self.ca_bundle_sha256 = hashlib.sha256(bundle).hexdigest()
         self.provider = provider
         self.max_turns = max_turns
         self.remote_dir = f"/installed-agent/yhc-{uuid.uuid4().hex}"
@@ -98,6 +114,8 @@ class YHCAgent(BaseInstalledAgent):
         base_url = self._get_env("YHC_BENCH_BASE_URL", "PROV_BASE_URL")
         if base_url:
             env["PROV_BASE_URL"] = base_url
+        if self.ca_bundle_path:
+            env["SSL_CERT_FILE"] = self.remote_dir + "/ca-certificates.crt"
         return env
 
     def execution_command(self) -> str:
@@ -125,6 +143,10 @@ class YHCAgent(BaseInstalledAgent):
             await environment.upload_file(self.ripgrep_path, remote_rg)
             await self.exec_as_root(environment, command=f"chmod 755 {shlex.quote(remote_rg)}")
             await self.check_ripgrep(environment, remote_rg)
+        if self.ca_bundle_path:
+            remote_ca = self.remote_dir + "/ca-certificates.crt"
+            await environment.upload_file(self.ca_bundle_path, remote_ca)
+            await self.exec_as_root(environment, command=f"chmod 644 {shlex.quote(remote_ca)}")
         # Keep the task's cwd, HOME, user, and installed software intact.
         await self.exec_as_agent(environment, command=f"mkdir -p {shlex.quote(str(self.environment_logs_dir))}")
         await self.exec_as_agent(environment, command=f"{shlex.quote(self.remote_binary)} version")
@@ -167,6 +189,8 @@ class YHCAgent(BaseInstalledAgent):
         metadata = {"binary_sha256": self.binary_sha256}
         if self.ripgrep_sha256:
             metadata["ripgrep_sha256"] = self.ripgrep_sha256
+        if self.ca_bundle_sha256:
+            metadata["ca_bundle_sha256"] = self.ca_bundle_sha256
         try:
             result = read_result(self.logs_dir / "yhc.jsonl")
             metadata.update({key: result[key] for key in (
