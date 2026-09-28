@@ -58,7 +58,7 @@ func WriteTool() ToolImpl {
 			if _, err := os.Stat(fullPath); err == nil {
 				// File exists — check read state.
 				if !HasFileBeenRead(fullPath) {
-					return "File has not been read yet. Read it first before writing to it.", nil
+					return "", fmt.Errorf("write: file has not been fully read yet; use Read to read the complete file before writing to it")
 				}
 			}
 			// If file doesn't exist (os.IsNotExist), allow creation without prior read.
