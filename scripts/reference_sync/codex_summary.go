@@ -59,7 +59,7 @@ func (g *codexModelSummaryGenerator) Generate(ctx context.Context, prompt string
 		"-C",
 		workDir,
 	}
-	cmd := exec.Command(g.command, args...)
+	cmd := exec.CommandContext(ctx, g.command, args...)
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(buildCodexSummaryPrompt(prompt))
 	if g.environment != nil {

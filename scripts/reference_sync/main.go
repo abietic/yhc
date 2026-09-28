@@ -715,7 +715,7 @@ func (g gitClient) run(args ...string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(parentCtx, defaultGitCommandTimeout)
 	defer cancel()
-	cmd := exec.Command("git", cmdArgs...)
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	cmd.Dir = g.dir
 	var output bytes.Buffer
 	cmd.Stdout = &output
