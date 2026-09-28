@@ -65,11 +65,6 @@ privacy:
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: build-metadata
     - path: scripts/reference_sync/main_test.go
-      line: 100
-      rule_id: private-url
-      match_sha256: e129ccde871d1708f2d484640adfa486f4c9613f3fa99daa2088cdcf760abb03
-      purpose: synthetic-security-fixture
-    - path: scripts/reference_sync/main_test.go
       line: 143
       rule_id: private-email
       match_sha256: a039239e19285c8ca3a7f99ee554d336ee2f8041d62800c536249ba7e9fc8ea8

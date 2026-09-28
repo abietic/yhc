@@ -97,7 +97,7 @@ func TestRunSyncContextReleasesLockAfterCancellation(t *testing.T) {
 	code := runSyncContext(
 		ctx,
 		t.TempDir(),
-		[]Repository{{ID: "codex", Path: "codex", Remote: "https://example.com/codex.git", Upstream: "origin/main", Sync: "enabled"}},
+		[]Repository{{ID: "codex", Path: "codex", Remote: "https://github.com/openai/codex.git", Upstream: "origin/main", Sync: "enabled"}},
 		t.TempDir(),
 		memoryRoot,
 		0,
