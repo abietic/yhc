@@ -188,6 +188,56 @@ class InstallTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn('"$PATH"', agent.execution_command())
         self.assertEqual(agent.ripgrep_sha256, agent.binary_sha256)
 
+    async def test_writable_project_needs_no_privileged_state_changes(self):
+        agent = self.agent()
+        agent.exec_as_root = AsyncMock()
+        self.environment.exec.return_value = SimpleNamespace(return_code=0)
+        await agent.prepare_project_state(self.environment)
+        agent.exec_as_root.assert_not_awaited()
+        self.assertFalse(agent.state_dir_provisioned)
+
+    async def test_install_prepares_project_state_as_part_of_setup(self):
+        agent = self.agent()
+        self.mock_commands(agent, True)
+        agent.prepare_project_state = AsyncMock()
+        await agent.install(self.environment)
+        agent.prepare_project_state.assert_awaited_once_with(self.environment)
+
+    async def test_readonly_project_gets_only_new_agent_owned_private_state(self):
+        agent = self.agent()
+        self.environment.exec.return_value = SimpleNamespace(return_code=1)
+        agent.exec_as_agent = AsyncMock(side_effect=[
+            SimpleNamespace(stdout="/task with spaces\n1001\n1002\n"),
+            SimpleNamespace(return_code=0),
+        ])
+        agent.exec_as_root = AsyncMock()
+        await agent.prepare_project_state(self.environment)
+        command = agent.exec_as_root.await_args.kwargs["command"]
+        self.assertEqual(command, "mkdir -m 700 -- '/task with spaces/.yhc' && "
+                         "chown -h -- 1001:1002 '/task with spaces/.yhc'")
+        self.assertTrue(agent.state_dir_provisioned)
+
+    async def test_existing_inaccessible_state_is_never_reowned(self):
+        agent = self.agent()
+        self.environment.exec.return_value = SimpleNamespace(return_code=1)
+        agent.exec_as_agent = AsyncMock(side_effect=RuntimeError("existing state refused"))
+        agent.exec_as_root = AsyncMock()
+        with self.assertRaises(RuntimeError):
+            await agent.prepare_project_state(self.environment)
+        agent.exec_as_root.assert_not_awaited()
+
+    async def test_invalid_project_identity_fails_before_privileged_changes(self):
+        for output in ["relative\n1\n1\n", "/app\n1;id\n1\n", "/app\n1\n",
+                       "/app\n-1\n1\n", "/app\n1\n1\nextra\n"]:
+            with self.subTest(output=output):
+                agent = self.agent()
+                self.environment.exec.return_value = SimpleNamespace(return_code=1)
+                agent.exec_as_agent = AsyncMock(return_value=SimpleNamespace(stdout=output))
+                agent.exec_as_root = AsyncMock()
+                with self.assertRaises(ValueError):
+                    await agent.prepare_project_state(self.environment)
+                agent.exec_as_root.assert_not_awaited()
+
     def test_bundled_ripgrep_must_match_linux_architecture(self):
         rg = self.root / "rg"
         for data in (b"not ELF", self.binary.read_bytes()[:18] + (183).to_bytes(2, "little") + bytes(44)):

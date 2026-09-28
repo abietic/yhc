@@ -12,7 +12,7 @@ import shutil
 import ssl
 import tempfile
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from harbor.agents.installed.base import BaseInstalledAgent, NonZeroAgentExitCodeError
 from harbor.agents.installed.base import with_prompt_template
@@ -96,6 +96,7 @@ class YHCAgent(BaseInstalledAgent):
         self.remote_dir = f"/installed-agent/yhc-{uuid.uuid4().hex}"
         self.remote_binary = f"{self.remote_dir}/yhc"
         self.remote_prompt = f"{self.remote_dir}/instruction.txt"
+        self.state_dir_provisioned = False
         self.execution_env()  # Fail before provisioning when credentials are absent.
 
     @staticmethod
@@ -150,6 +151,38 @@ class YHCAgent(BaseInstalledAgent):
         # Keep the task's cwd, HOME, user, and installed software intact.
         await self.exec_as_agent(environment, command=f"mkdir -p {shlex.quote(str(self.environment_logs_dir))}")
         await self.exec_as_agent(environment, command=f"{shlex.quote(self.remote_binary)} version")
+        await self.prepare_project_state(environment)
+
+    async def prepare_project_state(self, environment: BaseEnvironment) -> None:
+        # YHC persists its session and WorkBoard under cwd/.yhc. Some tasks
+        # expose writable source subdirectories inside a root-owned cwd.
+        # Provision only a missing private state directory, never re-own an
+        # existing path or relax permissions on task files or their parent.
+        probe = await environment.exec(command=(
+            "if [ -L .yhc ]; then exit 1; fi; "
+            "if [ -e .yhc ]; then test -d .yhc && test -w .yhc && test -x .yhc; "
+            "else test -w . && test -x .; fi"), timeout_sec=15)
+        if probe.return_code == 0:
+            return
+        identity = await self.exec_as_agent(environment, command=(
+            "if [ -e .yhc ] || [ -L .yhc ]; then "
+            "echo 'YHC state path already exists and is not a writable directory' >&2; exit 1; fi; "
+            "pwd -P && id -u && id -g"))
+        fields = (identity.stdout or "").splitlines()
+        if (len(fields) != 3 or not PurePosixPath(fields[0]).is_absolute()
+                or "\x00" in fields[0]
+                or not all(value.isascii() and value.isdecimal() for value in fields[1:])):
+            raise ValueError("Cannot identify task cwd and user for YHC state provisioning")
+        cwd, uid, gid = fields
+        state_dir = shlex.quote(str(PurePosixPath(cwd) / ".yhc"))
+        # mkdir without -p must succeed before chown. Existing paths, including
+        # links created after the probe, therefore fail without ownership changes.
+        await self.exec_as_root(environment, command=(
+            f"mkdir -m 700 -- {state_dir} && chown -h -- {uid}:{gid} {state_dir}"))
+        await self.exec_as_agent(environment, command=(
+            f"test ! -L {state_dir} && test -d {state_dir} && "
+            f"test -w {state_dir} && test -x {state_dir}"))
+        self.state_dir_provisioned = True
 
     async def check_ripgrep(self, environment: BaseEnvironment, executable: str) -> None:
         # exec_as_agent raises on nonzero status before a missing-dependency
@@ -191,6 +224,8 @@ class YHCAgent(BaseInstalledAgent):
             metadata["ripgrep_sha256"] = self.ripgrep_sha256
         if self.ca_bundle_sha256:
             metadata["ca_bundle_sha256"] = self.ca_bundle_sha256
+        if self.state_dir_provisioned:
+            metadata["state_dir_provisioned"] = True
         try:
             result = read_result(self.logs_dir / "yhc.jsonl")
             metadata.update({key: result[key] for key in (
