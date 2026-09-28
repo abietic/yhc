@@ -427,7 +427,7 @@ func runSyncContext(ctx context.Context, projectDir string, repositories []Repos
 		}
 	}
 	postSummary, postSummaryErr := summarizeUpdateFiles(
-		context.Background(),
+		ctx,
 		projectDir,
 		memoryRoot,
 		now,
