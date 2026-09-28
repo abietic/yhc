@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/abietic/yhc/scripts/internal/ownedprocess"
 )
 
 type codexModelSummaryGenerator struct {
@@ -57,7 +59,7 @@ func (g *codexModelSummaryGenerator) Generate(ctx context.Context, prompt string
 		"-C",
 		workDir,
 	}
-	cmd := exec.CommandContext(ctx, g.command, args...)
+	cmd := exec.Command(g.command, args...)
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(buildCodexSummaryPrompt(prompt))
 	if g.environment != nil {
@@ -68,7 +70,7 @@ func (g *codexModelSummaryGenerator) Generate(ctx context.Context, prompt string
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := ownedprocess.Run(ctx, cmd); err != nil {
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
 			return "", fmt.Errorf("codex exec failed: %w", err)

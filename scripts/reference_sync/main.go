@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/abietic/yhc/scripts/internal/ownedprocess"
 	"gopkg.in/yaml.v3"
 )
 
@@ -149,14 +150,10 @@ type gitClient struct {
 }
 
 func main() {
-	os.Exit(runWithSignals(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	return runContext(context.Background(), args, stdout, stderr)
-}
-
-func runWithSignals(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return runContext(ctx, args, stdout, stderr)
@@ -341,10 +338,6 @@ func selectRepositories(repositories []Repository, filter string) ([]Repository,
 	return nil, fmt.Errorf("repository %q is not in the configuration", filter)
 }
 
-func runCheck(repositories []Repository, referenceRoot string, stdout, stderr io.Writer) int {
-	return runCheckContext(context.Background(), repositories, referenceRoot, stdout, stderr)
-}
-
 func runCheckContext(ctx context.Context, repositories []Repository, referenceRoot string, stdout, stderr io.Writer) int {
 	failed := false
 	for _, repo := range repositories {
@@ -359,10 +352,6 @@ func runCheckContext(ctx context.Context, repositories []Repository, referenceRo
 		return 1
 	}
 	return 0
-}
-
-func runSync(projectDir string, repositories []Repository, referenceRoot, memoryRoot string, maxSubjects int, summaryConfig ModelSummary, subagentConfig SubagentSummary, dryRun bool, stdout, stderr io.Writer) int {
-	return runSyncContext(context.Background(), projectDir, repositories, referenceRoot, memoryRoot, maxSubjects, summaryConfig, subagentConfig, dryRun, stdout, stderr)
 }
 
 func runSyncContext(ctx context.Context, projectDir string, repositories []Repository, referenceRoot, memoryRoot string, maxSubjects int, summaryConfig ModelSummary, subagentConfig SubagentSummary, dryRun bool, stdout, stderr io.Writer) int {
@@ -470,10 +459,6 @@ func runSyncContext(ctx context.Context, projectDir string, repositories []Repos
 	return 0
 }
 
-func runBaseline(repositories []Repository, referenceRoot, memoryRoot string, dryRun bool, stdout, stderr io.Writer) int {
-	return runBaselineContext(context.Background(), repositories, referenceRoot, memoryRoot, dryRun, stdout, stderr)
-}
-
 func runBaselineContext(ctx context.Context, repositories []Repository, referenceRoot, memoryRoot string, dryRun bool, stdout, stderr io.Writer) int {
 	if dryRun {
 		fmt.Fprintln(stderr, "baseline does not support --dry-run")
@@ -510,10 +495,6 @@ func runBaselineContext(ctx context.Context, repositories []Repository, referenc
 	return 0
 }
 
-func inspectRepository(repo Repository, referenceRoot string) syncResult {
-	return inspectRepositoryContext(context.Background(), repo, referenceRoot)
-}
-
 func inspectRepositoryContext(ctx context.Context, repo Repository, referenceRoot string) syncResult {
 	result := syncResult{
 		Repository: repo.ID,
@@ -547,10 +528,6 @@ func inspectRepositoryContext(ctx context.Context, repo Repository, referenceRoo
 	result.Before, _ = client.run("rev-parse", "HEAD")
 	result.Status = "ready"
 	return result
-}
-
-func syncRepository(repo Repository, referenceRoot string, maxSubjects, maxDiffBytes int, dryRun bool) syncResult {
-	return syncRepositoryContext(context.Background(), repo, referenceRoot, maxSubjects, maxDiffBytes, dryRun)
 }
 
 func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot string, maxSubjects, maxDiffBytes int, dryRun bool) syncResult {
@@ -649,10 +626,6 @@ func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot s
 	return result
 }
 
-func mergePreparedRepository(repo Repository, referenceRoot string, result *syncResult) {
-	mergePreparedRepositoryContext(context.Background(), repo, referenceRoot, result)
-}
-
 func mergePreparedRepositoryContext(ctx context.Context, repo Repository, referenceRoot string, result *syncResult) {
 	if result == nil || result.Status != "pending_summary" {
 		return
@@ -718,10 +691,6 @@ func finalizePreparedUpdates(ctx context.Context, repositories []Repository, ref
 	}
 }
 
-func baselineRepository(repo Repository, referenceRoot string) syncResult {
-	return baselineRepositoryContext(context.Background(), repo, referenceRoot)
-}
-
 func baselineRepositoryContext(ctx context.Context, repo Repository, referenceRoot string) syncResult {
 	result := inspectRepositoryContext(ctx, repo, referenceRoot)
 	if result.Status == "error" {
@@ -746,10 +715,13 @@ func (g gitClient) run(args ...string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(parentCtx, defaultGitCommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
+	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = g.dir
-	output, err := cmd.CombinedOutput()
-	text := strings.TrimSpace(string(output))
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err := ownedprocess.Run(ctx, cmd)
+	text := strings.TrimSpace(output.String())
 	if err != nil {
 		if text == "" {
 			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
