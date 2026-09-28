@@ -24,6 +24,8 @@ type MicroCompactResult struct {
 // - Very long assistant reasoning (trim middle)
 //
 // Strategies are applied in order until targetTokensToFree is reached.
+// The latest assistant tool round has not yet been consumed by a subsequent
+// assistant response, so opportunistic trimming leaves that entire suffix intact.
 // The input slice is never mutated; a new slice is returned.
 func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroCompactResult {
 	if len(messages) == 0 || targetTokensToFree <= 0 {
@@ -35,7 +37,8 @@ func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroComp
 	}
 
 	totalFreed := 0
-	current := cloneMessages(messages)
+	protectedStart := unconsumedToolRoundStart(messages)
+	current := cloneMessages(messages[:protectedStart])
 
 	// Strategy 1: Trim long tool results
 	if totalFreed < targetTokensToFree {
@@ -59,10 +62,26 @@ func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroComp
 	}
 
 	return &MicroCompactResult{
-		Messages:    current,
+		Messages:    append(current, cloneMessages(messages[protectedStart:])...),
 		TokensFreed: totalFreed,
 		Applied:     totalFreed > 0,
 	}
+}
+
+// unconsumedToolRoundStart returns the latest assistant's index when it calls
+// tools, or len(messages) once a later assistant has consumed those results.
+// Protecting the whole round also covers parallel results and slow tools whose
+// owning assistant timestamp predates the idle-compaction threshold.
+func unconsumedToolRoundStart(messages []*schema.Message) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if msg := messages[i]; msg != nil && msg.Role == schema.Assistant {
+			if len(msg.ToolCalls) > 0 {
+				return i
+			}
+			break
+		}
+	}
+	return len(messages)
 }
 
 // TrimLongToolResults truncates tool results longer than maxLen characters.
@@ -383,6 +402,11 @@ func TimeBasedMicrocompact(messages []*schema.Message, querySource string) *Micr
 	}
 	for _, id := range compactableIDs[startKeep:] {
 		keepSet[id] = true
+	}
+	if start := unconsumedToolRoundStart(messages); start < len(messages) {
+		for _, call := range messages[start].ToolCalls {
+			keepSet[call.ID] = true
+		}
 	}
 
 	// Build clear set.
