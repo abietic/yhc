@@ -1,9 +1,119 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestAcquireLockReleasesAndAllowsNextRun(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	release, err := acquireLock(memoryRoot)
+	if err != nil {
+		t.Fatalf("acquireLock() error = %v", err)
+	}
+	if _, err := acquireLock(memoryRoot); err == nil || !strings.Contains(err.Error(), "appears to be running") {
+		t.Fatalf("second acquireLock() error = %v, want active-lock error", err)
+	}
+	release()
+
+	secondRelease, err := acquireLock(memoryRoot)
+	if err != nil {
+		t.Fatalf("acquireLock() after release error = %v", err)
+	}
+	secondRelease()
+}
+
+func TestAcquireLockUsesUnlockedPersistentFile(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	lockPath := filepath.Join(memoryRoot, ".lock")
+	if err := os.WriteFile(lockPath, []byte("persistent lock file"), 0o600); err != nil {
+		t.Fatalf("WriteFile(lock) error = %v", err)
+	}
+
+	release, err := acquireLock(memoryRoot)
+	if err != nil {
+		t.Fatalf("acquireLock() should lock an existing unlocked file: %v", err)
+	}
+	defer release()
+	content, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("ReadFile(lock) error = %v", err)
+	}
+	if string(content) != "persistent lock file" {
+		t.Fatalf("lock file content = %q, want it preserved", content)
+	}
+}
+
+func TestAcquireLockPreservesActiveLock(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	release, err := acquireLock(memoryRoot)
+	if err != nil {
+		t.Fatalf("first acquireLock() error = %v", err)
+	}
+	defer release()
+
+	if _, err := acquireLock(memoryRoot); err == nil || !strings.Contains(err.Error(), "appears to be running") {
+		t.Fatalf("second acquireLock() error = %v, want active-lock error", err)
+	}
+
+	lockPath := filepath.Join(memoryRoot, ".lock")
+	if info, err := os.Stat(lockPath); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("active lock file stat = %v, error = %v; want persistent regular file", info, err)
+	}
+}
+
+func TestGitClientRunHonorsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (gitClient{dir: t.TempDir(), ctx: ctx}).run("status")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("gitClient.run() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestRunSyncContextReleasesLockAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := filepath.Join(t.TempDir(), ".sync-memory")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var stdout, stderr bytes.Buffer
+	code := runSyncContext(
+		ctx,
+		t.TempDir(),
+		[]Repository{{ID: "codex", Path: "codex", Remote: "https://example.com/codex.git", Upstream: "origin/main", Sync: "enabled"}},
+		t.TempDir(),
+		memoryRoot,
+		0,
+		ModelSummary{},
+		SubagentSummary{},
+		false,
+		&stdout,
+		&stderr,
+	)
+	if code == 0 || !strings.Contains(stderr.String(), "sync cancelled") {
+		t.Fatalf("runSyncContext() = %d, stderr = %q; want cancellation reported", code, stderr.String())
+	}
+
+	release, err := acquireLock(memoryRoot)
+	if err != nil {
+		t.Fatalf("sync lock remained held after cancellation: %v", err)
+	}
+	release()
+}
 
 func TestValidateConfigRejectsFrozenReferenceUpdates(t *testing.T) {
 	t.Parallel()

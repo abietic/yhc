@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -27,6 +29,7 @@ const (
 	defaultSummaryTimeout     = 2 * time.Minute
 	defaultSubagentInputBytes = 80000
 	defaultSubagentTimeout    = 2 * time.Minute
+	defaultGitCommandTimeout  = 5 * time.Minute
 	summaryBackendYHC         = "yhc"
 	summaryBackendCodex       = "codex"
 )
@@ -142,13 +145,24 @@ type syncResult struct {
 
 type gitClient struct {
 	dir string
+	ctx context.Context
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(runWithSignals(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runContext(context.Background(), args, stdout, stderr)
+}
+
+func runWithSignals(args []string, stdout, stderr io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runContext(ctx, args, stdout, stderr)
+}
+
+func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("reference_sync", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", defaultConfigPath, "reference repository configuration")
@@ -210,11 +224,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	switch flags.Arg(0) {
 	case "check":
-		return runCheck(repositories, refRoot, stdout, stderr)
+		return runCheckContext(ctx, repositories, refRoot, stdout, stderr)
 	case "sync":
-		return runSync(root, repositories, refRoot, memRoot, cfg.MaxCommitSubjects, cfg.ModelSummary, cfg.SubagentSummary, *dryRun, stdout, stderr)
+		return runSyncContext(ctx, root, repositories, refRoot, memRoot, cfg.MaxCommitSubjects, cfg.ModelSummary, cfg.SubagentSummary, *dryRun, stdout, stderr)
 	case "baseline":
-		return runBaseline(repositories, refRoot, memRoot, *dryRun, stdout, stderr)
+		return runBaselineContext(ctx, repositories, refRoot, memRoot, *dryRun, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", flags.Arg(0))
 		return 2
@@ -328,9 +342,13 @@ func selectRepositories(repositories []Repository, filter string) ([]Repository,
 }
 
 func runCheck(repositories []Repository, referenceRoot string, stdout, stderr io.Writer) int {
+	return runCheckContext(context.Background(), repositories, referenceRoot, stdout, stderr)
+}
+
+func runCheckContext(ctx context.Context, repositories []Repository, referenceRoot string, stdout, stderr io.Writer) int {
 	failed := false
 	for _, repo := range repositories {
-		result := inspectRepository(repo, referenceRoot)
+		result := inspectRepositoryContext(ctx, repo, referenceRoot)
 		printResult(stdout, result)
 		if result.Status == "error" {
 			failed = true
@@ -344,6 +362,10 @@ func runCheck(repositories []Repository, referenceRoot string, stdout, stderr io
 }
 
 func runSync(projectDir string, repositories []Repository, referenceRoot, memoryRoot string, maxSubjects int, summaryConfig ModelSummary, subagentConfig SubagentSummary, dryRun bool, stdout, stderr io.Writer) int {
+	return runSyncContext(context.Background(), projectDir, repositories, referenceRoot, memoryRoot, maxSubjects, summaryConfig, subagentConfig, dryRun, stdout, stderr)
+}
+
+func runSyncContext(ctx context.Context, projectDir string, repositories []Repository, referenceRoot, memoryRoot string, maxSubjects int, summaryConfig ModelSummary, subagentConfig SubagentSummary, dryRun bool, stdout, stderr io.Writer) int {
 	if maxSubjects == 0 {
 		maxSubjects = defaultMaxSubjects
 	}
@@ -362,7 +384,20 @@ func runSync(projectDir string, repositories []Repository, referenceRoot, memory
 	now := time.Now().UTC()
 	results := make([]syncResult, 0, len(repositories))
 	for _, repo := range repositories {
-		result := syncRepository(repo, referenceRoot, maxSubjects, summaryConfig.MaxInputBytes, dryRun)
+		if err := ctx.Err(); err != nil {
+			results = append(results, syncResult{
+				Repository: repo.ID,
+				Path:       filepath.Join(referenceRoot, repo.Path),
+				Remote:     repo.Remote,
+				Upstream:   repo.Upstream,
+				Policy:     repo.Sync,
+				Status:     "error",
+				Detail:     "sync cancelled: " + err.Error(),
+				ObservedAt: now,
+			})
+			continue
+		}
+		result := syncRepositoryContext(ctx, repo, referenceRoot, maxSubjects, summaryConfig.MaxInputBytes, dryRun)
 		result.ObservedAt = now
 		results = append(results, result)
 	}
@@ -383,10 +418,10 @@ func runSync(projectDir string, repositories []Repository, referenceRoot, memory
 			return newConfiguredModelSummaryGeneratorForSelector(ctx, projectDir, summaryConfig.Model)
 		}
 	}
-	if err := generateModelSummaries(context.Background(), projectDir, summaryConfig, results, summaryFactory); err != nil {
+	if err := generateModelSummaries(ctx, projectDir, summaryConfig, results, summaryFactory); err != nil {
 		fmt.Fprintf(stderr, "model summary: %v\n", err)
 	}
-	finalizePreparedUpdates(repositories, referenceRoot, results)
+	finalizePreparedUpdates(ctx, repositories, referenceRoot, results)
 	for _, result := range results {
 		printResult(stdout, result)
 	}
@@ -436,6 +471,10 @@ func runSync(projectDir string, repositories []Repository, referenceRoot, memory
 }
 
 func runBaseline(repositories []Repository, referenceRoot, memoryRoot string, dryRun bool, stdout, stderr io.Writer) int {
+	return runBaselineContext(context.Background(), repositories, referenceRoot, memoryRoot, dryRun, stdout, stderr)
+}
+
+func runBaselineContext(ctx context.Context, repositories []Repository, referenceRoot, memoryRoot string, dryRun bool, stdout, stderr io.Writer) int {
 	if dryRun {
 		fmt.Fprintln(stderr, "baseline does not support --dry-run")
 		return 2
@@ -450,7 +489,11 @@ func runBaseline(repositories []Repository, referenceRoot, memoryRoot string, dr
 	now := time.Now().UTC()
 	results := make([]syncResult, 0, len(repositories))
 	for _, repo := range repositories {
-		result := baselineRepository(repo, referenceRoot)
+		if err := ctx.Err(); err != nil {
+			fmt.Fprintf(stderr, "baseline cancelled: %v\n", err)
+			return 1
+		}
+		result := baselineRepositoryContext(ctx, repo, referenceRoot)
 		result.ObservedAt = now
 		results = append(results, result)
 		printResult(stdout, result)
@@ -468,6 +511,10 @@ func runBaseline(repositories []Repository, referenceRoot, memoryRoot string, dr
 }
 
 func inspectRepository(repo Repository, referenceRoot string) syncResult {
+	return inspectRepositoryContext(context.Background(), repo, referenceRoot)
+}
+
+func inspectRepositoryContext(ctx context.Context, repo Repository, referenceRoot string) syncResult {
 	result := syncResult{
 		Repository: repo.ID,
 		Path:       filepath.Join(referenceRoot, repo.Path),
@@ -485,7 +532,7 @@ func inspectRepository(repo Repository, referenceRoot string) syncResult {
 		result.Detail = repo.Note
 		return result
 	}
-	client := gitClient{dir: result.Path}
+	client := gitClient{dir: result.Path, ctx: ctx}
 	if _, err := client.run("rev-parse", "--is-inside-work-tree"); err != nil {
 		result.Status = "error"
 		result.Detail = err.Error()
@@ -503,11 +550,15 @@ func inspectRepository(repo Repository, referenceRoot string) syncResult {
 }
 
 func syncRepository(repo Repository, referenceRoot string, maxSubjects, maxDiffBytes int, dryRun bool) syncResult {
-	result := inspectRepository(repo, referenceRoot)
+	return syncRepositoryContext(context.Background(), repo, referenceRoot, maxSubjects, maxDiffBytes, dryRun)
+}
+
+func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot string, maxSubjects, maxDiffBytes int, dryRun bool) syncResult {
+	result := inspectRepositoryContext(ctx, repo, referenceRoot)
 	if result.Status == "error" || result.Status == "frozen" {
 		return result
 	}
-	client := gitClient{dir: result.Path}
+	client := gitClient{dir: result.Path, ctx: ctx}
 	status, err := client.run("status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		result.Status = "error"
@@ -599,10 +650,14 @@ func syncRepository(repo Repository, referenceRoot string, maxSubjects, maxDiffB
 }
 
 func mergePreparedRepository(repo Repository, referenceRoot string, result *syncResult) {
+	mergePreparedRepositoryContext(context.Background(), repo, referenceRoot, result)
+}
+
+func mergePreparedRepositoryContext(ctx context.Context, repo Repository, referenceRoot string, result *syncResult) {
 	if result == nil || result.Status != "pending_summary" {
 		return
 	}
-	client := gitClient{dir: filepath.Join(referenceRoot, repo.Path)}
+	client := gitClient{dir: filepath.Join(referenceRoot, repo.Path), ctx: ctx}
 	current, err := client.run("rev-parse", "HEAD")
 	if err != nil {
 		result.Status = "error"
@@ -644,7 +699,7 @@ func mergePreparedRepository(repo Repository, referenceRoot string, result *sync
 	result.Status = "updated"
 }
 
-func finalizePreparedUpdates(repositories []Repository, referenceRoot string, results []syncResult) {
+func finalizePreparedUpdates(ctx context.Context, repositories []Repository, referenceRoot string, results []syncResult) {
 	for index := range results {
 		if results[index].Status != "pending_summary" {
 			continue
@@ -659,16 +714,20 @@ func finalizePreparedUpdates(repositories []Repository, referenceRoot string, re
 			results[index].Detail = "repository/result alignment is invalid"
 			continue
 		}
-		mergePreparedRepository(repositories[index], referenceRoot, &results[index])
+		mergePreparedRepositoryContext(ctx, repositories[index], referenceRoot, &results[index])
 	}
 }
 
 func baselineRepository(repo Repository, referenceRoot string) syncResult {
-	result := inspectRepository(repo, referenceRoot)
+	return baselineRepositoryContext(context.Background(), repo, referenceRoot)
+}
+
+func baselineRepositoryContext(ctx context.Context, repo Repository, referenceRoot string) syncResult {
+	result := inspectRepositoryContext(ctx, repo, referenceRoot)
 	if result.Status == "error" {
 		return result
 	}
-	client := gitClient{dir: result.Path}
+	client := gitClient{dir: result.Path, ctx: ctx}
 	result.Status = "baseline"
 	result.Before, _ = client.run("rev-parse", "HEAD")
 	result.After = result.Before
@@ -681,7 +740,13 @@ func baselineRepository(repo Repository, referenceRoot string) syncResult {
 
 func (g gitClient) run(args ...string) (string, error) {
 	cmdArgs := append([]string{"--no-pager"}, args...)
-	cmd := exec.CommandContext(context.Background(), "git", cmdArgs...)
+	parentCtx := g.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, defaultGitCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	cmd.Dir = g.dir
 	output, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(output))
@@ -794,13 +859,22 @@ func acquireLock(memoryRoot string) (func(), error) {
 		return nil, err
 	}
 	lockPath := filepath.Join(memoryRoot, ".lock")
-	if err := os.Mkdir(lockPath, 0o700); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, fmt.Errorf("another reference sync appears to be running (%s exists)", lockPath)
-		}
-		return nil, err
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open sync lock: %w", err)
 	}
-	return func() { _ = os.Remove(lockPath) }, nil
+	unlock, err := lockSyncFile(lockFile)
+	if err != nil {
+		_ = lockFile.Close()
+		if errors.Is(err, errSyncLockHeld) {
+			return nil, fmt.Errorf("another reference sync appears to be running (%s is locked)", lockPath)
+		}
+		return nil, fmt.Errorf("acquire sync lock: %w", err)
+	}
+	return func() {
+		_ = unlock()
+		_ = lockFile.Close()
+	}, nil
 }
 
 func writeSyncUpdates(memoryRoot string, now time.Time, results []syncResult) ([]string, error) {
