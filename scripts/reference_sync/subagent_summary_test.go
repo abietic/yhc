@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+type contextAwareSummaryGenerator struct{}
+
+func (contextAwareSummaryGenerator) Generate(ctx context.Context, _ string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return "generated summary", nil
+}
+
+func (contextAwareSummaryGenerator) Identity() (string, string) {
+	return "test", "context-aware"
+}
+
 func TestSummarizeUpdateFilesUsesOnlyNewUpdatesAndPersistsSummary(t *testing.T) {
 	t.Parallel()
 
@@ -106,6 +119,46 @@ func TestSummarizeUpdateFilesPersistsFailureWithoutFallback(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Post-update subagent analysis was not generated") {
 		t.Fatalf("failure summary = %s", data)
+	}
+}
+
+func TestSummarizeUpdateFilesPersistsFailureWhenContextIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	updatePath := filepath.Join(memoryRoot, "updates", "one.md")
+	if err := os.MkdirAll(filepath.Dir(updatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(updatePath, []byte("update evidence"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := summarizeUpdateFiles(
+		ctx,
+		t.TempDir(),
+		memoryRoot,
+		time.Date(2026, 8, 26, 1, 0, 0, 0, time.UTC),
+		[]string{updatePath},
+		SubagentSummary{MaxInputBytes: 4096, TimeoutSeconds: 1},
+		func(context.Context, string, string) (modelSummaryGenerator, error) {
+			return contextAwareSummaryGenerator{}, nil
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("summarizeUpdateFiles() error = %v, want context.Canceled", err)
+	}
+	if result.Status != "failed" || result.Path == "" {
+		t.Fatalf("result = %#v, want a persisted failed summary", result)
+	}
+	data, readErr := os.ReadFile(filepath.Join(memoryRoot, filepath.FromSlash(result.Path)))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(data), "Status: `failed`") || !strings.Contains(string(data), "context canceled") {
+		t.Fatalf("canceled summary = %s", data)
 	}
 }
 
