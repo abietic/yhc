@@ -24,8 +24,8 @@ type ProviderUsageDescriptor struct {
 	ReasoningEffort   string
 }
 
-// ProviderUsageAdmitter is the narrow provider-facing capability exposed by a
-// root Goal. It cannot change Goal budget, status, objective, or continuation.
+// ProviderUsageAdmitter is the narrow provider-facing accounting capability.
+// Goal and invocation owners may compose it without exposing their state controls.
 type ProviderUsageAdmitter interface {
 	NewLogicalRoundID() string
 	AdmitProviderUsage(context.Context, ProviderUsageDescriptor) (ProviderUsageCall, error)
@@ -133,13 +133,16 @@ func CompleteProviderUsage(
 	return nil
 }
 
-// MarkProviderUsageAmbiguous fails closed after provider dispatch may have
-// occurred but no exact final usage record can be committed.
+// MarkProviderUsageAmbiguous fails closed unless a call explicitly opts into
+// observation-only ambiguity. Existing Goal owners remain strict by default.
 func MarkProviderUsageAmbiguous(call ProviderUsageCall, cause error) error {
 	if call == nil {
 		return cause
 	}
 	accountingErr := call.MarkProviderUsageAmbiguous(cause)
+	if policy, ok := call.(interface{ FailClosedOnAmbiguousUsage() bool }); ok && !policy.FailClosedOnAmbiguousUsage() && accountingErr == nil {
+		return cause
+	}
 	return &ProviderUsageTerminalError{
 		Err: errors.Join(cause, accountingErr),
 	}

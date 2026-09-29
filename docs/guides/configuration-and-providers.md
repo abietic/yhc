@@ -165,6 +165,7 @@ only to that selected provider.
 | `--mouse` | Root TUI and `resume`; use `--mouse=false` to disable |
 | `-p`/`--print`, `--plain`, `--resume`, `--output-format` | Root interaction/compatibility selection |
 | `--resume`, `--output-format` | `exec` session selection and text/JSON/JSONL output |
+| `--max-provider-calls`, `--max-total-tokens` | Optional `exec` invocation limits; both default to `0` (off); [usage semantics](interaction-modes-and-commands.md#invocation-usage-and-optional-limits) |
 | `--output-format` | Scoped independently to `sessions`, `config`, `doctor`, `mcp`, and `plugins` administration trees |
 
 No runtime flag is persistent. Put it after the command that consumes it, such

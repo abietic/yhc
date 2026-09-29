@@ -44,6 +44,26 @@ def read_result(path: Path) -> dict:
     return result
 
 
+def validated_usage(value: object) -> dict | None:
+    """Project numeric invocation usage; partial totals cannot become Harbor totals."""
+    fields = ("provider_calls", "known_calls", "unknown_calls", "in_flight",
+              "untracked_calls", "prompt_tokens", "completion_tokens", "total_tokens",
+              "cached_prompt_tokens", "reasoning_tokens")
+    if not isinstance(value, dict) or type(value.get("complete")) is not bool:
+        return None
+    if any(type(value.get(key)) is not int or value[key] < 0 for key in fields):
+        return None
+    if (value["cached_prompt_tokens"] > value["prompt_tokens"]
+            or value["reasoning_tokens"] > value["completion_tokens"]
+            or value["total_tokens"] < value["prompt_tokens"] + value["completion_tokens"]
+            or value["provider_calls"] != value["known_calls"] + value["unknown_calls"] + value["in_flight"]):
+        return None
+    complete = not (value["unknown_calls"] or value["in_flight"] or value["untracked_calls"])
+    if value["complete"] != complete:
+        return None
+    return {**{key: value[key] for key in fields}, "complete": complete}
+
+
 def inspect_linux_binary(path: Path) -> tuple[str, str]:
     """Identify an uploaded executable before provisioning an environment."""
     with path.open("rb") as binary:
@@ -63,12 +83,19 @@ class YHCAgent(BaseInstalledAgent):
     def __init__(self, logs_dir: Path, model_name: str | None = None,
                  binary_path: str = "build/linux-amd64/yhc", provider: str | None = None,
                  max_turns: int = 0, ripgrep_path: str | None = None,
-                 ca_bundle_path: str | None = None, **kwargs):
+                 ca_bundle_path: str | None = None, max_provider_calls: int = 0,
+                 max_total_tokens: int = 0, **kwargs):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         if not model_name or not model_name.strip():
             raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
         if type(max_turns) is not int or max_turns < 0:
             raise ValueError("max_turns must be a nonnegative integer; 0 is unlimited")
+        for name, value in (("max_provider_calls", max_provider_calls),
+                            ("max_total_tokens", max_total_tokens)):
+            if type(value) is not int or not 0 <= value <= 2**63 - 1:
+                raise ValueError(f"{name} must be a nonnegative int64; 0 disables")
+        self.max_provider_calls = max_provider_calls
+        self.max_total_tokens = max_total_tokens
         self.binary_path = Path(binary_path).expanduser().resolve(strict=True)
         self.arch, self.binary_sha256 = inspect_linux_binary(self.binary_path)
         self.ripgrep_path = Path(ripgrep_path).expanduser().resolve(strict=True) if ripgrep_path else None
@@ -123,6 +150,10 @@ class YHCAgent(BaseInstalledAgent):
         argv = [self.remote_binary, "exec", "-", "--output-format", "jsonl",
                 "--model", self.model_name, "--max-turns", str(self.max_turns),
                 "-y", "--sandbox", "danger-full-access"]
+        if self.max_provider_calls:
+            argv += ["--max-provider-calls", str(self.max_provider_calls)]
+        if self.max_total_tokens:
+            argv += ["--max-total-tokens", str(self.max_total_tokens)]
         if self.provider:
             argv += ["--provider", self.provider]
         path_setup = f'export PATH={shlex.quote(self.remote_dir)}:"$PATH"; ' if self.ripgrep_path else ""
@@ -219,6 +250,9 @@ class YHCAgent(BaseInstalledAgent):
             raise ValueError("YHC process exit and terminal result disagree")
 
     def populate_context_post_run(self, context: AgentContext) -> None:
+        context.n_input_tokens = None
+        context.n_output_tokens = None
+        context.n_cache_tokens = None
         metadata = {"binary_sha256": self.binary_sha256}
         if self.ripgrep_sha256:
             metadata["ripgrep_sha256"] = self.ripgrep_sha256
@@ -228,10 +262,16 @@ class YHCAgent(BaseInstalledAgent):
             metadata["state_dir_provisioned"] = True
         try:
             result = read_result(self.logs_dir / "yhc.jsonl")
+            usage = validated_usage(result.get("usage"))
+            if usage is not None:
+                metadata["usage"] = usage
+                if usage["complete"]:
+                    context.n_input_tokens = usage["prompt_tokens"]
+                    context.n_output_tokens = usage["completion_tokens"]
+                    context.n_cache_tokens = usage["cached_prompt_tokens"]
             metadata.update({key: result[key] for key in (
                 "status", "exit_code", "terminal_reason", "session_id") if key in result})
         except (OSError, ValueError):
             metadata["status"] = "incomplete_stream"
         context.metadata = {**(context.metadata or {}), "yhc": metadata}
-        # The lifecycle schema does not expose aggregate tokens or cost. Leave
-        # Harbor's counters unset rather than reporting invented zero usage.
+        # Incomplete usage remains metadata-only; never infer a currency cost.

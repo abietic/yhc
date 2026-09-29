@@ -15,6 +15,7 @@ import (
 	"github.com/abietic/yhc/engine"
 	"github.com/abietic/yhc/engine/commands"
 	engineerrors "github.com/abietic/yhc/engine/errors"
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/session"
 	enginetransport "github.com/abietic/yhc/engine/transport"
@@ -34,6 +35,7 @@ const (
 
 type headlessOptions struct {
 	Runtime      runtimeFlags
+	UsageLimits  execution.RunUsageLimits
 	Resume       string
 	OutputFormat string
 	Stdin        io.Reader
@@ -42,6 +44,7 @@ type headlessOptions struct {
 }
 
 type headlessResult struct {
+	Usage          *execution.RunUsageSnapshot
 	Status         string
 	Output         string
 	SessionID      string
@@ -53,13 +56,14 @@ type headlessResult struct {
 }
 
 type headlessEnvelope struct {
-	SchemaVersion  int                    `json:"schema_version"`
-	Status         string                 `json:"status"`
-	Output         string                 `json:"output,omitempty"`
-	SessionID      string                 `json:"session_id,omitempty"`
-	TerminalReason string                 `json:"terminal_reason,omitempty"`
-	ExitCode       int                    `json:"exit_code"`
-	Error          *headlessEnvelopeError `json:"error,omitempty"`
+	Usage          *execution.RunUsageSnapshot `json:"usage,omitempty"`
+	SchemaVersion  int                         `json:"schema_version"`
+	Status         string                      `json:"status"`
+	Output         string                      `json:"output,omitempty"`
+	SessionID      string                      `json:"session_id,omitempty"`
+	TerminalReason string                      `json:"terminal_reason,omitempty"`
+	ExitCode       int                         `json:"exit_code"`
+	Error          *headlessEnvelopeError      `json:"error,omitempty"`
 }
 
 type headlessEnvelopeError struct {
@@ -87,6 +91,8 @@ func newExecCommand() *cobra.Command {
 		},
 	}
 	bindRuntimeFlags(command.Flags(), &options.Runtime)
+	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
+	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
 	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
 	return command
@@ -111,6 +117,10 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		return renderHeadlessFailure(formatForError(options.OutputFormat), options, err, "usage_error", ExitUsage)
 	}
 	options = normalizeHeadlessWriters(options)
+	usage, err := execution.NewRunUsage(options.UsageLimits)
+	if err != nil {
+		return renderHeadlessFailure(format, options, err, "usage_error", ExitUsage)
+	}
 
 	prompt, err := resolveHeadlessPrompt(promptArgument, options.Stdin, readerIsTerminal(options.Stdin))
 	if err != nil {
@@ -134,9 +144,11 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 
 	configureHeadlessPermissions(&engineCfg, options.Stderr)
 	engineCfg.CommandEntrypoint = commands.EntrypointHeadless
+	engineCfg.RunUsage = usage
 
 	eng := engine.NewQueryEngine(engineCfg)
 	emitExecutionContainmentStartupDiagnostic(options.Stderr, eng)
+	defer usage.Seal()
 	defer eng.Close()
 	defer printResumeHint(options.Stderr, eng)
 	if err := resumeConfiguredSession(ctx, eng, resumeSource, options.Stderr); err != nil {
@@ -173,6 +185,20 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		result = collectHeadlessEvents(queryCtx, options.Stderr, events)
 	}
 	result.SessionID = eng.SessionID()
+	eng.Close()
+	usage.Seal()
+	snapshot := usage.Snapshot()
+	result.Usage = &snapshot
+	if snapshot.StopReason != "" && result.ExitCode != ExitCancelled {
+		result.Status = "failed"
+		result.TerminalReason = snapshot.StopReason
+		result.ErrorCode = snapshot.StopReason
+		result.ExitCode = ExitFailure
+		result.Err = execution.ErrRunBudgetExceeded
+		if snapshot.StopReason == "run_usage_unknown" {
+			result.Err = execution.ErrRunUsageUnknown
+		}
+	}
 	result.Err = sanitizeHeadlessError(result.Err, options.Runtime.apiKey)
 	if err := renderHeadlessResult(format, options.Stdout, options.Stderr, result); err != nil {
 		return err
@@ -394,6 +420,7 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 	if format == outputFormatJSON {
 		envelope := headlessEnvelope{
 			SchemaVersion:  headlessEnvelopeSchemaVersion,
+			Usage:          result.Usage,
 			Status:         result.Status,
 			Output:         result.Output,
 			SessionID:      result.SessionID,
@@ -414,6 +441,7 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 		}
 		lifecycleResult := enginetransport.LifecycleResult{
 			LifecycleIdentity: identity,
+			Usage:             result.Usage,
 			Status:            result.Status,
 			Output:            result.Output,
 			TerminalReason:    result.TerminalReason,
@@ -435,6 +463,12 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 			if _, err := io.WriteString(stdout, "\n"); err != nil {
 				return fmt.Errorf("write headless output terminator: %w", err)
 			}
+		}
+	}
+	if result.Usage != nil {
+		u := result.Usage
+		if _, err := fmt.Fprintf(stderr, "Usage: calls=%d tokens=%d input=%d output=%d cached=%d reasoning=%d unknown=%d in_flight=%d complete=%t\n", u.ProviderCalls, u.TotalTokens, u.PromptTokens, u.CompletionTokens, u.CachedPromptTokens, u.ReasoningTokens, u.UnknownCalls, u.InFlight, u.Complete); err != nil {
+			return err
 		}
 	}
 	if result.Err != nil {

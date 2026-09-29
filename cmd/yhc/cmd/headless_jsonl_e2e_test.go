@@ -141,6 +141,9 @@ func TestHeadlessJSONLPublicExecStreamsCommittedLifecycle(t *testing.T) {
 		final.Result.Sequence <= previousSequence {
 		t.Fatalf("final lifecycle record = %#v", final)
 	}
+	if u := final.Result.Usage; u == nil || u.ProviderCalls != 3 || u.TotalTokens != 6 || !u.Complete {
+		t.Fatalf("final aggregate usage = %+v", u)
+	}
 	if calls := script.calls.Load(); calls != 3 {
 		t.Fatalf("provider calls = %d, want 3", calls)
 	}

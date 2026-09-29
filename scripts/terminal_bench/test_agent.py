@@ -79,6 +79,41 @@ class AgentTests(AgentFixture, unittest.TestCase):
             self.assertIn("--sandbox danger-full-access", command)
             self.assertIn("--max-turns 0", command)
 
+    def test_usage_limits_are_opt_in(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            self.assertNotIn("--max-provider-calls", self.agent().execution_command())
+            self.assertNotIn("--max-total-tokens", self.agent().execution_command())
+            command = self.agent(max_provider_calls=3, max_total_tokens=100).execution_command()
+            self.assertIn("--max-provider-calls 3", command)
+            self.assertIn("--max-total-tokens 100", command)
+            for invalid in (-1, True, "5", 2**63):
+                for name in ("max_provider_calls", "max_total_tokens"):
+                    with self.assertRaises(ValueError):
+                        self.agent(**{name: invalid})
+
+    def test_complete_usage_populates_harbor_and_partial_stays_metadata(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            agent = self.agent()
+        agent.logs_dir.mkdir()
+        usage = dict(provider_calls=2, known_calls=2, unknown_calls=0, in_flight=0,
+                     untracked_calls=0, prompt_tokens=30, completion_tokens=8,
+                     total_tokens=38, cached_prompt_tokens=20, reasoning_tokens=5,
+                     complete=True)
+        for complete in (True, False):
+            with self.subTest(complete=complete):
+                usage.update(complete=complete, known_calls=2 if complete else 1,
+                             unknown_calls=0 if complete else 1)
+                record = terminal()
+                record["result"]["usage"] = usage
+                (agent.logs_dir / "yhc.jsonl").write_text(json.dumps(record) + "\n")
+                context = AgentContext()
+                agent.populate_context_post_run(context)
+                self.assertEqual(context.n_input_tokens, 30 if complete else None)
+                self.assertEqual(context.n_output_tokens, 8 if complete else None)
+                self.assertEqual(context.n_cache_tokens, 20 if complete else None)
+                self.assertIsNone(context.cost_usd)
+                self.assertEqual(context.metadata["yhc"]["usage"]["reasoning_tokens"], 5)
+
     def test_missing_credentials_fails_before_starting_environment(self):
         with patch.dict("os.environ", {}, clear=True):
             with self.assertRaisesRegex(ValueError, "YHC_BENCH_API_KEY"):
