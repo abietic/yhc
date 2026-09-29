@@ -5,6 +5,7 @@ instruction are uploaded. Host settings, credentials files, repository contents,
 verifier/oracle data are never copied.
 """
 
+import asyncio
 import hashlib
 import json
 import shlex
@@ -123,6 +124,7 @@ class YHCAgent(BaseInstalledAgent):
         self.remote_dir = f"/installed-agent/yhc-{uuid.uuid4().hex}"
         self.remote_binary = f"{self.remote_dir}/yhc"
         self.remote_prompt = f"{self.remote_dir}/instruction.txt"
+        self.remote_pid = str(self.environment_logs_dir / "yhc.pid")
         self.state_dir_provisioned = False
         self.execution_env()  # Fail before provisioning when credentials are absent.
 
@@ -157,7 +159,10 @@ class YHCAgent(BaseInstalledAgent):
         if self.provider:
             argv += ["--provider", self.provider]
         path_setup = f'export PATH={shlex.quote(self.remote_dir)}:"$PATH"; ' if self.ripgrep_path else ""
-        return (f"{path_setup}exec {shlex.join(argv)} < {shlex.quote(self.remote_prompt)}"
+        # The shell becomes YHC via exec, so $$ identifies only this invocation.
+        # Restrict the PID file without changing the agent's inherited umask.
+        pid_setup = f"(umask 077; printf '%s\\n' \"$$\" > {shlex.quote(self.remote_pid)}) && "
+        return (f"{path_setup}{pid_setup}exec {shlex.join(argv)} < {shlex.quote(self.remote_prompt)}"
                 f" > {shlex.quote(str(self.environment_logs_dir / 'yhc.jsonl'))}"
                 f" 2> {shlex.quote(str(self.environment_logs_dir / 'yhc.stderr.log'))}")
 
@@ -235,7 +240,18 @@ class YHCAgent(BaseInstalledAgent):
         # an empty context. A provisional "running" status would suppress it.
         # No pipeline or shell interpolation of prompts/credentials. The exec
         # return code remains YHC's. Harbor owns the task timeout and teardown.
-        execution = await environment.exec(command=self.execution_command(), env=self.execution_env())
+        try:
+            execution = await environment.exec(command=self.execution_command(), env=self.execution_env())
+        except asyncio.CancelledError:
+            # Cancelling Docker exec's client does not signal its container child.
+            # Give YHC a bounded chance to cancel descendants and write its final
+            # usage before Harbor collects logs and tears down the environment.
+            # Never turn the original timeout/cancellation into a successful run.
+            try:
+                await asyncio.wait_for(self.interrupt_execution(environment), timeout=6)
+            except (Exception, asyncio.CancelledError):
+                self.logger.warning("YHC cancellation cleanup did not complete; usage may be partial")
+            raise
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="yhc-result-") as directory:
             local_result = Path(directory) / "yhc.jsonl"
@@ -248,6 +264,20 @@ class YHCAgent(BaseInstalledAgent):
         result = read_result(self.logs_dir / "yhc.jsonl")
         if result["exit_code"] != 0 or result["status"] != "completed":
             raise ValueError("YHC process exit and terminal result disagree")
+
+    async def interrupt_execution(self, environment: BaseEnvironment) -> None:
+        # Refuse missing/invalid PID files and processes using another executable.
+        # No host process or arbitrary task process may be selected for signalling.
+        command = (
+            f"read -r yhc_pid < {shlex.quote(self.remote_pid)} || exit 0; "
+            "case \"$yhc_pid\" in ''|*[!0-9]*) exit 0;; esac; "
+            "[ \"$yhc_pid\" -gt 1 ] || exit 0; "
+            f"[ \"/proc/$yhc_pid/exe\" -ef {shlex.quote(self.remote_binary)} ] || exit 0; "
+            "kill -INT \"$yhc_pid\" 2>/dev/null || exit 0; "
+            f"while [ \"/proc/$yhc_pid/exe\" -ef {shlex.quote(self.remote_binary)} ]; "
+            "do sleep 0.1; done"
+        )
+        await environment.exec(command=command, timeout_sec=5)
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         context.n_input_tokens = None

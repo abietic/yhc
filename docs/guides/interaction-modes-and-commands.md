@@ -97,6 +97,12 @@ agent arguments `--ak max_provider_calls=30 --ak max_total_tokens=200000`.
 Omitting them leaves both controls disabled. Complete usage fills Harbor input,
 output and cache counters; partial usage stays in metadata so it cannot be
 mistaken for a complete total. Cost remains unset.
+On Harbor timeout/cancellation, the adapter checks the invocation PID and Linux
+executable identity, sends an interrupt, and allows a bounded shutdown before
+Harbor collects logs. The original cancellation still propagates. Settled usage
+can survive in the final cancelled result; an interrupted call without usage
+remains unknown. Hard kills or failed shutdown can still leave an incomplete
+stream, so this is not a durable crash-recovery ledger.
 
 The collector is invocation-local and distinct from durable Goal accounting.
 Embedded consumers can explicitly share `QueryEngineConfig.RunUsage`;

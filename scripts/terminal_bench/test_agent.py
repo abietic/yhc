@@ -151,6 +151,38 @@ class RunTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
         self.environment = SimpleNamespace(upload_file=AsyncMock(), exec=AsyncMock(),
                                            download_file=AsyncMock())
 
+    async def test_cancellation_interrupts_owned_process_before_harbor_collects_logs(self):
+        started = asyncio.Event()
+
+        async def execute(**kwargs):
+            if "env" in kwargs:
+                started.set()
+                await asyncio.Future()
+            return SimpleNamespace(return_code=0)
+
+        self.environment.exec.side_effect = execute
+        context = AgentContext()
+        task = asyncio.create_task(self.subject.run("task", self.environment, context))
+        await started.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(self.environment.exec.await_count, 2)
+        cleanup = self.environment.exec.await_args.kwargs
+        self.assertIn("kill -INT", cleanup["command"])
+        self.assertIn(self.subject.remote_binary, cleanup["command"])
+        self.assertNotIn("env", cleanup)
+        self.assertLessEqual(cleanup["timeout_sec"], 5)
+        self.assertTrue(context.is_empty())
+
+    async def test_failed_interrupt_does_not_replace_cancellation(self):
+        self.environment.exec.side_effect = [asyncio.CancelledError(), OSError("gone")]
+        context = AgentContext()
+        with self.assertRaises(asyncio.CancelledError):
+            await self.subject.run("task", self.environment, context)
+        self.assertEqual(self.environment.exec.await_count, 2)
+        self.assertTrue(context.is_empty())
+
     async def test_cancel_or_download_failure_keeps_harbor_post_run_hook_eligible(self):
         for failed_operation, error in [("exec", asyncio.CancelledError()),
                                         ("download_file", OSError("download failed"))]:
