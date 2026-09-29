@@ -1163,18 +1163,18 @@ func runInvocation(ctx context.Context, t *testing.T, binary, root, repo string,
 	started := time.Now()
 	err := ownedprocess.Run(ctx, cmd)
 	if err != nil {
-		return envelope{}, newInvocationFailure("process", err, started, &stdout, &stderr)
+		return envelope{}, newInvocationError("process", err, started, &stdout, &stderr)
 	}
 	var out envelope
 	if err := strictJSON(stdout.Bytes(), &out); err != nil {
-		return envelope{}, newInvocationFailure("envelope", err, started, &stdout, &stderr)
+		return envelope{}, newInvocationError("envelope", err, started, &stdout, &stderr)
 	}
 	return out, nil
 }
 
 // Preserve error identity for callers, but keep process output and decoder
 // details out of test logs: either can contain fixture or provider content.
-type invocationFailure struct {
+type invocationError struct {
 	cause       error
 	phase       string
 	elapsed     time.Duration
@@ -1182,8 +1182,8 @@ type invocationFailure struct {
 	stderrBytes int
 }
 
-func newInvocationFailure(phase string, cause error, started time.Time, stdout, stderr *limitedBuffer) *invocationFailure {
-	return &invocationFailure{
+func newInvocationError(phase string, cause error, started time.Time, stdout, stderr *limitedBuffer) *invocationError {
+	return &invocationError{
 		cause:       cause,
 		phase:       phase,
 		elapsed:     time.Since(started),
@@ -1192,7 +1192,7 @@ func newInvocationFailure(phase string, cause error, started time.Time, stdout, 
 	}
 }
 
-func (e *invocationFailure) Error() string {
+func (e *invocationError) Error() string {
 	code := ownedprocess.Code(e.cause)
 	if code == "" {
 		code = "unclassified"
@@ -1205,7 +1205,7 @@ func (e *invocationFailure) Error() string {
 		e.elapsed.Milliseconds(), e.stdoutBytes, e.stderrBytes)
 }
 
-func (e *invocationFailure) Unwrap() error { return e.cause }
+func (e *invocationError) Unwrap() error { return e.cause }
 
 func workingTreeStatus(t *testing.T, repo string) []string {
 	t.Helper()

@@ -29,7 +29,7 @@ func TestInvocationFailurePreservesCauseWithoutDisclosingContent(t *testing.T) {
 			var stdout, stderr limitedBuffer
 			_, _ = stdout.Write([]byte(privateContent))
 			_, _ = stderr.Write([]byte(privateContent))
-			failure := newInvocationFailure(tc.phase, tc.cause, time.Now(), &stdout, &stderr)
+			failure := newInvocationError(tc.phase, tc.cause, time.Now(), &stdout, &stderr)
 			if !errors.Is(failure, tc.cause) {
 				t.Fatal("invocation diagnostic lost error identity")
 			}
@@ -56,7 +56,7 @@ func TestInvocationFailureReportsOwnedProcessCode(t *testing.T) {
 	if cause == nil {
 		t.Fatal("absent executable unexpectedly started")
 	}
-	failure := &invocationFailure{cause: cause, phase: "process"}
+	failure := &invocationError{cause: cause, phase: "process"}
 	if code := ownedprocess.Code(failure); code != "process_start_failed" {
 		t.Fatalf("wrapped process code = %q", code)
 	}
