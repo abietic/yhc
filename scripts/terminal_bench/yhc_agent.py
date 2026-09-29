@@ -85,7 +85,7 @@ class YHCAgent(BaseInstalledAgent):
                  binary_path: str = "build/linux-amd64/yhc", provider: str | None = None,
                  max_turns: int = 0, ripgrep_path: str | None = None,
                  ca_bundle_path: str | None = None, max_provider_calls: int = 0,
-                 max_total_tokens: int = 0, **kwargs):
+                 max_total_tokens: int = 0, execution_timeout_sec: int = 0, **kwargs):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         if not model_name or not model_name.strip():
             raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
@@ -95,6 +95,9 @@ class YHCAgent(BaseInstalledAgent):
                             ("max_total_tokens", max_total_tokens)):
             if type(value) is not int or not 0 <= value <= 2**63 - 1:
                 raise ValueError(f"{name} must be a nonnegative int64; 0 disables")
+        if type(execution_timeout_sec) is not int or not 0 <= execution_timeout_sec <= 9223372036:
+            raise ValueError("execution_timeout_sec must be nonnegative and fit Go time.Duration")
+        self.execution_timeout_sec = execution_timeout_sec
         self.max_provider_calls = max_provider_calls
         self.max_total_tokens = max_total_tokens
         self.binary_path = Path(binary_path).expanduser().resolve(strict=True)
@@ -152,6 +155,8 @@ class YHCAgent(BaseInstalledAgent):
         argv = [self.remote_binary, "exec", "-", "--output-format", "jsonl",
                 "--model", self.model_name, "--max-turns", str(self.max_turns),
                 "-y", "--sandbox", "danger-full-access"]
+        if self.execution_timeout_sec:
+            argv += ["--timeout", f"{self.execution_timeout_sec}s"]
         if self.max_provider_calls:
             argv += ["--max-provider-calls", str(self.max_provider_calls)]
         if self.max_total_tokens:

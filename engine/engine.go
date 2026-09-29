@@ -245,6 +245,7 @@ type QueryEngineConfig struct {
 	goalBinding               *goalExecutionIdentity
 	goalUsageReporter         *goalUsageReporter
 	RunUsage                  *execution.RunUsage // optional invocation-wide collector shared with descendants
+	RunDeadline               time.Time           // optional invocation cutoff, including resumed children; never persisted
 	RuntimeState              *RuntimeStateStore
 	AdditionalDirs            []string // extra working directories added via /add-dir
 	PluginDirs                []string // explicit plugin roots; defaults to user and project plugin directories
@@ -762,6 +763,7 @@ func newQueryEngineWithOptions(
 		subExec.goalBindingSnapshot = eng.currentGoalExecutionIdentity
 		subExec.goalUsageReporterFactory = eng.bindGoalUsageReporterForChild
 		subExec.RunUsage = config.RunUsage
+		subExec.RunDeadline = config.RunDeadline
 		if strings.TrimSpace(config.AgentID) == "" {
 			subExec.beginGoalChildWait = eng.goalService.beginForegroundChildWait
 		}
@@ -1373,6 +1375,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		}
 	}
 
+	ctx, cancelRunDeadline := execution.WithRunDeadline(ctx, e.config.RunDeadline)
 	e.mu.Lock()
 	baseMessages := append([]*schema.Message(nil), e.messages...)
 	turnAbortController := newAbortControllerFromContext(ctx)
@@ -1395,6 +1398,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		if admittedPrompt != nil {
 			defer e.releaseAdmittedPrompt(admittedPrompt)
 		}
+		defer cancelRunDeadline()
 		defer e.finishRuntimeInputTurn(
 			turnAbortController,
 			inputCoordinator,
@@ -1813,6 +1817,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		toolUseSummary := e.toolUseSummaryModelCall(ctx)
 
 		params := QueryParams{
+			RunUsage:                e.config.RunUsage,
 			Messages:                baseMessages,
 			SystemPrompt:            systemPrompt,
 			SessionID:               e.config.SessionID,
@@ -5318,6 +5323,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 		e.subagentExecutor.goalBindingSnapshot = e.currentGoalExecutionIdentity
 		e.subagentExecutor.goalUsageReporterFactory = e.bindGoalUsageReporterForChild
 		e.subagentExecutor.RunUsage = e.config.RunUsage
+		e.subagentExecutor.RunDeadline = e.config.RunDeadline
 		if strings.TrimSpace(e.config.AgentID) == "" {
 			e.subagentExecutor.beginGoalChildWait = e.goalService.beginForegroundChildWait
 		} else {

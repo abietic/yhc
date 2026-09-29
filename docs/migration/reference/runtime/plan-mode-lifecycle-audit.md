@@ -54,7 +54,7 @@ completion evidence is in
 
 Current replacement anchors:
 
-- [`QueryEngine.modelVisibleTools`](../../../../engine/engine.go#L1377)
+- [`QueryEngine.modelVisibleTools`](../../../../engine/engine.go#L3208)
 - [`evaluatePlanToolPolicy`](../../../../engine/plan_tool_policy.go#L47)
 - [`executeToolCall`](../../../../engine/tool_execution.go#L30)
 - [`isExactPlanFileMutation`](../../../../engine/plan_tool_policy.go#L171)

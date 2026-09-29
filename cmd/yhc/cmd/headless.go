@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -34,6 +35,7 @@ const (
 )
 
 type headlessOptions struct {
+	Timeout      time.Duration
 	Runtime      runtimeFlags
 	UsageLimits  execution.RunUsageLimits
 	Resume       string
@@ -91,6 +93,7 @@ func newExecCommand() *cobra.Command {
 		},
 	}
 	bindRuntimeFlags(command.Flags(), &options.Runtime)
+	command.Flags().DurationVar(&options.Timeout, "timeout", 0, "Cancel this query and its children after this duration (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
@@ -115,6 +118,9 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	format, err := parseOutputFormat(options.OutputFormat)
 	if err != nil {
 		return renderHeadlessFailure(formatForError(options.OutputFormat), options, err, "usage_error", ExitUsage)
+	}
+	if options.Timeout < 0 {
+		return renderHeadlessFailure(format, options, usageErrorf("timeout must be non-negative (0 disables)"), "usage_error", ExitUsage)
 	}
 	options = normalizeHeadlessWriters(options)
 	usage, err := execution.NewRunUsage(options.UsageLimits)
@@ -145,6 +151,12 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	configureHeadlessPermissions(&engineCfg, options.Stderr)
 	engineCfg.CommandEntrypoint = commands.EntrypointHeadless
 	engineCfg.RunUsage = usage
+	if options.Timeout > 0 {
+		engineCfg.RunDeadline = time.Now().Add(options.Timeout)
+		if earlier, ok := ctx.Deadline(); ok && earlier.Before(engineCfg.RunDeadline) {
+			engineCfg.RunDeadline = earlier
+		}
+	}
 
 	eng := engine.NewQueryEngine(engineCfg)
 	emitExecutionContainmentStartupDiagnostic(options.Stderr, eng)
@@ -157,7 +169,10 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 
 	queryCtx := ctx
 	cancelQuery := func() {}
-	if format == outputFormatJSONL {
+	if options.Timeout > 0 {
+		queryCtx, cancelQuery = execution.WithRunDeadline(ctx, engineCfg.RunDeadline)
+		defer cancelQuery()
+	} else if format == outputFormatJSONL {
 		queryCtx, cancelQuery = context.WithCancel(ctx)
 		defer cancelQuery()
 	}

@@ -72,3 +72,61 @@ func TestExecRunUsageAndOptionalLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestExecTimeoutCancelsProviderAndPreservesUnknownUsage(t *testing.T) {
+	prepareHeadlessJSONLProviderTest(t)
+	var calls atomic.Int32
+	var sawDeadline atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		encoded, _ := json.Marshal(body)
+		sawDeadline.Store(bytes.Contains(encoded, []byte("time_remaining_seconds=")))
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	var out, stderr bytes.Buffer
+	cmd := newRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetIn(bytes.NewReader(nil))
+	cmd.SetArgs([]string{"exec", "deadline probe", "--timeout", "1s", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		t.Fatal("timeout became success")
+	}
+	var result headlessEnvelope
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v output=%s stderr=%s", err, out.String(), stderr.String())
+	}
+	if calls.Load() != 1 || !sawDeadline.Load() {
+		t.Fatalf("calls=%d deadline=%v", calls.Load(), sawDeadline.Load())
+	}
+	if result.Status != "cancelled" || result.ExitCode != 130 || result.Usage == nil || result.Usage.Complete || result.Usage.UnknownCalls != 1 || result.Usage.InFlight != 0 {
+		t.Fatalf("result=%+v usage=%+v", result, result.Usage)
+	}
+}
+
+func TestExecRejectsNegativeTimeoutBeforeProviderSetup(t *testing.T) {
+	var out, stderr bytes.Buffer
+	cmd := newRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"exec", "probe", "--timeout=-1s", "--output-format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("negative timeout accepted")
+	}
+	var result headlessEnvelope
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == nil || result.Error.Code != "usage_error" {
+		t.Fatalf("result=%+v", result)
+	}
+}

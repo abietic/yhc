@@ -77,6 +77,26 @@ is enabled. With both controls off, usage collection preserves existing retry
 and fallback behavior. Opaque custom permission reviewers are skipped while
 limits apply; statistics-only runs mark their coverage incomplete.
 
+Before each main/child model round, explicitly enabled invocation limits are
+shown as a live budget snapshot at the request tail. This reminder is not saved
+as conversation history and does not rewrite the stable system prompt. Counts
+are shared with children and auxiliary calls; concurrent work can consume them
+after the snapshot. The admission checks remain authoritative.
+
+`yhc exec --timeout 29m` optionally cancels the query after that duration,
+including its active child/tool/provider contexts. The timer starts after provider configuration,
+before engine initialization, resume and query submission; zero (the default)
+disables it.
+An earlier caller deadline still wins. The explicit invocation deadline survives
+child foreground/background detachment and child continuation with fresh
+contexts; ordinary parent cancellation leases
+retain their existing behavior. With an invocation collector, enforced
+context deadlines are also included in the model's reminder. The reminder asks
+for targeted verification and honest reporting of unfinished work; it cannot
+guarantee the model will finish early. Cancellation uses the existing exit
+`130` path and settles available usage; shutdown/logging can take additional
+time, so leave a margin before an external container kill deadline.
+
 A rejected admission returns exit `1` with `error.code=run_budget_exceeded`;
 incomplete usage under a token limit returns `run_usage_unknown`. Cancellation
 retains exit `130`. Reaching a threshold in a successful final answer does not
@@ -94,7 +114,9 @@ A forced process kill may prevent the final summary from being written.
 
 The [Harbor adapter](../../scripts/terminal_bench/yhc_agent.py) accepts optional
 agent arguments `--ak max_provider_calls=30 --ak max_total_tokens=200000`.
-Omitting them leaves both controls disabled. Complete usage fills Harbor input,
+An optional `--ak execution_timeout_sec=1740` passes `--timeout 1740s` to YHC;
+choose a duration below Harbor's outer timeout to leave shutdown time. All three
+controls default to disabled. Complete usage fills Harbor input,
 output and cache counters; partial usage stays in metadata so it cannot be
 mistaken for a complete total. Cost remains unset.
 On Harbor timeout/cancellation, the adapter checks the invocation PID and Linux

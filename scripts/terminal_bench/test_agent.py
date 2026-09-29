@@ -91,6 +91,14 @@ class AgentTests(AgentFixture, unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.agent(**{name: invalid})
 
+    def test_execution_timeout_is_opt_in_and_bounded(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            self.assertNotIn("--timeout", self.agent().execution_command())
+            self.assertIn("--timeout 1740s", self.agent(execution_timeout_sec=1740).execution_command())
+            for invalid in (-1, True, "5", 9223372037):
+                with self.assertRaises(ValueError):
+                    self.agent(execution_timeout_sec=invalid)
+
     def test_complete_usage_populates_harbor_and_partial_stays_metadata(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
             agent = self.agent()
