@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-08-09
+**Last verified:** 2026-09-29
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -21,6 +21,14 @@ independent, reproducible answer to four questions:
 `make test` remains the ordinary full-suite gate. The focused targets below add
 risk-specific evidence; none of them replaces the four repository gates in
 [`verification.md`](verification.md).
+
+The full-suite target defaults to four concurrent Go packages, using
+`TEST_PACKAGE_PARALLEL=4`. This bounds process-launch contention, including
+macOS loader delays that can consume a PTY or real-binary scenario's deadline
+before its program starts. Tests, coverage, and per-scenario deadlines remain
+unchanged. Use `make test TEST_PACKAGE_PARALLEL=1` on a constrained host; CI uses
+that setting. This explicit `-p` setting takes precedence over `GOFLAGS=-p=...`
+for the full-suite invocation. It does not change concurrency inside a package.
 
 ## Evidence Layers
 

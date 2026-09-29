@@ -1059,7 +1059,7 @@ func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]s
 	defer cancel()
 	out, err := runInvocation(ctx, t, binary, root, repo, s, provider.server.URL)
 	if err != nil {
-		t.Fatalf("%s: binary failed", s.ID)
+		t.Fatalf("%s: binary failed: %v provider_requests=%d", s.ID, err, provider.requestCount())
 	}
 	if out.ExitCode != s.Expected.ExitCode || out.Status != s.Expected.Status || out.TerminalReason != s.Expected.TerminalReason {
 		t.Fatalf("%s: envelope mismatch", s.ID)
@@ -1160,16 +1160,52 @@ func runInvocation(ctx context.Context, t *testing.T, binary, root, repo string,
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(root, "home"), "XDG_CONFIG_HOME=" + filepath.Join(root, "cfg"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "TMPDIR=" + filepath.Join(root, "tmp"), "CLAUDE_TRANSCRIPT_DIR=" + filepath.Join(root, "transcripts"), "NO_PROXY=127.0.0.1,localhost", "GOTOOLCHAIN=local"}
 	var stdout, stderr limitedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	started := time.Now()
 	err := ownedprocess.Run(ctx, cmd)
 	if err != nil {
-		return envelope{}, err
+		return envelope{}, newInvocationFailure("process", err, started, &stdout, &stderr)
 	}
 	var out envelope
 	if err := strictJSON(stdout.Bytes(), &out); err != nil {
-		return envelope{}, err
+		return envelope{}, newInvocationFailure("envelope", err, started, &stdout, &stderr)
 	}
 	return out, nil
 }
+
+// Preserve error identity for callers, but keep process output and decoder
+// details out of test logs: either can contain fixture or provider content.
+type invocationFailure struct {
+	cause       error
+	phase       string
+	elapsed     time.Duration
+	stdoutBytes int
+	stderrBytes int
+}
+
+func newInvocationFailure(phase string, cause error, started time.Time, stdout, stderr *limitedBuffer) *invocationFailure {
+	return &invocationFailure{
+		cause:       cause,
+		phase:       phase,
+		elapsed:     time.Since(started),
+		stdoutBytes: len(stdout.Bytes()),
+		stderrBytes: len(stderr.Bytes()),
+	}
+}
+
+func (e *invocationFailure) Error() string {
+	code := ownedprocess.Code(e.cause)
+	if code == "" {
+		code = "unclassified"
+		if e.phase == "envelope" {
+			code = "invalid_envelope"
+		}
+	}
+	return fmt.Sprintf("phase=%s code=%s deadline=%t canceled=%t elapsed_ms=%d stdout_bytes=%d stderr_bytes=%d",
+		e.phase, code, errors.Is(e.cause, context.DeadlineExceeded), errors.Is(e.cause, context.Canceled),
+		e.elapsed.Milliseconds(), e.stdoutBytes, e.stderrBytes)
+}
+
+func (e *invocationFailure) Unwrap() error { return e.cause }
 
 func workingTreeStatus(t *testing.T, repo string) []string {
 	t.Helper()
