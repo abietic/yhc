@@ -98,16 +98,25 @@ func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T
 	if got := strings.Join(
 		resolved.Metadata.SupportedReasoningEfforts.Value,
 		",",
-	); got != "none,high,max" || resolved.Reasoning.DefaultEffort != "max" {
+	); got != "none,low,high,max" || resolved.Reasoning.DefaultEffort != "max" {
 		t.Fatalf("compiled DeepSeek reasoning = %#v", resolved)
 	}
 
 	profile.Reasoning.DefaultEffort = "low"
 	sources.User.ModelProfiles["primary"] = profile
+	lowSnapshot, err := CompilePortfolio(PortfolioCompileInput{Sources: sources, Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lowSnapshot.Profiles["primary"].Reasoning.DefaultEffort != "low" {
+		t.Fatal("low default was not retained")
+	}
+	profile.Reasoning.DefaultEffort = "medium"
+	sources.User.ModelProfiles["primary"] = profile
 	if _, err := CompilePortfolio(PortfolioCompileInput{
 		Sources: sources,
 		Getenv:  func(string) string { return "" },
-	}); err == nil || !strings.Contains(err.Error(), `default reasoning effort "low"`) {
+	}); err == nil || !strings.Contains(err.Error(), `default reasoning effort "medium"`) {
 		t.Fatalf("DeepSeek compatibility alias was admitted: %v", err)
 	}
 

@@ -17,7 +17,7 @@ func TestDeepSeekV4RequestCapabilitiesExposeOnlyExactEfforts(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s reasoning capability is unknown", modelID)
 		}
-		if want := []string{"none", "high", "max"}; !reflect.DeepEqual(efforts, want) {
+		if want := []string{"none", "low", "high", "max"}; !reflect.DeepEqual(efforts, want) {
 			t.Fatalf("%s efforts = %#v, want %#v", modelID, efforts, want)
 		}
 	}
@@ -67,9 +67,15 @@ func TestResolveAdapterReasoningEffortSeparatesIntentFromWireDialect(t *testing.
 			},
 		},
 		{
-			name:     "deepseek compatibility aliases stay rejected",
+			name:     "deepseek low enables exact wire effort",
 			provider: "agenticdeepseek",
 			effort:   "low",
+			want:     ResolvedReasoningEffort{CanonicalEffort: "low", WireEffort: "low", Dialect: ReasoningDialectDeepSeek},
+		},
+		{
+			name:     "deepseek compatibility aliases stay rejected",
+			provider: "agenticdeepseek",
+			effort:   "medium",
 			wantErr:  true,
 		},
 		{

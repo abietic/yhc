@@ -63,7 +63,7 @@ var reasoningAdapterPolicies = []reasoningAdapterPolicy{
 		provider: "agenticdeepseek",
 		aliases:  []string{"deepseek"},
 		dialect:  ReasoningDialectDeepSeek,
-		efforts:  []string{"none", "high", "max"},
+		efforts:  []string{"none", "low", "high", "max"},
 	},
 	{
 		provider: "agenticqwen",

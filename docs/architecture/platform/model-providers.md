@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-09-29
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -491,12 +491,12 @@ exact value and the selected adapter to support exact lowering:
 | Agentic OpenAI Responses | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | typed Responses reasoning |
 | Agentic Ark Responses | `minimal`, `low`, `medium`, `high` | typed Ark reasoning |
 | Agentic Gemini | `low`, `high` | typed Gemini thinking level |
-| Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
+| Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `low`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
 | Agentic Qwen | none | provider default only |
 
-For DeepSeek V4, all three explicit values are emitted unchanged as Responses
+For DeepSeek V4, all four explicit values are emitted unchanged as Responses
 `reasoning.effort`; the old Chat Completions `thinking` and
-`reasoning_effort` fields are never sent. Compatibility aliases such as `low`,
+`reasoning_effort` fields are never sent. Compatibility aliases such as `minimal`,
 `medium`, or `xhigh` are rejected instead of silently mapped. Empty effort
 emits no provider option. A profile default applies when the Session/call has
 no override, and `/effort default` restores that profile default or provider

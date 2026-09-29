@@ -18,6 +18,7 @@ func TestDeepSeekV4ReasoningEffortReachesActualRequestBody(t *testing.T) {
 		effort string
 	}{
 		{effort: "none"},
+		{effort: "low"},
 		{effort: "high"},
 		{effort: "max"},
 	} {
