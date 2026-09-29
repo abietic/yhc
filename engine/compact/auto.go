@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/abietic/yhc/engine/execution"
+	enginemessages "github.com/abietic/yhc/engine/messages"
 	modelcap "github.com/abietic/yhc/engine/model"
 )
 
@@ -27,8 +28,7 @@ const (
 )
 
 // TokenWarningState mirrors the threshold helpers from the reference runtime.
-// The Go port intentionally keeps the model sizing simple for now: until
-// provider/model capability tables land, we assume a 200k effective window.
+// Model capability metadata owns window sizing; unknown models use a fallback.
 type TokenWarningState struct {
 	PercentLeft                 int
 	IsAboveWarningThreshold     bool
@@ -221,8 +221,37 @@ func estimateMessageTokens(msg *schema.Message) int {
 	}
 
 	total := 8
-	total += roughTextTokens(msg.Content)
-	total += roughTextTokens(msg.ReasoningContent)
+	content, reasoning := msg.Content, msg.ReasoningContent
+	if msg.Role == schema.Assistant {
+		parts := msg.AssistantGenMultiContent
+		if merged, err := enginemessages.ConcatAssistantOutputParts(parts); err == nil {
+			parts = merged
+		}
+		var textParts, reasoningParts strings.Builder
+		hasText, hasReasoning := false, false
+		for _, part := range parts {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				hasText = true
+				textParts.WriteString(part.Text)
+			case schema.ChatMessagePartTypeReasoning:
+				hasReasoning = true
+				if part.Reasoning != nil {
+					reasoningParts.WriteString(part.Reasoning.Text)
+				}
+			default:
+				total += 32
+			}
+		}
+		if hasText {
+			content = textParts.String()
+		}
+		if hasReasoning {
+			reasoning = reasoningParts.String()
+		}
+	}
+	total += roughTextTokens(content)
+	total += roughTextTokens(reasoning)
 	total += roughTextTokens(msg.Name)
 	total += roughTextTokens(msg.ToolCallID)
 	total += roughTextTokens(msg.ToolName)
@@ -232,9 +261,6 @@ func estimateMessageTokens(msg *schema.Message) int {
 	}
 	if len(msg.UserInputMultiContent) > 0 {
 		total += len(msg.UserInputMultiContent) * 32
-	}
-	if len(msg.AssistantGenMultiContent) > 0 {
-		total += len(msg.AssistantGenMultiContent) * 32
 	}
 
 	for _, tc := range msg.ToolCalls {
@@ -285,7 +311,7 @@ func AutoCompact(
 	messages []*schema.Message,
 	querySource string,
 	tracking *CompactTracking,
-	snipTokensFreed int,
+	_ int, // prior snip savings are already reflected in messages
 	modelName string,
 	params *AutoCompactParams,
 ) (*AutoCompactResult, int, *CompactTracking) {
@@ -302,10 +328,7 @@ func AutoCompact(
 		return nil, tracking.ConsecutiveFailures, tracking
 	}
 
-	tokenCount := EstimateTokenCount(messages) - snipTokensFreed
-	if tokenCount < 0 {
-		tokenCount = 0
-	}
+	tokenCount := EstimateTokenCount(messages)
 	warningState := CalculateTokenWarningState(tokenCount, modelName)
 	if warningState.IsAtBlockingLimit {
 		tracking.Compacted = false
