@@ -78,6 +78,65 @@ class CostTests(unittest.TestCase):
         result = build_report([self.row], [self.card])
         self.assertIsNone(result["trials"][0]["cost_scenarios"]["scenario"])
 
+    def test_native_prices_and_fx_conversion_are_separate(self):
+        native = {**self.card, "name": "native", "currency": "CNY"}
+        fx = dict(base="USD", quote="CNY", rate="7", as_of="2026-10-03", source="fixture")
+        result = build_report([self.row], [self.card, native], settlement_currency="CNY",
+                              display_currency="CNY", fx_snapshots=[fx])
+        self.assertEqual(result["settlement_rate_cards"], ["native"])
+        trial = result["trials"][0]
+        self.assertEqual(trial["cost_scenarios"]["native"], "0.098")
+        converted = trial["converted_estimates"]["scenario"]
+        self.assertEqual(converted["amount"], "0.686")
+        self.assertEqual(converted["original_amount"], "0.098")
+        self.assertEqual(converted["fx_snapshot"], fx)
+        self.assertEqual(trial["converted_estimates"]["native"]["amount"], "0.098")
+        self.assertIsNone(trial["actual_billed_cost"])
+
+    def test_fx_snapshot_changes_display_without_rewriting_original_amount(self):
+        fx = dict(base="CNY", quote="USD", rate="0.14", as_of="2026-10-03", source="fixture")
+        native = {**self.card, "currency": "CNY"}
+        first = build_report([self.row], [native], display_currency="USD", fx_snapshots=[fx])
+        later = build_report([self.row], [native], display_currency="USD",
+                             fx_snapshots=[{**fx, "rate": "0.15", "as_of": "2026-10-04"}])
+        self.assertEqual(first["trials"][0]["converted_estimates"]["scenario"]["amount"], "0.01372")
+        self.assertEqual(later["trials"][0]["converted_estimates"]["scenario"]["amount"], "0.01470")
+        self.assertEqual(first["trials"][0]["cost_scenarios"], later["trials"][0]["cost_scenarios"])
+        self.assertEqual(first["fx_snapshots"], [fx])
+
+    def test_inverse_missing_fx_and_partial_usage_preserve_coverage(self):
+        fx = dict(base="CNY", quote="USD", rate="0.125", as_of="2026-10-03", source="fixture")
+        partial = {**self.row, "usage": None, "partial_usage_lower_bound": {
+            "complete": False, "totals": self.usage}}
+        result = build_report([partial], [self.card], display_currency="CNY", fx_snapshots=[fx])
+        converted = result["all_supplied_trials"]["converted_estimates"]["scenario"]
+        self.assertEqual(converted["amount"], "0.784")
+        self.assertTrue(converted["inverted"])
+        self.assertFalse(converted["complete"])
+        missing = build_report([self.row], [self.card], display_currency="CNY")
+        self.assertEqual(missing["trials"][0]["converted_estimates"]["scenario"]["status"], "missing_fx")
+        self.assertIsNone(missing["trials"][0]["converted_estimates"]["scenario"]["amount"])
+        self.assertFalse(missing["all_supplied_trials"]["converted_estimates"]["scenario"]["complete"])
+        unknown = build_report([{**self.row, "usage": None}], [self.card],
+                               display_currency="CNY", fx_snapshots=[fx])
+        self.assertIsNone(unknown["all_supplied_trials"]["converted_estimates"]["scenario"]["amount"])
+
+    def test_invalid_or_ambiguous_currency_inputs_fail_closed(self):
+        fx = dict(base="USD", quote="CNY", rate="7", as_of="2026-10-03", source="fixture")
+        invalid = [{**fx, "rate": value} for value in (0, -1, True, None, "NaN", "Infinity")]
+        invalid.extend([{**fx, "as_of": "yesterday"}, {**fx, "source": ""},
+                        {**fx, "base": "usd"}, {**fx, "quote": "USD"}])
+        for snapshot in invalid:
+            with self.subTest(snapshot=snapshot), self.assertRaises(ValueError):
+                build_report([self.row], [self.card], display_currency="CNY", fx_snapshots=[snapshot])
+        for snapshots in ([fx, fx], [fx, {**fx, "base": "CNY", "quote": "USD"}]):
+            with self.assertRaises(ValueError):
+                build_report([self.row], [self.card], display_currency="CNY", fx_snapshots=snapshots)
+        with self.assertRaises(ValueError):
+            build_report([self.row], [self.card], fx_snapshots=[fx])
+        with self.assertRaises(ValueError):
+            build_report([self.row], [{**self.card, "currency": "RMB"}], settlement_currency="cny")
+
 
 if __name__ == "__main__":
     unittest.main()

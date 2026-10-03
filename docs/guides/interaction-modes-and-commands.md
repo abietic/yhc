@@ -183,6 +183,26 @@ the experiment's explicitly recorded `manifest.model_request`. Each model has
 Historical recovered subsets use `partial_usage_lower_bound` with
 `complete=false` and `totals`. Cache and thinking subsets are not charged twice.
 No rate is guessed for an unlisted model, and `actual_billed_cost` stays null.
+Choose the rate card in the account's settlement currency: providers can publish
+independent CNY and USD prices, so their ratio is not a foreign-exchange rate.
+The optional `--settlement-currency CNY` records the explicitly checked account
+currency and identifies matching cards. This offline command does not access
+the account or verify that declaration. There is no default USD conversion.
+
+For a separate display view, add `--display-currency USD --fx fx.json`. An FX
+snapshot has `base`, `quote`, `rate`, `as_of` (ISO date/time), and `source`;
+`rate` means one unit of `base` buys that many units of `quote`. For example,
+`{"base":"CNY","quote":"USD","rate":"0.14","as_of":"2026-10-03","source":"example fixture"}`
+illustrates the schema, not a current exchange rate. The report preserves the
+original price scenarios and adds `converted_estimates`, including the exact
+snapshot used. It permits inversion of an explicitly supplied pair, rejects
+duplicate or conflicting pairs, and never chains rates or infers missing ones.
+Missing FX leaves the converted amount unknown. Each report freezes its supplied
+rate; a later revaluation requires a new output file, so currency fluctuations
+cannot silently rewrite historical estimates. Unknown and lower-bound usage
+remain unknown and lower-bound after conversion. These views do not implement
+a currency spending cap or reconstruct provider invoices.
+
 The CLI checks each trial's Harbor `result.json` for continuation history, so
 an older summarizer's latest-segment-only usage cannot undercount the run.
 Mixed model routes remain unpriced; a single-model estimate assumes the

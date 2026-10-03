@@ -8,6 +8,8 @@ million tokens. No model call or provider balance access occurs.
 
 import argparse
 import json
+import re
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -15,6 +17,70 @@ from scripts.terminal_bench.usage import sum_usage, validated_usage
 
 TOKEN_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")
+
+
+def validate_currency(currency: str) -> str:
+    if not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency):
+        raise ValueError("Currency must be an explicit three-letter uppercase code, e.g. CNY or USD")
+    return currency
+
+
+def validate_fx_snapshots(snapshots: list[dict]) -> list[dict]:
+    pairs = set()
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            raise ValueError("Invalid FX snapshot")
+        base, quote = (validate_currency(snapshot.get(key)) for key in ("base", "quote"))
+        pair = tuple(sorted((base, quote)))
+        if base == quote or pair in pairs:
+            raise ValueError("FX requires one unambiguous snapshot per currency pair")
+        pairs.add(pair)
+        if any(not isinstance(snapshot.get(key), str) or not snapshot[key].strip()
+               for key in ("as_of", "source")):
+            raise ValueError("FX requires a date and source")
+        try:
+            datetime.fromisoformat(snapshot["as_of"].replace("Z", "+00:00"))
+            rate = Decimal(str(snapshot.get("rate")))
+        except (ValueError, InvalidOperation) as exc:
+            raise ValueError("Invalid FX date or rate") from exc
+        if isinstance(snapshot.get("rate"), bool) or not rate.is_finite() or rate <= 0:
+            raise ValueError("FX rate must be finite and positive")
+    return snapshots
+
+
+def convert_estimate(amount: str | None, currency: str, target: str,
+                     snapshots: list[dict]) -> dict:
+    result = {"original_amount": amount, "original_currency": currency, "currency": target,
+              "amount": None, "fx_snapshot": None, "inverted": False, "status": "unpriced"}
+    if amount is None:
+        return result
+    if currency == target:
+        return {**result, "amount": amount, "status": "original_currency"}
+    for snapshot in snapshots:
+        if {snapshot["base"], snapshot["quote"]} == {currency, target}:
+            inverted = snapshot["base"] != currency
+            rate = Decimal(str(snapshot["rate"]))
+            converted = Decimal(amount) / rate if inverted else Decimal(amount) * rate
+            return {**result, "amount": str(converted), "fx_snapshot": snapshot,
+                    "inverted": inverted, "status": "converted_estimate"}
+    # Never derive an FX rate from two independently published token price cards.
+    return {**result, "status": "missing_fx"}
+
+
+def add_conversions(report: dict, cards: list[dict], target: str, snapshots: list[dict]) -> None:
+    for row in report["trials"]:
+        row["converted_estimates"] = {
+            card["name"]: convert_estimate(row["cost_scenarios"][card["name"]], card["currency"], target, snapshots)
+            for card in cards}
+    for key in ("all_supplied_trials", "successful_trials"):
+        converted = {}
+        for card in cards:
+            value = report[key]["currency_estimates"][card["name"]]
+            estimate = convert_estimate(value["known_amount"], card["currency"], target, snapshots)
+            converted[card["name"]] = {**estimate,
+                "complete": value["complete"] and estimate["amount"] is not None,
+                "priced_trials": value["priced_trials"], "unpriced_trials": value["unpriced_trials"]}
+        report[key]["converted_estimates"] = converted
 
 
 def hydrate_continuation(stat: dict) -> dict:
@@ -75,6 +141,7 @@ def validate_rate_card(card: dict) -> dict:
     if not isinstance(card, dict) or any(not isinstance(card.get(key), str) or not card[key].strip()
                                         for key in ("name", "currency", "as_of", "source")):
         raise ValueError("Rates require name, currency, as_of and source")
+    validate_currency(card["currency"])
     if not isinstance(card.get("models"), dict) or not card["models"]:
         raise ValueError("Rates require explicit model prices")
     for prices in card["models"].values():
@@ -123,8 +190,17 @@ def aggregate(rows: list[dict], cards: list[dict]) -> dict:
     return result
 
 
-def build_report(statistics: list[dict], rate_cards: list[dict]) -> dict:
+def build_report(statistics: list[dict], rate_cards: list[dict], *,
+                 settlement_currency: str | None = None, display_currency: str | None = None,
+                 fx_snapshots: list[dict] | None = None) -> dict:
     cards = [validate_rate_card(card) for card in rate_cards]
+    if settlement_currency is not None:
+        validate_currency(settlement_currency)
+    if display_currency is not None:
+        validate_currency(display_currency)
+    snapshots = validate_fx_snapshots(fx_snapshots or [])
+    if snapshots and display_currency is None:
+        raise ValueError("FX snapshots require an explicit display currency")
     if len({card["name"] for card in cards}) != len(cards):
         raise ValueError("Rate scenario names must be unique")
     rows = []
@@ -153,15 +229,24 @@ def build_report(statistics: list[dict], rate_cards: list[dict]) -> dict:
                      "actual_billed_cost": None})
     # Only this explicitly supplied cohort is covered, never the user's account total.
     successful = [row for row in rows if row["successful"]]
-    return {"schema_version": 1, "billing_kind": "explicit_rate_scenarios_not_bill",
+    report = {"schema_version": 2, "billing_kind": "explicit_rate_scenarios_not_bill",
+            "settlement_currency": settlement_currency,
+            "settlement_rate_cards": [card["name"] for card in cards if card["currency"] == settlement_currency],
+            "display_currency": display_currency, "fx_snapshots": snapshots,
             "rate_cards": cards, "trials": rows, "all_supplied_trials": aggregate(rows, cards),
             "successful_trials": aggregate(successful, cards)}
+    if display_currency is not None:
+        add_conversions(report, cards, display_currency, snapshots)
+    return report
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--statistics", type=Path, action="append", required=True)
     parser.add_argument("--rates", type=Path, action="append", default=[])
+    parser.add_argument("--settlement-currency", help="Explicit account currency; not inferred from provider identity")
+    parser.add_argument("--display-currency", help="Optional conversion view; original amounts remain unchanged")
+    parser.add_argument("--fx", type=Path, action="append", default=[], help="Dated FX snapshot JSON, one per pair")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     rows = []
@@ -170,7 +255,9 @@ def main() -> None:
         if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
             raise ValueError("statistics must be a JSON list of trial rows")
         rows.extend(hydrate_continuation(row) for row in value)
-    report = build_report(rows, [json.loads(path.read_text()) for path in args.rates])
+    report = build_report(rows, [json.loads(path.read_text()) for path in args.rates],
+                          settlement_currency=args.settlement_currency, display_currency=args.display_currency,
+                          fx_snapshots=[json.loads(path.read_text()) for path in args.fx])
     # A new path protects previous accounting snapshots from accidental replacement.
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
