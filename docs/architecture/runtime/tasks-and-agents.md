@@ -174,6 +174,13 @@ approach taken. Verification checks each requirement against independent
 expected behavior, including relevant unchanged code. Missing task context or
 required checks leave a PARTIAL verdict; observed mismatches produce FAIL.
 
+The default root, general-purpose, and verification prompts distinguish hard
+constraints from optimization goals. They ask the model to preserve the original
+inputs and scope, and to check final saved deliverables against those inputs.
+An objective improvement cannot excuse a constraint violation. These are model
+workflow instructions, not an automatic feasibility checker or a guarantee of
+task success; explicit custom prompts keep their existing replacement behavior.
+
 Verification exposes Read, Glob, Grep, Bash, WebFetch, and WebSearch. Explicit
 caller tool scopes narrow that list. Edit, Write, NotebookEdit, and recursive
 Agent calls remain unavailable. Its restricted role is not an OS filesystem
