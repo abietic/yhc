@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-09-29
+**Last verified:** 2026-10-03
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -134,6 +134,64 @@ an outer 1200-second limit, use `--ak execution_timeout_sec=1140`. An offline
 streaming check confirms that the internal deadline preserves completed usage
 and marks the unfinished response unknown. It does not establish an actual
 bill or make incomplete usage safe for automatic budget continuation.
+
+Budget continuation is opt-in. Supply a JSON list of new finite allowances to
+authorize attempts after a budget stop, for example:
+
+```bash
+--ak max_provider_calls=30 \
+--ak 'continuation_budgets=[{"max_provider_calls":10,"max_total_tokens":200000}]'
+```
+
+The initial allowance and every additional allowance apply to one invocation;
+the list authorizes additional spending, rather than resetting an overall
+financial cap. At least one limit in each grant must be positive. No grants are
+configured by default. The adapter only continues after an exit-1
+`run_budget_exceeded` result with complete usage and a saved session ID. It runs
+`exec --resume` in the same environment with existing files and conversation
+history. Unknown usage, cancellation, other errors and exhausted grants stop
+the run. The overall configured execution timeout and Harbor timeout do not
+restart. Session recovery preserves completed tool history; the model can still
+choose to repeat an action, so continuation is an opportunity to finish, not a
+guarantee of zero repeated work or eventual reward.
+
+Prior streams and stderr are archived as `yhc.segment-0000.*`, etc.;
+`yhc.jsonl` is the latest segment. Harbor metadata contains per-segment usage
+and the aggregate across segments. Missing segment usage makes the total
+unknown; it never becomes zero. The continuation list must be supplied before
+the trial starts. Once Harbor has deleted the environment, this adapter cannot
+restore the entire workspace from a session ID alone. A resumed trial also has
+different allowances and must be reported separately from a fresh baseline.
+
+For offline cost reports, use
+[`report_costs`](../../scripts/terminal_bench/report_costs.py) with existing
+statistics and explicit dated rate cards. It groups successful trials
+separately, counts each unique trial once, preserves unknown/lower-bound usage,
+and keeps bills distinct from price scenarios:
+
+```bash
+python -m scripts.terminal_bench.report_costs \
+  --statistics build/experiment/statistics.json \
+  --rates build/experiment/rates.json --output build/experiment/costs.json
+```
+
+A rate card has `name`, `currency`, `as_of`, `source`, and `models`, keyed by
+the experiment's explicitly recorded `manifest.model_request`. Each model has
+`cached_input_per_million`, `uncached_input_per_million`, and
+`output_per_million`. Statistics are trial rows with unique `trial_path`,
+`manifest`, `reward` and `usage`, as emitted by the experiment summarizer.
+Historical recovered subsets use `partial_usage_lower_bound` with
+`complete=false` and `totals`. Cache and thinking subsets are not charged twice.
+No rate is guessed for an unlisted model, and `actual_billed_cost` stays null.
+The CLI checks each trial's Harbor `result.json` for continuation history, so
+an older summarizer's latest-segment-only usage cannot undercount the run.
+Mixed model routes remain unpriced; a single-model estimate assumes the
+experiment's recorded model applies to all counted calls and does not prove
+the provider's resolved model identity.
+This is a supplied-cohort estimate; it does not read the account's bill,
+automatically infer historical prices/time bands, or enforce a currency limit.
+The current runtime limits remain calls and reported tokens, with possible
+in-flight overshoot.
 
 The collector is invocation-local and distinct from durable Goal accounting.
 Embedded consumers can explicitly share `QueryEngineConfig.RunUsage`;

@@ -7,11 +7,88 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestExecBudgetResumeKeepsCompletedToolAndFreshAllowance(t *testing.T) {
+	repo := prepareHeadlessJSONLProviderTest(t)
+	artifact := filepath.Join(repo, "budget-progress.txt")
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		var body json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		item := p430Function("budget-write-once", artifact, "saved progress")
+		if call == 2 {
+			if !bytes.Contains(body, []byte("budget-write-once")) || !bytes.Contains(body, []byte("saved progress")) {
+				t.Errorf("resume lost completed tool history: %s", body)
+			}
+			item = `{"type":"message","id":"budget-final","role":"assistant","status":"completed","content":[{"type":"output_text","text":"continued","annotations":[]}]}`
+		} else if call != 1 {
+			t.Errorf("unexpected replay or retry, call %d", call)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		if call == 1 {
+			_, _ = fmt.Fprintf(w, "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":0,\"output_index\":0,\"item\":%s}\n\n", item)
+		} else {
+			_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":0,\"item_id\":\"budget-final\",\"output_index\":0,\"content_index\":0,\"delta\":\"continued\"}\n\n")
+		}
+		_, _ = fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"id\":\"budget-response\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[%s],\"usage\":{\"input_tokens\":10,\"output_tokens\":4,\"total_tokens\":14}}}\n\n", item)
+	}))
+	defer server.Close()
+	run := func(resume string) (headlessEnvelope, error) {
+		var out, stderr bytes.Buffer
+		cmd := newRootCommand()
+		cmd.SetOut(&out)
+		cmd.SetErr(&stderr)
+		cmd.SetIn(bytes.NewReader(nil))
+		args := []string{"exec", "continue saved work", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--permission-mode", "acceptEdits", "--tools", "Write", "--max-provider-calls", "1"}
+		if resume != "" {
+			args = append(args, "--resume", resume)
+		}
+		cmd.SetArgs(args)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		err := cmd.ExecuteContext(ctx)
+		var result headlessEnvelope
+		if decodeErr := json.Unmarshal(out.Bytes(), &result); decodeErr != nil {
+			t.Fatalf("decode result: %v stdout=%s stderr=%s", decodeErr, out.String(), stderr.String())
+		}
+		return result, err
+	}
+	first, err := run("")
+	if err == nil || first.Error == nil || first.Error.Code != "run_budget_exceeded" || first.SessionID == "" {
+		t.Fatalf("first result=%+v err=%v", first, err)
+	}
+	before, err := os.Stat(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := run(first.SessionID)
+	if err != nil || second.Status != "completed" || second.SessionID != first.SessionID {
+		t.Fatalf("second result=%+v err=%v", second, err)
+	}
+	after, err := os.Stat(artifact)
+	if err != nil || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("completed write was replayed: before=%v after=%v err=%v", before, after, err)
+	}
+	data, err := os.ReadFile(artifact)
+	if err != nil || string(data) != "saved progress" || calls.Load() != 2 {
+		t.Fatalf("artifact=%q calls=%d err=%v", data, calls.Load(), err)
+	}
+	for _, result := range []headlessEnvelope{first, second} {
+		if result.Usage == nil || !result.Usage.Complete || result.Usage.ProviderCalls != 1 || result.Usage.TotalTokens != 14 || result.Usage.Limits.MaxProviderCalls != 1 {
+			t.Fatalf("segment allowance/usage=%+v", result.Usage)
+		}
+	}
+}
 
 func TestExecRunUsageAndOptionalLimits(t *testing.T) {
 	for _, tc := range []struct {

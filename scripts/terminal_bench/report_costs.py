@@ -1,0 +1,181 @@
+"""Offline cost scenarios for benchmark statistics; never a provider bill.
+
+python -m scripts.terminal_bench.report_costs --statistics statistics.json \
+    --rates rates.json --output costs.json
+Rates are explicit, dated cards with a source and cached/input/output prices per
+million tokens. No model call or provider balance access occurs.
+"""
+
+import argparse
+import json
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+from scripts.terminal_bench.usage import sum_usage, validated_usage
+
+TOKEN_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens",
+                "cached_prompt_tokens", "reasoning_tokens")
+
+
+def hydrate_continuation(stat: dict) -> dict:
+    """Old summarizers read only the latest stream; recover all segments from Harbor."""
+    path = Path(stat["trial_path"]) / "result.json"
+    if not path.exists():
+        return stat
+    result = json.loads(path.read_text())
+    metadata = ((result.get("agent_result") or {}).get("metadata") or {}).get("yhc") or {}
+    continuation = metadata.get("continuation")
+    if continuation is None:
+        return stat
+    history = continuation.get("history") if isinstance(continuation, dict) else None
+    segments = continuation.get("segments") if isinstance(continuation, dict) else None
+    if (not isinstance(history, list) or type(segments) is not int or not 2 <= segments <= 17
+            or len(history) > segments or any(not isinstance(entry, dict) for entry in history)):
+        raise ValueError("Invalid continuation accounting history")
+    values = [entry.get("usage") for entry in history]
+    if len(history) == segments:
+        total = sum_usage(values)
+        if total is not None:
+            reported = validated_usage(metadata.get("usage"))
+            if reported is not None and reported != total:
+                raise ValueError("Continuation aggregate disagrees with segment usage")
+            return {**stat, "usage": total}
+    known = [value for value in values if validated_usage(value) is not None]
+    total = sum_usage(known)
+    # A missing latest stream remains unknown; retain only the proven lower bound.
+    return {**stat, "usage": None, "partial_usage_lower_bound": {
+        "complete": False, "totals": token_totals(total)} if total else None}
+
+
+def token_totals(value: object) -> dict:
+    if not isinstance(value, dict) or any(type(value.get(key)) is not int or value[key] < 0 for key in TOKEN_FIELDS):
+        raise ValueError("Invalid token totals")
+    if (value["cached_prompt_tokens"] > value["prompt_tokens"]
+            or value["reasoning_tokens"] > value["completion_tokens"]
+            or value["total_tokens"] < value["prompt_tokens"] + value["completion_tokens"]):
+        raise ValueError("Inconsistent token totals")
+    return {key: value[key] for key in TOKEN_FIELDS}
+
+
+def usage_for_row(row: dict) -> tuple[dict | None, str]:
+    if row.get("usage") is not None:
+        usage = validated_usage(row["usage"])
+        if usage is None:
+            raise ValueError("Invalid usage; cannot calculate a cost scenario")
+        return token_totals(usage), "complete" if usage["complete"] else "lower_bound"
+    partial = row.get("partial_usage_lower_bound")
+    if partial is not None:
+        if not isinstance(partial, dict) or partial.get("complete") is not False:
+            raise ValueError("Recovered usage must be explicitly marked incomplete")
+        return token_totals(partial.get("totals")), "lower_bound"
+    return None, "unknown"
+
+
+def validate_rate_card(card: dict) -> dict:
+    if not isinstance(card, dict) or any(not isinstance(card.get(key), str) or not card[key].strip()
+                                        for key in ("name", "currency", "as_of", "source")):
+        raise ValueError("Rates require name, currency, as_of and source")
+    if not isinstance(card.get("models"), dict) or not card["models"]:
+        raise ValueError("Rates require explicit model prices")
+    for prices in card["models"].values():
+        if not isinstance(prices, dict):
+            raise ValueError("Invalid model prices")
+        for key in ("cached_input_per_million", "uncached_input_per_million", "output_per_million"):
+            value = prices.get(key)
+            if isinstance(value, bool):
+                raise ValueError("Invalid token price")
+            try:
+                price = Decimal(str(value))
+            except InvalidOperation as exc:
+                raise ValueError("Invalid token price") from exc
+            if not price.is_finite() or price < 0:
+                raise ValueError("Invalid token price")
+    return card
+
+
+def estimate(tokens: dict | None, model: str | None, card: dict) -> str | None:
+    prices = card["models"].get(model)
+    if tokens is None or prices is None:
+        return None
+    # Thinking is part of output; cached input is part of input. Neither is added twice.
+    amount = (tokens["cached_prompt_tokens"] * Decimal(str(prices["cached_input_per_million"]))
+              + (tokens["prompt_tokens"] - tokens["cached_prompt_tokens"]) * Decimal(str(prices["uncached_input_per_million"]))
+              + tokens["completion_tokens"] * Decimal(str(prices["output_per_million"]))) / Decimal(1000000)
+    return str(amount)
+
+
+def aggregate(rows: list[dict], cards: list[dict]) -> dict:
+    known = [row for row in rows if row["tokens"] is not None]
+    counts = {kind: sum(row["usage_coverage"] == kind for row in rows)
+              for kind in ("complete", "lower_bound", "unknown")}
+    result = {"trials": len(rows), "coverage": counts,
+              "known_tokens": {key: sum(row["tokens"][key] for row in known) for key in TOKEN_FIELDS},
+              "currency_estimates": {}, "actual_billed_cost": None}
+    for card in cards:
+        values = [row["cost_scenarios"][card["name"]] for row in rows]
+        known_costs = [value for value in values if value is not None]
+        result["currency_estimates"][card["name"]] = {
+            "known_amount": str(sum((Decimal(value) for value in known_costs), Decimal(0))) if known_costs else None,
+            "priced_trials": len(known_costs), "unpriced_trials": len(rows) - len(known_costs),
+            "complete": counts["lower_bound"] == counts["unknown"] == 0 and len(known_costs) == len(rows),
+            "currency": card["currency"],
+        }
+    return result
+
+
+def build_report(statistics: list[dict], rate_cards: list[dict]) -> dict:
+    cards = [validate_rate_card(card) for card in rate_cards]
+    if len({card["name"] for card in cards}) != len(cards):
+        raise ValueError("Rate scenario names must be unique")
+    rows = []
+    seen = set()
+    for stat in statistics:
+        path = stat.get("trial_path")
+        if not isinstance(path, str) or not path or path in seen:
+            raise ValueError("Each trial requires a unique trial_path; duplicate costs are forbidden")
+        seen.add(path)
+        tokens, coverage = usage_for_row(stat)
+        manifest = stat.get("manifest") or {}
+        model = manifest.get("model_request")
+        routes = (stat.get("usage") or {}).get("routes") or []
+        mixed_routes = len({route.get("model") for route in routes}) > 1
+        reward = stat.get("reward")
+        if isinstance(reward, dict):
+            reward = reward.get("reward")
+        rows.append({"trial_path": path, "task": manifest.get("task"), "model_request": model,
+                     "effort": stat.get("effort"), "started_at": manifest.get("started_at"),
+                     "reward": reward, "successful": type(reward) in (int, float) and reward > 0,
+                     "agent_seconds": stat.get("agent_seconds"), "usage_coverage": coverage, "tokens": tokens,
+                     "provider_calls": (stat.get("usage") or {}).get("provider_calls"),
+                     "cache_hit_rate": tokens["cached_prompt_tokens"] / tokens["prompt_tokens"] if tokens and tokens["prompt_tokens"] else None,
+                     "cost_model_assumption": "unpriced_mixed_routes" if mixed_routes else "experiment_model_applies_to_recorded_calls",
+                     "cost_scenarios": {card["name"]: None if mixed_routes else estimate(tokens, model, card) for card in cards},
+                     "actual_billed_cost": None})
+    # Only this explicitly supplied cohort is covered, never the user's account total.
+    successful = [row for row in rows if row["successful"]]
+    return {"schema_version": 1, "billing_kind": "explicit_rate_scenarios_not_bill",
+            "rate_cards": cards, "trials": rows, "all_supplied_trials": aggregate(rows, cards),
+            "successful_trials": aggregate(successful, cards)}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--statistics", type=Path, action="append", required=True)
+    parser.add_argument("--rates", type=Path, action="append", default=[])
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    rows = []
+    for path in args.statistics:
+        value = json.loads(path.read_text())
+        if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
+            raise ValueError("statistics must be a JSON list of trial rows")
+        rows.extend(hydrate_continuation(row) for row in value)
+    report = build_report(rows, [json.loads(path.read_text()) for path in args.rates])
+    # A new path protects previous accounting snapshots from accidental replacement.
+    with args.output.open("x", encoding="utf-8") as stream:
+        json.dump(report, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+
+if __name__ == "__main__":
+    main()
