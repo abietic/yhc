@@ -36,7 +36,7 @@ CYCLONEDX_GOMOD_VERSION := v1.10.0
 LINT_NEW_BASE ?= origin/master
 # Bound process launch contention in the full suite without changing test
 # deadlines or concurrency within a package. CI uses a smaller runner budget.
-TEST_PACKAGE_PARALLEL ?= 4
+TEST_PACKAGE_PARALLEL ?= 2
 TEST_CONTRACT_TIMEOUT ?= 3m
 TEST_RACE_TIMEOUT ?= 5m
 TEST_PTY_TIMEOUT ?= 3m
