@@ -226,7 +226,9 @@ network. A history-snip notice reports a
 separate local context transformation, not the cause of a network failure.
 
 GLM defaults to the exact `glm-5.3-flash` model and accepts the public aliases
-`glm`, `zhipu`, and `zai`. It exposes `default`, `low`, `high`, and `max`
+`glm`, `zhipu`, and `zai`. The supported mainstream models are
+`glm-5.3`, `glm-5.3-flash`, and `glm-5.3-flashx`; `glm5.3` is a
+metadata alias for `glm-5.3`. All expose `default`, `low`, `high`, and `max`
 reasoning choices; the three explicit values are sent unchanged to GLM's
 native `reasoning_effort` field. For a local source run:
 
@@ -234,19 +236,56 @@ native `reasoning_effort` field. For a local source run:
 ZAI_API_KEY='replace-me' make run PROV=glm PROV_MODEL=glm-5.3-flash
 ```
 
-The dedicated adapter supports ordered text, image, video, and file input. Its
+The flagship `glm-5.3` is text-only; Flash and FlashX support ordered text,
+image, video, and file input. A text-only per-call model override cannot
+bypass media rejection. The
 Files client implements bounded `agent` and `user_data` upload, listing, and
 deletion. Use `user_data` with a supported document format for reusable Chat
 Completions `file_id` input; `agent` resources belong to the separate Agent API.
-The external canary exercises streaming text, inline vision, and the complete
-DOCX upload-to-model-to-delete file lifecycle:
+The external canary makes five model calls: Flash is capped at 256 output tokens;
+the two text-only family probes are capped at 512 with deterministic sampling.
+streaming text, inline vision, and DOCX upload-to-model-to-delete on Flash,
+then one text request each to 5.3 and FlashX. It performs no model fallback
+or retry:
 
 ```bash
-ZAI_API_KEY='replace-me' make test-glm-live
+GLM_LIVE_USAGE_PATH=/tmp/glm-usage.json make test-glm-live
 ```
 
-The canary uses a real provider account and may consume provider quota.
-Ordinary repository tests never enable it.
+Set `GLM_LIVE_CASES=family` to run only the two short 5.3/FlashX arithmetic
+probes when diagnosing model access; it skips the already verified multimodal
+and Files lifecycle and still records every attempted call.
+
+Export `ZAI_API_KEY` or `ZHIPUAI_API_KEY` securely before running the canary;
+do not put a real key in command text. The optional usage path must not
+already exist. It stores only per-model call/token counts, never credentials,
+prompts, reasoning text, responses, or remote file IDs. Failed calls and absent
+terminal usage remain explicitly incomplete. Ordinary repository tests never
+enable the billable canary.
+
+Generate an offline cost estimate using the shared Terminal Bench reporter:
+
+```bash
+make test-provider-costs
+python3 -m scripts.terminal_bench.report_costs \
+  --statistics /tmp/glm-usage.json \
+  --rates scripts/terminal_bench/rates/glm-2026-10-05-cny.json \
+  --settlement-currency CNY --output /tmp/glm-costs.json
+```
+
+The dated rate card records the official standard API prices in CNY. Cache
+hits are a subset of input; reasoning tokens are a subset of output, so
+neither is charged twice. Missing usage, absent or mismatched actual-response
+model identity, unknown model prices, and mixed-model
+routes do not become a complete bill. Optional display-currency conversion
+requires a caller-supplied dated FX snapshot with a source; native prices are
+never overwritten. This reports only supplied calls, not account-wide quota,
+Coding Plan consumption, resource-package deductions, or actual settlement.
+No undocumented GLM balance endpoint is used. Existing DeepSeek benchmark
+statistics and caller-supplied price cards use the same reporter. Legacy
+statistics without route identity keep their token totals but remain unpriced;
+continuation aggregation preserves all known model routes rather than pricing
+only the final segment.
 
 This controls provider request reasoning, not the local continuation token
 budget. The selected value is checkpointed with the active model binding. An

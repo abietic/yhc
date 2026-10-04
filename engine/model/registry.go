@@ -231,6 +231,8 @@ func buildDefaultEntries() []RegistryEntry {
 		{modelID: "deepseek-v4-pro", provider: "DeepSeek", displayName: "DeepSeek V4 Pro", toolCalls: true, streaming: true},
 
 		// GLM
+		{modelID: "glm-5.3", provider: "GLM", displayName: "GLM 5.3", toolCalls: true, streaming: true},
+		{modelID: "glm-5.3-flashx", provider: "GLM", displayName: "GLM 5.3 FlashX", toolCalls: true, streaming: true},
 		{modelID: "glm-5.3-flash", provider: "GLM", displayName: "GLM 5.3 Flash", toolCalls: true, streaming: true},
 
 		// Qwen
@@ -260,6 +262,15 @@ func buildDefaultEntries() []RegistryEntry {
 
 // deriveCostTier maps per-token cost to a human-friendly tier.
 func deriveCostTier(cap *ModelCapabilities) CostTier {
+	// These models are billed in CNY. Do not invent a USD conversion or
+	// mistake absent USD rates for free access; exact dated prices live in
+	// the native-currency rate card used by the delivery cost report.
+	switch cap.Name {
+	case "glm-5.3":
+		return CostTierStandard
+	case "glm-5.3-flash", "glm-5.3-flashx":
+		return CostTierBudget
+	}
 	// Use output cost as the primary signal (it's typically higher and more differentiating).
 	outputCost := cap.CostPerOutputToken
 	switch {

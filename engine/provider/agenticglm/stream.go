@@ -26,7 +26,6 @@ type chatStreamState struct {
 	finishReason string
 	usage        *responseUsage
 	toolCalls    map[int]streamedToolCall
-	terminal     *schema.AgenticMessage
 }
 
 func parseChatStream(reader io.Reader, maxEventBytes int, send func(*schema.AgenticMessage) bool) error {
@@ -63,14 +62,20 @@ func parseChatStream(reader io.Reader, maxEventBytes int, send func(*schema.Agen
 	if !state.finishSeen {
 		return &ProtocolError{ReasonCode: "stream_finish_reason_missing"}
 	}
-	if state.terminal == nil || send(state.terminal) {
+	// Usage may be delivered after finish_reason. Only [DONE] freezes the
+	// single terminal snapshot consumed by runtime accounting and callbacks.
+	terminal := &schema.AgenticMessage{
+		Role:         schema.AgenticRoleTypeAssistant,
+		ResponseMeta: responseMeta(state.responseID, state.requestID, state.model, state.finishReason, state.usage),
+	}
+	if send(terminal) {
 		return io.EOF
 	}
 	return nil
 }
 
 func (s *chatStreamState) convertChunk(chunk *chatResponse) ([]*schema.AgenticMessage, error) {
-	if chunk == nil || strings.TrimSpace(chunk.ID) == "" || len(chunk.Choices) != 1 {
+	if chunk == nil || strings.TrimSpace(chunk.ID) == "" || len(chunk.Choices) > 1 {
 		return nil, &ProtocolError{ReasonCode: "stream_envelope_invalid"}
 	}
 	if s.responseID == "" {
@@ -87,10 +92,22 @@ func (s *chatStreamState) convertChunk(chunk *chatResponse) ([]*schema.AgenticMe
 		s.model = chunk.Model
 	}
 	if chunk.Usage != nil {
+		if err := validateUsage(chunk.Usage); err != nil {
+			return nil, err
+		}
 		copied := *chunk.Usage
 		s.usage = &copied
 	}
+	if len(chunk.Choices) == 0 {
+		if !s.finishSeen || chunk.Usage == nil {
+			return nil, &ProtocolError{ReasonCode: "stream_usage_only_unexpected"}
+		}
+		return nil, nil
+	}
 	choice := chunk.Choices[0]
+	if s.finishSeen {
+		return nil, &ProtocolError{ReasonCode: "stream_event_after_finish"}
+	}
 	messages := make([]*schema.AgenticMessage, 0, 2)
 	deltaMessage, err := s.convertDelta(choice.Delta)
 	if err != nil {
@@ -105,12 +122,6 @@ func (s *chatStreamState) convertChunk(chunk *chatResponse) ([]*schema.AgenticMe
 		}
 		s.finishSeen = true
 		s.finishReason = *choice.FinishReason
-		s.terminal = &schema.AgenticMessage{
-			Role: schema.AgenticRoleTypeAssistant,
-			ResponseMeta: responseMeta(
-				s.responseID, s.requestID, s.model, s.finishReason, s.usage,
-			),
-		}
 	}
 	return messages, nil
 }

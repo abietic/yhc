@@ -157,8 +157,12 @@ func DefaultReasoningEfforts(provider, modelID string) ([]string, bool) {
 			return nil, false
 		}
 	}
-	if policy.dialect == ReasoningDialectGLM && !strings.EqualFold(capabilities.Name, "glm-5.3-flash") {
-		return nil, false
+	if policy.dialect == ReasoningDialectGLM {
+		switch strings.ToLower(capabilities.Name) {
+		case "glm-5.3", "glm-5.3-flash", "glm-5.3-flashx":
+		default:
+			return nil, false
+		}
 	}
 	return append([]string(nil), policy.efforts...), true
 }

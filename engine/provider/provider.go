@@ -43,7 +43,8 @@ type Config struct {
 	// ModelAliases maps user-facing names to provider model identifiers.
 	ModelAliases map[string]string
 
-	// Claude-specific
+	// Maximum output tokens for native Claude and GLM clients; zero uses the
+	// adapter default. Other adapters currently do not consume this field.
 	MaxTokens int
 }
 
@@ -94,10 +95,15 @@ func newAgenticGLM(ctx context.Context, cfg Config) (model.AgenticModel, error) 
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = os.Getenv("ZAI_BASE_URL")
 	}
+	var maxTokens *int
+	if cfg.MaxTokens != 0 {
+		maxTokens = &cfg.MaxTokens
+	}
 	return agenticglm.New(ctx, &agenticglm.Config{
-		BaseURL: cfg.BaseURL,
-		APIKey:  cfg.APIKey,
-		Model:   cfg.Model,
+		BaseURL:   cfg.BaseURL,
+		APIKey:    cfg.APIKey,
+		Model:     cfg.Model,
+		MaxTokens: maxTokens,
 	})
 }
 

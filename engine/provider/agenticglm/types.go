@@ -1,4 +1,4 @@
-// Package agenticglm implements GLM-5.3-Flash's native Chat Completion API as
+// Package agenticglm implements GLM-5.3's native Chat Completion API as
 // an Eino AgenticModel. The package owns the provider wire contract and does
 // not route requests through an OpenAI compatibility client.
 package agenticglm
@@ -16,10 +16,10 @@ import (
 
 const (
 	// DefaultBaseURL is the domestic Zhipu AI API root.
-	DefaultBaseURL = "https://open.bigmodel.cn/api/paas/v4"
-	// ModelGLM53Flash is the exact GLM model whose native multimodal and
-	// preserved-thinking contract is implemented by this package.
-	ModelGLM53Flash = "glm-5.3-flash"
+	DefaultBaseURL   = "https://open.bigmodel.cn/api/paas/v4"
+	ModelGLM53       = "glm-5.3"
+	ModelGLM53Flash  = "glm-5.3-flash"
+	ModelGLM53FlashX = "glm-5.3-flashx"
 
 	defaultMaxSSEEventBytes = 8 << 20
 	maxResponseBytes        = 32 << 20
@@ -310,9 +310,9 @@ type chatReply struct {
 }
 
 type responseUsage struct {
-	PromptTokens        int `json:"prompt_tokens"`
-	CompletionTokens    int `json:"completion_tokens"`
-	TotalTokens         int `json:"total_tokens"`
+	PromptTokens        *int `json:"prompt_tokens"`
+	CompletionTokens    *int `json:"completion_tokens"`
+	TotalTokens         *int `json:"total_tokens"`
 	PromptTokensDetails struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
@@ -327,3 +327,7 @@ func conversionError(messageIndex, blockIndex int, reason string) *ConversionErr
 
 func boolPtr(value bool) *bool       { return &value }
 func stringPtr(value string) *string { return &value }
+
+func supportedModel(name string) bool {
+	return name == ModelGLM53 || name == ModelGLM53Flash || name == ModelGLM53FlashX
+}

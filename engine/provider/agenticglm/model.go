@@ -43,7 +43,7 @@ type Model struct {
 	maxSSEEventBytes int
 }
 
-// New creates a dedicated GLM-5.3-Flash AgenticModel. It performs only local
+// New creates a dedicated GLM-5.3 family AgenticModel. It performs only local
 // validation and never contacts the provider.
 func New(_ context.Context, config *Config) (*Model, error) {
 	if config == nil {
@@ -54,7 +54,7 @@ func New(_ context.Context, config *Config) (*Model, error) {
 		return nil, conversionError(-1, -1, "api_key_missing")
 	}
 	modelID := strings.ToLower(strings.TrimSpace(config.Model))
-	if modelID != ModelGLM53Flash {
+	if !supportedModel(modelID) {
 		return nil, conversionError(-1, -1, "model_unsupported")
 	}
 	endpoint, err := chatCompletionsEndpoint(config.BaseURL)
@@ -174,6 +174,8 @@ func (m *Model) Generate(
 }
 
 // Stream invokes GLM Chat Completion with provider SSE enabled.
+// Callers abandoning an idle stream must cancel ctx as well as close the
+// reader: Eino's concrete StreamReader has no HTTP-body Close hook.
 func (m *Model) Stream(
 	ctx context.Context,
 	input []*schema.AgenticMessage,

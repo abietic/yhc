@@ -264,7 +264,7 @@ func TestStreamDoesNotPublishTerminalMetadataBeforeDone(t *testing.T) {
 }
 
 func TestNewRejectsUnsupportedModelAndRedactsCredential(t *testing.T) {
-	if _, err := New(context.Background(), &Config{APIKey: "key", Model: "glm-5.3"}); err == nil || !strings.Contains(err.Error(), "model_unsupported") {
+	if _, err := New(context.Background(), &Config{APIKey: "key", Model: "glm-4.7"}); err == nil || !strings.Contains(err.Error(), "model_unsupported") {
 		t.Fatalf("unsupported model error = %v", err)
 	}
 

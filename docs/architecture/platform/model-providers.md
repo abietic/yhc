@@ -342,7 +342,7 @@ state; callers remain responsible for deleting files they no longer need.
 
 GLM uses the project-owned
 [`agenticglm`](../../../engine/provider/agenticglm/model.go) Eino adapter. The
-current Eino Ext provider tree has no GLM/Zhipu/Z.ai AgenticModel, while its
+audited Eino Ext snapshot has no GLM/Zhipu/Z.ai AgenticModel, while its
 DeepSeek and Qwen adapters delegate to an OpenAI Chat Completions ACL. YHC keeps
 the familiar `Config`, `New`, `Generate`, `Stream`, callback, and per-call tool
 shape, but posts directly to GLM's documented
@@ -350,14 +350,28 @@ shape, but posts directly to GLM's documented
 endpoint with project-owned wire types. This is a dedicated provider contract,
 not use of an OpenAI SDK.
 
-Only the exact `glm-5.3-flash` model is admitted. The adapter preserves
+Only the exact `glm-5.3`, `glm-5.3-flash`, and `glm-5.3-flashx` models
+are admitted. The adapter preserves
 historical `reasoning_content`, sends `thinking.type=enabled` with
 `clear_thinking=false` by default, lowers only `low`, `high`, or `max`
 reasoning effort, and enables `tool_stream` for streaming tool calls. It accepts
-ordered text plus HTTP(S)/base64 images, HTTP(S) video, and URL/base64/`file_id`
-files. Unsupported forced tool choice, multimodal tool results, malformed
+ordered text; only Flash and FlashX accept HTTP(S)/base64 images, HTTP(S)
+video, and URL/base64/`file_id` files. The effective per-call model is checked
+before dispatch. Unsupported forced tool choice, multimodal tool results, malformed
 provider envelopes, an SSE stream without `[DONE]`, and a stream without a
 finish reason fail locally or fail the attempt rather than downgrading.
+
+GLM terminal usage is validated before conversion and published exactly once,
+after `[DONE]`, including a final usage-only event after the finish reason.
+Callers abandoning an idle SSE stream must cancel its request context as well
+as close the Eino reader; Pipe Close alone cannot interrupt an HTTP read.
+Absent usage stays nil; malformed counts cannot become known-zero accounting.
+Cached input and reasoning output details survive both the Eino callback and
+classic runtime bridge. Native CNY prices are not inserted into the legacy
+USD-only cost fields or presented as free access. The opt-in canary exports
+counts for the offline native-currency reporter; the reproducible workflow and
+billing exclusions are owned by the
+[provider guide](../../guides/configuration-and-providers.md).
 
 The same package exposes a bounded
 [`FilesClient`](../../../engine/provider/agenticglm/files.go) for the official
@@ -575,7 +589,7 @@ exact value and the selected adapter to support exact lowering:
 | Agentic Ark Responses | `minimal`, `low`, `medium`, `high` | typed Ark reasoning |
 | Agentic Gemini | `low`, `high` | typed Gemini thinking level |
 | Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `low`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
-| Agentic GLM 5.3 Flash | `low`, `high`, `max` | native Chat Completion `reasoning_effort` with thinking enabled |
+| Agentic GLM 5.3 / Flash / FlashX | `low`, `high`, `max` | native Chat Completion `reasoning_effort` with thinking enabled |
 | Agentic Qwen | none | provider default only |
 
 For DeepSeek V4, all four explicit values are emitted unchanged as Responses

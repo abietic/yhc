@@ -228,7 +228,7 @@ clear:
 	rm -rf $(BUILD_DIR)
 
 # ── Test ───────────────────────────────────────────────
-test: prepare-gotestsum
+test: prepare-gotestsum test-provider-costs
 	@mkdir -p $(BUILD_DIR)
 	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml --jsonfile $(TEST_EVENTS_FILE) -- -p=$(TEST_PACKAGE_PARALLEL) -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
 	$(GO) -C third_party/acp-go-sdk test ./...
@@ -317,7 +317,11 @@ test-deepseek-live:
 .PHONY: test-glm-live
 test-glm-live:
 	@if [[ -z "$$ZAI_API_KEY" && -z "$$ZHIPUAI_API_KEY" ]]; then echo "ZAI_API_KEY or ZHIPUAI_API_KEY is required" >&2; exit 1; fi
-	GLM_LIVE_TEST=1 $(GO) test ./engine/provider/agenticglm -run '^TestLiveGLM53FlashAndFilesLifecycle$$' -count=1 -timeout=4m
+	GLM_LIVE_TEST=1 $(GO) test ./engine/provider/agenticglm -run '^TestLiveGLM53FlashAndFilesLifecycle$$' -v -count=1 -timeout=8m
+
+.PHONY: test-provider-costs
+test-provider-costs:
+	python3 -m unittest scripts.terminal_bench.test_costs
 
 # ── Debug ───────────────────────────────────────────────
 # Launches the agent under delve in headless mode so any IDE can attach.

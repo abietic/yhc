@@ -101,6 +101,9 @@ func GetModelTier(modelName string) ModelTier {
 	}
 
 	// GLM Flash
+	if name == "glm-5.3" {
+		return TierLarge
+	}
 	if strings.Contains(name, "glm") && strings.Contains(name, "flash") {
 		return TierSmall
 	}
@@ -835,6 +838,15 @@ var modelTable = map[string]*ModelCapabilities{
 	// =========================================================================
 	// GLM
 	// =========================================================================
+	"glm-5.3": {
+		Name: "glm-5.3", ContextWindow: 1000000, MaxOutputTokens: 131072,
+		SupportsThinking: true, SupportsTools: true, SupportsStreaming: true, SupportsSystemPrompt: true,
+	},
+	"glm-5.3-flashx": {
+		Name: "glm-5.3-flashx", ContextWindow: 1000000, MaxOutputTokens: 131072,
+		SupportsImages: true, SupportsPDFs: true, SupportsThinking: true,
+		SupportsTools: true, SupportsStreaming: true, SupportsSystemPrompt: true,
+	},
 	"glm-5.3-flash": {
 		Name:                 "glm-5.3-flash",
 		ContextWindow:        1000000,
@@ -872,6 +884,7 @@ var aliases = map[string]string{
 	// Convenience short names
 	"deepseek": "deepseek-flash",
 	"glm":      "glm-5.3-flash",
+	"glm5.3":   "glm-5.3",
 }
 
 // ResolveModelAlias returns the canonical identifier for a built-in model

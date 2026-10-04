@@ -25,7 +25,7 @@ func buildChatRequest(
 	if common.Model != nil {
 		modelID = strings.ToLower(strings.TrimSpace(*common.Model))
 	}
-	if modelID != ModelGLM53Flash {
+	if !supportedModel(modelID) {
 		return nil, conversionError(-1, -1, "model_unsupported")
 	}
 	messages, err := convertMessages(input)
@@ -34,6 +34,19 @@ func buildChatRequest(
 	}
 	if len(messages) == 0 {
 		return nil, conversionError(-1, -1, "messages_empty")
+	}
+	// The flagship is text-only. Check the effective per-call model, not the
+	// constructor model, so model.WithModel cannot bypass this boundary.
+	if modelID == ModelGLM53 {
+		for messageIndex, message := range messages {
+			if parts, ok := message.Content.([]multimodalPart); ok {
+				for blockIndex, part := range parts {
+					if part.Type != "text" {
+						return nil, conversionError(messageIndex, blockIndex, "model_media_unsupported")
+					}
+				}
+			}
+		}
 	}
 	if len(common.DeferredTools) > 0 || common.ToolSearchTool != nil {
 		return nil, conversionError(-1, -1, "deferred_tools_unsupported")
@@ -439,6 +452,9 @@ func responseToAgentic(response *chatResponse) (*schema.AgenticMessage, error) {
 	if response == nil || strings.TrimSpace(response.ID) == "" || len(response.Choices) != 1 {
 		return nil, &ProtocolError{ReasonCode: "response_envelope_invalid"}
 	}
+	if err := validateUsage(response.Usage); err != nil {
+		return nil, err
+	}
 	choice := response.Choices[0]
 	if choice.Message.Role != "assistant" || choice.FinishReason == nil {
 		return nil, &ProtocolError{ReasonCode: "response_choice_invalid"}
@@ -496,9 +512,9 @@ func responseMeta(responseID, requestID, modelID, finishReason string, usage *re
 	}}
 	if usage != nil {
 		meta.TokenUsage = &schema.TokenUsage{
-			PromptTokens:     usage.PromptTokens,
-			CompletionTokens: usage.CompletionTokens,
-			TotalTokens:      usage.TotalTokens,
+			PromptTokens:     *usage.PromptTokens,
+			CompletionTokens: *usage.CompletionTokens,
+			TotalTokens:      *usage.TotalTokens,
 			PromptTokenDetails: schema.PromptTokenDetails{
 				CachedTokens: usage.PromptTokensDetails.CachedTokens,
 			},
@@ -508,6 +524,22 @@ func responseMeta(responseID, requestID, modelID, finishReason string, usage *re
 		}
 	}
 	return meta
+}
+
+func validateUsage(usage *responseUsage) error {
+	if usage == nil {
+		return nil // Missing usage remains unknown, never a fabricated zero.
+	}
+	if usage.PromptTokens == nil || usage.CompletionTokens == nil || usage.TotalTokens == nil {
+		return &ProtocolError{ReasonCode: "response_usage_invalid"}
+	}
+	prompt, completion, total := *usage.PromptTokens, *usage.CompletionTokens, *usage.TotalTokens
+	cached, reasoning := usage.PromptTokensDetails.CachedTokens, usage.CompletionTokensDetails.ReasoningTokens
+	if prompt < 0 || completion < 0 || total < 0 || cached < 0 || reasoning < 0 ||
+		cached > prompt || reasoning > completion || uint64(total) < uint64(prompt)+uint64(completion) {
+		return &ProtocolError{ReasonCode: "response_usage_invalid"}
+	}
+	return nil
 }
 
 func validReasoningEffort(effort ReasoningEffort) bool {
