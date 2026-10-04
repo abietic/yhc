@@ -162,7 +162,8 @@ func TestLiveDeepSeekFlashVisionStream(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
-	maxOutputTokens := 2048
+	// The output cap also includes reasoning tokens in max-effort mode.
+	maxOutputTokens := 8192
 	m, err := New(ctx, &Config{
 		APIKey: apiKey, BaseURL: os.Getenv("DEEPSEEK_BASE_URL"), Model: FlashModel,
 		Timeout: 60 * time.Second, MaxOutputTokens: &maxOutputTokens,
@@ -187,6 +188,8 @@ func TestLiveDeepSeekFlashVisionStream(t *testing.T) {
 			defer stream.Close()
 			var output strings.Builder
 			var sawUsage bool
+			var status ResponseStatus
+			var outputTokens, reasoningTokens int
 			for {
 				chunk, recvErr := stream.Recv()
 				if recvErr == io.EOF {
@@ -198,19 +201,27 @@ func TestLiveDeepSeekFlashVisionStream(t *testing.T) {
 				output.WriteString(agenticOutputText(chunk))
 				if chunk.ResponseMeta != nil && chunk.ResponseMeta.TokenUsage != nil {
 					sawUsage = chunk.ResponseMeta.TokenUsage.TotalTokens > 0
+					outputTokens = chunk.ResponseMeta.TokenUsage.CompletionTokens
+					reasoningTokens = chunk.ResponseMeta.TokenUsage.CompletionTokensDetails.ReasoningTokens
+				}
+				if chunk.ResponseMeta != nil {
+					if extension, ok := chunk.ResponseMeta.Extension.(*ResponseMetaExtension); ok {
+						status = extension.Status
+					}
 				}
 			}
-			if !strings.Contains(strings.ToLower(output.String()), "red") || !sawUsage {
-				t.Fatal("stream did not satisfy the image and terminal-usage oracles")
+			if !strings.Contains(strings.ToLower(output.String()), "red") || !sawUsage || status != ResponseStatusCompleted {
+				t.Fatalf("stream oracle failed: completed=%t usage=%t output_nonempty=%t output_tokens=%d reasoning_tokens=%d",
+					status == ResponseStatusCompleted, sawUsage, output.Len() > 0, outputTokens, reasoningTokens)
 			}
 		})
 	}
 }
 
 func makeLiveCanaryPNG() ([]byte, error) {
-	imageData := image.NewRGBA(image.Rect(0, 0, 32, 32))
-	for y := range 32 {
-		for x := range 32 {
+	imageData := image.NewRGBA(image.Rect(0, 0, 256, 256))
+	for y := range 256 {
+		for x := range 256 {
 			imageData.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
 		}
 	}

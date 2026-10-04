@@ -215,7 +215,10 @@ path. V4 Pro and unknown DeepSeek models reject image input before provider
 dispatch. Transport failures include a bounded `reason` such as `timeout`,
 `dns`, `tls`, or `connection_reset` without exposing the endpoint or credentials.
 A timeout or connection failure is terminal for that attempt; it does not
-silently change models or drop the picture. A history-snip notice reports a
+silently change models or drop the picture. With the standard Go transport,
+default DeepSeek clients allow up to 30 seconds for TLS establishment, still bounded by request timeouts and
+cancellation; this does not retry a billable request or fix an unavailable
+network. A history-snip notice reports a
 separate local context transformation, not the cause of a network failure.
 
 This controls provider request reasoning, not the local continuation token

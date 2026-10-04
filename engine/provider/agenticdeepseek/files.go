@@ -137,7 +137,7 @@ func NewFilesClient(config *FilesConfig) (*FilesClient, error) {
 	}
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: config.Timeout}
+		httpClient = newDefaultHTTPClient(config.Timeout)
 	}
 	return &FilesClient{httpClient: httpClient, endpoint: endpoint, apiKey: apiKey}, nil
 }

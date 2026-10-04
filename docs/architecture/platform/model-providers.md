@@ -292,6 +292,14 @@ Transport errors keep the original cause available through `Unwrap` for
 cancellation and failure classification. Their public message exposes only a
 finite `reason` category, never arbitrary transport text, hostnames, URLs, or
 credentials. This does not add transport retry or cross-provider failover.
+When the global default is a standard `*http.Transport`, default Responses and
+Files clients share a provider-owned clone with a bounded 30-second TLS
+handshake instead of the standard 10 seconds, preserving connection reuse
+across model roles and file operations. A caller's nonstandard global transport
+is reused unchanged. Request
+timeouts and context cancellation still bound the entire call; HTTP/2 and
+certificate verification remain unchanged. An explicit `HTTPClient` remains
+authoritative and is never modified.
 `TestDeepSeekFlashRichTurnSurvivesHistorySnip` exercises typed prompt admission,
 history snipping, route resolution, max effort, and the actual Responses wire
 while preserving the current image bytes and text/image order.

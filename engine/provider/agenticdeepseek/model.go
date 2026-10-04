@@ -106,7 +106,7 @@ func New(_ context.Context, config *Config) (*Model, error) {
 
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: config.Timeout}
+		httpClient = newDefaultHTTPClient(config.Timeout)
 	}
 	return &Model{
 		httpClient:       httpClient,
