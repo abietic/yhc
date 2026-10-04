@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/abietic/yhc/engine/skills"
 )
 
 func TestInitSkillsMakesProjectSkillsDiscoverableAndInvokable(t *testing.T) {
@@ -38,5 +40,22 @@ func TestInitSkillsMakesProjectSkillsDiscoverableAndInvokable(t *testing.T) {
 	}
 	if strings.TrimSpace(result) != "Hello Theo." {
 		t.Fatalf("unexpected expanded skill: %q", result)
+	}
+}
+
+func TestSkillModelInvocationFlags(t *testing.T) {
+	registry := skills.NewSkillRegistry()
+	registry.Register(&skills.Skill{Name: "manual-only", Content: "manual body", DisableModelInvocation: true})
+	hidden := false
+	registry.Register(&skills.Skill{Name: "automatic", Content: "automatic body", UserInvocable: &hidden})
+	description := skillToolDescription(registry)
+	if strings.Contains(description, "manual-only") || !strings.Contains(description, "automatic") {
+		t.Fatalf("model discovery = %q", description)
+	}
+	if _, err := executeSkillWithRegistry(`{"skill":"manual-only"}`, registry); err == nil {
+		t.Fatal("model invoked disabled skill")
+	}
+	if output, err := executeSkillWithRegistry(`{"skill":"automatic"}`, registry); err != nil || output != "automatic body" {
+		t.Fatalf("automatic skill = %q %v", output, err)
 	}
 }

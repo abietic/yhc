@@ -1,0 +1,76 @@
+version: 1
+reference_dir: .reference
+memory_dir: .sync-memory
+max_commit_subjects: 80
+model_summary:
+  backend: codex
+  model: gpt-5.6-luna
+  max_input_bytes: 120000
+  timeout_seconds: 120
+subagent_summary:
+  # Both summary stages use the local Codex CLI with its ChatGPT/OpenAI auth;
+  # they do not inherit YHC's provider or Anthropic environment variables.
+  backend: codex
+  model: gpt-5.6-luna
+  max_input_bytes: 80000
+  timeout_seconds: 120
+
+# `enabled` references may be fetched and fast-forwarded by the scheduled job.
+# `frozen` references are inventory/evidence only: the job never fetches or
+# merges them. The script also hardens the two intentional frozen ids below.
+repositories:
+  - id: claude-code-ripe
+    path: claude-code-ripe
+    remote: https://github.com/instructkr/claude-code.git
+    upstream: origin/main
+    sync: frozen
+    note: Compatibility baseline; explicitly excluded from scheduled updates.
+
+  - id: codex
+    path: codex
+    remote: https://github.com/openai/codex.git
+    upstream: origin/main
+    sync: enabled
+    note: Typed thread, event, replay, and multi-agent platform reference.
+
+  - id: crush
+    path: crush
+    remote: https://github.com/charmbracelet/crush.git
+    upstream: origin/main
+    sync: enabled
+    note: Go/Bubble Tea and terminal-native implementation reference.
+
+  - id: deepseek-harness
+    path: deepseek-harness
+    remote: https://github.com/deepseek-ai/deepseek-harness.git
+    upstream: origin/master
+    sync: enabled
+    note: Session, ACP, provider, and host/preset composition reference.
+
+  - id: grok-build
+    path: grok-build
+    remote: git@github.com:xai-org/grok-build.git
+    upstream: origin/main
+    sync: enabled
+    note: Asynchronous session, terminal, subagent, and lifecycle reference.
+
+  - id: grok-bot-0.18-reconstructed
+    path: grok-bot-0.18-reconstructed
+    remote: git@github.com:b-nnett/grok-bot-0.18-reconstructed.git
+    upstream: origin/main
+    sync: frozen
+    note: Newly added snapshot; explicitly excluded from scheduled updates.
+
+  - id: opencode
+    path: opencode
+    remote: git@github.com:anomalyco/opencode.git
+    upstream: origin/dev
+    sync: enabled
+    note: Extensibility, sessions, workspace, permissions, and product integration reference.
+
+  - id: pi
+    path: pi
+    remote: git@github.com:earendil-works/pi.git
+    upstream: origin/main
+    sync: enabled
+    note: Small-kernel agent loop, session, provider, and extension-boundary reference.
