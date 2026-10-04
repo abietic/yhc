@@ -44,6 +44,41 @@ privacy:
   test_sentinels:
     - sentinel-provider-credential
   reviewed_findings:
+    - path: docs/migration/reference/reference-repositories.yaml
+      line: 52
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: docs/migration/reference/reference-repositories.yaml
+      line: 59
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: docs/migration/reference/reference-repositories.yaml
+      line: 66
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: docs/migration/reference/reference-repositories.yaml
+      line: 73
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: scripts/reference_sync/main_test.go
+      line: 143
+      rule_id: private-email
+      match_sha256: a039239e19285c8ca3a7f99ee554d336ee2f8041d62800c536249ba7e9fc8ea8
+      purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/main_test.go
+      line: 371
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/main_test.go
+      line: 372
+      rule_id: private-email
+      match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
+      purpose: synthetic-security-fixture
     - path: ".agents/skill-runtime/skill_log.py"
       line: 81
       rule_id: credential-assignment
@@ -2345,7 +2380,7 @@ privacy:
       match_sha256: ac76767037a950d94b148509cbf489349f6012fd29dc622947cac657d15274aa
       purpose: synthetic-security-fixture
     - path: engine/commands/registry.go
-      line: 2085
+      line: 2098
       rule_id: credential-assignment
       match_sha256: 4690f6483df28ae664680214d84ababf73f7c2619fcbac001f00a2b25eb2c2fa
       purpose: documentation-example

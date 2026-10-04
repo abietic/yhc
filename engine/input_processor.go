@@ -66,6 +66,7 @@ func (e *QueryEngine) ensureCommandRegistry() *commands.Registry {
 		e.commandRegistry = commands.NewRegistry()
 		commands.RegisterDefaults(e.commandRegistry)
 	}
+	e.commandRegistry.SetSkillRegistry(e.skillRegistry)
 	return e.commandRegistry
 }
 
