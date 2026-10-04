@@ -122,8 +122,14 @@ func TestTUITerminalShutdownRestoresTermiosAndKillsOwnedShellTreePTY(t *testing.
 	})
 
 	waitTerminalShutdownPTY(t, timeout, func() bool {
+		select {
+		case err := <-waitDone:
+			exited = true
+			t.Fatalf("CLI exited before TUI startup: %v output=%s", err, boundedTerminalShutdownDiagnostic(output.snapshot()))
+		default:
+		}
 		return output.emulator.IsAltScreen()
-	}, "TUI startup")
+	}, "TUI startup", func() string { return boundedTerminalShutdownDiagnostic(output.snapshot()) })
 	waitTerminalShutdownPTY(t, timeout, func() bool {
 		active := terminalShutdownTermios(t, terminal)
 		return !reflect.DeepEqual(active, entry)
@@ -246,7 +252,7 @@ func terminalShutdownTermios(t *testing.T, terminal *os.File) *term.State {
 	return state
 }
 
-func waitTerminalShutdownPTY(t *testing.T, timeout time.Duration, ready func() bool, category string) {
+func waitTerminalShutdownPTY(t *testing.T, timeout time.Duration, ready func() bool, category string, diagnostics ...func() string) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -254,6 +260,9 @@ func waitTerminalShutdownPTY(t *testing.T, timeout time.Duration, ready func() b
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if len(diagnostics) > 0 {
+		t.Fatalf("timed out waiting for %s output=%s", category, diagnostics[0]())
 	}
 	t.Fatalf("timed out waiting for %s", category)
 }
