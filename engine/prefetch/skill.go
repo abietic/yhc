@@ -60,7 +60,7 @@ func (p *SkillPrefetch) findMatchingSkills(userMsg string) []*schema.Message {
 	var matches []*schema.Message
 
 	for _, skill := range available {
-		if skill == nil || skill.Name == "" {
+		if skill == nil || skill.Name == "" || skill.DisableModelInvocation {
 			continue
 		}
 		if !p.skillMatchesMessage(skill, lower) {

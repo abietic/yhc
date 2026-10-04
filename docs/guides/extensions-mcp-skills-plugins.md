@@ -1,7 +1,7 @@
 # Extensions: MCP, Skills, and Plugins
 
 **Status:** current
-**Last verified:** 2026-07-31
+**Last verified:** 2026-09-05
 
 > **Ownership:** supported extension setup and the boundary between active and loader-only capabilities
 
@@ -87,14 +87,18 @@ exact lowercase `strict` blocks non-read-only tools.
 
 ## Add a skill
 
-Create a Markdown file under either `~/.claude/skills/` or
-`<project>/.claude/skills/`. User skills load first, so a project skill with the
-same name replaces it.
+Create `<project>/.agents/skills/review-package/SKILL.md` using the example below.
+User skills can live under `~/.agents/skills/`; `.claude/skills` and flat `.md`
+files remain supported. Project skills take precedence over user skills, and
+`.agents/skills` takes precedence over `.claude/skills` within the same scope.
+Support files inside a skill bundle are available to the skill without becoming
+commands of their own.
 
 ```markdown
 ---
 name: review-package
 description: Review one Go package
+argument-hint: <package>
 args:
   - name: package
     description: Package path
@@ -103,11 +107,22 @@ args:
 Review {{package}} for correctness, concurrency, and missing tests.
 ```
 
-Skills are loaded recursively at engine construction. `/skills` lists/searches
-the registry with source/health and malformed-source diagnostic counts; the
-model-visible `Skill` tool invokes a skill and substitutes declared `{{arg}}`
-values. Restart or resume into a reloaded engine after adding a skill; there is
-no general skill-reload slash command.
+After restarting YHC, type `/review-package` and press Tab to complete the
+command. The gray `<package>` hint shows what to enter; use
+`/review-package engine/commands` to run it. The qualified form
+`/skill:review-package engine/commands` remains available when the short name
+conflicts with a built-in or plugin command. Ctrl+K also finds skills and stages
+the selected command for editing.
+
+`/skills` lists/searches the loaded registry with source, health, and malformed
+source diagnostics. Declared `args` bind positionally and substitute `{{name}}`;
+quote a value containing spaces. For a free-form request, put `$ARGUMENTS` in the
+skill body or let YHC append the arguments. `user-invocable: false` hides direct
+commands; `disable-model-invocation: true` reserves a skill for explicit user
+invocation. See the [skill contract](../architecture/capabilities/skills.md).
+
+Restart or resume into a reloaded engine after adding or editing files; there
+is no general skill-reload slash command.
 
 ## Add a plugin prompt command
 
@@ -128,6 +143,7 @@ Place a directory containing `plugin.json` under `~/.claude/plugins/` or
 }
 ```
 
+The `skill:` prefix is reserved for skills; choose another plugin name.
 The command becomes `/quality:review [arguments]`; its Markdown body is injected
 as a model prompt. Run `/reload-plugins` after changing a manifest or prompt.
 Reload validates the versioned bundled workflow pack together with every

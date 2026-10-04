@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-24
+**Last verified:** 2026-09-05
 
 **Ownership:** `internal/tui` owns one mutable active-draft projection;
 `QueryEngine` owns accepted prompt and queued-input truth.
@@ -65,6 +65,28 @@ and accepted submission all run draft-media reachability collection. A
 recalled submitted rich row restores only sanitized text and an explicit
 `image content not restored` label; it never reconstructs image elements.
 Detailed editing behavior is owned by [`editing.md`](editing.md).
+
+## Command arguments
+
+Command-name completion reads the engine command registry and matches canonical
+names and aliases. Tab accepts the selected row, or the first row when none is
+selected, as `/name ` without submitting. The trailing space closes command-name
+completion. Only explicit path commands (`/add-dir` and `/export`) offer file
+candidates rooted at the active project; ordinary and skill arguments do not
+trigger directory scans.
+
+For an exact available command with no typed arguments, a focused single-line
+composer shows `Command.ArgumentHint()` in gray after the cursor. This display
+projection is clipped to the available cells and is hidden during history
+recall, modal ownership, cursor movement into the text, or actual argument
+entry. It never changes text, cursor, undo, structured elements, or submission
+bytes. Tab, Right Arrow, and Enter cannot accept argument placeholders.
+Selecting a skill in the command palette stages it for argument editing.
+
+The skill discovery and invocation contract belongs to
+[`Skills`](../../capabilities/skills.md). Regression evidence is in
+[`command_argument_hint_test.go`](../../../../internal/tui/command_argument_hint_test.go)
+and [`skill_commands_test.go`](../../../../internal/tui/skill_commands_test.go).
 
 ## Next-prompt ghost
 
