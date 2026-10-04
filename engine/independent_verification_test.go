@@ -195,3 +195,45 @@ func TestIndependentVerificationCannotCompleteThroughAPIErrorBypass(t *testing.T
 		t.Fatalf("terminal=%+v usage=%+v", terminal, usage.Snapshot())
 	}
 }
+
+func TestIndependentVerificationReservesFinalRoundForReport(t *testing.T) {
+	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 4})
+	tool := verificationResponse("")
+	tool.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command", Type: "function", Function: schema.FunctionCall{Name: "Bash", Arguments: `{"command":"independent check"}`}}}
+	mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), tool, tool, verificationResponse(verificationPass)}}
+	registry := tools.NewRegistry()
+	tools.RegisterDefaults(registry)
+	verifierCalls := 0
+	params := QueryParams{Messages: []*schema.Message{schema.UserMessage("original contract")}, ChatModel: mdl, RunUsage: usage, ToolRegistry: registry, IndependentVerification: IndependentVerificationConfig{MaxTurns: 3}, ToolExecutor: func(context.Context, string, string) (string, error) { return "observed evidence", nil }}
+	params.Deps = &QueryDeps{ProviderUsage: usage, CallModel: func(ctx context.Context, chatModel model.BaseChatModel, messages []*schema.Message, system *schema.Message, infos []*schema.ToolInfo, opts execution.CallModelOptions) (*execution.CallModelResult, error) {
+		if opts.QuerySource == "independent_verification" {
+			verifierCalls++
+			last := messages[len(messages)-1]
+			if !strings.Contains(last.Content, "verification round") || last.Extra["is_meta"] != true {
+				t.Error("checker cannot see its bounded remaining rounds")
+			}
+			if verifierCalls == 3 && opts.ToolChoice != "none" {
+				t.Error("last admitted round must request a report without tools")
+			}
+		}
+		return execution.CallModel(ctx, chatModel, messages, system, infos, opts)
+	}}
+	_, terminal := collectEvents(t.Context(), params)
+	if terminal.Err != nil || verifierCalls != 3 || usage.Snapshot().ProviderCalls != 4 {
+		t.Fatalf("terminal=%+v checker=%d usage=%+v", terminal, verifierCalls, usage.Snapshot())
+	}
+}
+
+func TestIndependentVerificationRejectsToolsInFinalReportRound(t *testing.T) {
+	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3})
+	tool := verificationResponse("")
+	tool.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command", Type: "function", Function: schema.FunctionCall{Name: "Bash", Arguments: `{"command":"independent check"}`}}}
+	mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), tool, tool}}
+	registry := tools.NewRegistry()
+	tools.RegisterDefaults(registry)
+	executions := 0
+	_, terminal := collectEvents(t.Context(), QueryParams{Messages: []*schema.Message{schema.UserMessage("original contract")}, ChatModel: mdl, RunUsage: usage, Deps: &QueryDeps{ProviderUsage: usage}, ToolRegistry: registry, IndependentVerification: IndependentVerificationConfig{MaxTurns: 2}, ToolExecutor: func(context.Context, string, string) (string, error) { executions++; return "observed evidence", nil }})
+	if terminal.Err == nil || executions != 1 || usage.Snapshot().ProviderCalls != 3 {
+		t.Fatalf("terminal=%+v executions=%d usage=%+v", terminal, executions, usage.Snapshot())
+	}
+}

@@ -8,10 +8,12 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/tools"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -209,6 +211,35 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 	}
 	maxTurns := g.params.IndependentVerification.MaxTurns
 	p.MaxTurns = &maxTurns
+	// Reserve the last existing round for a report, not another tool cycle.
+	// Retries/fallback attempts keep the same logical round and allowance.
+	callModel := p.Deps.CallModel
+	if callModel == nil {
+		callModel = execution.CallModel
+	}
+	var reportOnly atomic.Bool
+	rounds := map[string]int{}
+	p.Deps.CallModel = func(ctx context.Context, chatModel model.BaseChatModel, messages []*schema.Message, system *schema.Message, infos []*schema.ToolInfo, opts execution.CallModelOptions) (*execution.CallModelResult, error) {
+		if opts.QuerySource != "independent_verification" {
+			return callModel(ctx, chatModel, messages, system, infos, opts)
+		}
+		round, known := rounds[opts.UsageLogicalRoundID]
+		if !known {
+			round = len(rounds) + 1
+			rounds[opts.UsageLogicalRoundID] = round
+		}
+		last := round >= maxTurns
+		reportOnly.Store(last)
+		notice := fmt.Sprintf("Independent verification round %d of %d. Batch inspection and executable checks; leave the final round for the JSON report. Missing coverage must be PARTIAL. Report a demonstrated failure promptly rather than exhaustively auditing unrelated code.", round, maxTurns)
+		if last {
+			opts.ToolChoice = "none"
+			opts.ForcedToolName = ""
+			notice += " This is the final verification round: tools are disabled. Return the required JSON report now using existing evidence; list all unchecked requirements as missing."
+		}
+		nudge := &schema.Message{Role: schema.User, Content: notice, Extra: map[string]any{"is_meta": true}}
+		withNotice := append(append([]*schema.Message{}, messages...), nudge)
+		return callModel(ctx, chatModel, withNotice, system, infos, opts)
+	}
 	p.ToolUseContext = clonePermissionReviewToolContext(g.params.ToolUseContext)
 	if p.ToolUseContext == nil {
 		p.ToolUseContext = &ToolUseContext{}
@@ -229,6 +260,9 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 	}
 	parentCanUse := p.CanUseTool
 	p.CanUseTool = func(ctx context.Context, name string, input map[string]any, toolCtx *ToolUseContext) (bool, string) {
+		if reportOnly.Load() {
+			return false, "final independent verification round is reserved for reporting"
+		}
 		if !verificationToolAllowed(name) {
 			return false, "tool excluded from independent verification"
 		}

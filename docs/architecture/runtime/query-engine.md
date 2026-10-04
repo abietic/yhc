@@ -57,6 +57,11 @@ prompt and history containing original non-meta user text captured before
 compaction. Solver reasoning, success claims, and test outputs are not copied.
 It adds no separate model role or fallback selector.
 
+Each checker round receives its bounded round number. The last existing round
+requests the JSON report with tool choice disabled and denies tool dispatch,
+including when a provider ignores that choice. Missing coverage remains PARTIAL;
+no extra reporting call is granted. Model retries retain their logical round.
+
 The checker can inspect with Read/Glob/Grep and exercise behavior with Bash;
 other tool dispatch is denied. Bash retains the existing execution policy and
 permissions. Instructions prohibit project changes, but this tool projection
