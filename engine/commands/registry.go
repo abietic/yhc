@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/abietic/yhc/engine/skills"
 	"github.com/abietic/yhc/internal/identity"
 )
 
@@ -654,6 +655,7 @@ type Registry struct {
 	promptCommandKeys       map[string]struct{}
 	promptCommandCanonicals map[string]struct{}
 	promptGeneration        PromptCommandGenerationSnapshot
+	skillRegistry           *skills.SkillRegistry
 }
 
 // NewRegistry creates a new empty command registry.
@@ -761,6 +763,11 @@ func prepareCommand(cmd *Command) (*Command, error) {
 		seen[alias] = struct{}{}
 		prepared.Aliases = append(prepared.Aliases, alias)
 	}
+	for _, key := range commandKeys(&prepared) {
+		if strings.HasPrefix(key, "skill:") {
+			return nil, fmt.Errorf("command %q uses the reserved skill: namespace", key)
+		}
+	}
 	prepared.Args = append([]ArgDef(nil), cmd.Args...)
 	prepared.Compatibility.DeprecatedAliases = append(
 		[]string(nil),
@@ -821,6 +828,11 @@ func prepareRemovedCommand(removed *RemovedCommand) (*RemovedCommand, error) {
 		}
 		seen[alias] = struct{}{}
 		prepared.Aliases = append(prepared.Aliases, alias)
+	}
+	for _, key := range removedCommandKeys(&prepared) {
+		if strings.HasPrefix(key, "skill:") {
+			return nil, fmt.Errorf("removed command %q uses the reserved skill: namespace", key)
+		}
 	}
 	return &prepared, nil
 }
@@ -1346,9 +1358,8 @@ func (r *Registry) Get(name string) *Command {
 	if r == nil {
 		return nil
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return cloneCommand(r.commands[normalizeCommandKey(name)])
+	snapshot := r.commandSnapshot()
+	return cloneCommand(snapshot.commands[normalizeCommandKey(name)])
 }
 
 // GetRemoved looks up a retired command by canonical name or alias.
@@ -1427,16 +1438,15 @@ func (r *Registry) List() []*Command {
 	if r == nil {
 		return nil
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	snapshot := r.commandSnapshot()
 	seen := make(map[string]bool)
 	var result []*Command
-	for _, name := range r.order {
+	for _, name := range snapshot.order {
 		if seen[name] {
 			continue
 		}
 		seen[name] = true
-		cmd := r.commands[name]
+		cmd := snapshot.commands[name]
 		if cmd != nil && cmd.Availability == AvailabilitySupported &&
 			cmd.Entrypoints != EntrypointsNone {
 			result = append(result, cloneCommand(cmd))
@@ -1450,11 +1460,10 @@ func (r *Registry) ListFor(entrypoint Entrypoint) []*Command {
 	if r == nil {
 		return nil
 	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	snapshot := r.commandSnapshot()
 	var result []*Command
-	for _, name := range r.order {
-		cmd := r.commands[name]
+	for _, name := range snapshot.order {
+		cmd := snapshot.commands[name]
 		if cmd != nil &&
 			cmd.Availability == AvailabilitySupported &&
 			cmd.Entrypoints.Supports(entrypoint) {
@@ -1477,16 +1486,15 @@ func (r *Registry) ListForContext(
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	r.mu.RLock()
-	candidates := make([]*Command, 0, len(r.order))
-	for _, name := range r.order {
-		cmd := r.commands[name]
+	snapshot := r.commandSnapshot()
+	candidates := make([]*Command, 0, len(snapshot.order))
+	for _, name := range snapshot.order {
+		cmd := snapshot.commands[name]
 		if cmd == nil || !cmd.Entrypoints.Supports(entrypoint) {
 			continue
 		}
 		candidates = append(candidates, cloneCommand(cmd))
 	}
-	r.mu.RUnlock()
 	var result []*Command
 	for _, cmd := range candidates {
 		state, _ := resolveCommandAvailability(ctx, cmd, commandContextForEnvironment(cmdCtx, entrypoint))
@@ -1559,22 +1567,28 @@ func (r *Registry) DiscoverySnapshotForContext(
 // [name=default] for optional arguments. Commands with no hint omit the
 // input object.
 func commandDiscoveryInput(cmd *Command) *CommandDiscoveryInput {
-	if cmd == nil {
+	hint := cmd.ArgumentHint()
+	if hint == "" {
 		return nil
 	}
+	return &CommandDiscoveryInput{Hint: hint}
+}
+
+// ArgumentHint is the shared display-only usage suffix for discovery consumers.
+func (c *Command) ArgumentHint() string {
+	if c == nil {
+		return ""
+	}
 	hint := ""
-	if rest, ok := strings.CutPrefix(cmd.Usage, "/"+cmd.Name); ok && rest != "" {
+	if rest, ok := strings.CutPrefix(c.Usage, "/"+c.Name); ok && rest != "" {
 		if r, _ := utf8.DecodeRuneInString(rest); unicode.IsSpace(r) {
 			hint = strings.TrimSpace(rest)
 		}
 	}
 	if hint == "" {
-		hint = commandArgDefsHint(cmd.Args)
+		hint = commandArgDefsHint(c.Args)
 	}
-	if hint == "" {
-		return nil
-	}
-	return &CommandDiscoveryInput{Hint: hint}
+	return hint
 }
 
 func commandArgDefsHint(args []ArgDef) string {
@@ -1698,10 +1712,9 @@ func (r *Registry) Dispatch(
 		return nil, fmt.Errorf("invalid command input: %w", parseErr)
 	}
 
-	r.mu.RLock()
-	cmd := r.commands[name]
-	removed := r.removed[name]
-	r.mu.RUnlock()
+	snapshot := r.commandSnapshot()
+	cmd := snapshot.commands[name]
+	removed := snapshot.removed[name]
 	if removed != nil {
 		removed = cloneRemovedCommand(removed)
 		return &CommandResult{

@@ -43,6 +43,12 @@ type Skill struct {
 	Tags []string
 	// Args defines the argument placeholders this skill accepts.
 	Args []SkillArg
+	// ArgumentHint is the ghost hint shown when invoking this skill as a command.
+	ArgumentHint string
+	// UserInvocable controls whether the skill is exposed as a user command. A nil value defaults to true.
+	UserInvocable *bool
+	// DisableModelInvocation prevents the model-visible Skill tool from invoking it.
+	DisableModelInvocation bool
 }
 
 // Diagnostic records one skill source that could not enter the live registry.
@@ -61,10 +67,13 @@ type Snapshot struct {
 
 // skillFrontmatter is the internal struct for parsing YAML frontmatter.
 type skillFrontmatter struct {
-	Name        string     `yaml:"name"`
-	Description string     `yaml:"description"`
-	Tags        []string   `yaml:"tags"`
-	Args        []SkillArg `yaml:"args"`
+	Name                   string     `yaml:"name"`
+	Description            string     `yaml:"description"`
+	Tags                   []string   `yaml:"tags"`
+	Args                   []SkillArg `yaml:"args"`
+	ArgumentHint           string     `yaml:"argument-hint"`
+	UserInvocable          *bool      `yaml:"user-invocable"`
+	DisableModelInvocation bool       `yaml:"disable-model-invocation"`
 }
 
 // SkillRegistry manages a collection of loaded skills with thread-safe access.
@@ -126,6 +135,17 @@ func (r *SkillRegistry) LoadFromDirectoryWithSource(
 			return err
 		}
 		if info.IsDir() {
+			bundle := filepath.Join(path, "SKILL.md")
+			if bundleInfo, bundleErr := os.Stat(bundle); bundleErr == nil && !bundleInfo.IsDir() {
+				skill, parseErr := ParseSkillFile(bundle)
+				if parseErr != nil {
+					r.recordDiagnostic(Diagnostic{Source: source, FilePath: bundle, Message: parseErr.Error()})
+				} else {
+					skill.Source, skill.Health = source, "available"
+					r.Register(skill)
+				}
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
@@ -155,7 +175,7 @@ func (r *SkillRegistry) Get(name string) (*Skill, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	s, ok := r.skills[name]
-	return s, ok
+	return cloneSkill(s), ok
 }
 
 // List returns all registered skills in no guaranteed order.
@@ -230,11 +250,13 @@ func (r *SkillRegistry) ForProjectDirectory(projectDir string) (*SkillRegistry, 
 			}
 		}
 	}
-	if err := next.LoadFromDirectoryWithSource(
+	for _, dir := range []string{
 		filepath.Join(projectDir, ".claude", "skills"),
-		"project",
-	); err != nil {
-		return nil, err
+		filepath.Join(projectDir, ".agents", "skills"),
+	} {
+		if err := next.LoadFromDirectoryWithSource(dir, "project"); err != nil {
+			return nil, err
+		}
 	}
 	return next, nil
 }
@@ -272,6 +294,10 @@ func cloneSkill(skill *Skill) *Skill {
 	cloned := *skill
 	cloned.Tags = append([]string(nil), skill.Tags...)
 	cloned.Args = append([]SkillArg(nil), skill.Args...)
+	if skill.UserInvocable != nil {
+		value := *skill.UserInvocable
+		cloned.UserInvocable = &value
+	}
 	return &cloned
 }
 
@@ -283,13 +309,21 @@ func (r *SkillRegistry) Invoke(name string, args map[string]string) (string, err
 	if !ok {
 		return "", fmt.Errorf("skills: skill %q not found", name)
 	}
+	return skill.Render(args)
+}
+
+// Render substitutes argument placeholders in a stable skill snapshot.
+func (skill *Skill) Render(args map[string]string) (string, error) {
+	if skill == nil {
+		return "", fmt.Errorf("skills: skill is nil")
+	}
 
 	// Validate required arguments.
 	for _, arg := range skill.Args {
 		if arg.Required {
 			if _, provided := args[arg.Name]; !provided {
 				if arg.Default == "" {
-					return "", fmt.Errorf("skills: required argument %q not provided for skill %q", arg.Name, name)
+					return "", fmt.Errorf("skills: required argument %q not provided for skill %q", arg.Name, skill.Name)
 				}
 			}
 		}
@@ -341,32 +375,40 @@ func ParseSkillData(path string, data []byte) (*Skill, error) {
 		}
 	}
 
-	// Derive skill name from frontmatter or filename.
+	// Derive skill name from frontmatter or filename. A bundle's SKILL.md uses
+	// its containing directory so support files cannot become skills.
 	name := meta.Name
 	if name == "" {
-		base := filepath.Base(path)
-		name = strings.TrimSuffix(base, filepath.Ext(base))
+		if strings.EqualFold(filepath.Base(path), "SKILL.md") {
+			name = filepath.Base(filepath.Dir(path))
+		} else {
+			base := filepath.Base(path)
+			name = strings.TrimSuffix(base, filepath.Ext(base))
+		}
 	}
 
 	absPath, _ := filepath.Abs(path)
 
 	return &Skill{
-		Name:        name,
-		Description: meta.Description,
-		Content:     body,
-		FilePath:    absPath,
-		Health:      "available",
-		Tags:        meta.Tags,
-		Args:        meta.Args,
+		Name:                   name,
+		Description:            meta.Description,
+		Content:                body,
+		FilePath:               absPath,
+		Health:                 "available",
+		Tags:                   meta.Tags,
+		Args:                   meta.Args,
+		ArgumentHint:           meta.ArgumentHint,
+		UserInvocable:          meta.UserInvocable,
+		DisableModelInvocation: meta.DisableModelInvocation,
 	}, nil
 }
 
 // LoadDefaultSkills creates a SkillRegistry pre-loaded with skills from the
 // standard locations:
-//   - <projectDir>/.claude/skills/ (project-level skills)
-//   - ~/.claude/skills/ (user-level skills)
+//   - ~/.claude/skills/ and ~/.agents/skills/ (user-level skills)
+//   - <projectDir>/.claude/skills/ and <projectDir>/.agents/skills/ (project-level skills)
 //
-// Both directories are optional; missing directories are silently skipped.
+// All directories are optional; missing directories are silently skipped.
 // Project-level skills take precedence over user-level skills with the same name.
 func LoadDefaultSkills(projectDir string) (*SkillRegistry, error) {
 	registry := NewSkillRegistry()
@@ -374,22 +416,24 @@ func LoadDefaultSkills(projectDir string) (*SkillRegistry, error) {
 	// Load user-level skills first (lower precedence).
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		userSkillsDir := filepath.Join(homeDir, ".claude", "skills")
-		if loadErr := registry.LoadFromDirectoryWithSource(
-			userSkillsDir,
-			"user",
-		); loadErr != nil {
-			return nil, fmt.Errorf("skills: load user skills: %w", loadErr)
+		for _, userSkillsDir := range []string{
+			filepath.Join(homeDir, ".claude", "skills"),
+			filepath.Join(homeDir, ".agents", "skills"),
+		} {
+			if loadErr := registry.LoadFromDirectoryWithSource(userSkillsDir, "user"); loadErr != nil {
+				return nil, fmt.Errorf("skills: load user skills: %w", loadErr)
+			}
 		}
 	}
 
 	// Load project-level skills second (higher precedence, overwrites user-level).
-	projectSkillsDir := filepath.Join(projectDir, ".claude", "skills")
-	if loadErr := registry.LoadFromDirectoryWithSource(
-		projectSkillsDir,
-		"project",
-	); loadErr != nil {
-		return nil, fmt.Errorf("skills: load project skills: %w", loadErr)
+	for _, projectSkillsDir := range []string{
+		filepath.Join(projectDir, ".claude", "skills"),
+		filepath.Join(projectDir, ".agents", "skills"),
+	} {
+		if loadErr := registry.LoadFromDirectoryWithSource(projectSkillsDir, "project"); loadErr != nil {
+			return nil, fmt.Errorf("skills: load project skills: %w", loadErr)
+		}
 	}
 
 	return registry, nil

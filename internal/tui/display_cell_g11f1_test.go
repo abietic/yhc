@@ -119,6 +119,9 @@ func TestG11F1ProductionGeometrySelectorsAreClassified(t *testing.T) {
 		{"key_actions.go", "App.handleVimEditorKey", "unicode/utf8.RuneCountInString"}: {
 			owner: "Vim editor cursor", removalCondition: "Vim adapter accepts native editor offsets", calls: 1,
 		},
+		{"command_completion.go", "App.commandArgumentGhostHint", "unicode/utf8.RuneCountInString"}: {
+			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
+		},
 		{"app.go", "App.sendSlashCommand", "unicode/utf8.RuneCountInString"}: {
 			owner: "Vim editor cursor", removalCondition: "Vim adapter accepts native editor offsets", calls: 1,
 		},
@@ -158,6 +161,9 @@ func TestG11F1ProductionGeometrySelectorsAreClassified(t *testing.T) {
 		// exposes its wrapped row count or accepts DisplayCellProfile.
 		{"layout.go", "countWrappedLines", "github.com/rivo/uniseg.StringWidth"}: {
 			owner: "Bubbles textarea adapter", removalCondition: "Bubbles exposes wrapped rows", calls: 2,
+		},
+		{"app.go", "App.renderEditor", "charm.land/bubbles/v2/textarea.Width"}: {
+			owner: "Bubbles textarea adapter", removalCondition: "Bubbles exposes editor content width", calls: 1,
 		},
 		{"plan_dialog.go", "PlanDialog.feedbackEditorView", "charm.land/bubbles/v2/textarea.Width"}: {
 			owner: "Bubbles textarea adapter", removalCondition: "Bubbles exposes editor content width", calls: 1,

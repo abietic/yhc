@@ -109,7 +109,7 @@ func executeSkills(ctx *CommandContext, args string) (*CommandResult, error) {
 			len(snapshot.Skills.Diagnostics),
 		)
 	}
-	sb.WriteString("\nSkills are invoked automatically by the agent through the Skill tool.")
+	sb.WriteString("\nUse /skill:<name> [arguments] to invoke a skill explicitly.")
 	sb.WriteString("\nUse /skills <name> to see details for a specific skill.")
 	return &CommandResult{Output: sb.String()}, nil
 }
@@ -122,6 +122,9 @@ func formatSkillDetail(
 	fmt.Fprintf(&sb, "Skill: %s\n", s.Name)
 	fmt.Fprintf(&sb, "Source: %s\n", firstNonEmpty(s.Source, "runtime"))
 	fmt.Fprintf(&sb, "Health: %s\n", firstNonEmpty(s.Health, "available"))
+	if s.UserInvocable == nil || *s.UserInvocable {
+		fmt.Fprintf(&sb, "Command: /skill:%s %s\n", strings.ToLower(s.Name), skillCommand(s, strings.ToLower(s.Name)).ArgumentHint())
+	}
 	if s.Description != "" {
 		fmt.Fprintf(&sb, "Description: %s\n", s.Description)
 	}

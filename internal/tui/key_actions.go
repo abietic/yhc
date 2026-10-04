@@ -375,6 +375,11 @@ func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
 		a.acceptCommandHint()
 		return nil
 	}
+	if msg.Code == tea.KeyTab && len(a.commandHints) > 0 {
+		a.commandHintIdx = 0
+		a.acceptCommandHint()
+		return nil
+	}
 	if a.fileHintIdx >= 0 && a.fileHintIdx < len(a.fileHints) {
 		a.acceptFileHint()
 		return nil

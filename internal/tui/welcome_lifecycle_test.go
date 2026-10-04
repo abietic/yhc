@@ -219,9 +219,8 @@ func TestWelcomeHintsRenderNavigateAndStayOnWelcome(t *testing.T) {
 
 func TestWelcomeFileHintsRenderAfterCommandSelection(t *testing.T) {
 	app := prepareViewSizedApp(New(Config{}))
-	commands := app.commandRegistry.List()
-	if len(commands) == 0 {
-		t.Fatal("expected command registry entries")
+	if app.commandRegistry.Get("add-dir") == nil {
+		t.Fatal("expected add-dir command")
 	}
 
 	wd, err := os.Getwd()
@@ -246,7 +245,7 @@ func TestWelcomeFileHintsRenderAfterCommandSelection(t *testing.T) {
 	}()
 
 	app.inputMode = InputCommand
-	app.textarea.SetValue("/" + commands[0].Name + " a")
+	app.textarea.SetValue("/add-dir a")
 	app.updateCommandHints()
 
 	if app.state != StateWelcome {

@@ -79,7 +79,7 @@ func skillToolDescription(registry *skills.SkillRegistry) string {
 	sort.Slice(available, func(i, j int) bool { return available[i].Name < available[j].Name })
 	entries := make([]string, 0, len(available))
 	for _, skill := range available {
-		if skill == nil || skill.Name == "" {
+		if skill == nil || skill.Name == "" || skill.DisableModelInvocation {
 			continue
 		}
 		entry := skill.Name
@@ -131,7 +131,14 @@ func executeSkillWithRegistry(input string, registry *skills.SkillRegistry) (str
 		}
 	}
 
-	content, err := registry.Invoke(params.Skill, args)
+	skill, ok := registry.Get(params.Skill)
+	if !ok {
+		return "", fmt.Errorf("skill: skill %q not found", params.Skill)
+	}
+	if skill.DisableModelInvocation {
+		return "", fmt.Errorf("skill: skill %q is disabled for model invocation", params.Skill)
+	}
+	content, err := skill.Render(args)
 	if err != nil {
 		return "", fmt.Errorf("skill: %w", err)
 	}
