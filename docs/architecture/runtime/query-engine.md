@@ -31,6 +31,19 @@ ACP, and child Agents use the `QueryEngine` boundary. See
 [`architecture/runtime/README.md`](README.md) for the runtime index and
 [`architecture/README.md`](../README.md) for entrypoints.
 
+## Behavior verification guidance
+
+Default CLI identity and the built-in `general-purpose` and `verification`
+child prompts share the behavior-verification policy owned by
+[`prompt_builder.go`](../../../engine/context/prompt_builder.go). For changes
+to behavior, it asks for requirement-to-check mapping, supported non-default
+configuration checks, intermediate-state and progress checks for concurrency,
+and explicit verified/failed/unverified reporting. Checks derive expected
+results from the user contract rather than the changed implementation.
+This guides model behavior; it does not mechanically prove task completion,
+automatically start another model, or override custom root prompts. Existing
+tool permissions and invocation budgets still govern any selected checks.
+
 ## Durable Goal State And Projection
 
 P24.1 added one internal `QueryEngine` Goal transition owner. It serializes
