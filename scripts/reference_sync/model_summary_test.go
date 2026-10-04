@@ -230,7 +230,7 @@ func TestFinalizePreparedUpdatesBlocksMergeWithoutModelSummary(t *testing.T) {
 		SummaryStatus: "failed",
 		SummaryError:  "provider unavailable",
 	}}
-	finalizePreparedUpdates([]Repository{{ID: "codex", Path: "missing"}}, t.TempDir(), results)
+	finalizePreparedUpdates(context.Background(), []Repository{{ID: "codex", Path: "missing"}}, t.TempDir(), results)
 	if results[0].Status != "blocked_summary" {
 		t.Fatalf("status = %q, want blocked_summary", results[0].Status)
 	}
