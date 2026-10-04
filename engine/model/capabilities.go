@@ -631,6 +631,24 @@ var modelTable = map[string]*ModelCapabilities{
 	// =========================================================================
 	// DeepSeek
 	// =========================================================================
+	// Official API model catalog and pricing, checked 2026-10-05:
+	// https://api-docs.deepseek.com/quick_start/pricing/
+	// Flash compatibility names now serve V4.1 Flash. Use peak USD prices for
+	// conservative local budget estimates; provider usage remains authoritative.
+	"deepseek-flash": {
+		Name:                 "deepseek-flash",
+		ContextWindow:        1000000,
+		MaxOutputTokens:      384000,
+		SupportsImages:       true,
+		SupportsPDFs:         false,
+		SupportsThinking:     true,
+		SupportsTools:        true,
+		SupportsStreaming:    true,
+		SupportsSystemPrompt: true,
+		IsFirstParty:         false,
+		CostPerInputToken:    0.0000003, // $0.30/Mtok cache miss, peak
+		CostPerOutputToken:   0.0000012, // $1.20/Mtok, peak
+	},
 	"deepseek-v4-pro": {
 		Name:                 "deepseek-v4-pro",
 		ContextWindow:        1000000,
@@ -649,15 +667,17 @@ var modelTable = map[string]*ModelCapabilities{
 		Name:                 "deepseek-v4-flash",
 		ContextWindow:        1000000,
 		MaxOutputTokens:      384000,
-		SupportsImages:       false,
+		SupportsImages:       true,
 		SupportsPDFs:         false,
 		SupportsThinking:     true,
 		SupportsTools:        true,
 		SupportsStreaming:    true,
 		SupportsSystemPrompt: true,
 		IsFirstParty:         false,
-		CostPerInputToken:    0.00000014, // $0.14/Mtok cache miss
-		CostPerOutputToken:   0.00000028, // $0.28/Mtok
+		CostPerInputToken:    0.0000003, // current Flash price, peak
+		CostPerOutputToken:   0.0000012,
+		DeprecatedAt:         "2026-09-10",
+		Successor:            "deepseek-flash",
 	},
 	"deepseek-v4-flash-vision-exp": {
 		Name:                 "deepseek-v4-flash-vision-exp",
@@ -670,8 +690,10 @@ var modelTable = map[string]*ModelCapabilities{
 		SupportsStreaming:    true,
 		SupportsSystemPrompt: true,
 		IsFirstParty:         false,
-		CostPerInputToken:    0.00000014, // $0.14/Mtok; images use up to 384 tokens each
-		CostPerOutputToken:   0.00000028, // $0.28/Mtok
+		CostPerInputToken:    0.0000003, // current Flash price; images use up to 1024 tokens each
+		CostPerOutputToken:   0.0000012,
+		DeprecatedAt:         "2026-09-10",
+		Successor:            "deepseek-flash",
 	},
 	"deepseek-v3": {
 		Name:                 "deepseek-v3",
@@ -826,7 +848,7 @@ var aliases = map[string]string{
 	"claude-3-haiku":   "claude-3-haiku-20240307",
 
 	// Convenience short names
-	"deepseek": "deepseek-v4-flash",
+	"deepseek": "deepseek-flash",
 }
 
 // ResolveModelAlias returns the canonical identifier for a built-in model
@@ -844,6 +866,18 @@ func ResolveModelAlias(name string) string {
 		return canonical + suffix
 	}
 	return trimmed
+}
+
+// LookupExactCapabilities returns detached metadata for a known exact model or
+// built-in alias, independently of the curated UI picker. It never authorizes
+// a custom model based on substring similarity or unknown-model defaults.
+func LookupExactCapabilities(modelID string) (*ModelCapabilities, bool) {
+	capability, ok := knownExactPortfolioCapabilities(modelID)
+	if !ok {
+		return nil, false
+	}
+	copy := *capability
+	return &copy, true
 }
 
 // GetCapabilities returns model capabilities for the given model name.

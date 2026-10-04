@@ -82,7 +82,7 @@ func newAgenticDeepSeek(ctx context.Context, cfg Config) (model.AgenticModel, er
 		return nil, fmt.Errorf("API key required for Agentic DeepSeek. Set PROV_API_KEY or DEEPSEEK_API_KEY env var")
 	}
 	if cfg.Model == "" {
-		cfg.Model = "deepseek-v4-flash"
+		cfg.Model = agenticdeepseek.FlashModel
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = os.Getenv("DEEPSEEK_BASE_URL")

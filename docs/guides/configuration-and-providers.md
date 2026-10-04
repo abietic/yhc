@@ -1,7 +1,7 @@
 # Configuration and Providers
 
 **Status:** current
-**Last verified:** 2026-08-26
+**Last verified:** 2026-10-05
 
 > **Ownership:** production configuration sources, precedence, provider selection, and runtime settings
 
@@ -183,13 +183,20 @@ unchanged. Client construction for a newly selected valid route remains lazy.
 `/effort [level]` is shown only when the resolved active model metadata and its
 adapter share at least one exact reasoning value. Run `/effort` to see the
 current model's choices; the list is not a global enum. For example, DeepSeek
-V4 Pro, Flash, and Flash Vision Exp currently expose `default`, `none`, `high`,
-and `max`. The three explicit values are sent unchanged as DeepSeek Responses
+Flash and V4 Pro expose `default`, `none`, `low`, `high`, and `max`.
+The four explicit values are sent unchanged as DeepSeek Responses
 `reasoning.effort`.
 
-DeepSeek defaults to `deepseek-v4-flash`; the former `deepseek-chat` and
-`deepseek-reasoner` compatibility names passed their announced deprecation date
-on 2026-07-24. Select `deepseek-v4-flash-vision-exp` for ordered image input.
+DeepSeek defaults to `deepseek-flash` (V4.1 Flash), which supports both text
+and ordered image input with a 1M context window. Select it with
+`/model deepseek-flash`, then use `/effort max` if needed. The
+[official model catalog](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+still lists `deepseek-v4-pro` as a text-only model. The retired
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` names remain accepted
+compatibility routes with current Flash capabilities; existing configurations
+and Sessions continue to work, but the model picker recommends the current
+API names. The former `deepseek-chat` and `deepseek-reasoner` compatibility
+names passed their announced deprecation date on 2026-07-24.
 The dedicated SDK also supports DeepSeek Files API upload, listing, retrieval,
 and deletion for reusable image `file_id` input. Its external canary is
 explicitly opt-in and billable:
@@ -198,13 +205,18 @@ explicitly opt-in and billable:
 DEEPSEEK_API_KEY='replace-me' make test-deepseek-live
 ```
 
-The canary uploads a small one-hour image, submits it to the vision model, and
-deletes it before succeeding. Ordinary `make test` never enables this external
+The canary checks Flash text and inline/file-ID images, uploads a small
+one-hour image and deletes it before succeeding, and exercises image streaming
+with `none` and `max` effort. Ordinary `make test` never enables this external
 operation.
 
-That experimental model supports URL and base64 images through the normal YHC
-multimodal input path; other DeepSeek models reject image input before provider
-dispatch.
+Flash supports URL and base64 images through the normal YHC multimodal input
+path. V4 Pro and unknown DeepSeek models reject image input before provider
+dispatch. Transport failures include a bounded `reason` such as `timeout`,
+`dns`, `tls`, or `connection_reset` without exposing the endpoint or credentials.
+A timeout or connection failure is terminal for that attempt; it does not
+silently change models or drop the picture. A history-snip notice reports a
+separate local context transformation, not the cause of a network failure.
 
 This controls provider request reasoning, not the local continuation token
 budget. The selected value is checkpointed with the active model binding. An

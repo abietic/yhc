@@ -23,7 +23,7 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 		{"Anthropic", 5},
 		{"OpenAI", 4},
 		{"Google", 2},
-		{"DeepSeek", 3},
+		{"DeepSeek", 2},
 		{"Qwen", 2},
 	}
 
@@ -51,9 +51,8 @@ func TestDefaultRegistryPublishesOnlyCurrentDeepSeekResponsesModels(t *testing.T
 		got = append(got, entry.ModelID)
 	}
 	want := []string{
+		"deepseek-flash",
 		"deepseek-v4-pro",
-		"deepseek-v4-flash",
-		"deepseek-v4-flash-vision-exp",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("DeepSeek registry = %#v, want %#v", got, want)

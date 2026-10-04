@@ -83,7 +83,7 @@ func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T
 	account.Provider = "deepseek"
 	sources.User.ProviderAccounts["openai-main"] = account
 	profile := sources.User.ModelProfiles["primary"]
-	profile.APIModel = "deepseek-v4-flash"
+	profile.APIModel = "deepseek-flash"
 	profile.Reasoning.DefaultEffort = "max"
 	sources.User.ModelProfiles["primary"] = profile
 
@@ -98,7 +98,7 @@ func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T
 	if got := strings.Join(
 		resolved.Metadata.SupportedReasoningEfforts.Value,
 		",",
-	); got != "none,high,max" || resolved.Reasoning.DefaultEffort != "max" {
+	); got != "none,low,high,max" || resolved.Reasoning.DefaultEffort != "max" {
 		t.Fatalf("compiled DeepSeek reasoning = %#v", resolved)
 	}
 
@@ -107,7 +107,15 @@ func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T
 	if _, err := CompilePortfolio(PortfolioCompileInput{
 		Sources: sources,
 		Getenv:  func(string) string { return "" },
-	}); err == nil || !strings.Contains(err.Error(), `default reasoning effort "low"`) {
+	}); err != nil {
+		t.Fatalf("exact DeepSeek low effort was rejected: %v", err)
+	}
+	profile.Reasoning.DefaultEffort = "medium"
+	sources.User.ModelProfiles["primary"] = profile
+	if _, err := CompilePortfolio(PortfolioCompileInput{
+		Sources: sources,
+		Getenv:  func(string) string { return "" },
+	}); err == nil || !strings.Contains(err.Error(), `default reasoning effort "medium"`) {
 		t.Fatalf("DeepSeek compatibility alias was admitted: %v", err)
 	}
 

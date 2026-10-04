@@ -1,7 +1,7 @@
 # Getting Started
 
 **Status:** current
-**Last verified:** 2026-08-26
+**Last verified:** 2026-10-05
 
 > **Ownership:** prerequisites, build outputs, first provider setup, and first run
 
@@ -72,7 +72,7 @@ For example, on Apple silicon:
 | `anthropic`, `claude` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
 | `openai` | `gpt-4o` | `OPENAI_API_KEY` |
 | `google`, `gemini` | `gemini-2.5-flash` | `GOOGLE_API_KEY`, `GEMINI_API_KEY` |
-| `deepseek` | `deepseek-v4-flash` | `DEEPSEEK_API_KEY` |
+| `deepseek` | `deepseek-flash` | `DEEPSEEK_API_KEY` |
 | `qwen`, `dashscope` | `qwen-max` | `DASHSCOPE_API_KEY`, `QWEN_API_KEY` |
 | `ark`, `volcengine` | `doubao-1.5-pro-32k` | `ARK_API_KEY` |
 

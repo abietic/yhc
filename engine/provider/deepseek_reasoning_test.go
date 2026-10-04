@@ -18,6 +18,7 @@ func TestDeepSeekV4ReasoningEffortReachesActualRequestBody(t *testing.T) {
 		effort string
 	}{
 		{effort: "none"},
+		{effort: "low"},
 		{effort: "high"},
 		{effort: "max"},
 	} {
@@ -50,7 +51,7 @@ func TestDeepSeekV4ReasoningEffortReachesActualRequestBody(t *testing.T) {
 				Provider: ProviderAgenticDeepSeek,
 				BaseURL:  server.URL,
 				APIKey:   "test-key",
-				Model:    "deepseek-v4-flash",
+				Model:    "deepseek-flash",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -63,7 +64,7 @@ func TestDeepSeekV4ReasoningEffortReachesActualRequestBody(t *testing.T) {
 				nil,
 				execution.CallModelOptions{
 					Provider:    string(ProviderAgenticDeepSeek),
-					Model:       "deepseek-v4-flash",
+					Model:       "deepseek-flash",
 					EffortValue: tc.effort,
 				},
 			)
@@ -113,7 +114,7 @@ func TestDeepSeekVisionInputAndToolsReachResponsesWire(t *testing.T) {
 		Provider: ProviderAgenticDeepSeek,
 		BaseURL:  server.URL,
 		APIKey:   "test-key",
-		Model:    "deepseek-v4-flash-vision-exp",
+		Model:    "deepseek-flash",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +141,7 @@ func TestDeepSeekVisionInputAndToolsReachResponsesWire(t *testing.T) {
 		[]*schema.ToolInfo{tool},
 		execution.CallModelOptions{
 			Provider: string(ProviderAgenticDeepSeek),
-			Model:    "deepseek-v4-flash-vision-exp",
+			Model:    "deepseek-flash",
 		},
 	)
 	if err != nil {
@@ -156,7 +157,7 @@ func TestDeepSeekVisionInputAndToolsReachResponsesWire(t *testing.T) {
 		t.Fatalf("request path = %q, want /responses", got)
 	}
 	body := <-requests
-	if body["model"] != "deepseek-v4-flash-vision-exp" || body["stream"] != true {
+	if body["model"] != "deepseek-flash" || body["stream"] != true {
 		t.Fatalf("request header fields = %#v", body)
 	}
 	items := body["input"].([]any)

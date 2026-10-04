@@ -63,7 +63,7 @@ var reasoningAdapterPolicies = []reasoningAdapterPolicy{
 		provider: "agenticdeepseek",
 		aliases:  []string{"deepseek"},
 		dialect:  ReasoningDialectDeepSeek,
-		efforts:  []string{"none", "high", "max"},
+		efforts:  []string{"none", "low", "high", "max"},
 	},
 	{
 		provider: "agenticqwen",
@@ -145,7 +145,7 @@ func DefaultReasoningEfforts(provider, modelID string) ([]string, bool) {
 	}
 	if policy.dialect == ReasoningDialectDeepSeek {
 		switch strings.ToLower(capabilities.Name) {
-		case "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+		case "deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
 		default:
 			return nil, false
 		}

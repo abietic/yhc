@@ -68,7 +68,7 @@ WEBUI_ASSETS := $(shell find internal/webui/assets -type f 2>/dev/null)
 # Default provider config (override via ENV or make args)
 PROV ?= agenticdeepseek
 PROV_API_KEY ?= $(ANTHROPIC_AUTH_TOKEN)
-PROV_MODEL ?= deepseek-v4-flash
+PROV_MODEL ?= deepseek-flash
 
 # Release flags
 VERSION ?= 0.1.0
@@ -305,7 +305,7 @@ run:
 .PHONY: test-deepseek-live
 test-deepseek-live:
 	@if [[ -z "$$DEEPSEEK_API_KEY" ]]; then echo "DEEPSEEK_API_KEY is required" >&2; exit 1; fi
-	DEEPSEEK_LIVE_TEST=1 $(GO) test ./engine/provider/agenticdeepseek -run '^TestLiveDeepSeekResponsesAndFilesLifecycle$$' -count=1 -timeout=4m
+	DEEPSEEK_LIVE_TEST=1 $(GO) test ./engine/provider/agenticdeepseek -run '^TestLiveDeepSeek(ResponsesAndFilesLifecycle|FlashVisionStream)$$' -count=1 -timeout=6m
 
 # ── Debug ───────────────────────────────────────────────
 # Launches the agent under delve in headless mode so any IDE can attach.
