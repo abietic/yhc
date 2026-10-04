@@ -21,6 +21,7 @@ const (
 	// FlashModel is the current official text-and-image DeepSeek API model.
 	FlashModel = "deepseek-flash"
 	// VisionModel names the current image-capable Flash model.
+	//
 	// Deprecated: use FlashModel. Vision is no longer a separate model.
 	VisionModel = FlashModel
 
