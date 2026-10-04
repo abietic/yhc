@@ -32,6 +32,26 @@ def terminal(status="completed", exit_code=0):
 
 
 class ResultTests(unittest.TestCase):
+    def test_completed_rejects_conflicting_terminal_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            for fields in ({"terminal_reason": "cancelled"},
+                           {"terminal_reason": "aborted_tools"},
+                           {"terminal_reason": "run_budget_exceeded"},
+                           {"terminal_reason": "future_unknown_reason"},
+                           {"error": {"code": "cancelled"}}, {"exit_code": 130}):
+                with self.subTest(fields=fields):
+                    record = terminal()
+                    record["result"].update(fields)
+                    path.write_text(json.dumps(record) + "\n")
+                    with self.assertRaises(ValueError):
+                        read_result(path)
+            for reason in (None, "completed", "stop_hook_prevented", "hook_stopped"):
+                record = terminal()
+                record["result"].update(terminal_reason=reason, error=None)
+                path.write_text(json.dumps(record) + "\n")
+                self.assertEqual(read_result(path)["status"], "completed")
+
     def test_only_one_closing_result_is_accepted(self):
         event = {"schema_version": 1, "type": "event", "event": {"kind": "tool"}}
         with tempfile.TemporaryDirectory() as directory:

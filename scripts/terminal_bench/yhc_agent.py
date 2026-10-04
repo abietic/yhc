@@ -41,6 +41,14 @@ def read_result(path: Path) -> dict:
                         or not isinstance(result.get("status"), str)
                         or type(result.get("exit_code")) is not int):
                     raise ValueError("Invalid YHC terminal result")
+                if result["status"] == "completed" and (
+                        result["exit_code"] != 0 or result.get("error") is not None
+                        or result.get("terminal_reason") not in (
+                            None, "completed", "stop_hook_prevented", "hook_stopped")):
+                    # Reason remains optional for command-only/older v1 results;
+                    # an explicit cancellation, error, or unknown reason is not
+                    # allowed to masquerade as a successful closure.
+                    raise ValueError("Completed YHC result contradicts terminal fields")
             elif record.get("type") != "event" or not isinstance(record.get("event"), dict):
                 raise ValueError("Unknown YHC lifecycle record")
     if result is None:
