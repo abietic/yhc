@@ -438,7 +438,7 @@ dependencies:
     license: "MIT"
     decision: allow
   - package: "fast-uri"
-    version: "3.1.6"
+    version: "3.1.8"
     license: "BSD-3-Clause"
     decision: allow
   - package: "fdir"
