@@ -115,7 +115,8 @@ type LifecycleInterruption struct {
 // event channel drains and the headless process classifies its exit status.
 // Pre-turn failures carry only identity that exists; pre-engine failures carry none.
 type LifecycleResult struct {
-	Usage *execution.RunUsageSnapshot `json:"usage,omitempty"`
+	Verification []engine.IndependentVerificationSummary `json:"verification,omitempty"`
+	Usage        *execution.RunUsageSnapshot             `json:"usage,omitempty"`
 	LifecycleIdentity
 
 	Status         string          `json:"status"`

@@ -109,6 +109,8 @@ type RuntimeItemAdmission func(context.Context, RuntimeItem) error
 // QueryParams holds immutable parameters for a single query() call.
 // Mirrors query.ts:181-199.
 type QueryParams struct {
+	independentVerification   *independentVerificationGate
+	IndependentVerification   IndependentVerificationConfig
 	RunUsage                  *execution.RunUsage // live invocation budget projection; never persisted
 	Messages                  []*schema.Message
 	SystemPrompt              *schema.Message

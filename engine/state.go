@@ -12,6 +12,7 @@ const (
 	ContinueMaxOutputTokensEscalate ContinueReason = "max_output_tokens_escalate"
 	ContinueMaxOutputTokensRecovery ContinueReason = "max_output_tokens_recovery"
 	ContinueStopHookBlocking        ContinueReason = "stop_hook_blocking"
+	ContinueIndependentVerification ContinueReason = "independent_verification"
 	ContinueTokenBudgetContinuation ContinueReason = "token_budget_continuation"
 	ContinueMediaRecovery           ContinueReason = "media_recovery"
 )

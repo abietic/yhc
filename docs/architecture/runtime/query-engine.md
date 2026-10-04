@@ -44,6 +44,50 @@ This guides model behavior; it does not mechanically prove task completion,
 automatically start another model, or override custom root prompts. Existing
 tool permissions and invocation budgets still govern any selected checks.
 
+## Optional independent completion verification
+
+`IndependentVerificationConfig` is invocation-local and disabled when `MaxTurns`
+is zero. When enabled, the canonical after-model boundary runs it only after
+normal completion, Stop hooks, and token-continuation decisions. Checker tool
+hooks forward to the parent owner; parent completion hooks are not re-run
+inside the checker. It requires a
+finite shared provider-call allowance. The checker uses the production Query
+kernel, the root model binding and permission/tool dispatch, and a fresh system
+prompt and history containing original non-meta user text captured before
+compaction. Solver reasoning, success claims, and test outputs are not copied.
+It adds no separate model role or fallback selector.
+
+The checker can inspect with Read/Glob/Grep and exercise behavior with Bash;
+other tool dispatch is denied. Bash retains the existing execution policy and
+permissions. Instructions prohibit project changes, but this tool projection
+is **not** an OS-level read-only filesystem sandbox. Checks must reference an
+actual Bash call ID and exact effective command from this checker invocation;
+bounded actual tool outputs accompany the verdict attachment. This validates
+execution provenance, not the truth of every model interpretation or complete
+coverage of arbitrary prose requirements.
+
+A structured PASS requires executable checks, all checks passing, complete
+claimed coverage, and no missing requirements. FAIL/PARTIAL may request at most
+`MaxRepairs` additional solver cycles (0..3), followed by fresh checks. Invalid
+reports, missing command evidence, exhausted repair allowance, budget admission
+failure, and checker errors fail closed. Parent cancellation propagates through
+the checker. Solver candidate text may already have streamed; the enclosing
+terminal result remains the completion authority.
+
+All checker/repair calls share root RunUsage and deadline; there is no top-up,
+call reservation for verification, separate currency cap, or paid trial implied
+by enabling the feature. The gate cursor and checker history are not durable.
+An interrupted Graph decision cannot be resumed with this gate enabled; normal
+session continuation begins a new bounded invocation and may repeat checks.
+This first slice supports text requirements and invocation completion, not a
+provider-independent proof, hidden benchmark grader, or automatic TUI rollout.
+Multimodal requests and synthetic structured-output completion are rejected
+when this gate is enabled.
+
+Code: [`independent_verification.go`](../../../engine/independent_verification.go),
+[`round_lifecycle.go`](../../../engine/round_lifecycle.go), and
+[`headless verification tests`](../../../cmd/yhc/cmd/headless_verification_test.go).
+
 ## Durable Goal State And Projection
 
 P24.1 added one internal `QueryEngine` Goal transition owner. It serializes

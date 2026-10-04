@@ -112,6 +112,21 @@ class AgentTests(AgentFixture, unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.agent(**{name: invalid})
 
+    def test_independent_verification_is_opt_in_and_shares_finite_segment_caps(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            self.assertNotIn("--verification-turns", self.agent().execution_command())
+            command = self.agent(max_provider_calls=8, verification_turns=2,
+                                 verification_repairs=1).execution_command()
+            self.assertIn("--verification-turns 2", command)
+            self.assertIn("--verification-repairs 1", command)
+            for kwargs in ({"verification_turns": True}, {"verification_turns": 33},
+                           {"verification_repairs": 4}, {"verification_repairs": 1},
+                           {"verification_turns": 2},
+                           {"verification_turns": 2, "max_provider_calls": 8,
+                            "continuation_budgets": [{"max_total_tokens": 100}]}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                    self.agent(**kwargs)
+
     def test_execution_timeout_is_opt_in_and_bounded(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
             self.assertNotIn("--timeout", self.agent().execution_command())
