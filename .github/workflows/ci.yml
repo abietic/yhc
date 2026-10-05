@@ -236,7 +236,7 @@ jobs:
         env:
           # Keep wall-clock performance budgets isolated from package-level
           # CPU contention while preserving concurrency inside each package.
-          GOFLAGS: '-p=1'
+          TEST_PACKAGE_PARALLEL: '1'
         run: |
           started=$SECONDS
           make test

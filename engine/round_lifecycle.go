@@ -209,8 +209,7 @@ func runCanonicalRoundPreparation(
 		preCompactCancelled = input.params.modelCompactionGuard(modelName) != nil
 	}
 	if input.hookExecutor != nil {
-		tokenEstimate := compact.EstimateTokenCount(messagesForQuery) -
-			snipTokensFreed
+		tokenEstimate := compact.EstimateTokenCount(messagesForQuery)
 		preHookResult := input.hookExecutor.ExecutePreCompact(
 			ctx,
 			len(messagesForQuery),

@@ -62,7 +62,7 @@ func EditTool() ToolImpl {
 
 			// File-not-read guard: reject if file was never read via Read tool.
 			if !HasFileBeenRead(fullPath) {
-				return "File has not been read yet. Read it first before editing it.", nil
+				return "", fmt.Errorf("edit: file has not been fully read yet; use Read to read the complete file before editing it")
 			}
 
 			data, err := os.ReadFile(fullPath)

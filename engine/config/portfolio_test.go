@@ -104,11 +104,12 @@ func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T
 
 	profile.Reasoning.DefaultEffort = "low"
 	sources.User.ModelProfiles["primary"] = profile
-	if _, err := CompilePortfolio(PortfolioCompileInput{
-		Sources: sources,
-		Getenv:  func(string) string { return "" },
-	}); err != nil {
-		t.Fatalf("exact DeepSeek low effort was rejected: %v", err)
+	lowSnapshot, err := CompilePortfolio(PortfolioCompileInput{Sources: sources, Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lowSnapshot.Profiles["primary"].Reasoning.DefaultEffort != "low" {
+		t.Fatal("low default was not retained")
 	}
 	profile.Reasoning.DefaultEffort = "medium"
 	sources.User.ModelProfiles["primary"] = profile

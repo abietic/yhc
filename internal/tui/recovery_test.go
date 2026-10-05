@@ -113,7 +113,7 @@ func tuiRecoveryHistory() []*schema.Message {
 	for i := 0; i < 4; i++ {
 		history = append(history,
 			&schema.Message{Role: schema.User, Content: fmt.Sprintf("history user %d", i)},
-			&schema.Message{Role: schema.Assistant, Content: fmt.Sprintf("history assistant %d", i)},
+			&schema.Message{Role: schema.Assistant, Content: fmt.Sprintf("history assistant %d: %s", i, strings.Repeat("discardable investigation detail ", 100))},
 		)
 	}
 	return history

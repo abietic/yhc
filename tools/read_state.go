@@ -22,6 +22,11 @@ var readFileState = struct {
 func RecordFileRead(path string, isPartial bool) {
 	readFileState.Lock()
 	defer readFileState.Unlock()
+	// A narrower reread does not erase knowledge from a prior complete read,
+	// write, or edit. Keep partial-only files guarded until a complete read.
+	if previous := readFileState.m[path]; previous != nil && !previous.IsPartial {
+		isPartial = false
+	}
 	readFileState.m[path] = &ReadFileEntry{
 		Timestamp: time.Now().UnixMilli(),
 		IsPartial: isPartial,

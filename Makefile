@@ -34,6 +34,9 @@ GOVULNCHECK_VERSION := v1.6.0
 GITLEAKS_VERSION := v8.29.1
 CYCLONEDX_GOMOD_VERSION := v1.10.0
 LINT_NEW_BASE ?= origin/master
+# Bound process launch contention in the full suite without changing test
+# deadlines or concurrency within a package. CI uses a smaller runner budget.
+TEST_PACKAGE_PARALLEL ?= 2
 TEST_CONTRACT_TIMEOUT ?= 3m
 TEST_RACE_TIMEOUT ?= 5m
 TEST_PTY_TIMEOUT ?= 3m
@@ -223,7 +226,7 @@ clear:
 # ── Test ───────────────────────────────────────────────
 test: prepare-gotestsum
 	@mkdir -p $(BUILD_DIR)
-	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml -- -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
+	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml -- -p=$(TEST_PACKAGE_PARALLEL) -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
 	$(GO) -C third_party/acp-go-sdk test ./...
 	$(GO) tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
 	@echo "Coverage report: $(BUILD_DIR)/coverage.html"

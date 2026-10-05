@@ -65,8 +65,8 @@ func TestAutoCompactCompactsWhenAboveThreshold(t *testing.T) {
 		t.Fatalf("expected compact summary second, got %#v", post[1])
 		return
 	}
-	if post[2].Content != "latest question" {
-		t.Fatalf("expected preserved tail after summary, got %#v", post)
+	if post[2].Content != messages[0].Content || post[3].Content != "latest question" {
+		t.Fatalf("expected original request followed by preserved tail, got %#v", post)
 	}
 	if result.PostCompactTokenCount >= result.PreCompactTokenCount {
 		t.Fatalf("expected compaction to reduce estimated tokens, pre=%d post=%d", result.PreCompactTokenCount, result.PostCompactTokenCount)
@@ -110,7 +110,8 @@ func TestAutoCompactCircuitBreakerSkipsAfterFailures(t *testing.T) {
 func TestAutoCompactUsesModelContextWindow(t *testing.T) {
 	// With default window (200k), these messages (~600 tokens) won't trigger compaction.
 	messages := []*schema.Message{
-		{Role: schema.User, Content: strings.Repeat("word ", 500)},
+		{Role: schema.Assistant, Content: strings.Repeat("word ", 500)},
+		{Role: schema.User, Content: "request"},
 		{Role: schema.Assistant, Content: "reply"},
 	}
 	tracking := &CompactTracking{}

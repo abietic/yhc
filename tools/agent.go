@@ -222,6 +222,9 @@ func executeAgentTool(ctx context.Context, input string) (string, error) {
 
 		result, err := RunAgent(ctx, runner, opts)
 		if err != nil {
+			if result != nil && result.Result != "" {
+				return "", fmt.Errorf("agent: sub-agent execution failed: %w\nPartial output (execution did not complete):\n%s", err, result.Result)
+			}
 			return "", fmt.Errorf("agent: sub-agent execution failed: %w", err)
 		}
 

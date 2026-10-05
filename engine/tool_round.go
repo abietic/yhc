@@ -154,9 +154,13 @@ func runCanonicalToolRound(
 				toolCtx = tools.WithProgressFn(
 					toolCtx,
 					func(event tools.ToolProgressEvent) {
+						// Tool progress can contain external bytes or a split UTF-8 rune.
+						// Normalize this display text once for both outward projections;
+						// identities, assistant deltas and tool input retain their contracts.
+						content := strings.ToValidUTF8(event.Content, "�")
 						projection, projectionErr := buildCanonicalToolProgressProjection(
 							toolCall.ID,
-							event.Content,
+							content,
 						)
 						if projectionErr != nil {
 							projectionErrMu.Lock()
@@ -172,7 +176,7 @@ func runCanonicalToolRound(
 							ToolProgress: &ToolProgressEvent{
 								ToolName:  event.ToolName,
 								ToolUseID: event.ToolUseID,
-								Content:   event.Content,
+								Content:   content,
 								IsFinal:   event.IsFinal,
 							},
 						})

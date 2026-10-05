@@ -1320,7 +1320,11 @@ func canonicalPromptTooLongTrace(t *testing.T, kernel queryKernel) canonicalTrac
 	}}
 	trace := runCanonicalQuery(t, "prompt_too_long", QueryParams{
 		Messages: []*schema.Message{
-			{Role: schema.User, Content: strings.Repeat("old context ", 2000)},
+			{Role: schema.User, Content: "original requirements"},
+			{Role: schema.Assistant, Content: strings.Repeat("old investigation one ", 500)},
+			{Role: schema.Assistant, Content: strings.Repeat("old investigation two ", 500)},
+			{Role: schema.Assistant, Content: strings.Repeat("old investigation three ", 500)},
+			{Role: schema.Assistant, Content: strings.Repeat("old investigation four ", 500)},
 			{Role: schema.Assistant, Content: "older answer"},
 			{Role: schema.User, Content: "latest question"},
 		},
