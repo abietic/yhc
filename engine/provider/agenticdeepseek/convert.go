@@ -282,7 +282,7 @@ func convertSystemOrUserMessage(
 			if role != "user" {
 				return nil, conversionError(messageIndex, blockIndex, "image_role_unsupported")
 			}
-			if modelID != VisionModel {
+			if !supportsImageInput(modelID) {
 				return nil, conversionError(messageIndex, blockIndex, "image_model_unsupported")
 			}
 			part, err := convertImage(block.UserInputImage, block.Extra)
@@ -377,7 +377,7 @@ func convertFunctionToolResult(
 			}
 			output = append(output, contentPart{Type: "input_text", Text: block.Text.Text})
 		case schema.FunctionToolResultContentBlockTypeImage:
-			if modelID != VisionModel {
+			if !supportsImageInput(modelID) {
 				return inputItem{}, conversionError(messageIndex, blockIndex, "image_model_unsupported")
 			}
 			part, err := convertImage(block.Image, block.Extra)
@@ -393,6 +393,17 @@ func convertFunctionToolResult(
 		output = append(output, contentPart{Type: "input_text", Text: ""})
 	}
 	return inputItem{Type: "function_call_output", CallID: result.CallID, Output: output}, nil
+}
+
+// Exact compatibility names remain image-capable because the official API
+// serves them with current Flash. Never infer vision from a name substring.
+func supportsImageInput(modelID string) bool {
+	switch modelID {
+	case FlashModel, "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+		return true
+	default:
+		return false
+	}
 }
 
 func convertImage(image *schema.UserInputImage, extra map[string]any) (contentPart, error) {

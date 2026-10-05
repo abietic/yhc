@@ -249,6 +249,7 @@ func TestRoleResolverReasoningPrecedenceAndAdapterTable(t *testing.T) {
 		{ProviderAgenticDeepSeek, "high", true},
 		{ProviderAgenticDeepSeek, "max", true},
 		{ProviderAgenticDeepSeek, "low", true},
+		{ProviderAgenticDeepSeek, "medium", false},
 		{ProviderAgenticQwen, "high", false},
 	}
 	for _, test := range cases {

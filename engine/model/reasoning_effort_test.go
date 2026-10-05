@@ -9,6 +9,7 @@ func TestDeepSeekV4RequestCapabilitiesExposeOnlyExactEfforts(t *testing.T) {
 	t.Parallel()
 
 	for _, modelID := range []string{
+		"deepseek-flash",
 		"deepseek-v4-flash",
 		"deepseek-v4-pro",
 		"deepseek-v4-flash-vision-exp",
@@ -67,10 +68,14 @@ func TestResolveAdapterReasoningEffortSeparatesIntentFromWireDialect(t *testing.
 			},
 		},
 		{
-			name:     "deepseek low enables exact wire effort",
+			name:     "deepseek low is an exact wire effort",
 			provider: "agenticdeepseek",
 			effort:   "low",
-			want:     ResolvedReasoningEffort{CanonicalEffort: "low", WireEffort: "low", Dialect: ReasoningDialectDeepSeek},
+			want: ResolvedReasoningEffort{
+				CanonicalEffort: "low",
+				WireEffort:      "low",
+				Dialect:         ReasoningDialectDeepSeek,
+			},
 		},
 		{
 			name:     "deepseek compatibility aliases stay rejected",

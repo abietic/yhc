@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-09-29
+**Last verified:** 2026-10-05
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -265,17 +265,47 @@ monotonically ordered `response.completed` or `response.incomplete` terminal
 event. `response.failed`, malformed events, a truncated stream, or the legacy
 `data: [DONE]` marker fail the attempt.
 
-[`deepseek-v4-flash-vision-exp`](https://api-docs.deepseek.com/zh-cn/news/news260821/)
-is the exact image-capable DeepSeek model. Following the official
+[`deepseek-flash`](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+is the current text-and-image DeepSeek API model (V4.1 Flash), with a 1M
+context window and a 384K maximum output. The
+[Models API catalog](https://api-docs.deepseek.com/api/list-models/) gives the
+exact limits as 1,048,576 context tokens and 393,216 output tokens for both
+Flash and V4 Pro, rather than decimal approximations. The exact compatibility names
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` now serve current Flash;
+their metadata remains image-capable and carries a deprecation/successor notice.
+The default route, short `deepseek` alias, and curated picker use the current
+name. Explicit legacy API model identities are preserved for configured routes
+and Session resume. Rich-prompt admission reads detached exact catalog
+capabilities through `LookupExactCapabilities`, independently of picker
+membership; substring-matched custom models receive no built-in authority.
+Following the official
 [vision contract](https://api-docs.deepseek.com/zh-cn/guides/vision/), the
 adapter preserves mixed text/image order and accepts HTTP(S), supported base64
 data URLs, and DeepSeek Files API `file_id` references in user input; Responses
 tool outputs may also carry images. Image input fails locally for every other
-DeepSeek model instead of relying on the provider's placeholder or downgrade
+DeepSeek model, including V4 Pro, instead of relying on placeholder or downgrade
 behavior. Request size, per-image inline size, image count, URL scheme/length,
 MIME type, detail, and file-ID shape are bounded before dispatch. The classic
 YHC message bridge currently supplies URL and base64 images; direct Eino callers
-can use the adapter's typed file-ID block constructors.
+can use the adapter's typed file-ID block constructors. Flash and V4 Pro admit
+the exact Responses efforts `none`, `low`, `high`, and `max`; compatibility
+effort aliases that the provider would clamp remain rejected locally.
+
+Transport errors keep the original cause available through `Unwrap` for
+cancellation and failure classification. Their public message exposes only a
+finite `reason` category, never arbitrary transport text, hostnames, URLs, or
+credentials. This does not add transport retry or cross-provider failover.
+When the global default is a standard `*http.Transport`, default Responses and
+Files clients share a provider-owned clone with a bounded 30-second TLS
+handshake instead of the standard 10 seconds, preserving connection reuse
+across model roles and file operations. A caller's nonstandard global transport
+is reused unchanged. Request
+timeouts and context cancellation still bound the entire call; HTTP/2 and
+certificate verification remain unchanged. An explicit `HTTPClient` remains
+authoritative and is never modified.
+`TestDeepSeekFlashRichTurnSurvivesHistorySnip` exercises typed prompt admission,
+history snipping, route resolution, max effort, and the actual Responses wire
+while preserving the current image bytes and text/image order.
 
 The same package exposes a separate project-owned DeepSeek
 [`FilesClient`](../../../engine/provider/agenticdeepseek/files.go) for image

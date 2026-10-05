@@ -60,8 +60,8 @@ func TestGetCapabilities_KnownModel(t *testing.T) {
 		{
 			name:           "deepseek-v4-pro",
 			model:          "deepseek-v4-pro",
-			wantContext:    1000000,
-			wantMaxOutput:  384000,
+			wantContext:    1048576,
+			wantMaxOutput:  393216,
 			wantImages:     false,
 			wantThinking:   true,
 			wantFirstParty: false,
@@ -69,8 +69,8 @@ func TestGetCapabilities_KnownModel(t *testing.T) {
 		{
 			name:           "deepseek-v4-flash-vision-exp",
 			model:          "deepseek-v4-flash-vision-exp",
-			wantContext:    1000000,
-			wantMaxOutput:  384000,
+			wantContext:    1048576,
+			wantMaxOutput:  393216,
 			wantImages:     true,
 			wantThinking:   true,
 			wantFirstParty: false,
@@ -176,8 +176,8 @@ func TestGetCapabilities_PartialNameMatching(t *testing.T) {
 		{
 			name:        "provider-prefixed deepseek v4 pro",
 			input:       "agenticdeepseek:deepseek-v4-pro",
-			wantContext: 1000000,
-			wantOutput:  384000,
+			wantContext: 1048576,
+			wantOutput:  393216,
 		},
 		{
 			name:        "unknown non-anthropic model with explicit 1m suffix",
@@ -188,8 +188,8 @@ func TestGetCapabilities_PartialNameMatching(t *testing.T) {
 		{
 			name:        "deepseek alias",
 			input:       "deepseek",
-			wantContext: 1000000,
-			wantOutput:  384000,
+			wantContext: 1048576,
+			wantOutput:  393216,
 		},
 	}
 
@@ -213,8 +213,8 @@ func TestContextWindow(t *testing.T) {
 	if got := ContextWindow("gemini-2.0-flash"); got != 1000000 {
 		t.Errorf("ContextWindow(gemini-2.0-flash) = %d, want 1000000", got)
 	}
-	if got := ContextWindow("deepseek-v4-pro"); got != 1000000 {
-		t.Errorf("ContextWindow(deepseek-v4-pro) = %d, want 1000000", got)
+	if got := ContextWindow("deepseek-v4-pro"); got != 1048576 {
+		t.Errorf("ContextWindow(deepseek-v4-pro) = %d, want 1048576", got)
 	}
 	if got := ContextWindow("gpt-4"); got != 8192 {
 		t.Errorf("ContextWindow(gpt-4) = %d, want 8192", got)

@@ -83,7 +83,7 @@ func TestCompilePortfolioAdmitsExactDeepSeekV4ReasoningCapabilities(t *testing.T
 	account.Provider = "deepseek"
 	sources.User.ProviderAccounts["openai-main"] = account
 	profile := sources.User.ModelProfiles["primary"]
-	profile.APIModel = "deepseek-v4-flash"
+	profile.APIModel = "deepseek-flash"
 	profile.Reasoning.DefaultEffort = "max"
 	sources.User.ModelProfiles["primary"] = profile
 
