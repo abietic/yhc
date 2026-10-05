@@ -41,6 +41,14 @@ def read_result(path: Path) -> dict:
                         or not isinstance(result.get("status"), str)
                         or type(result.get("exit_code")) is not int):
                     raise ValueError("Invalid YHC terminal result")
+                if result["status"] == "completed" and (
+                        result["exit_code"] != 0 or result.get("error") is not None
+                        or result.get("terminal_reason") not in (
+                            None, "completed", "stop_hook_prevented", "hook_stopped")):
+                    # Reason remains optional for command-only/older v1 results;
+                    # an explicit cancellation, error, or unknown reason is not
+                    # allowed to masquerade as a successful closure.
+                    raise ValueError("Completed YHC result contradicts terminal fields")
             elif record.get("type") != "event" or not isinstance(record.get("event"), dict):
                 raise ValueError("Unknown YHC lifecycle record")
     if result is None:
@@ -92,7 +100,8 @@ class YHCAgent(BaseInstalledAgent):
                  max_turns: int = 0, ripgrep_path: str | None = None,
                  ca_bundle_path: str | None = None, max_provider_calls: int = 0,
                  max_total_tokens: int = 0, execution_timeout_sec: int = 0,
-                 continuation_budgets: list | str | None = None, **kwargs):
+                 continuation_budgets: list | str | None = None,
+                 verification_turns: int = 0, verification_repairs: int = 0, **kwargs):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         if not model_name or not model_name.strip():
             raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
@@ -110,6 +119,17 @@ class YHCAgent(BaseInstalledAgent):
         self.continuation_budgets = parse_continuation_budgets(continuation_budgets)
         if self.continuation_budgets and not (max_provider_calls or max_total_tokens):
             raise ValueError("continuation_budgets requires a finite initial usage limit")
+        for name, value, upper in (("verification_turns", verification_turns, 32),
+                                   ("verification_repairs", verification_repairs, 3)):
+            if type(value) is not int or not 0 <= value <= upper:
+                raise ValueError(f"{name} must be an integer in 0..{upper}")
+        if not verification_turns and verification_repairs:
+            raise ValueError("verification_repairs requires verification_turns")
+        if verification_turns and (not max_provider_calls or any(
+                not grant["max_provider_calls"] for grant in self.continuation_budgets)):
+            raise ValueError("verification requires a finite provider-call limit in every segment")
+        self.verification_turns = verification_turns
+        self.verification_repairs = verification_repairs
         self._segment_session = None
         self._segment_timeout = None
         self._segment_limits = None
@@ -177,6 +197,9 @@ class YHCAgent(BaseInstalledAgent):
         for name, value in limits.items():
             if value:
                 argv += ["--" + name.replace("_", "-"), str(value)]
+        if self.verification_turns:
+            argv += ["--verification-turns", str(self.verification_turns),
+                     "--verification-repairs", str(self.verification_repairs)]
         if self.provider:
             argv += ["--provider", self.provider]
         path_setup = f'export PATH={shlex.quote(self.remote_dir)}:"$PATH"; ' if self.ripgrep_path else ""

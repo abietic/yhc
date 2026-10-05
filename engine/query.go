@@ -65,6 +65,11 @@ func queryWithKernel(
 		}
 	}
 
+	params.Deps = deps
+	if err := prepareIndependentVerification(&params); err != nil {
+		return Terminal{Reason: TerminalModelError, Err: err}
+	}
+
 	queryCtx := ctx
 	if queryCtx == nil {
 		queryCtx = context.Background()
@@ -84,6 +89,9 @@ func queryWithKernel(
 		consumedCommandUUIDs: &consumedCommandUUIDs,
 		yield:                projectionEmitter.Emit,
 	})
+	if gate := params.independentVerification; gate != nil && terminal.Reason == TerminalCompleted && !gate.passed {
+		terminal = Terminal{Reason: TerminalModelError, Err: ErrIndependentVerification}
+	}
 	if projectionErr := projectionEmitter.Err(); projectionErr != nil {
 		terminal = Terminal{
 			Reason:    TerminalModelError,

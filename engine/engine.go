@@ -244,6 +244,7 @@ type QueryEngineConfig struct {
 	AgentGeneration           int64  // current durable child execution generation
 	goalBinding               *goalExecutionIdentity
 	goalUsageReporter         *goalUsageReporter
+	IndependentVerification   IndependentVerificationConfig
 	RunUsage                  *execution.RunUsage // optional invocation-wide collector shared with descendants
 	RunDeadline               time.Time           // optional invocation cutoff, including resumed children; never persisted
 	RuntimeState              *RuntimeStateStore
@@ -1817,6 +1818,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		toolUseSummary := e.toolUseSummaryModelCall(ctx)
 
 		params := QueryParams{
+			IndependentVerification: e.config.IndependentVerification,
 			RunUsage:                e.config.RunUsage,
 			Messages:                baseMessages,
 			SystemPrompt:            systemPrompt,

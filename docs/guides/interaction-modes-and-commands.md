@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-03
+**Last verified:** 2026-10-04
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -48,6 +48,37 @@ reasoning, provider responses, raw noncanonical tool events, or an interactive
 approval channel. Consumers should branch on `schema_version`, `type`, and
 `event.kind`, ignore unknown additive fields, and treat the single `result`
 record as process closure.
+
+### Opt into independent completion checks
+
+The completion checker is **off by default**. To enable it with a finite shared
+allowance and at most one solver repair cycle:
+
+```bash
+yhc exec "implement the requested behavior" --output-format jsonl \
+  --max-provider-calls 40 --max-total-tokens 1000000 \
+  --verification-turns 6 --verification-repairs 1
+```
+
+`--verification-turns` accepts 1..32; `--verification-repairs` accepts 0..3.
+A checker uses a fresh context containing original user requirements and checks
+the current workspace with the same admitted model and budget. A missing or
+failed check cannot be reported as completed. JSON/JSONL final results include bounded `verification` verdict/check-count
+summaries; usage routes distinguish checker calls. Detailed commands and
+outputs stay in the private session attachment, not the outward JSONL event
+union. Invalid reports and exhausted repairs yield
+`independent_verification_failed`; a shared budget stop retains
+`run_budget_exceeded`. The model still chooses and interprets checks, so this
+is not proof of benchmark reward or exhaustive correctness.
+
+Harbor accepts `verification_turns` and `verification_repairs` agent arguments;
+they also default to zero. Every initial/continuation segment must include a
+finite provider-call limit when checking is enabled. No additional grant is
+created. Normal session resume preserves solver workspace and history, but
+starts a new checker context; checker history is not resumable. The feature
+does not reserve budget for checks, and TUI/ACP settings do not enable it.
+See the [runtime contract](../architecture/runtime/query-engine.md#optional-independent-completion-verification)
+for tool, cancellation, and interrupted-Graph limitations.
 
 ### Invocation usage and optional limits
 
