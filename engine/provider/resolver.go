@@ -48,6 +48,7 @@ var providerPriority = []Provider{
 	ProviderAgenticOpenAI,
 	ProviderAgenticGemini,
 	ProviderAgenticDeepSeek,
+	ProviderAgenticGLM,
 	ProviderAgenticQwen,
 	ProviderAgenticArk,
 }
@@ -63,6 +64,10 @@ var providerAliases = map[string]Provider{
 	"agenticgemini":   ProviderAgenticGemini,
 	"deepseek":        ProviderAgenticDeepSeek,
 	"agenticdeepseek": ProviderAgenticDeepSeek,
+	"glm":             ProviderAgenticGLM,
+	"zhipu":           ProviderAgenticGLM,
+	"zai":             ProviderAgenticGLM,
+	"agenticglm":      ProviderAgenticGLM,
 	"qwen":            ProviderAgenticQwen,
 	"dashscope":       ProviderAgenticQwen,
 	"agenticqwen":     ProviderAgenticQwen,
@@ -77,7 +82,7 @@ func NormalizeProvider(value Provider) (Provider, error) {
 	if provider, ok := providerAliases[normalized]; ok {
 		return provider, nil
 	}
-	return "", fmt.Errorf("unknown provider %q (supported: anthropic/claude, openai, google/gemini, deepseek, qwen, ark)", value)
+	return "", fmt.Errorf("unknown provider %q (supported: anthropic/claude, openai, google/gemini, deepseek, glm/zhipu/zai, qwen, ark)", value)
 }
 
 // ResolveConfig resolves one provider configuration with deterministic priority:
@@ -274,6 +279,8 @@ func providerFromModel(modelName string) Provider {
 		return ProviderAgenticGemini
 	case enginemodel.ProviderDeepSeek:
 		return ProviderAgenticDeepSeek
+	case enginemodel.ProviderGLM:
+		return ProviderAgenticGLM
 	case enginemodel.ProviderQwen:
 		return ProviderAgenticQwen
 	case enginemodel.ProviderArk:
@@ -293,6 +300,8 @@ func providerID(provider Provider) enginemodel.ProviderID {
 		return enginemodel.ProviderGoogle
 	case ProviderAgenticDeepSeek:
 		return enginemodel.ProviderDeepSeek
+	case ProviderAgenticGLM:
+		return enginemodel.ProviderGLM
 	case ProviderAgenticQwen:
 		return enginemodel.ProviderQwen
 	case ProviderAgenticArk:

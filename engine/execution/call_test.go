@@ -578,6 +578,14 @@ func TestCallModelLowersProviderReasoningEffortThroughTypedOptions(t *testing.T)
 			field:        "ThinkingConfig",
 			want:         "HIGH",
 		},
+		{
+			name:         "glm max",
+			provider:     providerAgenticGLM,
+			effort:       "max",
+			typeFragment: "agenticglm.callOptions",
+			field:        "reasoningEffort",
+			want:         "max",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -660,6 +668,7 @@ func TestCallModelRejectsUnsupportedEffortBeforeProviderUse(t *testing.T) {
 		effort   string
 	}{
 		{provider: providerAgenticDeepSeek, effort: "medium"},
+		{provider: providerAgenticGLM, effort: "none"},
 		{provider: providerAgenticQwen, effort: "low"},
 		{provider: providerAgenticGemini, effort: "medium"},
 		{provider: providerAgenticArk, effort: "xhigh"},
@@ -775,6 +784,9 @@ func extractReasoningOptionValue(
 			field.Type(),
 			unsafe.Pointer(field.UnsafeAddr()),
 		).Elem()
+		if field.Kind() == reflect.String {
+			return field.String(), true
+		}
 		if field.IsNil() {
 			continue
 		}

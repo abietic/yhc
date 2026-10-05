@@ -1,0 +1,23 @@
+{
+  "name": "glm-standard-api-2026-10-05",
+  "currency": "CNY",
+  "as_of": "2026-10-05",
+  "source": "https://docs.bigmodel.cn/cn/guide/start/pricing",
+  "models": {
+    "glm-5.3": {
+      "uncached_input_per_million": "8",
+      "cached_input_per_million": "2",
+      "output_per_million": "28"
+    },
+    "glm-5.3-flash": {
+      "uncached_input_per_million": "0.8",
+      "cached_input_per_million": "0.23",
+      "output_per_million": "2.8"
+    },
+    "glm-5.3-flashx": {
+      "uncached_input_per_million": "2",
+      "cached_input_per_million": "0.57",
+      "output_per_million": "7"
+    }
+  }
+}

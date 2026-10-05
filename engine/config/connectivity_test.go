@@ -67,6 +67,30 @@ func TestCheckConnectivityUsesCustomBaseURLAndContext(t *testing.T) {
 	}
 }
 
+func TestCheckConnectivityUsesAuthenticatedGLMFilesList(t *testing.T) {
+	var path, query, authorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		query = r.URL.RawQuery
+		authorization = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	result := CheckConnectivity(model.ProviderGLM, "glm-key", &ConnectivityCheckOptions{
+		BaseURL: server.URL + "/api/paas/v4/",
+	})
+	if !result.IsOK() {
+		t.Fatalf("GLM connectivity = %#v", result)
+	}
+	if path != "/api/paas/v4/files" || query != "purpose=agent&limit=1" {
+		t.Fatalf("GLM preflight target = %q?%s", path, query)
+	}
+	if authorization != "Bearer glm-key" {
+		t.Fatalf("GLM authorization = %q", authorization)
+	}
+}
+
 func TestCheckConnectivity_AuthFailed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

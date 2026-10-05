@@ -37,6 +37,10 @@ func TestNormalizeProvider(t *testing.T) {
 		{"agenticgemini", ProviderAgenticGemini},
 		{"deepseek", ProviderAgenticDeepSeek},
 		{"agenticdeepseek", ProviderAgenticDeepSeek},
+		{"glm", ProviderAgenticGLM},
+		{"zhipu", ProviderAgenticGLM},
+		{"zai", ProviderAgenticGLM},
+		{"agenticglm", ProviderAgenticGLM},
 		{"qwen", ProviderAgenticQwen},
 		{"dashscope", ProviderAgenticQwen},
 		{"agenticqwen", ProviderAgenticQwen},
@@ -165,6 +169,29 @@ func TestResolveConfig(t *testing.T) {
 					Provider: "config",
 					Model:    "config",
 					APIKey:   "env:DEEPSEEK_API_KEY",
+					BaseURL:  "provider-default",
+				},
+			},
+		},
+		{
+			name: "GLM canonical ZAI key and defaults",
+			input: ResolveInput{
+				Explicit: Config{Provider: "glm"},
+				Getenv: getenvMap(map[string]string{
+					"ZAI_API_KEY": "glm-key",
+				}),
+			},
+			want: ResolvedConfig{
+				Config: Config{
+					Provider: ProviderAgenticGLM,
+					Model:    "glm-5.3-flash",
+					APIKey:   "glm-key",
+					BaseURL:  "https://open.bigmodel.cn/api/paas/v4",
+				},
+				Sources: ResolutionSources{
+					Provider: "explicit",
+					Model:    "provider-default",
+					APIKey:   "env:ZAI_API_KEY",
 					BaseURL:  "provider-default",
 				},
 			},
