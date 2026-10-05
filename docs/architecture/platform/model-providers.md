@@ -291,10 +291,33 @@ can use the adapter's typed file-ID block constructors. Flash and V4 Pro admit
 the exact Responses efforts `none`, `low`, `high`, and `max`; compatibility
 effort aliases that the provider would clamp remain rejected locally.
 
+The YHC DeepSeek factory enables attempt-local image transport preparation.
+For `auto` (or omitted) detail, a valid inline PNG between 256 KiB and 5 MiB
+may be replaced only in the wire request by a smaller delivery copy. The
+profile preserves aspect ratio, limits the long edge to 8192 and pixels to
+1,690,000, and uses JPEG quality 85 for opaque images or PNG for transparency.
+This follows the official vision guide's approximately 1300×1300 pre-model
+pixel budget instead of uploading full-resolution clipboard PNGs on every
+stateless round. A derivative must reduce bytes by at least half. Small,
+invalid, animated, already compact, and over-bound images remain unchanged;
+`high` and `original` preserve exact encoding. Canonical messages, durable
+media, input order, and explicit detail remain unchanged. There is no hidden
+Files upload, remote retention, or cross-request image cache. Direct SDK callers
+keep exact encoding unless they enable `Config.OptimizeImageTransport`.
+`TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy` covers the production
+factory and classic bridge through both Generate and Stream.
+
 Transport errors keep the original cause available through `Unwrap` for
 cancellation and failure classification. Their public message exposes only a
-finite `reason` category, never arbitrary transport text, hostnames, URLs, or
+finite `reason` and `phase` categories, never arbitrary transport text, hostnames, URLs, or
 credentials. This does not add transport retry or cross-provider failover.
+Responses transport phases record the furthest observed trace milestone: DNS,
+connect, TLS handshake, request upload, request sent, and response headers.
+`request_sent` means upload completed but no response header byte was observed;
+`response_headers` requires `GotFirstResponseByte`. These are progress markers,
+not proof of the network fault's location. Per-request atomic trace state
+composes with the caller's trace and cannot regress because of a late parallel
+connection event.
 When the global default is a standard `*http.Transport`, default Responses and
 Files clients share a provider-owned clone with a bounded 30-second TLS
 handshake instead of the standard 10 seconds, preserving connection reuse
@@ -646,6 +669,8 @@ the explicit startup preflight owns network/auth probing.
 | Portfolio compilation | [`CompilePortfolio`](../../../engine/config/portfolio.go) | Validates account/profile authority, metadata, roles, failover policy, and the immutable non-secret snapshot. |
 | Request capability policy | [`ResolveAdapterReasoningEffort`](../../../engine/model/reasoning_effort.go) | Separates canonical request intent, exact-model defaults, ordered adapter support, and provider wire dialects. |
 | Request lowering | [`buildProviderEffortOption`](../../../engine/execution/call.go) | Produces the final typed provider SDK option immediately before provider admission and dispatch. |
+| DeepSeek image delivery | [`optimizeResponseImages`](../../../engine/provider/agenticdeepseek/image_transport.go) | Prepares only automatic-detail wire copies while preserving canonical media, explicit detail, and ordered input. |
+| Bounded image codec | [`DeriveForTransport`](../../../engine/internal/mediaimage/transport.go) | Shares strict raster decoding and derivative construction with recovery, without changing Recovery Profile v1. |
 | Named credentials | [`ResolveNamedCredential`](../../../engine/auth/auth.go) | Resolves opaque user-owned credential references only when a selected route is constructed. |
 | Configured runtime | [`NewConfiguredRuntime`](../../../engine/provider/configured_runtime.go) | Joins source-aware configuration with the single shared CLI/ACP provider runtime. |
 | Client isolation | [`NewRouteIdentity`](../../../engine/provider/route_identity.go) | Defines the complete non-secret identity used to isolate and reuse provider clients. |
