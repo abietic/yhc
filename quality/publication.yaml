@@ -135,57 +135,57 @@ privacy:
       match_sha256: 6b92323c3a3f154c0a30cc602002b87ff41486d6cba571162e1bae16d7761997
       purpose: build-metadata
     - path: Makefile
-      line: 235
+      line: 238
       rule_id: high-entropy-token
       match_sha256: be5a952a6bf7286e30dbcf02b692f61f9eda1e48315ea565d19a20d171b5efa4
       purpose: build-metadata
     - path: Makefile
-      line: 236
+      line: 239
       rule_id: high-entropy-token
       match_sha256: '08bf8be3232a88279a98d478ee129562e25717876c4971f05c2f1cd5b1ce86cf'
       purpose: build-metadata
     - path: Makefile
-      line: 236
+      line: 239
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: Makefile
-      line: 236
+      line: 239
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: Makefile
-      line: 242
+      line: 245
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: Makefile
-      line: 242
+      line: 245
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: Makefile
-      line: 265
+      line: 268
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: Makefile
-      line: 265
+      line: 268
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: Makefile
-      line: 278
+      line: 281
       rule_id: high-entropy-token
       match_sha256: d2e744ec70d978e984e880c92094942b9d29bffedd0d0f76ec3544a516317b7d
       purpose: build-metadata
     - path: Makefile
-      line: 298
+      line: 301
       rule_id: credential-assignment
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 318
+      line: 321
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
@@ -940,7 +940,7 @@ privacy:
       match_sha256: 7bbafa91c679ef267047d715cbe1243e47055ea74aeacf3a1b1e76f7f4248fb3
       purpose: documentation-example
     - path: docs/contributing/testing-strategy.md
-      line: 97
+      line: 105
       rule_id: high-entropy-token
       match_sha256: 02d65186ce62ffc3f7cdf88384e8cdfc1b443a6a56fb0b2dc4c6f7718f976bad
       purpose: documentation-example
@@ -2495,27 +2495,27 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 313
+      line: 322
       rule_id: private-url
       match_sha256: dfb9fb4ea1abf2b1c1828cd4afb68b0da46952d8df972f795cf03b84ccc61c50
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 314
+      line: 323
       rule_id: private-url
       match_sha256: dfb9fb4ea1abf2b1c1828cd4afb68b0da46952d8df972f795cf03b84ccc61c50
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 433
+      line: 442
       rule_id: private-email
       match_sha256: 5621d8503bf646fdcb9c1c9be19718a44af4b7c27c2e13dd7d4ca53652866a51
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 433
+      line: 442
       rule_id: private-url
       match_sha256: 6507cd60169ae5a526ed9820bf2356bdfb9db12213bcb1b950ff4108b80f037c
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 477
+      line: 486
       rule_id: private-url
       match_sha256: 9f8dbedf71204345763fc16a5fa5451cb98c33b8f8ef832c5c1ca546bc26d3fb
       purpose: synthetic-security-fixture
@@ -3380,17 +3380,17 @@ privacy:
       match_sha256: 29bbb267190d6b1a331640bed30f1728c2f117246b238c6bc4f294ac48a3e832
       purpose: synthetic-security-fixture
     - path: "engine/provider/deepseek_reasoning_test.go"
-      line: 52
+      line: 53
       rule_id: credential-assignment
       match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
       purpose: synthetic-security-fixture
     - path: "engine/provider/deepseek_reasoning_test.go"
-      line: 115
+      line: 116
       rule_id: credential-assignment
       match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
       purpose: synthetic-security-fixture
     - path: "engine/provider/deepseek_reasoning_test.go"
-      line: 121
+      line: 122
       rule_id: private-url
       match_sha256: 1924eb3c78692e187749ce96a1d9c5712099074d868c7831bf530cd2469382fa
       purpose: synthetic-security-fixture
@@ -5088,6 +5088,91 @@ privacy:
       line: 152
       rule_id: private-url
       match_sha256: f1e2c7da767e6e0fc3eac0819fdd3a622967f18748c6f0a875c3a5b0a165031e
+      purpose: synthetic-security-fixture
+    - path: engine/query_normalize_rich_test.go
+      line: 13
+      rule_id: private-url
+      match_sha256: 14e5a36ad5fa01c2da3fca63af3f65f20aa33dd89bc1b051b79ba7f777fc9cd1
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_agent.py
+      line: 268
+      rule_id: private-key
+      match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 2
+      rule_id: high-entropy-token
+      match_sha256: 533429893995ce8d324733d132ea6436b8eec87cbb3e3914a0f32b96b57402a3
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 3
+      rule_id: high-entropy-token
+      match_sha256: a08c349399245fafec4b62848db0411852a44e382def8b7a18edce175c60dabe
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 4
+      rule_id: high-entropy-token
+      match_sha256: ef74be55c08377852f52a19e6b0632bbc13c85335c9b4b19d2e743c81fe56a1e
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 5
+      rule_id: high-entropy-token
+      match_sha256: 0b8c08c0fefba45af2f6ee3053c1c21034926e1643ddcb275e320e35eb8da385
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 6
+      rule_id: high-entropy-token
+      match_sha256: b95a356f48552056f5e8ee27ce6bae4d3f1ce90615b7ba4a0e59227dacd1410d
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 7
+      rule_id: high-entropy-token
+      match_sha256: da293e4c24b1a732a3174fdb07cb8e4105ee9cc53f200de8186b8874d502998e
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 8
+      rule_id: high-entropy-token
+      match_sha256: 8e11805f429db51e6c4fa7901e5b7896b12b48aaac35970cc9212f9f0b5d66f3
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 9
+      rule_id: high-entropy-token
+      match_sha256: 494f8b2ceb6d699d50e66833cf318c046d097356dddbff6f44a9b04d08d2440b
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 10
+      rule_id: high-entropy-token
+      match_sha256: f498452d673be3295fb3d17f99196c80a360e4b120976798a4563833cd9c22d8
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 11
+      rule_id: high-entropy-token
+      match_sha256: 544b4464a6e55a22e0da79c5007797d1275a8014162e63ec394a9eb546c3199a
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 12
+      rule_id: high-entropy-token
+      match_sha256: fdba94a3872d9c756c95dfdee347979163293887a88e81ea2c1081a2ad4757be
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 13
+      rule_id: high-entropy-token
+      match_sha256: 472f1ab9d8a4ea92a5176deb864a464ae8a53ef576e573ed5467b957305d9af5
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 14
+      rule_id: high-entropy-token
+      match_sha256: bab67512e339f6334a2626796e4282d3717dde5ee894e62a928e0ab8e15ee169
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 15
+      rule_id: high-entropy-token
+      match_sha256: 33e04d6ceb0442cb8f79a62214166d268936c88c18840bfa8848efec090f30b5
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/testdata/ca.pem
+      line: 16
+      rule_id: high-entropy-token
+      match_sha256: c3e7031ea7179b777c194e75ebc2a1dc44233b9e40b0bae611c7c1fc6f62f369
       purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml
