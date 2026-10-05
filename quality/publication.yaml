@@ -860,7 +860,7 @@ privacy:
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
     - path: "docs/architecture/platform/model-providers.md"
-      line: 644
+      line: 674
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
@@ -960,7 +960,7 @@ privacy:
       match_sha256: 5d7c4cb77a8e9606c8df07be152ac39ffdb1a4dbf4fd3372f20823341c9612f8
       purpose: documentation-example
     - path: docs/guides/configuration-and-providers.md
-      line: 198
+      line: 207
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
@@ -2495,27 +2495,27 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 313
+      line: 321
       rule_id: private-url
       match_sha256: dfb9fb4ea1abf2b1c1828cd4afb68b0da46952d8df972f795cf03b84ccc61c50
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 314
+      line: 322
       rule_id: private-url
       match_sha256: dfb9fb4ea1abf2b1c1828cd4afb68b0da46952d8df972f795cf03b84ccc61c50
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 433
+      line: 441
       rule_id: private-email
       match_sha256: 5621d8503bf646fdcb9c1c9be19718a44af4b7c27c2e13dd7d4ca53652866a51
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 433
+      line: 441
       rule_id: private-url
       match_sha256: 6507cd60169ae5a526ed9820bf2356bdfb9db12213bcb1b950ff4108b80f037c
       purpose: synthetic-security-fixture
     - path: engine/config/portfolio_test.go
-      line: 477
+      line: 485
       rule_id: private-url
       match_sha256: 9f8dbedf71204345763fc16a5fa5451cb98c33b8f8ef832c5c1ca546bc26d3fb
       purpose: synthetic-security-fixture
@@ -3380,17 +3380,17 @@ privacy:
       match_sha256: 29bbb267190d6b1a331640bed30f1728c2f117246b238c6bc4f294ac48a3e832
       purpose: synthetic-security-fixture
     - path: "engine/provider/deepseek_reasoning_test.go"
-      line: 52
+      line: 53
       rule_id: credential-assignment
       match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
       purpose: synthetic-security-fixture
     - path: "engine/provider/deepseek_reasoning_test.go"
-      line: 115
+      line: 116
       rule_id: credential-assignment
       match_sha256: 62af8704764faf8ea82fc61ce9c4c3908b6cb97d463a634e9e587d7c885db0ef
       purpose: synthetic-security-fixture
     - path: "engine/provider/deepseek_reasoning_test.go"
-      line: 121
+      line: 122
       rule_id: private-url
       match_sha256: 1924eb3c78692e187749ce96a1d9c5712099074d868c7831bf530cd2469382fa
       purpose: synthetic-security-fixture

@@ -18,9 +18,12 @@ import (
 const (
 	// DefaultBaseURL is the official DeepSeek API origin.
 	DefaultBaseURL = "https://api.deepseek.com"
-	// VisionModel is the only official DeepSeek Responses model that consumes
-	// image input rather than replacing it with placeholder text.
-	VisionModel = "deepseek-v4-flash-vision-exp"
+	// FlashModel is the current official text-and-image DeepSeek API model.
+	FlashModel = "deepseek-flash"
+	// VisionModel names the current image-capable Flash model.
+	//
+	// Deprecated: use FlashModel. Vision is no longer a separate model.
+	VisionModel = FlashModel
 
 	defaultMaxSSEEventBytes = 16 << 20
 	maxResponseBytes        = 32 << 20
@@ -253,7 +256,7 @@ type transportError struct {
 }
 
 func (e *transportError) Error() string {
-	return "agenticdeepseek: DeepSeek Responses transport failed"
+	return "agenticdeepseek: DeepSeek API transport failed: reason=" + transportReason(e.err)
 }
 
 func (e *transportError) Unwrap() error {

@@ -227,9 +227,8 @@ func buildDefaultEntries() []RegistryEntry {
 		{modelID: "gemini-2.0-flash", provider: "Google", displayName: "Gemini 2.0 Flash", toolCalls: true, streaming: true},
 
 		// DeepSeek
+		{modelID: "deepseek-flash", provider: "DeepSeek", displayName: "DeepSeek V4.1 Flash", toolCalls: true, streaming: true},
 		{modelID: "deepseek-v4-pro", provider: "DeepSeek", displayName: "DeepSeek V4 Pro", toolCalls: true, streaming: true},
-		{modelID: "deepseek-v4-flash", provider: "DeepSeek", displayName: "DeepSeek V4 Flash", toolCalls: true, streaming: true},
-		{modelID: "deepseek-v4-flash-vision-exp", provider: "DeepSeek", displayName: "DeepSeek V4 Flash Vision Exp", toolCalls: true, streaming: true},
 
 		// Qwen
 		{modelID: "qwen-max", provider: "Qwen", displayName: "Qwen Max", toolCalls: true, streaming: true},

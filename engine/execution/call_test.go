@@ -623,6 +623,7 @@ func TestCallModelLowersDeepSeekV4ReasoningToResponsesOption(t *testing.T) {
 		effort string
 	}{
 		{effort: "none"},
+		{effort: "low"},
 		{effort: "high"},
 		{effort: "max"},
 	} {
@@ -658,7 +659,7 @@ func TestCallModelRejectsUnsupportedEffortBeforeProviderUse(t *testing.T) {
 		provider string
 		effort   string
 	}{
-		{provider: providerAgenticDeepSeek, effort: "low"},
+		{provider: providerAgenticDeepSeek, effort: "medium"},
 		{provider: providerAgenticQwen, effort: "low"},
 		{provider: providerAgenticGemini, effort: "medium"},
 		{provider: providerAgenticArk, effort: "xhigh"},
