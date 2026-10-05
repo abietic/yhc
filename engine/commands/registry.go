@@ -291,6 +291,8 @@ type Command struct {
 	PhaseScope    PhaseScope
 	// Args defines the argument schema for validation.
 	Args []ArgDef
+	// Completion is advisory metadata, independent of execution validation.
+	Completion []ArgumentCompletion
 	// Kind, Entrypoints, Availability, Dependency, SideEffect, ResultKind and
 	// Compatibility form the canonical discovery and dispatch contract.
 	Kind               CommandKind
@@ -656,6 +658,7 @@ type Registry struct {
 	promptCommandCanonicals map[string]struct{}
 	promptGeneration        PromptCommandGenerationSnapshot
 	skillRegistry           *skills.SkillRegistry
+	completionDirectories   map[string]completionDirectoryCache
 }
 
 // NewRegistry creates a new empty command registry.
@@ -728,6 +731,7 @@ func (r *Registry) mustRegisterRemoved(removed *RemovedCommand) {
 }
 
 func (r *Registry) mustRegister(cmd *Command) {
+	cmd.Completion = builtinArgumentCompletion(cmd.Name)
 	if err := r.Register(cmd); err != nil {
 		panic("commands: invalid built-in registry: " + err.Error())
 	}
@@ -853,6 +857,7 @@ func cloneCommand(cmd *Command) *Command {
 	cloned := *cmd
 	cloned.Aliases = append([]string(nil), cmd.Aliases...)
 	cloned.Args = append([]ArgDef(nil), cmd.Args...)
+	cloned.Completion = cloneArgumentCompletions(cmd.Completion)
 	cloned.Compatibility.DeprecatedAliases = append(
 		[]string(nil),
 		cmd.Compatibility.DeprecatedAliases...,

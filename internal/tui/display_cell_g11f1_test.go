@@ -122,6 +122,15 @@ func TestG11F1ProductionGeometrySelectorsAreClassified(t *testing.T) {
 		{"command_completion.go", "App.commandArgumentGhostHint", "unicode/utf8.RuneCountInString"}: {
 			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
 		},
+		{"argument_completion.go", "App.updateArgumentCompletion", "unicode/utf8.RuneCountInString"}: {
+			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
+		},
+		{"argument_completion.go", "App.argumentGhost", "unicode/utf8.RuneCountInString"}: {
+			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
+		},
+		{"argument_completion.go", "App.acceptArgumentCompletion", "unicode/utf8.RuneCountInString"}: {
+			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 2,
+		},
 		{"app.go", "App.sendSlashCommand", "unicode/utf8.RuneCountInString"}: {
 			owner: "Vim editor cursor", removalCondition: "Vim adapter accepts native editor offsets", calls: 1,
 		},

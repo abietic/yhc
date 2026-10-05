@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-09-05
+**Last verified:** 2026-10-05
 
 **Ownership:** `internal/tui` owns one mutable active-draft projection;
 `QueryEngine` owns accepted prompt and queued-input truth.
@@ -71,9 +71,41 @@ Detailed editing behavior is owned by [`editing.md`](editing.md).
 Command-name completion reads the engine command registry and matches canonical
 names and aliases. Tab accepts the selected row, or the first row when none is
 selected, as `/name ` without submitting. The trailing space closes command-name
-completion. Only explicit path commands (`/add-dir` and `/export`) offer file
-candidates rooted at the active project; ordinary and skill arguments do not
-trigger directory scans.
+completion and opens the available argument candidates. The engine command
+registry owns advisory choices, positional/subcommand metadata, runtime model
+and effort values, MCP names, session IDs, and explicitly declared path sources.
+The TUI queries these asynchronously; directory and session requests debounce
+for 80 ms, and directory listings use a bounded one-second cache. Ordinary
+arguments and display-only hints never imply a filesystem source.
+
+[`argument_completion.go`](../../../../internal/tui/argument_completion.go)
+projects one candidate result into both the popup and inline ghost. Up/Down
+changes the selected preview without changing the draft. Tab accepts the
+selected or first candidate as one undoable edit; Right Arrow accepts a ghost
+only at the end of the draft. Enter accepts an explicitly selected row without
+execution; with no selected row it retains ordinary submission semantics.
+Completed arguments close their candidates. Escape dismisses candidates, the
+free-text suggestion prompt, or a pending request and preserves the draft until
+another edit; a second Escape retains ordinary draft cancellation. Replacement
+uses half-open rune ranges, preserves text outside the replaced argument, and
+quotes values for the existing strict dispatch parser. Non-prefix and
+middle-cursor replacements use the popup without an append-only ghost.
+
+Request identity includes engine, thread, draft revision, query, cursor, CWD,
+model selector, route generation, and request serial. History recall, modal
+input, structured elements, submission admission, edits, and engine/thread
+changes hide or cancel completion; mismatched late results are discarded.
+
+Ctrl+Space explicitly requests a free-text argument suggestion when metadata
+permits it. It never runs automatically while typing and never predicts closed
+choices such as model selectors or effort levels. The engine's
+[`GenerateCommandArgumentSuggestion`](../../../../engine/command_argument_suggestion.go)
+uses the shared tool-free auxiliary provider boundary with a four-second
+deadline, bounded command metadata and prefix, strict JSON output, prefix
+validation, and separate auxiliary usage accounting. It reads no prompt-recall
+history, skill body, files, or transcript. Plan mode, pending permission input,
+active turns, and unfinished Goals suppress the call. Accepting its candidate
+still edits only the draft.
 
 For an exact available command with no typed arguments, a focused single-line
 composer shows `Command.ArgumentHint()` in gray after the cursor. This display
@@ -87,6 +119,9 @@ The skill discovery and invocation contract belongs to
 [`Skills`](../../capabilities/skills.md). Regression evidence is in
 [`command_argument_hint_test.go`](../../../../internal/tui/command_argument_hint_test.go)
 and [`skill_commands_test.go`](../../../../internal/tui/skill_commands_test.go).
+Candidate and terminal regressions are in
+[`argument_completion_test.go`](../../../../internal/tui/argument_completion_test.go)
+and [`argument_completion_pty_unix_test.go`](../../../../internal/tui/argument_completion_pty_unix_test.go).
 
 ## Next-prompt ghost
 

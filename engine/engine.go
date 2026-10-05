@@ -2826,6 +2826,17 @@ type promptSuggestionCallSnapshot struct {
 	routeGeneration uint64
 }
 
+// CommandCompletionRevision fences ephemeral completions across route changes,
+// including changes that retain the same model selector.
+func (e *QueryEngine) CommandCompletionRevision() uint64 {
+	if e == nil {
+		return 0
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.promptRouteGeneration
+}
+
 func (e *QueryEngine) promptSuggestionProviderCall() (
 	promptSuggestionCallSnapshot,
 	error,
@@ -2882,6 +2893,12 @@ func (e *QueryEngine) generatePromptSuggestionProvider(
 	ctx context.Context,
 	conversation []string,
 ) (string, error) {
+	return e.generateAuxiliarySuggestionProvider(ctx, conversation, services.GetSuggestionPrompt(), "prompt_suggestion_generation")
+}
+
+// generateAuxiliarySuggestionProvider is the shared, tool-free auxiliary
+// request boundary for prompt and explicitly requested argument suggestions.
+func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, conversation []string, systemPrompt, querySource string) (string, error) {
 	if e == nil || ctx == nil {
 		return "", fmt.Errorf("prompt suggestion provider entry is unavailable")
 	}
@@ -2902,6 +2919,8 @@ func (e *QueryEngine) generatePromptSuggestionProvider(
 	if err != nil {
 		return "", err
 	}
+	call.options.SystemPrompt = systemPrompt
+	call.options.QuerySource = querySource
 	call.options.Messages = make([]*schema.Message, 0, len(conversation))
 	for _, entry := range conversation {
 		call.options.Messages = append(call.options.Messages, &schema.Message{

@@ -18,14 +18,6 @@ func splitSlashCommandInput(query string) (name, arguments string, hasSeparator 
 	return query, "", false
 }
 
-func lastCommandArgument(arguments string) string {
-	fields := strings.Fields(arguments)
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[len(fields)-1]
-}
-
 func commandNameMatches(cmd *commands.Command, query string) bool {
 	if cmd == nil || query == "" {
 		return cmd != nil && query == ""
@@ -59,21 +51,6 @@ func commandMatchRank(cmd *commands.Command, query string) int {
 	return 3
 }
 
-func commandSupportsFileHints(cmd *commands.Command) bool {
-	if cmd == nil {
-		return false
-	}
-	// These core commands explicitly accept workspace paths. Command metadata
-	// is intentionally not inferred here: skills and unrelated core command
-	// arguments must never cause filesystem reads merely while composing text.
-	switch cmd.Name {
-	case "add-dir", "export":
-		return true
-	default:
-		return false
-	}
-}
-
 func (a *App) commandForInput(name string) *commands.Command {
 	if a == nil || a.commandRegistry == nil || name == "" {
 		return nil
@@ -90,7 +67,16 @@ func (a *App) commandForInput(name string) *commands.Command {
 // exact supported command. It never changes the composer model or dispatches
 // input; the command registry remains its sole argument-schema owner.
 func (a *App) commandArgumentGhostHint() string {
-	if a == nil || a.focus != FocusEditor || a.inputMode != InputCommand ||
+	if a == nil {
+		return ""
+	}
+	if ghost := a.argumentGhost(); ghost != "" {
+		return ghost
+	}
+	if a.argumentCompletion.Dismissed != nil && *a.argumentCompletion.Dismissed == a.argumentCompletionKey() {
+		return ""
+	}
+	if a.focus != FocusEditor || a.inputMode != InputCommand ||
 		(a.state != StateWelcome && a.state != StateChat) ||
 		a.suppressingHistoryHints() || a.historySearch.Active ||
 		a.composerInputBlocked() || a.externalEditorActive ||
