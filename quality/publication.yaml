@@ -70,12 +70,12 @@ privacy:
       match_sha256: a039239e19285c8ca3a7f99ee554d336ee2f8041d62800c536249ba7e9fc8ea8
       purpose: synthetic-security-fixture
     - path: scripts/reference_sync/main_test.go
-      line: 371
+      line: 415
       rule_id: private-email
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: synthetic-security-fixture
     - path: scripts/reference_sync/main_test.go
-      line: 372
+      line: 416
       rule_id: private-email
       match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
       purpose: synthetic-security-fixture
