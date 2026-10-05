@@ -960,7 +960,7 @@ privacy:
       match_sha256: 5d7c4cb77a8e9606c8df07be152ac39ffdb1a4dbf4fd3372f20823341c9612f8
       purpose: documentation-example
     - path: docs/guides/configuration-and-providers.md
-      line: 207
+      line: 208
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
@@ -3690,37 +3690,37 @@ privacy:
       match_sha256: b39f6f8b78bdc27e6c1e6956e95fdde2c90f5233a1565ad1964d537c9059c278
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 59
+      line: 60
       rule_id: credential-assignment
       match_sha256: eee056029e6790b9a9e7e52a101e282fca0c66877a8bdf1c63ac7c4bec7dfbd1
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 66
+      line: 67
       rule_id: private-url
       match_sha256: 56bd65bfae7cbe7737bd94aaa6eb3f8b8b4c05300dc88a5a09a669662571d418
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 96
+      line: 97
       rule_id: private-url
       match_sha256: 56bd65bfae7cbe7737bd94aaa6eb3f8b8b4c05300dc88a5a09a669662571d418
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 196
+      line: 197
       rule_id: credential-assignment
       match_sha256: '08e43bba190e73d6bca885a791123ff04a1a58aaf566dc77038c02c60b349358'
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 197
+      line: 198
       rule_id: credential-assignment
       match_sha256: 6d68104863c902a968ee82e1ec27b4a02348751bc14d2a2e180a88b5ff5a465f
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 197
+      line: 198
       rule_id: private-email
       match_sha256: bec76b77549a628f6e6b8a8d555c40fb0643347f9236bb29d81b93416208834f
       purpose: synthetic-security-fixture
     - path: engine/provider/reviewer_test.go
-      line: 197
+      line: 198
       rule_id: private-url
       match_sha256: f26101c87ed3149696a11f478fbb2557e2e09ee4cc79223441392e6cc1199617
       purpose: synthetic-security-fixture
@@ -4285,7 +4285,7 @@ privacy:
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: synthetic-security-fixture
     - path: scripts/e2e/harness_test.go
-      line: 1126
+      line: 1127
       rule_id: private-email
       match_sha256: 5b03e9e76d0e381bfdfcdbfe4fc288c159291aaaed13e6a00b6b03b59ccf2386
       purpose: synthetic-security-fixture
@@ -5095,7 +5095,7 @@ privacy:
       match_sha256: 14e5a36ad5fa01c2da3fca63af3f65f20aa33dd89bc1b051b79ba7f777fc9cd1
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_agent.py
-      line: 268
+      line: 343
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
       purpose: synthetic-security-fixture

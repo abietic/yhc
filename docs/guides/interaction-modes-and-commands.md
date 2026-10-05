@@ -126,6 +126,15 @@ can survive in the final cancelled result; an interrupted call without usage
 remains unknown. Hard kills or failed shutdown can still leave an incomplete
 stream, so this is not a durable crash-recovery ledger.
 
+For local Docker running an amd64 task through Rosetta on an arm64 host,
+`/proc/PID/exe` can identify the emulator rather than the uploaded YHC binary.
+The identity guard then refuses to signal that PID. Keep this guard and set an
+explicit internal deadline at least 60 seconds before the outer deadline; for
+an outer 1200-second limit, use `--ak execution_timeout_sec=1140`. An offline
+streaming check confirms that the internal deadline preserves completed usage
+and marks the unfinished response unknown. It does not establish an actual
+bill or make incomplete usage safe for automatic budget continuation.
+
 The collector is invocation-local and distinct from durable Goal accounting.
 Embedded consumers can explicitly share `QueryEngineConfig.RunUsage`;
 existing Goal accounting remains authoritative and fails closed independently.
