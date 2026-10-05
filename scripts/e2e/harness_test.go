@@ -82,12 +82,13 @@ type providerLane struct {
 	Steps       []providerStep `json:"steps"`
 }
 type envelope struct {
-	SchemaVersion  int    `json:"schema_version"`
-	Status         string `json:"status"`
-	Output         string `json:"output,omitempty"`
-	SessionID      string `json:"session_id"`
-	TerminalReason string `json:"terminal_reason"`
-	ExitCode       int    `json:"exit_code"`
+	Usage          json.RawMessage `json:"usage,omitempty"`
+	SchemaVersion  int             `json:"schema_version"`
+	Status         string          `json:"status"`
+	Output         string          `json:"output,omitempty"`
+	SessionID      string          `json:"session_id"`
+	TerminalReason string          `json:"terminal_reason"`
+	ExitCode       int             `json:"exit_code"`
 }
 
 func TestYHCModuleCommandAndArtifactIdentity(t *testing.T) {

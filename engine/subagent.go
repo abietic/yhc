@@ -14,6 +14,7 @@ import (
 	"github.com/abietic/yhc/engine/compact"
 	"github.com/abietic/yhc/engine/containment"
 	promptctx "github.com/abietic/yhc/engine/context"
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/internal/workboard"
 	"github.com/abietic/yhc/engine/memdir"
@@ -82,6 +83,8 @@ type SubAgentExecutor struct {
 	ExecutionBindings *containment.Bindings
 	SkillRegistry     *skills.SkillRegistry
 	WebFetchModel     model.BaseChatModel
+	RunUsage          *execution.RunUsage
+	RunDeadline       time.Time
 	WorktreeService   *worktree.Service
 
 	agentDefinitionsMu       sync.RWMutex
@@ -1055,6 +1058,8 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 		AgentGeneration:             opts.Generation,
 		goalBinding:                 cloneGoalExecutionIdentity(goalBinding),
 		goalUsageReporter:           goalUsageReporter,
+		RunUsage:                    e.RunUsage,
+		RunDeadline:                 e.RunDeadline,
 		RuntimeState:                e.RuntimeState,
 		CustomSystemPrompt:          systemPrompt,
 		MaxTurns:                    maxTurns,

@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-08-26
+**Last verified:** 2026-09-29
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -48,6 +48,99 @@ reasoning, provider responses, raw noncanonical tool events, or an interactive
 approval channel. Consumers should branch on `schema_version`, `type`, and
 `event.kind`, ignore unknown additive fields, and treat the single `result`
 record as process closure.
+
+### Invocation usage and optional limits
+
+After engine execution, ordinary `exec` reports current-invocation usage: JSON and the final
+JSONL `result` contain `usage`; text mode prints a numeric summary on stderr.
+Resuming a session starts a fresh counter. TUI, plain mode, ACP, and `goal run`
+do not automatically enable this invocation collector.
+
+Both budget controls are **off by default** (`0`). Enable either or both:
+
+```bash
+yhc exec "inspect the failing tests" --output-format json \
+  --max-provider-calls 30 --max-total-tokens 200000
+```
+
+`--max-provider-calls` limits admitted YHC provider calls across the main loop,
+children, compaction, retries/fallbacks, WebFetch AI and engine-owned auxiliary
+calls. Reservations proven not dispatched are refunded. This counts YHC client
+entries, not HTTP attempts hidden inside a third-party SDK, external hook/MCP
+traffic, or a currency amount.
+
+`--max-total-tokens` checks accumulated provider-reported tokens before admitting
+the next call. The last response and concurrent in-flight calls can exceed the
+threshold; it is not a strict token reservation or spending cap. Missing,
+invalid, or ambiguous usage prevents further calls only when this token control
+is enabled. With both controls off, usage collection preserves existing retry
+and fallback behavior. Opaque custom permission reviewers are skipped while
+limits apply; statistics-only runs mark their coverage incomplete.
+
+Before each main/child model round, explicitly enabled invocation limits are
+shown as a live budget snapshot at the request tail. This reminder is not saved
+as conversation history and does not rewrite the stable system prompt. Counts
+are shared with children and auxiliary calls; concurrent work can consume them
+after the snapshot. The admission checks remain authoritative.
+
+`yhc exec --timeout 29m` optionally cancels the query after that duration,
+including its active child/tool/provider contexts. The timer starts after provider configuration,
+before engine initialization, resume and query submission; zero (the default)
+disables it.
+An earlier caller deadline still wins. The explicit invocation deadline survives
+child foreground/background detachment and child continuation with fresh
+contexts; ordinary parent cancellation leases
+retain their existing behavior. With an invocation collector, enforced
+context deadlines are also included in the model's reminder. The reminder asks
+for targeted verification and honest reporting of unfinished work; it cannot
+guarantee the model will finish early. Cancellation uses the existing exit
+`130` path and settles available usage; shutdown/logging can take additional
+time, so leave a margin before an external container kill deadline.
+
+A rejected admission returns exit `1` with `error.code=run_budget_exceeded`;
+incomplete usage under a token limit returns `run_usage_unknown`. Cancellation
+retains exit `130`. Reaching a threshold in a successful final answer does not
+itself turn success into failure; the next admission is the enforcement point.
+
+`usage` contains input/output/total tokens, cached input, reasoning output,
+known/unknown/in-flight calls, denied calls, and breakdowns by model, source,
+role, and effort. `total_tokens` is at least input plus output. Cached input and
+reasoning output are subsets, never added again. Missing usage is **unknown**,
+not zero: totals are partial when `complete=false`. Cache and reasoning details
+are those supplied by the adapter; an omitted detail cannot prove that no
+caching or thinking occurred. `provider_duration_ms` sums call lifetimes and
+may exceed invocation `elapsed_ms` when calls overlap. No price is inferred.
+A forced process kill may prevent the final summary from being written.
+
+The [Harbor adapter](../../scripts/terminal_bench/yhc_agent.py) accepts optional
+agent arguments `--ak max_provider_calls=30 --ak max_total_tokens=200000`.
+An optional `--ak execution_timeout_sec=1740` passes `--timeout 1740s` to YHC;
+choose a duration below Harbor's outer timeout to leave shutdown time. All three
+controls default to disabled. Complete usage fills Harbor input,
+output and cache counters; partial usage stays in metadata so it cannot be
+mistaken for a complete total. Cost remains unset.
+On Harbor timeout/cancellation, the adapter checks the invocation PID and Linux
+executable identity, sends an interrupt, and allows a bounded shutdown before
+Harbor collects logs. The original cancellation still propagates. Settled usage
+can survive in the final cancelled result; an interrupted call without usage
+remains unknown. Hard kills or failed shutdown can still leave an incomplete
+stream, so this is not a durable crash-recovery ledger.
+
+For local Docker running an amd64 task through Rosetta on an arm64 host,
+`/proc/PID/exe` can identify the emulator rather than the uploaded YHC binary.
+The identity guard then refuses to signal that PID. Keep this guard and set an
+explicit internal deadline at least 60 seconds before the outer deadline; for
+an outer 1200-second limit, use `--ak execution_timeout_sec=1140`. An offline
+streaming check confirms that the internal deadline preserves completed usage
+and marks the unfinished response unknown. It does not establish an actual
+bill or make incomplete usage safe for automatic budget continuation.
+
+The collector is invocation-local and distinct from durable Goal accounting.
+Embedded consumers can explicitly share `QueryEngineConfig.RunUsage`;
+existing Goal accounting remains authoritative and fails closed independently.
+See [`RunUsage`](../../engine/execution/run_usage.go),
+[provider admission](../../engine/execution/provider_usage.go), and
+[headless composition](../../cmd/yhc/cmd/headless.go).
 
 Runtime flags are command-local. Put them after the selected subcommand, for
 example `yhc exec --provider openai "prompt"` or

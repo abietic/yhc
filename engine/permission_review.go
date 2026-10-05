@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/permission"
 )
 
@@ -142,6 +143,12 @@ func (e *QueryEngine) launchPermissionReview(
 		action.AgentID != "" ||
 		projectGraphHITLProbeFromContext(ctx) != nil {
 		return nil
+	}
+	if e.config.RunUsage != nil && e.config.RunUsage.LimitsEnabled() {
+		aware, ok := e.config.ApprovalReviewer.(interface{ AccountsProviderUsage() bool })
+		if !ok || !aware.AccountsProviderUsage() {
+			return nil
+		}
 	}
 	toolUseID := strings.TrimSpace(currentToolUseID(ctx))
 	if toolUseID == "" {
@@ -332,6 +339,13 @@ func (e *QueryEngine) runPermissionReview(
 			Model:        pending.route.Model,
 			DataBoundary: pending.route.DataBoundary,
 		})
+	}
+	if usage := e.config.RunUsage; usage != nil {
+		aware, ok := e.config.ApprovalReviewer.(interface{ AccountsProviderUsage() bool })
+		if !ok || !aware.AccountsProviderUsage() {
+			usage.RecordUntrackedCall()
+		}
+		reviewCtx = execution.WithProviderUsageScope(reviewCtx, usage, true)
 	}
 	result, reviewErr := e.config.ApprovalReviewer.Review(
 		reviewCtx,

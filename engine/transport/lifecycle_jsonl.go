@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine"
+	"github.com/abietic/yhc/engine/execution"
 )
 
 // LifecycleSchemaVersion is the stable schema version for the headless JSONL
@@ -114,6 +115,7 @@ type LifecycleInterruption struct {
 // event channel drains and the headless process classifies its exit status.
 // Pre-turn failures carry only identity that exists; pre-engine failures carry none.
 type LifecycleResult struct {
+	Usage *execution.RunUsageSnapshot `json:"usage,omitempty"`
 	LifecycleIdentity
 
 	Status         string          `json:"status"`

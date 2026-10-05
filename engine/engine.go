@@ -244,6 +244,8 @@ type QueryEngineConfig struct {
 	AgentGeneration           int64  // current durable child execution generation
 	goalBinding               *goalExecutionIdentity
 	goalUsageReporter         *goalUsageReporter
+	RunUsage                  *execution.RunUsage // optional invocation-wide collector shared with descendants
+	RunDeadline               time.Time           // optional invocation cutoff, including resumed children; never persisted
 	RuntimeState              *RuntimeStateStore
 	AdditionalDirs            []string // extra working directories added via /add-dir
 	PluginDirs                []string // explicit plugin roots; defaults to user and project plugin directories
@@ -760,6 +762,8 @@ func newQueryEngineWithOptions(
 		subExec.WebFetchModel = eng.webFetchModel
 		subExec.goalBindingSnapshot = eng.currentGoalExecutionIdentity
 		subExec.goalUsageReporterFactory = eng.bindGoalUsageReporterForChild
+		subExec.RunUsage = config.RunUsage
+		subExec.RunDeadline = config.RunDeadline
 		if strings.TrimSpace(config.AgentID) == "" {
 			subExec.beginGoalChildWait = eng.goalService.beginForegroundChildWait
 		}
@@ -1371,6 +1375,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		}
 	}
 
+	ctx, cancelRunDeadline := execution.WithRunDeadline(ctx, e.config.RunDeadline)
 	e.mu.Lock()
 	baseMessages := append([]*schema.Message(nil), e.messages...)
 	turnAbortController := newAbortControllerFromContext(ctx)
@@ -1393,6 +1398,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		if admittedPrompt != nil {
 			defer e.releaseAdmittedPrompt(admittedPrompt)
 		}
+		defer cancelRunDeadline()
 		defer e.finishRuntimeInputTurn(
 			turnAbortController,
 			inputCoordinator,
@@ -1811,6 +1817,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		toolUseSummary := e.toolUseSummaryModelCall(ctx)
 
 		params := QueryParams{
+			RunUsage:                e.config.RunUsage,
 			Messages:                baseMessages,
 			SystemPrompt:            systemPrompt,
 			SessionID:               e.config.SessionID,
@@ -1895,7 +1902,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 				ReportFileStateSnapshotFailure: func(error) {
 					fileStateSnapshotRepairRequired.Store(true)
 				},
-				ProviderUsage: e.currentGoalProviderUsageAdmitter(),
+				ProviderUsage: e.currentProviderUsageAdmitter(),
 			},
 		}
 		params.modelDispatchGuard = e.checkModelDispatch
@@ -2530,7 +2537,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 	}
 	ctx = execution.WithProviderUsageScope(
 		ctx,
-		e.currentGoalProviderUsageAdmitter(),
+		e.currentProviderUsageAdmitter(),
 		e.goalProviderUsageRequired(),
 	)
 	ctx = tools.WithMediaSupport(ctx, modelcaps.GetCapabilities(e.config.Model).SupportsImages)
@@ -2937,6 +2944,10 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 			"prompt suggestion is disabled while permission input is pending",
 		)
 	}
+	call.options.ProviderUsage = e.currentProviderUsageAdmitter()
+	if call.options.ProviderUsage != nil {
+		call.options.UsageLogicalRoundID = call.options.ProviderUsage.NewLogicalRoundID()
+	}
 	response, err := execution.SideQuery(ctx, call.chatModel, call.options)
 	if err != nil || response == nil {
 		return "", err
@@ -3017,7 +3028,10 @@ func (e *QueryEngine) callBackgroundProvider(
 			"long-session provider entry is disabled while an unfinished Goal requires exact provider accounting",
 		)
 	}
-	return chatModel.Generate(ctx, messages, opts...)
+	e.mu.Lock()
+	modelName := e.config.Model
+	e.mu.Unlock()
+	return execution.GenerateWithUsage(ctx, chatModel, messages, e.currentProviderUsageAdmitter(), execution.ProviderUsageDescriptor{Model: modelName, QuerySource: "long_session_background"}, opts...)
 }
 
 func (e *QueryEngine) rebindLongSessionServices() {
@@ -5327,6 +5341,8 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 		e.subagentExecutor.ParentFileState = e.fileStateCache
 		e.subagentExecutor.goalBindingSnapshot = e.currentGoalExecutionIdentity
 		e.subagentExecutor.goalUsageReporterFactory = e.bindGoalUsageReporterForChild
+		e.subagentExecutor.RunUsage = e.config.RunUsage
+		e.subagentExecutor.RunDeadline = e.config.RunDeadline
 		if strings.TrimSpace(e.config.AgentID) == "" {
 			e.subagentExecutor.beginGoalChildWait = e.goalService.beginForegroundChildWait
 		} else {

@@ -423,7 +423,7 @@ git diff --check
 
 | Boundary | Source |
 |---|---|
-| model-visible projection | [`QueryEngine.modelVisibleTools`](../../../../engine/engine.go#L1377) |
+| model-visible projection | [`QueryEngine.modelVisibleTools`](../../../../engine/engine.go#L3208) |
 | central Plan capability decision | [`evaluatePlanToolPolicy`](../../../../engine/plan_tool_policy.go#L47) |
 | canonical tool admission and transition | [`executeToolCall`](../../../../engine/tool_execution.go#L30) |
 | exact plan-file guard | [`isExactPlanFileMutation`](../../../../engine/plan_tool_policy.go#L171) |

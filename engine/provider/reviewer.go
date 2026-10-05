@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/permission"
 )
 
@@ -92,17 +93,21 @@ func NewApprovalReviewer(
 	}
 	return &ApprovalReviewerRuntime{
 		Reviewer: &approvalReviewer{
-			client:  client,
-			timeout: opts.Timeout,
+			client:    client,
+			timeout:   opts.Timeout,
+			modelName: resolved.Model,
 		},
 		Route: route,
 	}, nil
 }
 
 type approvalReviewer struct {
-	client  model.BaseChatModel
-	timeout time.Duration
+	client    model.BaseChatModel
+	timeout   time.Duration
+	modelName string
 }
+
+func (*approvalReviewer) AccountsProviderUsage() bool { return true }
 
 func (r *approvalReviewer) Review(
 	ctx context.Context,
@@ -128,12 +133,15 @@ func (r *approvalReviewer) Review(
 			err,
 		)
 	}
-	response, err := r.client.Generate(
+	admitter, _ := execution.ProviderUsageScopeFromContext(bounded)
+	response, err := execution.GenerateWithUsage(
 		bounded,
+		r.client,
 		[]*schema.Message{
 			schema.SystemMessage(permissionReviewerSystemPrompt),
 			schema.UserMessage(string(encoded)),
 		},
+		admitter, execution.ProviderUsageDescriptor{Model: r.modelName, QuerySource: "approval_review"},
 		model.WithMaxTokens(256),
 	)
 	if err != nil {
