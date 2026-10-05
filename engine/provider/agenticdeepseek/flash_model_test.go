@@ -29,7 +29,7 @@ func TestCurrentAndLegacyFlashModelsPreserveMixedImageInput(t *testing.T) {
 				_, _ = io.WriteString(w, `{"id":"flash-fixture","object":"response","status":"completed","output":[]}`)
 			}))
 			defer server.Close()
-			m, err := New(t.Context(), &Config{APIKey: "fixture-key", BaseURL: server.URL, Model: modelID, ReasoningEffort: ReasoningEffortMax})
+			m, err := New(t.Context(), &Config{APIKey: "sentinel-provider-credential", BaseURL: server.URL, Model: modelID, ReasoningEffort: ReasoningEffortMax})
 			if err != nil {
 				t.Fatal(err)
 			}

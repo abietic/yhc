@@ -71,7 +71,7 @@ func TestDeepSeekFlashRichTurnSurvivesHistorySnip(t *testing.T) {
 					Sources: &engineconfig.ConfigSources{User: &engineconfig.Config{}, Project: &engineconfig.Config{}},
 					Resolution: provider.ResolveInput{Explicit: provider.Config{
 						Provider: provider.ProviderAgenticDeepSeek, Model: modelID,
-						APIKey: "fixture-key", BaseURL: server.URL,
+						APIKey: "sentinel-provider-credential", BaseURL: server.URL,
 					}, Getenv: func(string) string { return "" }},
 				})
 				if err != nil {

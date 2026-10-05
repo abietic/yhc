@@ -632,13 +632,14 @@ var modelTable = map[string]*ModelCapabilities{
 	// DeepSeek
 	// =========================================================================
 	// Official API model catalog and pricing, checked 2026-10-05:
+	// https://api-docs.deepseek.com/api/list-models/
 	// https://api-docs.deepseek.com/quick_start/pricing/
 	// Flash compatibility names now serve V4.1 Flash. Use peak USD prices for
 	// conservative local budget estimates; provider usage remains authoritative.
 	"deepseek-flash": {
 		Name:                 "deepseek-flash",
-		ContextWindow:        1000000,
-		MaxOutputTokens:      384000,
+		ContextWindow:        1048576,
+		MaxOutputTokens:      393216,
 		SupportsImages:       true,
 		SupportsPDFs:         false,
 		SupportsThinking:     true,
@@ -651,8 +652,8 @@ var modelTable = map[string]*ModelCapabilities{
 	},
 	"deepseek-v4-pro": {
 		Name:                 "deepseek-v4-pro",
-		ContextWindow:        1000000,
-		MaxOutputTokens:      384000,
+		ContextWindow:        1048576,
+		MaxOutputTokens:      393216,
 		SupportsImages:       false,
 		SupportsPDFs:         false,
 		SupportsThinking:     true,
@@ -660,13 +661,13 @@ var modelTable = map[string]*ModelCapabilities{
 		SupportsStreaming:    true,
 		SupportsSystemPrompt: true,
 		IsFirstParty:         false,
-		CostPerInputToken:    0.000000435, // $0.435/Mtok cache miss
-		CostPerOutputToken:   0.00000087,  // $0.87/Mtok
+		CostPerInputToken:    0.00000132, // $1.32/Mtok cache miss, peak
+		CostPerOutputToken:   0.00000396, // $3.96/Mtok, peak
 	},
 	"deepseek-v4-flash": {
 		Name:                 "deepseek-v4-flash",
-		ContextWindow:        1000000,
-		MaxOutputTokens:      384000,
+		ContextWindow:        1048576,
+		MaxOutputTokens:      393216,
 		SupportsImages:       true,
 		SupportsPDFs:         false,
 		SupportsThinking:     true,
@@ -681,8 +682,8 @@ var modelTable = map[string]*ModelCapabilities{
 	},
 	"deepseek-v4-flash-vision-exp": {
 		Name:                 "deepseek-v4-flash-vision-exp",
-		ContextWindow:        1000000,
-		MaxOutputTokens:      384000,
+		ContextWindow:        1048576,
+		MaxOutputTokens:      393216,
 		SupportsImages:       true,
 		SupportsPDFs:         false,
 		SupportsThinking:     true,

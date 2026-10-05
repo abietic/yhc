@@ -267,7 +267,10 @@ event. `response.failed`, malformed events, a truncated stream, or the legacy
 
 [`deepseek-flash`](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
 is the current text-and-image DeepSeek API model (V4.1 Flash), with a 1M
-context window and a 384K maximum output. The exact compatibility names
+context window and a 384K maximum output. The
+[Models API catalog](https://api-docs.deepseek.com/api/list-models/) gives the
+exact limits as 1,048,576 context tokens and 393,216 output tokens for both
+Flash and V4 Pro, rather than decimal approximations. The exact compatibility names
 `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` now serve current Flash;
 their metadata remains image-capable and carries a deprecation/successor notice.
 The default route, short `deepseek` alias, and curated picker use the current

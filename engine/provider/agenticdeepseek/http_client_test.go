@@ -17,11 +17,11 @@ func TestDefaultHTTPClientKeepsBoundedTLSBudgetAndGlobalTransport(t *testing.T) 
 		t.Fatal("unexpected standard default transport")
 	}
 	originalTLSBudget := global.TLSHandshakeTimeout
-	m, err := New(t.Context(), &Config{APIKey: "fixture-key", Model: FlashModel, Timeout: 2 * time.Second})
+	m, err := New(t.Context(), &Config{APIKey: "sentinel-provider-credential", Model: FlashModel, Timeout: 2 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := NewFilesClient(&FilesConfig{APIKey: "fixture-key", Timeout: 3 * time.Second})
+	files, err := NewFilesClient(&FilesConfig{APIKey: "sentinel-provider-credential", Timeout: 3 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,11 +49,11 @@ func TestDefaultHTTPClientKeepsBoundedTLSBudgetAndGlobalTransport(t *testing.T) 
 
 func TestExplicitHTTPClientRemainsAuthoritative(t *testing.T) {
 	client := &http.Client{Timeout: time.Second}
-	m, err := New(t.Context(), &Config{APIKey: "fixture-key", Model: FlashModel, Timeout: 5 * time.Second, HTTPClient: client})
+	m, err := New(t.Context(), &Config{APIKey: "sentinel-provider-credential", Model: FlashModel, Timeout: 5 * time.Second, HTTPClient: client})
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := NewFilesClient(&FilesConfig{APIKey: "fixture-key", Timeout: 5 * time.Second, HTTPClient: client})
+	files, err := NewFilesClient(&FilesConfig{APIKey: "sentinel-provider-credential", Timeout: 5 * time.Second, HTTPClient: client})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,11 +74,11 @@ func TestDefaultHTTPClientRespectsCallerNonstandardGlobalTransport(t *testing.T)
 	replacement := &callerDefaultTransport{}
 	http.DefaultTransport = replacement
 	t.Cleanup(func() { http.DefaultTransport = original })
-	m, err := New(t.Context(), &Config{APIKey: "fixture-key", Model: FlashModel, Timeout: time.Second})
+	m, err := New(t.Context(), &Config{APIKey: "sentinel-provider-credential", Model: FlashModel, Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := NewFilesClient(&FilesConfig{APIKey: "fixture-key", Timeout: 2 * time.Second})
+	files, err := NewFilesClient(&FilesConfig{APIKey: "sentinel-provider-credential", Timeout: 2 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestDefaultHTTPClientHonorsCancellationDuringTLSHandshake(t *testing.T) {
 		close(accepted)
 		<-release // Deliberately never answer the TLS ClientHello.
 	}()
-	m, err := New(t.Context(), &Config{APIKey: "fixture-key", Model: FlashModel, BaseURL: "https://" + listener.Addr().String()})
+	m, err := New(t.Context(), &Config{APIKey: "sentinel-provider-credential", Model: FlashModel, BaseURL: "https://" + listener.Addr().String()})
 	if err != nil {
 		t.Fatal(err)
 	}

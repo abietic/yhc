@@ -188,7 +188,9 @@ The four explicit values are sent unchanged as DeepSeek Responses
 `reasoning.effort`.
 
 DeepSeek defaults to `deepseek-flash` (V4.1 Flash), which supports both text
-and ordered image input with a 1M context window. Select it with
+and ordered image input with a 1M context window (1,048,576 tokens) and a
+384K maximum output (393,216 tokens), as returned by the official
+[Models API](https://api-docs.deepseek.com/api/list-models/). Select it with
 `/model deepseek-flash`, then use `/effort max` if needed. The
 [official model catalog](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
 still lists `deepseek-v4-pro` as a text-only model. The retired
