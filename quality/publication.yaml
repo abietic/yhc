@@ -47,22 +47,22 @@ privacy:
     - sentinel-provider-credential
   reviewed_findings:
     - path: docs/migration/reference/reference-repositories.yaml
-      line: 52
-      rule_id: private-email
-      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
-      purpose: build-metadata
-    - path: docs/migration/reference/reference-repositories.yaml
-      line: 59
-      rule_id: private-email
-      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
-      purpose: build-metadata
-    - path: docs/migration/reference/reference-repositories.yaml
       line: 66
       rule_id: private-email
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: build-metadata
     - path: docs/migration/reference/reference-repositories.yaml
       line: 73
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: docs/migration/reference/reference-repositories.yaml
+      line: 80
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: docs/migration/reference/reference-repositories.yaml
+      line: 87
       rule_id: private-email
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: build-metadata
@@ -81,6 +81,36 @@ privacy:
       rule_id: private-email
       match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
       purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/resilience_test.go
+      line: 52
+      rule_id: credential-assignment
+      match_sha256: 5becbb595df70e0ed01d0643f8ea9b55091714f996b4655cf358fefc8f971adc
+      purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/resilience_test.go
+      line: 118
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/resilience_test.go
+      line: 152
+      rule_id: private-email
+      match_sha256: 9389a280838ef0a9f68fe87fad0aa6bedd4546a9351da8a1bed6240c58f2ccef
+      purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/resilience_test.go
+      line: 317
+      rule_id: private-email
+      match_sha256: 852e7b941ea2052143c1b0a0f7b007a06c49c056312aac64e2649dc35d13f994
+      purpose: synthetic-security-fixture
+    - path: scripts/reference_sync/retry.go
+      line: 142
+      rule_id: private-email
+      match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
+      purpose: build-metadata
+    - path: scripts/reference_sync/retry.go
+      line: 142
+      rule_id: private-email
+      match_sha256: 50bf1ed00f168a4734999e1ec9bdc3f5f0e72a9bb374969cb8da51abc6b83c65
+      purpose: build-metadata
     - path: ".agents/skill-runtime/skill_log.py"
       line: 81
       rule_id: credential-assignment
