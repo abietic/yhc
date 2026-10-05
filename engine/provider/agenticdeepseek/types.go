@@ -96,6 +96,11 @@ type Config struct {
 	HTTPClient *http.Client
 	Timeout    time.Duration
 
+	// OptimizeImageTransport enables bounded attempt-local preparation of large
+	// auto-detail inline PNGs. Canonical messages and explicit high/original
+	// detail are unchanged. Direct SDK callers retain exact encoding by default.
+	OptimizeImageTransport bool
+
 	// MaxTokens keeps source compatibility with eino-ext's Config. It maps to
 	// Responses max_output_tokens. New code may use MaxOutputTokens instead;
 	// setting both is rejected.
@@ -252,11 +257,12 @@ func (e *ProtocolError) Error() string {
 }
 
 type transportError struct {
-	err error
+	err   error
+	phase transportPhase
 }
 
 func (e *transportError) Error() string {
-	return "agenticdeepseek: DeepSeek API transport failed: reason=" + transportReason(e.err)
+	return "agenticdeepseek: DeepSeek API transport failed: reason=" + transportReason(e.err) + " phase=" + e.phase.code()
 }
 
 func (e *transportError) Unwrap() error {

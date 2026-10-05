@@ -8,9 +8,11 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"path"
 	"strings"
+	"sync/atomic"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -30,15 +32,16 @@ type Model struct {
 	endpoint   string
 	apiKey     string
 
-	model            string
-	maxOutputTokens  *int
-	temperature      *float32
-	topP             *float32
-	topLogProbs      *int
-	reasoningEffort  ReasoningEffort
-	textFormat       *TextFormat
-	userID           string
-	maxSSEEventBytes int
+	model                  string
+	maxOutputTokens        *int
+	temperature            *float32
+	topP                   *float32
+	topLogProbs            *int
+	reasoningEffort        ReasoningEffort
+	textFormat             *TextFormat
+	userID                 string
+	maxSSEEventBytes       int
+	optimizeImageTransport bool
 }
 
 // New creates a dedicated DeepSeek Responses AgenticModel. It performs only
@@ -109,18 +112,19 @@ func New(_ context.Context, config *Config) (*Model, error) {
 		httpClient = newDefaultHTTPClient(config.Timeout)
 	}
 	return &Model{
-		httpClient:       httpClient,
-		endpoint:         endpoint,
-		apiKey:           apiKey,
-		model:            modelID,
-		maxOutputTokens:  cloneInt(maxOutputTokens),
-		temperature:      cloneFloat32(config.Temperature),
-		topP:             cloneFloat32(config.TopP),
-		topLogProbs:      cloneInt(config.TopLogProbs),
-		reasoningEffort:  config.ReasoningEffort,
-		textFormat:       cloneTextFormat(textFormat),
-		userID:           config.UserID,
-		maxSSEEventBytes: maxEventBytes,
+		httpClient:             httpClient,
+		endpoint:               endpoint,
+		apiKey:                 apiKey,
+		model:                  modelID,
+		maxOutputTokens:        cloneInt(maxOutputTokens),
+		temperature:            cloneFloat32(config.Temperature),
+		topP:                   cloneFloat32(config.TopP),
+		topLogProbs:            cloneInt(config.TopLogProbs),
+		reasoningEffort:        config.ReasoningEffort,
+		textFormat:             cloneTextFormat(textFormat),
+		userID:                 config.UserID,
+		maxSSEEventBytes:       maxEventBytes,
+		optimizeImageTransport: config.OptimizeImageTransport,
 	}, nil
 }
 
@@ -135,6 +139,11 @@ func (m *Model) Generate(
 	req, err := buildResponseRequest(input, common, specific, false)
 	if err != nil {
 		return nil, err
+	}
+	if m.optimizeImageTransport {
+		if err := optimizeResponseImages(ctx, req); err != nil {
+			return nil, err
+		}
 	}
 	body, err := marshalRequest(req)
 	if err != nil {
@@ -191,6 +200,11 @@ func (m *Model) Stream(
 	req, err := buildResponseRequest(input, common, specific, true)
 	if err != nil {
 		return nil, err
+	}
+	if m.optimizeImageTransport {
+		if err := optimizeResponseImages(ctx, req); err != nil {
+			return nil, err
+		}
 	}
 	body, err := marshalRequest(req)
 	if err != nil {
@@ -290,6 +304,27 @@ func (m *Model) options(opts ...model.Option) (*model.Options, *callOptions) {
 }
 
 func (m *Model) do(ctx context.Context, body []byte, stream bool) (*http.Response, error) {
+	var phase atomic.Uint32
+	setPhase := func(value transportPhase) {
+		for previous := phase.Load(); uint32(value) > previous; previous = phase.Load() {
+			if phase.CompareAndSwap(previous, uint32(value)) {
+				return
+			}
+		}
+	}
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		DNSStart:          func(httptrace.DNSStartInfo) { setPhase(transportPhaseDNS) },
+		ConnectStart:      func(string, string) { setPhase(transportPhaseConnect) },
+		TLSHandshakeStart: func() { setPhase(transportPhaseTLS) },
+		GotConn:           func(httptrace.GotConnInfo) { setPhase(transportPhaseUpload) },
+		WroteHeaders:      func() { setPhase(transportPhaseUpload) },
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			if info.Err == nil {
+				setPhase(transportPhaseRequestSent)
+			}
+		},
+		GotFirstResponseByte: func() { setPhase(transportPhaseHeaders) },
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, &ProtocolError{ReasonCode: "request_build_failed"}
@@ -304,13 +339,13 @@ func (m *Model) do(ctx context.Context, body []byte, stream bool) (*http.Respons
 	response, err := m.httpClient.Do(req)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, &transportError{err: ctxErr}
+			return nil, &transportError{err: ctxErr, phase: transportPhase(phase.Load())}
 		}
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) && urlErr.Err != nil {
 			err = urlErr.Err
 		}
-		return nil, &transportError{err: err}
+		return nil, &transportError{err: err, phase: transportPhase(phase.Load())}
 	}
 	return response, nil
 }

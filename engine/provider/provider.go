@@ -88,9 +88,10 @@ func newAgenticDeepSeek(ctx context.Context, cfg Config) (model.AgenticModel, er
 		cfg.BaseURL = os.Getenv("DEEPSEEK_BASE_URL")
 	}
 	return agenticdeepseek.New(ctx, &agenticdeepseek.Config{
-		BaseURL: cfg.BaseURL,
-		APIKey:  cfg.APIKey,
-		Model:   cfg.Model,
+		BaseURL:                cfg.BaseURL,
+		APIKey:                 cfg.APIKey,
+		Model:                  cfg.Model,
+		OptimizeImageTransport: true,
 	})
 }
 

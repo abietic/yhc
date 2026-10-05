@@ -9,6 +9,37 @@ import (
 	"syscall"
 )
 
+type transportPhase uint32
+
+const (
+	transportPhaseUnknown transportPhase = iota
+	transportPhaseDNS
+	transportPhaseConnect
+	transportPhaseTLS
+	transportPhaseUpload
+	transportPhaseRequestSent
+	transportPhaseHeaders
+)
+
+func (phase transportPhase) code() string {
+	switch phase {
+	case transportPhaseDNS:
+		return "dns"
+	case transportPhaseConnect:
+		return "connect"
+	case transportPhaseTLS:
+		return "tls_handshake"
+	case transportPhaseUpload:
+		return "request_upload"
+	case transportPhaseRequestSent:
+		return "request_sent"
+	case transportPhaseHeaders:
+		return "response_headers"
+	default:
+		return "unknown"
+	}
+}
+
 // transportReason exposes only a finite category. The original error stays
 // available through Unwrap for cancellation/retry classification, but its
 // endpoint, host, headers, and arbitrary text never enter the public message.
