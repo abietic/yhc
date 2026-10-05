@@ -135,9 +135,14 @@ additional, diff-bound record:
   to `evidence_ready` only when every applicable gate is complete.
 - Evidence and bounded per-target logs live under
   `build/iteration/<diff-digest>/`; a pass removes its temporary log.
-- The first executed failure is immutable: a retry cannot overwrite it. A
+- The first executed failure is immutable within an attempt: a retry cannot overwrite it. A
   `blocked` placeholder with no execution result may be replaced when that
   target first actually runs.
+
+Explicit environment-recovery attempts and recorded command-budget overrides
+are owned by the [verification guide](verification.md#recover-an-environment-blocked-verification-attempt).
+They preserve the previous failure and rerun all required checks; they do not
+establish the cause of a flaky test or replace defect diagnosis.
 
 `docs-check` is `not_applicable` in iteration evidence when `.reference` is
 absent, while `docs-check-ci` still runs. `coverage.json` is an advisory

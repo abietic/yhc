@@ -48,6 +48,10 @@ TEST_DEEP_TIMEOUT ?= 10m
 ITERATION_BASE ?= origin/master
 ITERATION_FORMAT ?= markdown
 ITERATION_SLICE_ID ?=
+ITERATION_TEST_TIMEOUT ?=
+ITERATION_BUDGET_REASON ?=
+ITERATION_RESTART_REASON ?=
+TEST_EVENTS_FILE ?= $(BUILD_DIR)/test-events.jsonl
 HOOK_BENCHMARK_RUNS ?= 7
 WORKTREE_AUDIT_BASE ?= origin/master
 WORKTREE_AUDIT_FORMAT ?= text
@@ -226,7 +230,7 @@ clear:
 # ── Test ───────────────────────────────────────────────
 test: prepare-gotestsum
 	@mkdir -p $(BUILD_DIR)
-	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml -- -p=$(TEST_PACKAGE_PARALLEL) -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
+	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml --jsonfile $(TEST_EVENTS_FILE) -- -p=$(TEST_PACKAGE_PARALLEL) -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
 	$(GO) -C third_party/acp-go-sdk test ./...
 	$(GO) tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
 	@echo "Coverage report: $(BUILD_DIR)/coverage.html"
@@ -388,7 +392,11 @@ verify-focused:
 	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) verify --level focused
 
 verify-merge:
-	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) verify --level merge
+	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) verify --level merge $(if $(ITERATION_TEST_TIMEOUT),--test-timeout $(ITERATION_TEST_TIMEOUT),) $(if $(ITERATION_BUDGET_REASON),--budget-reason $(ITERATION_BUDGET_REASON),)
+
+.PHONY: change-evidence-restart
+change-evidence-restart:
+	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) restart --reason $(ITERATION_RESTART_REASON)
 
 check-boundaries:
 	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) boundaries
@@ -410,7 +418,7 @@ change-evidence-ready:
 iteration-policy-check:
 	$(GO) run ./scripts/iteration policy-check
 
-# Read-only aggregate of retained local gate evidence. It is intentionally
+# Read-only aggregate of current local gate evidence. It is intentionally
 # advisory and is not part of verification, hooks, or CI.
 iteration-metrics:
 	$(GO) run ./scripts/iteration metrics --format $(ITERATION_FORMAT)
