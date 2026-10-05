@@ -1,7 +1,7 @@
 # Verification Guide
 
 **Status:** current
-**Last verified:** 2026-08-10
+**Last verified:** 2026-10-05
 
 > **Ownership:** required validation surfaces for documentation and code changes
 
@@ -177,11 +177,64 @@ results. Ordinary `evidence` reads and pre-push `--require-ready` checks never
 perform this transition; merge gates still run for the exact committed head.
 
 Results are retained below `build/iteration/<diff-digest>/` with bounded target
-logs. The first executed failure is retained permanently for that evidence; a
+logs. The first executed failure is immutable within an attempt; an ordinary
 retry cannot turn it into a pass. Only an unexecuted `blocked` placeholder can
 be replaced when its target first executes. When `.reference` is absent,
 iteration evidence marks `docs-check` not applicable, but it still executes
 `docs-check-ci`.
+
+### Recover an environment-blocked verification attempt
+
+Diagnose the failure first. A passing retry alone does not establish a repaired
+environment or test oracle. If a recorded timeout or execution block came from
+the environment, explicitly start a new attempt on the same clean topic tree:
+
+```bash
+make change-evidence-restart ITERATION_RESTART_REASON=environment_timeout
+# After repairing another confirmed environmental cause, use environment_repaired.
+make verify-focused
+make verify-merge
+make change-evidence-ready
+```
+
+The restart moves the entire previous directory, including original evidence
+and logs, to `build/iteration/history/<diff-digest>/<attempt-id>/` without
+rewriting it. The new attempt identifies that archive and starts with no gates:
+all required focused and committed-tree checks must execute again. Restart
+rejects stale plans, dirty/protected branches, unsafe paths, and evidence with
+no executed failure or block. `environment_timeout` additionally requires a
+recorded elapsed timeout, not a normal nonzero test exit. It is not a shortcut
+for unresolved functional failures; repair their cause before verification.
+The advisory `iteration-metrics` command samples only active diff directories,
+not historical attempts; it is not an all-attempt failure-rate report.
+
+Verification, deep discovery, and restart share a worktree lock. A competing
+operation fails rather than overwriting an active run. If restart is interrupted
+between directory moves, its journal blocks verification until the same restart
+command resumes it. Neither the journal nor a stale `verification.lock` is
+automatically deleted. Inspect process ownership before manually removing an
+abandoned lock; do not remove a lock merely because a command is slow. This
+coordination is worktree-local, not a host-wide CPU scheduler.
+
+The full `make test` command budget defaults to 15 minutes, including compilation.
+For a measured cold cache or host contention, an explicit 1–60 minute budget
+may be used; other gates and test assertions remain unchanged:
+
+```bash
+make verify-merge ITERATION_TEST_TIMEOUT=45m ITERATION_BUDGET_REASON=host_contention
+# The other accepted budget reason is cold_cache.
+```
+
+The executed gate records its timeout and declared reason in JSON and Markdown.
+Overrides are accepted only for merge verification with an applicable full test.
+A reused test result must have the same recorded timeout and reason; a different
+override is rejected before execution. Omitting an override preserves existing
+evidence. None of these options reruns an immutable failed gate: diagnose and
+restart the attempt first. An invalid, unbounded, or unexplained override fails
+before execution. Retained
+`logs/test-events.jsonl` contains streaming Go test events, so a command timeout
+does not hide failures behind gotestsum's final summary. These logs are local
+test artifacts, not automatically published evidence or private-session exports.
 
 The versioned pre-push hook checks each non-deletion commit being pushed with
 `iteration evidence --require-ready --head <sha>`. The check is read-only: it

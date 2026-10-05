@@ -48,11 +48,11 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 2
 	}
 	if flags.NArg() < 1 {
-		fmt.Fprintln(stderr, "usage: iteration [flags] plan|evidence|policy-check|boundaries|deep|metrics|hook-benchmark|verify --level focused|merge|hook <event>")
+		fmt.Fprintln(stderr, "usage: iteration [flags] plan|evidence|policy-check|boundaries|deep|metrics|hook-benchmark|restart --reason <reason>|verify --level focused|merge|hook <event>")
 		return 2
 	}
 	command := flags.Arg(0)
-	if !oneOf(command, "plan", "evidence", "policy-check", "boundaries", "deep", "verify", "hook", "metrics", "hook-benchmark") {
+	if !oneOf(command, "plan", "evidence", "policy-check", "boundaries", "deep", "verify", "restart", "hook", "metrics", "hook-benchmark") {
 		fmt.Fprintf(stderr, "unknown command %q\n", command)
 		return 2
 	}
@@ -61,6 +61,8 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 2
 	}
 	var verifyLevel VerifyLevel
+	var testTimeout time.Duration
+	var budgetReason, restartReason string
 	var hookEvent HookEventName
 	boundaryAll := false
 	requireReady := false
@@ -69,11 +71,29 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		verifyFlags := flag.NewFlagSet("verify", flag.ContinueOnError)
 		verifyFlags.SetOutput(stderr)
 		level := verifyFlags.String("level", "", "verification level: focused or merge")
+		verifyFlags.DurationVar(&testTimeout, "test-timeout", 0, "explicit full-test command budget, 1m..60m")
+		verifyFlags.StringVar(&budgetReason, "budget-reason", "", "host_contention or cold_cache")
 		if err := verifyFlags.Parse(flags.Args()[1:]); err != nil || verifyFlags.NArg() != 0 || !oneOf(*level, string(VerifyFocused), string(VerifyMerge)) {
 			fmt.Fprintln(stderr, "usage: iteration [flags] verify --level focused|merge")
 			return 2
 		}
 		verifyLevel = VerifyLevel(*level)
+		if err := validateTestBudget(testTimeout, budgetReason); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		if verifyLevel != VerifyMerge && testTimeout != 0 {
+			fmt.Fprintln(stderr, "explicit test budgets require verify --level merge")
+			return 2
+		}
+	} else if command == "restart" {
+		restartFlags := flag.NewFlagSet("restart", flag.ContinueOnError)
+		restartFlags.SetOutput(stderr)
+		restartFlags.StringVar(&restartReason, "reason", "", "environment_timeout or environment_repaired")
+		if err := restartFlags.Parse(flags.Args()[1:]); err != nil || restartFlags.NArg() != 0 || !validRestartReason(restartReason) {
+			fmt.Fprintln(stderr, "usage: iteration [flags] restart --reason environment_timeout|environment_repaired")
+			return 2
+		}
 	} else if command == "evidence" {
 		evidenceFlags := flag.NewFlagSet("evidence", flag.ContinueOnError)
 		evidenceFlags.SetOutput(stderr)
@@ -255,6 +275,25 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		reportRunError(stderr, err)
 		return 1
 	}
+	var release func() error
+	if oneOf(command, "verify", "deep", "restart") {
+		release, err = acquireVerificationLock(repositoryPath)
+		if err != nil {
+			reportRunError(stderr, err)
+			return 1
+		}
+		defer func() {
+			if release != nil {
+				_ = release()
+			}
+		}()
+		if command != "restart" {
+			if err := rejectPendingRestart(repositoryPath); err != nil {
+				reportRunError(stderr, err)
+				return 1
+			}
+		}
+	}
 
 	var output bytes.Buffer
 	exitCode := 0
@@ -276,9 +315,14 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 			break
 		}
 		if len(evidence.Gates) == 0 {
+			attempt := evidence.Attempt
 			evidence = initialEvidence(plan)
+			evidence.Attempt = attempt
 		}
 		if requireReady {
+			if err = rejectPendingRestart(repositoryPath); err != nil {
+				break
+			}
 			if evidence.State != "evidence_ready" {
 				err = errors.New("committed iteration evidence is not ready")
 			}
@@ -302,7 +346,18 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 			}
 			return buildPlan(policy, snapshot, deps.goos, acceptedSlice)
 		}
-		evidence, verifyErr := verify(ctx, repositoryPath, VerifyOptions{Level: verifyLevel, Plan: plan}, deps.runnerFactory(plan), store, replan)
+		runner := deps.runnerFactory(plan)
+		if testTimeout != 0 {
+			budgeted, ok := runner.(testBudgetTargetRunner)
+			if !ok {
+				err = errors.New("verification runner does not support explicit test budgets")
+				break
+			}
+			if err = budgeted.UseTestBudget(testTimeout, budgetReason); err != nil {
+				break
+			}
+		}
+		evidence, verifyErr := verify(ctx, repositoryPath, VerifyOptions{Level: verifyLevel, Plan: plan}, runner, store, replan)
 		if verifyErr != nil {
 			err = verifyErr
 			break
@@ -319,6 +374,31 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		}
 		if err == nil {
 			exitCode = verificationExitCode(evidence, verifyLevel)
+		}
+	case "restart":
+		if deps.storeFactory == nil {
+			err = errors.New("evidence store factory is unavailable")
+			break
+		}
+		if err = inspectMergeTree(ctx, repositoryPath, plan); err != nil {
+			break
+		}
+		restarter, ok := deps.storeFactory(repositoryPath).(interface {
+			Restart(Plan, string) (Evidence, error)
+		})
+		if !ok {
+			err = errors.New("evidence store does not support explicit restart")
+			break
+		}
+		evidence, restartErr := restarter.Restart(plan, restartReason)
+		if restartErr != nil {
+			err = restartErr
+			break
+		}
+		if *format == "json" {
+			err = renderJSON(evidence, &output)
+		} else {
+			err = renderEvidenceMarkdown(evidence, &output)
 		}
 	case "boundaries":
 		if deps.tree == nil {
@@ -390,6 +470,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		err = runHook(hookEvent, deps.hookInput, &output, repositoryPath, HookSnapshot{
 			Plan: plan, Evidence: evidence, Branch: branch,
 		}, deps.hookStoreFactory(repositoryPath))
+	}
+	if release != nil {
+		releaseErr := release()
+		release = nil
+		if err == nil {
+			err = releaseErr
+		}
 	}
 	if err != nil {
 		reportRunError(stderr, err)

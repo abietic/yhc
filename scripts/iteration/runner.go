@@ -20,6 +20,11 @@ type TargetRunner interface {
 	Run(context.Context, string, string, string) RunResult
 }
 
+type testBudgetTargetRunner interface {
+	UseTestBudget(time.Duration, string) error
+	TestBudget() (time.Duration, string)
+}
+
 var targetDeadlines = map[string]time.Duration{
 	"fmt": 3 * time.Minute, "lint": 10 * time.Minute, "test": 15 * time.Minute, "build": 15 * time.Minute,
 	"docs-check": 5 * time.Minute, "docs-check-ci": 5 * time.Minute, "test-contract": 5 * time.Minute,
@@ -42,13 +47,27 @@ type targetProcess interface {
 type processFactory func(context.Context, string, ...string) targetProcess
 
 type commandTargetRunner struct {
-	focused     map[string][]string
-	base        string
-	factory     processFactory
-	now         func() time.Time
-	withTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
-	beforeStart func()
-	afterStart  func()
+	focused      map[string][]string
+	base         string
+	factory      processFactory
+	now          func() time.Time
+	withTimeout  func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+	beforeStart  func()
+	afterStart   func()
+	testTimeout  time.Duration
+	budgetReason string
+}
+
+func (r *commandTargetRunner) UseTestBudget(timeout time.Duration, reason string) error {
+	if err := validateTestBudget(timeout, reason); err != nil {
+		return err
+	}
+	r.testTimeout, r.budgetReason = timeout, reason
+	return nil
+}
+
+func (r *commandTargetRunner) TestBudget() (time.Duration, string) {
+	return r.testTimeout, r.budgetReason
 }
 
 func newCommandTargetRunner(plan Plan) *commandTargetRunner {
@@ -68,8 +87,19 @@ func (r *commandTargetRunner) UsePlan(plan Plan) {
 	}
 }
 
-func (r *commandTargetRunner) Run(parent context.Context, root, digest, target string) RunResult {
+func (r *commandTargetRunner) Run(parent context.Context, root, digest, target string) (result RunResult) {
 	args, timeout, ok := r.command(target)
+	if target == "test" && digestPattern.MatchString(digest) {
+		args = append(args, "TEST_EVENTS_FILE="+path.Join("build", "iteration", digest, "logs", "test-events.jsonl"))
+	}
+	defer func() {
+		if result.DurationMillis > 0 {
+			result.TimeoutMillis = timeout.Milliseconds()
+			if target == "test" {
+				result.BudgetReason = r.budgetReason
+			}
+		}
+	}()
 	if !ok || parent.Err() != nil {
 		return RunResult{Status: GateBlocked}
 	}
@@ -106,7 +136,7 @@ func (r *commandTargetRunner) Run(parent context.Context, root, digest, target s
 	}
 	r.afterStart()
 	err = process.Wait()
-	result := r.result(parent, ctx, startedAt, logPath, limited, err)
+	result = r.result(parent, ctx, startedAt, logPath, limited, err)
 	closed = true
 	if closeErr := log.Close(); closeErr != nil && result.Status == GatePass {
 		return RunResult{Status: GateBlocked, DurationMillis: result.DurationMillis, FailureLogPath: logPath}
@@ -158,6 +188,9 @@ func (r *commandTargetRunner) command(target string) ([]string, time.Duration, b
 		return []string{"make", target, "ITERATION_BASE=" + r.base}, targetDeadlines[target], true
 	}
 	if timeout, ok := targetDeadlines[target]; ok {
+		if target == "test" && r.testTimeout != 0 {
+			timeout = r.testTimeout
+		}
 		return []string{"make", target}, timeout, true
 	}
 	if packages, ok := r.focused[target]; ok && len(packages) > 0 {
