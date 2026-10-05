@@ -82,15 +82,57 @@ func TestExecuteShellHookEscalatesAndStopsDescendantSideEffects(t *testing.T) {
 
 	heartbeat := fmt.Sprintf("%s/heartbeat", t.TempDir())
 	command := fmt.Sprintf("(trap '' TERM; while :; do printf x >> %s; sleep 0.02; done) & wait", shellQuote(heartbeat))
-	result, err := ExecuteShellHook(context.Background(), &ShellHook{
-		Command: command,
-		Timeout: 80 * time.Millisecond,
-	}, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	type outcome struct {
+		result *ShellHookResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		defer close(done)
+		result, err := ExecuteShellHook(ctx, &ShellHook{
+			Command: command,
+			Timeout: 10 * time.Second,
+		}, nil)
+		done <- outcome{result, err}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	// The descendant must have installed its TERM trap before termination.
+	// A nonempty heartbeat proves that boundary; startup speed is not the oracle.
+	startup := time.NewTimer(5 * time.Second)
+	defer startup.Stop()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+waitForDescendant:
+	for {
+		select {
+		case got := <-done:
+			t.Fatalf("hook returned before descendant readiness: result=%#v error=%v", got.result, got.err)
+		case <-startup.C:
+			t.Fatal("descendant did not become ready within the fixture startup budget")
+		case <-ticker.C:
+			data, err := os.ReadFile(heartbeat)
+			if err == nil && len(data) > 0 {
+				break waitForDescendant
+			}
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatalf("observe descendant readiness: %v", err)
+			}
+		}
+	}
+	cancel()
+	got := <-done
+	result, err := got.result, got.err
 	if err != nil {
 		t.Fatalf("ExecuteShellHook returned error: %v", err)
 	}
-	if !result.TimedOut || !result.TerminationEscalated {
-		t.Fatalf("timeout result = %#v, want forced tree termination", result)
+	if result.TimedOut || !result.Cancelled || !result.TerminationEscalated {
+		t.Fatalf("cancellation result = %#v, want forced tree termination", result)
 	}
 
 	before, err := os.ReadFile(heartbeat)
