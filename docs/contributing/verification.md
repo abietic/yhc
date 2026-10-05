@@ -84,8 +84,14 @@ and CI cannot mistake an incomplete state for success.
 
 Set `ITERATION_FORMAT=json` for machine-readable output, `ITERATION_BASE` to
 compare another accepted base, or `ITERATION_SLICE_ID` to attach one executable
-migration slice. Plans exclude untracked contents from `diff_digest`; they
-report only the outside-scope untracked count. An unclassified tracked path,
+migration slice. `diff_digest` hashes a versioned prefix, the resolved comparison
+base commit, and the tracked binary patch. A rebase onto a new comparison base
+therefore selects new evidence even if the patch bytes are unchanged. HEAD is
+bound separately, so committing unchanged focused work keeps its digest. The
+previous patch-only directories remain untouched; upgrading requires fresh
+verification rather than importing their gates. Plans exclude untracked contents
+from the digest and report only the outside-scope untracked count. An unclassified
+tracked path,
 ambiguous equal-priority owner, invalid policy, or in-progress merge/rebase
 fails closed.
 

@@ -139,7 +139,9 @@ func resolveSnapshot(
 	if err != nil {
 		return GitSnapshot{}, fmt.Errorf("read tracked diff: %w", err)
 	}
-	digest := sha256.Sum256(binaryDiff)
+	// The same patch on a new base is a different verification candidate. Do not
+	// hash HEAD: committing unchanged work must still permit focused promotion.
+	digest := sha256.Sum256(append([]byte("yhc-iteration-diff-v2\x00"+base+"\x00"), binaryDiff...))
 
 	untracked := 0
 	if head == "" {
