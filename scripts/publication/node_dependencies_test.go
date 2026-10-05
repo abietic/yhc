@@ -25,7 +25,7 @@ func TestNodeDesktopManifestPinsPublicIdentityAndElectronFloor(t *testing.T) {
 	if err := json.Unmarshal(contents, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Name != "yhc-desktop" || manifest.Author != "YHC contributors" || manifest.Build.AppID != "com.abietic.yhc.desktop" || manifest.Build.ProductName != "YHC" || manifest.DevDependencies["electron"] != "41.10.4" {
+	if manifest.Name != "yhc-desktop" || manifest.Author != "YHC contributors" || manifest.Build.AppID != "com.abietic.yhc.desktop" || manifest.Build.ProductName != "YHC" || manifest.DevDependencies["electron"] != "41.10.7" {
 		t.Fatalf("desktop manifest does not preserve public YHC identity and Electron floor: %#v", manifest)
 	}
 }
