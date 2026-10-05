@@ -22,7 +22,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/cloudwego/eino v0.9.13
 	github.com/cloudwego/eino-ext/components/model/agenticark v0.2.4
-	github.com/cloudwego/eino-ext/components/model/agenticclaude v0.1.3
+	github.com/cloudwego/eino-ext/components/model/agenticclaude v0.1.4
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.2
 	github.com/cloudwego/eino-ext/components/model/agenticopenai v0.2.2
 	github.com/cloudwego/eino-ext/components/model/agenticqwen v0.1.0
