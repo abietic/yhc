@@ -105,14 +105,24 @@ def hydrate_continuation(stat: dict) -> dict:
         total = sum_usage(values)
         if total is not None:
             reported = validated_usage(metadata.get("usage"))
-            if reported is not None and reported != total:
+            # Older adapter aggregates omitted routes even when segment
+            # receipts retained them. Compare accounting totals independently.
+            if reported is not None and (
+                    {key: value for key, value in reported.items() if key != "routes"}
+                    != {key: value for key, value in total.items() if key != "routes"}):
                 raise ValueError("Continuation aggregate disagrees with segment usage")
+            if reported is not None and "routes" in reported and (
+                    {route["model"] for route in reported["routes"]}
+                    != {route["model"] for route in total.get("routes", [])}):
+                raise ValueError("Continuation aggregate disagrees with segment models")
             return {**stat, "usage": total}
     known = [value for value in values if validated_usage(value) is not None]
     total = sum_usage(known)
     # A missing latest stream remains unknown; retain only the proven lower bound.
-    return {**stat, "usage": None, "partial_usage_lower_bound": {
-        "complete": False, "totals": token_totals(total), "routes": total.get("routes")} if total else None}
+    partial = {"complete": False, "totals": token_totals(total)} if total else None
+    if partial is not None and "routes" in total:
+        partial["routes"] = total["routes"]
+    return {**stat, "usage": None, "partial_usage_lower_bound": partial}
 
 
 def token_totals(value: object) -> dict:
@@ -135,7 +145,13 @@ def usage_for_row(row: dict) -> tuple[dict | None, str]:
     if partial is not None:
         if not isinstance(partial, dict) or partial.get("complete") is not False:
             raise ValueError("Recovered usage must be explicitly marked incomplete")
-        return token_totals(partial.get("totals")), "lower_bound"
+        totals = token_totals(partial.get("totals"))
+        route_usage = partial if "routes" in partial else partial["totals"]
+        if "routes" in route_usage and (not isinstance(route_usage["routes"], list)
+                or any(not isinstance(route, dict) or not isinstance(route.get("model"), str)
+                       for route in route_usage["routes"])):
+            raise ValueError("Invalid recovered model routes")
+        return totals, "lower_bound"
     return None, "unknown"
 
 
@@ -219,23 +235,17 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         tokens, coverage = usage_for_row(stat)
         manifest = stat.get("manifest") or {}
         model = manifest.get("model_request")
-        usage = validated_usage(stat.get("usage"))
-        partial = stat.get("partial_usage_lower_bound") or {}
-        routes = (usage or {}).get("routes") or partial.get("routes") or (partial.get("totals") or {}).get("routes")
-        route_models = {route["model"] for route in routes} if (
-            isinstance(routes, list) and routes
-            and all(isinstance(route, dict) and isinstance(route.get("model"), str)
-                    and route["model"] and route["model"] == route["model"].strip()
-                    for route in routes)) else set()
-        if not route_models:
-            assumption = "unpriced_missing_routes"
-        elif len(route_models) != 1:
-            assumption = "unpriced_mixed_routes"
-        elif route_models != {model}:
-            assumption = "unpriced_route_mismatch"
-        else:
-            assumption = "recorded_response_model_matches_request"
-        priceable = assumption == "recorded_response_model_matches_request"
+        recorded_usage = stat.get("usage") or stat.get("partial_usage_lower_bound") or {}
+        route_usage = (recorded_usage if "routes" in recorded_usage else
+                       recorded_usage.get("totals") or recorded_usage)
+        routes = route_usage.get("routes") or []
+        route_models = {route.get("model") for route in routes}
+        mixed_routes = len(route_models) > 1
+        # Routes name configured profiles (e.g. "bench"), not resolved vendor
+        # IDs. One known profile retains the explicit experiment-model scenario.
+        unpriced_routes = mixed_routes or any(
+            not profile or profile != profile.strip() for profile in route_models) or (
+            "routes" in route_usage and tokens and tokens["total_tokens"] > 0 and not routes)
         reward = stat.get("reward")
         if isinstance(reward, dict):
             reward = reward.get("reward")
@@ -245,8 +255,9 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
                      "agent_seconds": stat.get("agent_seconds"), "usage_coverage": coverage, "tokens": tokens,
                      "provider_calls": (stat.get("usage") or {}).get("provider_calls"),
                      "cache_hit_rate": tokens["cached_prompt_tokens"] / tokens["prompt_tokens"] if tokens and tokens["prompt_tokens"] else None,
-                     "cost_model_assumption": assumption,
-                     "cost_scenarios": {card["name"]: estimate(tokens, model, card) if priceable else None for card in cards},
+                     "cost_model_assumption": ("unpriced_mixed_routes" if mixed_routes else
+                         "unpriced_unknown_model_routes" if unpriced_routes else "experiment_model_applies_to_recorded_calls"),
+                     "cost_scenarios": {card["name"]: None if unpriced_routes else estimate(tokens, model, card) for card in cards},
                      "actual_billed_cost": None})
     # Only this explicitly supplied cohort is covered, never the user's account total.
     successful = [row for row in rows if row["successful"]]

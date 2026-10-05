@@ -15,6 +15,16 @@ from harbor.models.agent.context import AgentContext
 from scripts.terminal_bench.yhc_agent import YHCAgent, read_result
 
 
+def budget_terminal(session="test-session", complete=True):
+    record = terminal("failed", 1)
+    record["result"].update(session_id=session, terminal_reason="run_budget_exceeded",
+                            error={"code": "run_budget_exceeded"}, usage=dict(
+        provider_calls=1, known_calls=int(complete), unknown_calls=int(not complete),
+        in_flight=0, untracked_calls=0, prompt_tokens=10, completion_tokens=4,
+        total_tokens=14, cached_prompt_tokens=6, reasoning_tokens=2, complete=complete))
+    return record
+
+
 def terminal(status="completed", exit_code=0):
     return {"schema_version": 1, "type": "result", "result": {
         "status": status, "exit_code": exit_code, "session_id": "test-session",
@@ -64,6 +74,17 @@ class AgentFixture:
 
 
 class AgentTests(AgentFixture, unittest.TestCase):
+    def test_continuation_requires_finite_explicit_allowances(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            self.assertEqual(self.agent().continuation_budgets, [])
+            self.assertEqual(self.agent(max_provider_calls=1, continuation_budgets='[{"max_provider_calls":2}]').continuation_budgets,
+                             [{"max_provider_calls": 2, "max_total_tokens": 0}])
+            for invalid in ([{}], [{"max_provider_calls": 0}], [{"max_total_tokens": True}],
+                            [{"max_total_tokens": -1}], [{"max_total_tokens": 2**63}],
+                            [{"money": 1}], "bad json", {}, [{}] * 17):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    self.agent(continuation_budgets=invalid)
+
     def test_key_is_environment_only_and_task_environment_is_preserved(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "private-key",
                                       "UNRELATED_SECRET": "unrelated"}, clear=True):
@@ -156,8 +177,111 @@ class RunTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
         self.addCleanup(keys.stop)
         self.subject = self.agent()
         self.subject.exec_as_root = AsyncMock()
+        self.subject.exec_as_agent = AsyncMock()
         self.environment = SimpleNamespace(upload_file=AsyncMock(), exec=AsyncMock(),
                                            download_file=AsyncMock())
+
+    async def test_budget_continues_same_session_with_fresh_finite_allowance_and_total_usage(self):
+        self.subject.continuation_budgets = [{"max_provider_calls": 2, "max_total_tokens": 100}]
+        commands = []
+        records = [budget_terminal(), budget_terminal()]
+        records[1]["result"].update(status="completed", exit_code=0, terminal_reason="completed", error=None)
+
+        async def execute(**kwargs):
+            if "env" in kwargs:
+                commands.append(kwargs["command"])
+            return SimpleNamespace(return_code=1 if len(commands) == 1 else 0)
+
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(records[len(commands) - 1]) + "\n")
+
+        self.environment.exec.side_effect = execute
+        self.environment.download_file.side_effect = download
+        context = AgentContext()
+        await self.subject.run("original instruction", self.environment, context)
+        self.assertEqual(len(commands), 2)
+        self.assertNotIn("--resume", commands[0])
+        self.assertIn("--resume test-session", commands[1])
+        self.assertIn("--max-provider-calls 2", commands[1])
+        self.assertIn("--max-total-tokens 100", commands[1])
+        self.assertEqual(context.n_input_tokens, 20)
+        self.assertEqual(context.n_output_tokens, 8)
+        self.assertEqual(context.n_cache_tokens, 12)
+        self.assertEqual(context.metadata["yhc"]["usage"]["provider_calls"], 2)
+        self.assertEqual(context.metadata["yhc"]["continuation"]["segments"], 2)
+        self.assertTrue((self.subject.logs_dir / "yhc.segment-0000.jsonl").exists())
+        self.assertEqual(read_result(self.subject.logs_dir / "yhc.jsonl")["status"], "completed")
+
+    async def test_continuation_does_not_retry_unknown_usage_other_errors_or_missing_session(self):
+        records = [budget_terminal(complete=False), budget_terminal(session=""), terminal("failed", 1),
+                   terminal("cancelled", 130), terminal("max_turns", 1), budget_terminal()]
+        records[-1]["result"]["error"]["code"] = "run_usage_unknown"
+        self.subject.continuation_budgets = [{"max_provider_calls": 1, "max_total_tokens": 0}]
+        for record in records:
+            with self.subTest(record=record):
+                self.environment.exec.reset_mock()
+                self.environment.exec.return_value = SimpleNamespace(return_code=record["result"]["exit_code"])
+                async def download(_source, target):
+                    Path(target).write_text(json.dumps(record) + "\n")
+                self.environment.download_file.side_effect = download
+                with self.assertRaises(NonZeroAgentExitCodeError):
+                    await self.subject.run("task", self.environment, AgentContext())
+                self.assertEqual(self.environment.exec.await_count, 1)
+
+    async def test_continuation_allowances_exhaust_then_stop(self):
+        self.subject.continuation_budgets = [{"max_provider_calls": 1, "max_total_tokens": 0}]
+        self.environment.exec.return_value = SimpleNamespace(return_code=1)
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(budget_terminal()) + "\n")
+        self.environment.download_file.side_effect = download
+        context = AgentContext()
+        with self.assertRaises(NonZeroAgentExitCodeError):
+            await self.subject.run("task", self.environment, context)
+        calls = [call for call in self.environment.exec.await_args_list if "env" in call.kwargs]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(context.metadata["yhc"]["terminal_reason"], "run_budget_exceeded")
+        self.assertEqual(context.metadata["yhc"]["usage"]["total_tokens"], 28)
+
+    async def test_continuation_does_not_reset_overall_execution_deadline(self):
+        self.subject.execution_timeout_sec = 2
+        self.subject.continuation_budgets = [{"max_provider_calls": 1, "max_total_tokens": 0}]
+        self.environment.exec.return_value = SimpleNamespace(return_code=1)
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(budget_terminal()) + "\n")
+        self.environment.download_file.side_effect = download
+        moments = iter([0, 0.25, 1.25])
+        with patch("scripts.terminal_bench.yhc_agent.time", SimpleNamespace(monotonic=lambda: next(moments))):
+            with self.assertRaises(NonZeroAgentExitCodeError):
+                await self.subject.run("task", self.environment, AgentContext())
+        commands = [call.kwargs["command"] for call in self.environment.exec.await_args_list]
+        self.assertIn("--timeout 1750ms", commands[0])
+        self.assertIn("--timeout 750ms", commands[1])
+
+    async def test_cancelled_continuation_preserves_prior_usage_without_counting_it_twice(self):
+        self.subject.continuation_budgets = [{"max_provider_calls": 1, "max_total_tokens": 0}]
+        calls = 0
+        async def execute(**kwargs):
+            nonlocal calls
+            if "env" in kwargs:
+                calls += 1
+                if calls == 2:
+                    raise asyncio.CancelledError()
+            return SimpleNamespace(return_code=1)
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(budget_terminal()) + "\n")
+        self.environment.exec.side_effect = execute
+        self.environment.download_file.side_effect = download
+        context = AgentContext()
+        with self.assertRaises(asyncio.CancelledError):
+            await self.subject.run("task", self.environment, context)
+        self.assertTrue(context.is_empty())
+        self.subject.populate_context_post_run(context)
+        self.assertEqual(context.metadata["yhc"]["status"], "incomplete_stream")
+        self.assertIsNone(context.n_input_tokens)
+        self.assertEqual(context.metadata["yhc"]["continuation"]["segments"], 2)
+        history = context.metadata["yhc"]["continuation"]["history"]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["usage"]["total_tokens"], 14)
 
     async def test_cancellation_interrupts_owned_process_before_harbor_collects_logs(self):
         started = asyncio.Event()

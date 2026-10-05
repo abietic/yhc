@@ -21,12 +21,12 @@ def validated_usage(value: object) -> dict | None:
     if value["complete"] != complete:
         return None
     result = {**{key: value[key] for key in USAGE_FIELDS}, "complete": complete}
-    routes = value.get("routes")
-    if (isinstance(routes, list) and routes
-            and all(isinstance(route, dict) and isinstance(route.get("model"), str)
-                    and route["model"] and route["model"] == route["model"].strip()
-                    for route in routes)):
-        result["routes"] = [{"model": model} for model in sorted({route["model"] for route in routes})]
+    if "routes" in value:
+        routes = value["routes"]
+        if (not isinstance(routes, list) or any(not isinstance(route, dict)
+                or not isinstance(route.get("model"), str) for route in routes)):
+            return None
+        result["routes"] = [dict(route) for route in routes]
     for key in ("provider_duration_ms", "denied_calls", "released_calls"):
         if key in value:
             if type(value[key]) is not int or value[key] < 0:
@@ -42,9 +42,15 @@ def sum_usage(values: list) -> dict | None:
         return None
     result = {key: sum(value[key] for value in usages) for key in USAGE_FIELDS}
     result["complete"] = all(value["complete"] for value in usages)
-    if all("routes" in value for value in usages):
-        result["routes"] = [{"model": model} for model in sorted({
-            route["model"] for value in usages for route in value["routes"]})]
+    if any("routes" in value for value in usages):
+        result["routes"] = []
+        for value in usages:
+            routes = value.get("routes") or []
+            result["routes"].extend(routes)
+            if value["provider_calls"] and not routes:
+                # A partially described model history cannot inherit another
+                # segment's model price. Older all-route-less usage stays valid.
+                result["routes"].append({"model": ""})
     for key in ("provider_duration_ms", "denied_calls", "released_calls"):
         if all(key in value for value in usages):
             result[key] = sum(value[key] for value in usages)

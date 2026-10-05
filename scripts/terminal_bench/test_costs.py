@@ -12,7 +12,7 @@ class CostTests(unittest.TestCase):
         self.usage = dict(provider_calls=1, known_calls=1, unknown_calls=0, in_flight=0,
                           untracked_calls=0, prompt_tokens=1000000, completion_tokens=100000,
                           total_tokens=1100000, cached_prompt_tokens=800000, reasoning_tokens=90000,
-                          complete=True, routes=[{"model": "flash"}])
+                          complete=True)
         self.card = dict(name="scenario", currency="USD", as_of="2026-10-03", source="test fixture",
                          models={"flash": dict(cached_input_per_million="0.01",
                                                uncached_input_per_million="0.2", output_per_million="0.5")})
@@ -98,21 +98,88 @@ class CostTests(unittest.TestCase):
         result = build_report([self.row], [self.card])
         self.assertIsNone(result["trials"][0]["cost_scenarios"]["scenario"])
 
-    def test_missing_mismatched_and_invalid_routes_remain_unpriced(self):
-        for routes in (None, [], [{"model": ""}], [{"model": "unknown"}],
-                       [{"model": " flash "}], [{"other": "flash"}]):
-            usage = {**self.usage, "routes": routes}
-            result = build_report([{**self.row, "usage": usage}], [self.card])
-            self.assertIsNone(result["trials"][0]["cost_scenarios"]["scenario"])
-            self.assertFalse(result["all_supplied_trials"]["currency_estimates"]["scenario"]["complete"])
-        missing_segment_route = {**self.usage}
-        missing_segment_route.pop("routes")
-        total = sum_usage([self.usage, missing_segment_route])
-        self.assertNotIn("routes", total)
-        result = build_report([{**self.row, "usage": total}], [self.card])
-        self.assertIsNone(result["trials"][0]["cost_scenarios"]["scenario"])
+    def test_continuation_retains_model_routes_in_harbor_history(self):
+        first = {**self.usage, "routes": [{"model": "flash"}]}
+        second = {**self.usage, "routes": [{"model": "pro"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = {"usage": sum_usage([first, second]), "continuation": {
+                "segments": 2, "history": [{"usage": first}, {"usage": second}]}}
+            for old_aggregate in (False, True):
+                with self.subTest(old_aggregate=old_aggregate):
+                    if old_aggregate:
+                        metadata["usage"].pop("routes")
+                    (Path(directory) / "result.json").write_text(json.dumps(
+                        {"agent_result": {"metadata": {"yhc": metadata}}}))
+                    result = build_report([hydrate_continuation(
+                        {**self.row, "trial_path": directory})], [self.card])
+                    trial = result["trials"][0]
+                    self.assertEqual(trial["tokens"]["total_tokens"], 2200000)
+                    self.assertEqual(trial["cost_model_assumption"], "unpriced_mixed_routes")
+                    self.assertIsNone(trial["cost_scenarios"]["scenario"])
 
-    def test_native_prices_and_fx_conversion_are_separate_with_known_routes(self):
+    def test_unknown_or_missing_segment_model_is_not_priced_as_flash(self):
+        flash = {**self.usage, "routes": [{"model": "flash"}]}
+        for segments in ([flash, self.usage],
+                         [{**self.usage, "routes": [{"model": ""}]}],
+                         [{**self.usage, "routes": []}]):
+            with self.subTest(segments=segments):
+                row = {**self.row, "usage": sum_usage(segments)}
+                trial = build_report([row], [self.card])["trials"][0]
+                self.assertIsNone(trial["cost_scenarios"]["scenario"])
+                if len(segments) == 1:
+                    trial = build_report([{**self.row, "usage": segments[0]}],
+                                         [self.card])["trials"][0]
+                    self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_named_profile_uses_explicit_experiment_model_assumption(self):
+        usage = sum_usage([{**self.usage, "routes": [{"model": "bench"}]}])
+        trial = build_report([{**self.row, "usage": usage}], [self.card])["trials"][0]
+        self.assertEqual(trial["cost_scenarios"]["scenario"], "0.098")
+        self.assertEqual(trial["cost_model_assumption"], "experiment_model_applies_to_recorded_calls")
+
+    def test_incomplete_continuation_retains_known_mixed_models_without_pricing(self):
+        first = {**self.usage, "routes": [{"model": "flash"}]}
+        second = {**self.usage, "routes": [{"model": "pro"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = {"continuation": {"segments": 3,
+                "history": [{"usage": first}, {"usage": second}]}}
+            (Path(directory) / "result.json").write_text(json.dumps(
+                {"agent_result": {"metadata": {"yhc": metadata}}}))
+            result = build_report([hydrate_continuation(
+                {**self.row, "trial_path": directory})], [self.card])
+            trial = result["trials"][0]
+            self.assertEqual(trial["usage_coverage"], "lower_bound")
+            self.assertEqual(trial["tokens"]["total_tokens"], 2200000)
+            self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_same_model_continuations_keep_price_and_old_usage_remains_compatible(self):
+        flash = {**self.usage, "routes": [{"model": "flash"}]}
+        for segments in ([flash, flash], [self.usage, self.usage]):
+            with self.subTest(segments=segments):
+                trial = build_report([{**self.row, "usage": sum_usage(segments)}],
+                                     [self.card])["trials"][0]
+                self.assertEqual(trial["cost_scenarios"]["scenario"], "0.196")
+
+    def test_nested_recovered_routes_do_not_price_mixed_profiles(self):
+        totals = sum_usage([{**self.usage, "routes": [{"model": "flash"}]},
+                            {**self.usage, "routes": [{"model": "pro"}]}])
+        row = {**self.row, "usage": None, "partial_usage_lower_bound": {
+            "complete": False, "totals": totals}}
+        trial = build_report([row], [self.card])["trials"][0]
+        self.assertEqual(trial["tokens"]["total_tokens"], 2200000)
+        self.assertEqual(trial["usage_coverage"], "lower_bound")
+        self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_invalid_profile_routes_fail_closed(self):
+        for routes in ([], [{"model": ""}], [{"model": " flash "}]):
+            with self.subTest(routes=routes):
+                row = {**self.row, "usage": {**self.usage, "routes": routes}}
+                self.assertIsNone(build_report([row], [self.card])["trials"][0]["cost_scenarios"]["scenario"])
+        for routes in (None, [{"other": "flash"}]):
+            with self.subTest(routes=routes), self.assertRaises(ValueError):
+                build_report([{**self.row, "usage": {**self.usage, "routes": routes}}], [self.card])
+
+    def test_native_prices_and_fx_conversion_are_separate(self):
         native = {**self.card, "name": "native", "currency": "CNY"}
         fx = dict(base="USD", quote="CNY", rate="7", as_of="2026-10-03", source="fixture")
         result = build_report([self.row], [self.card, native], settlement_currency="CNY",
