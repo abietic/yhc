@@ -187,7 +187,7 @@ privacy:
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 325
+      line: 334
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
