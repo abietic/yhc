@@ -1,7 +1,7 @@
 # Skills
 
 **Status:** current
-**Last verified:** 2026-09-05
+**Last verified:** 2026-10-05
 
 > **Ownership:** This file owns skill parsing, registry precedence, engine
 > binding, invocation, and query-time prefetch. Plugin discovery and whether
@@ -69,7 +69,8 @@ owns that name. `skill:` is reserved for this projection; static and plugin
 registrations in that namespace fail validation. Static commands retain
 precedence for short aliases. Discovery and dispatch use
 the same projection; handlers capture the skill bytes shown by that snapshot.
-No filesystem I/O occurs during command completion.
+Skill discovery during command-name completion reads this in-memory snapshot;
+it never re-walks skill directories.
 
 `argument-hint` supplies display text; declared `args` supply a fallback hint,
 positional binding, required checks, and defaults. Quoted arguments remain one
@@ -78,6 +79,29 @@ joined command arguments without shell evaluation. Free-form or extra arguments
 are appended when the body has no `$ARGUMENTS` placeholder. The resulting prompt
 includes the skill source path so relative support files can be resolved and
 uses the existing prompt-workflow path under ordinary tools and permissions.
+
+Declared `args` can additionally provide `choices`, `completion`, and `suggest`.
+Choices and the existing default are advisory candidates; they do not add enum
+validation or change required/default substitution. `completion` accepts only
+the built-in sources `files`, `directories`, `models`, `efforts`, `mcp`, and
+`sessions`; unknown source names are rejected while parsing. No source executes
+a skill-supplied script. `suggest: true` permits an explicitly requested
+free-text recommendation only when that argument has no choices or dynamic
+source. Skills with no declared args permit the same manual recommendation for
+their free-form tail. Popup, ghost, and keyboard behavior belong to the
+[`Structured Composer Contract`](../tui/contracts/composer.md).
+
+```yaml
+args:
+  - name: target
+    required: true
+    completion: directories
+  - name: mode
+    choices: [quick, thorough]
+    default: quick
+  - name: explanation
+    suggest: true
+```
 
 `user-invocable: false` hides direct skill commands. `disable-model-invocation:
 true` removes the skill from the model's Skill description, rejects model-tool

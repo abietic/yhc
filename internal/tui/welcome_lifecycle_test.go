@@ -229,7 +229,7 @@ func TestWelcomeFileHintsRenderAfterCommandSelection(t *testing.T) {
 		return
 	}
 	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "alpha.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.Mkdir(filepath.Join(tmp, "alpha"), 0o755); err != nil {
 		t.Fatal(err)
 		return
 	}
@@ -246,17 +246,19 @@ func TestWelcomeFileHintsRenderAfterCommandSelection(t *testing.T) {
 
 	app.inputMode = InputCommand
 	app.textarea.SetValue("/add-dir a")
+	app.textarea.CursorEnd()
 	app.updateCommandHints()
+	finishArgumentCompletion(t, app)
 
 	if app.state != StateWelcome {
 		t.Fatalf("state before rendering file hints = %v, want welcome", app.state)
 	}
-	if len(app.fileHints) == 0 {
+	if len(app.argumentCandidates()) == 0 {
 		t.Fatal("expected file hints after valid command plus space")
 	}
 
 	view := stripANSIForTest(app.renderView())
-	if !strings.Contains(view, "alpha.txt") {
+	if !strings.Contains(view, "alpha"+string(filepath.Separator)) {
 		t.Fatalf("expected visible file hints in welcome view, got %q", view)
 	}
 }

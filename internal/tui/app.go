@@ -196,6 +196,7 @@ type App struct {
 	composerAdmissionPending   *composerAdmissionRequest
 	composerAdmissionSerial    uint64
 	composerSuggestion         composerSuggestionState
+	argumentCompletion         argumentCompletionState
 	composerSuggestionRequest  *composerSuggestionRequest
 	composerSuggestionSerial   uint64
 	composerSuggestionTurnSeen bool
@@ -881,6 +882,9 @@ func (a *App) Init() tea.Cmd {
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 	defer func() {
+		if pending := a.takeArgumentCompletionCmd(); pending != nil {
+			resultCmd = tea.Batch(resultCmd, pending)
+		}
 		resultCmd = batchNotificationCmd(
 			resultCmd,
 			a.reconcileNotificationExpiry(),
@@ -1181,6 +1185,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 
 	case composerSuggestionMsg:
 		a.handleComposerSuggestion(msg)
+		a.updateLayout()
+		return a, nil
+	case argumentCompletionMsg:
+		a.handleArgumentCompletion(msg)
 		a.updateLayout()
 		return a, nil
 
@@ -1766,6 +1774,9 @@ func (a *App) renderHintSection() string {
 		hints = a.renderCommandHints()
 	}
 	if hints == "" {
+		hints = a.renderArgumentHints()
+	}
+	if hints == "" {
 		hints = a.renderFileHints()
 	}
 	queued := a.renderQueuedInputRows()
@@ -1951,6 +1962,10 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if a.visibleComposerSuggestion() != "" && msg.Code == tea.KeyRight {
 		return a.acceptComposerSuggestion()
+	}
+	if a.argumentGhost() != "" && msg.Code == tea.KeyRight {
+		a.acceptArgumentCompletion()
+		return nil
 	}
 	if handled, cmd := a.resolveEditorKeyAction(msg); handled {
 		if a.hasComposerSuggestionActivity() {
@@ -4076,19 +4091,16 @@ func (a *App) updateCommandHints() {
 	}
 	value := strings.TrimLeftFunc(a.textarea.Value(), unicode.IsSpace)
 	query := strings.TrimPrefix(value, "/")
-	commandName, argumentText, hasArgumentSeparator := splitSlashCommandInput(query)
+	commandName, _, hasArgumentSeparator := splitSlashCommandInput(query)
 	if hasArgumentSeparator {
-		cmd := a.commandForInput(commandName)
 		a.commandHints = nil
 		a.commandHintIdx = -1
-		if commandSupportsFileHints(cmd) {
-			a.updateFileHints(lastCommandArgument(argumentText))
-		} else {
-			a.fileHints = nil
-			a.fileHintIdx = -1
-		}
+		a.fileHints = nil
+		a.fileHintIdx = -1
+		a.updateArgumentCompletion(false)
 		return
 	}
+	a.cancelArgumentCompletion()
 
 	// Standard command name matching
 	cmdQuery := strings.ToLower(commandName)
@@ -4125,58 +4137,6 @@ func (a *App) acceptCommandHint() {
 	a.textarea.CursorEnd()
 	a.commandHintIdx = -1
 	a.updateCommandHints()
-}
-
-// updateFileHints populates file path completions based on the partial path typed.
-func (a *App) updateFileHints(partial string) {
-	a.fileHints = nil
-	a.fileHintIdx = -1
-
-	// Determine directory to list and prefix to match
-	dir := "."
-	prefix := partial
-	if partial != "" {
-		if d := filepath.Dir(partial); d != "." && d != "" {
-			dir = d
-			prefix = filepath.Base(partial)
-		}
-	}
-
-	// Resolve relative to CWD
-	if !filepath.IsAbs(dir) {
-		if cwd := a.cwd(); cwd != "" {
-			dir = filepath.Join(cwd, dir)
-		}
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-
-	lowerPrefix := strings.ToLower(prefix)
-	var hints []string
-	for _, e := range entries {
-		name := e.Name()
-		// Skip hidden files unless user typed a dot
-		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".") {
-			continue
-		}
-		if lowerPrefix == "" || strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
-			if e.IsDir() {
-				name += "/"
-			}
-			hints = append(hints, name)
-		}
-	}
-	sort.Strings(hints)
-
-	// Limit to reasonable count
-	const maxFileHints = 50
-	if len(hints) > maxFileHints {
-		hints = hints[:maxFileHints]
-	}
-	a.fileHints = hints
 }
 
 // acceptFileHint fills the selected file path into the textarea.
