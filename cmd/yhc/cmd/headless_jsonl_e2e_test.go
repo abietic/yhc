@@ -399,7 +399,11 @@ func TestHeadlessJSONLGLMChatCompletionsProjectsCanonicalLifecycle(t *testing.T)
 					},
 					"finish_reason": "tool_calls",
 				}},
-				"usage": map[string]any{"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+				"usage": map[string]any{
+					"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5,
+					"prompt_tokens_details":     map[string]any{"cached_tokens": 1},
+					"completion_tokens_details": map[string]any{"reasoning_tokens": 2},
+				},
 			})
 		case 2:
 			wantToolResult := fmt.Sprintf("Wrote %d bytes to %s", len("glm-write"), target)
@@ -417,7 +421,11 @@ func TestHeadlessJSONLGLMChatCompletionsProjectsCanonicalLifecycle(t *testing.T)
 					"delta":         map[string]any{"role": "assistant", "content": assistantOutput},
 					"finish_reason": "stop",
 				}},
-				"usage": map[string]any{"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+				"usage": map[string]any{
+					"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6,
+					"prompt_tokens_details":     map[string]any{"cached_tokens": 2},
+					"completion_tokens_details": map[string]any{"reasoning_tokens": 1},
+				},
 			})
 		default:
 			http.Error(w, "unexpected call count", http.StatusBadRequest)
@@ -468,6 +476,13 @@ func TestHeadlessJSONLGLMChatCompletionsProjectsCanonicalLifecycle(t *testing.T)
 	if resultCount != 1 || final.Type != enginetransport.LifecycleRecordResult || final.Result == nil ||
 		final.Result.Status != "completed" || final.Result.Output != assistantOutput || final.Result.ExitCode != ExitSuccess {
 		t.Fatalf("GLM final lifecycle records = %#v", records)
+	}
+	usage := final.Result.Usage
+	if usage == nil || !usage.Complete || usage.ProviderCalls != 2 || usage.KnownCalls != 2 ||
+		usage.UnknownCalls != 0 || usage.InFlight != 0 || usage.PromptTokens != 6 ||
+		usage.CompletionTokens != 5 || usage.TotalTokens != 11 || usage.CachedPromptTokens != 3 ||
+		usage.ReasoningTokens != 3 {
+		t.Fatalf("GLM invocation usage = %#v; want two settled calls and 11 total tokens", usage)
 	}
 }
 
