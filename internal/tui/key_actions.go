@@ -105,6 +105,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 		return true, nil
 	case keybindings.ActionChatImagePaste:
 		return true, a.pasteClipboardImage()
+	case keybindings.ActionChatArgumentSuggest:
+		a.updateArgumentCompletion(true)
+		return true, nil
 	case keybindings.ActionChatExternalEditor:
 		return true, a.openComposerExternalEditor()
 	case keybindings.ActionChatUndo:
@@ -143,7 +146,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionAutocompleteAccept:
 		return true, a.acceptAutocomplete(msg)
 	case keybindings.ActionAutocompleteDismiss:
-		if a.hasComposerSuggestionActivity() {
+		if a.hasArgumentCompletionActivity() {
+			a.dismissArgumentCompletion()
+		} else if a.hasComposerSuggestionActivity() {
 			a.dismissComposerSuggestion()
 		} else if len(a.mentionHints) > 0 {
 			a.dismissMentionHints()
@@ -321,6 +326,18 @@ func (a *App) handleHistoryAction(msg tea.KeyPressMsg, direction int) tea.Cmd {
 }
 
 func (a *App) moveAutocomplete(direction int) {
+	if values := a.argumentCandidates(); len(values) > 0 {
+		index := a.argumentCompletion.Index
+		if index < 0 {
+			if direction > 0 {
+				index = -1
+			} else {
+				index = 0
+			}
+		}
+		a.argumentCompletion.Index = (index + direction + len(values)) % len(values)
+		return
+	}
 	if len(a.mentionHints) > 0 {
 		if direction < 0 {
 			if a.mentionHintIdx <= 0 {
@@ -365,6 +382,10 @@ func (a *App) moveAutocomplete(direction int) {
 }
 
 func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
+	if len(a.argumentCandidates()) > 0 && (msg.Code == tea.KeyTab || a.argumentCompletion.Index >= 0) {
+		a.acceptArgumentCompletion()
+		return nil
+	}
 	if a.visibleComposerSuggestion() != "" {
 		return a.acceptComposerSuggestion()
 	}
@@ -395,6 +416,9 @@ func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *App) autocompleteOwnsKey(msg tea.KeyPressMsg) bool {
+	if msg.Code == tea.KeyEscape && a.hasArgumentCompletionActivity() {
+		return true
+	}
 	if a.visibleComposerSuggestion() != "" {
 		switch msg.Code {
 		case tea.KeyTab, tea.KeyRight, tea.KeyEscape:
@@ -408,6 +432,7 @@ func (a *App) autocompleteOwnsKey(msg tea.KeyPressMsg) bool {
 	}
 	mentionActive := len(a.mentionHints) > 0
 	commandActive := a.inputMode == InputCommand && (len(a.commandHints) > 0 || len(a.fileHints) > 0)
+	commandActive = commandActive || len(a.argumentCandidates()) > 0
 	if !mentionActive && !commandActive {
 		return false
 	}

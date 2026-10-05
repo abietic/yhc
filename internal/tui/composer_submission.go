@@ -43,6 +43,8 @@ func (a *App) markComposerChanged() {
 		return
 	}
 	a.dismissComposerSuggestion()
+	a.cancelArgumentCompletion()
+	a.argumentCompletion.Dismissed = nil
 	a.composerRevision++
 	if a.composerRevision == 0 {
 		a.composerRevision++

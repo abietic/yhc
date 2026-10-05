@@ -23,6 +23,10 @@ type SkillArg struct {
 	Required bool `yaml:"required"`
 	// Default is the fallback value when the argument is not provided.
 	Default string `yaml:"default"`
+	// Choices and Completion are advisory values for command editing.
+	Choices    []string `yaml:"choices"`
+	Completion string   `yaml:"completion"`
+	Suggest    bool     `yaml:"suggest"`
 }
 
 // Skill represents a loaded markdown skill with its metadata and content.
@@ -294,6 +298,9 @@ func cloneSkill(skill *Skill) *Skill {
 	cloned := *skill
 	cloned.Tags = append([]string(nil), skill.Tags...)
 	cloned.Args = append([]SkillArg(nil), skill.Args...)
+	for i := range cloned.Args {
+		cloned.Args[i].Choices = append([]string(nil), skill.Args[i].Choices...)
+	}
 	if skill.UserInvocable != nil {
 		value := *skill.UserInvocable
 		cloned.UserInvocable = &value
@@ -372,6 +379,14 @@ func ParseSkillData(path string, data []byte) (*Skill, error) {
 	if frontmatter != "" {
 		if yamlErr := yaml.Unmarshal([]byte(frontmatter), &meta); yamlErr != nil {
 			return nil, fmt.Errorf("skills: unmarshal frontmatter in %s: %w", path, yamlErr)
+		}
+	}
+
+	for _, arg := range meta.Args {
+		switch arg.Completion {
+		case "", "files", "directories", "models", "efforts", "mcp", "sessions":
+		default:
+			return nil, fmt.Errorf("skills: unknown argument completion source %q in %s", arg.Completion, path)
 		}
 	}
 

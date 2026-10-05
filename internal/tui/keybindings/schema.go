@@ -86,22 +86,23 @@ const (
 
 // Chat input actions
 const (
-	ActionChatCancel         Action = "chat:cancel"
-	ActionChatKillAgents     Action = "chat:killAgents"
-	ActionChatCycleMode      Action = "chat:cycleMode"
-	ActionChatModelPicker    Action = "chat:modelPicker"
-	ActionChatFastMode       Action = "chat:fastMode"
-	ActionChatThinkingToggle Action = "chat:thinkingToggle"
-	ActionChatSubmit         Action = "chat:submit"
-	ActionChatNewline        Action = "chat:newline"
-	ActionChatUndo           Action = "chat:undo"
-	ActionChatExternalEditor Action = "chat:externalEditor"
-	ActionChatStash          Action = "chat:stash"
-	ActionChatImagePaste     Action = "chat:imagePaste"
-	ActionChatMessageActions Action = "chat:messageActions"
-	ActionChatRewriteMessage Action = "chat:rewriteMessage"
-	ActionChatPreviousAgent  Action = "chat:previousAgent"
-	ActionChatNextAgent      Action = "chat:nextAgent"
+	ActionChatCancel          Action = "chat:cancel"
+	ActionChatKillAgents      Action = "chat:killAgents"
+	ActionChatCycleMode       Action = "chat:cycleMode"
+	ActionChatModelPicker     Action = "chat:modelPicker"
+	ActionChatFastMode        Action = "chat:fastMode"
+	ActionChatThinkingToggle  Action = "chat:thinkingToggle"
+	ActionChatSubmit          Action = "chat:submit"
+	ActionChatNewline         Action = "chat:newline"
+	ActionChatUndo            Action = "chat:undo"
+	ActionChatExternalEditor  Action = "chat:externalEditor"
+	ActionChatArgumentSuggest Action = "chat:argumentSuggest"
+	ActionChatStash           Action = "chat:stash"
+	ActionChatImagePaste      Action = "chat:imagePaste"
+	ActionChatMessageActions  Action = "chat:messageActions"
+	ActionChatRewriteMessage  Action = "chat:rewriteMessage"
+	ActionChatPreviousAgent   Action = "chat:previousAgent"
+	ActionChatNextAgent       Action = "chat:nextAgent"
 )
 
 // Autocomplete actions
@@ -279,6 +280,7 @@ var SupportedActionContexts = map[Action][]Context{
 	ActionChatNewline:           {ContextChat},
 	ActionChatUndo:              {ContextChat},
 	ActionChatExternalEditor:    {ContextChat},
+	ActionChatArgumentSuggest:   {ContextChat},
 	ActionChatImagePaste:        {ContextChat},
 	ActionChatRewriteMessage:    {ContextChat},
 	ActionChatPreviousAgent:     {ContextChat},

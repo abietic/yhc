@@ -77,8 +77,13 @@ func (r *Registry) commandSnapshot() commandRegistrySnapshot {
 func skillCommand(skill *skills.Skill, name string) *Command {
 	commandName := "skill:" + name
 	args := make([]ArgDef, 0, len(skill.Args))
+	completion := make([]ArgumentCompletion, 0, len(skill.Args))
 	for _, arg := range skill.Args {
 		args = append(args, ArgDef{Name: arg.Name, Type: "string", Required: arg.Required && arg.Default == "", Default: arg.Default, Description: arg.Description})
+		completion = append(completion, ArgumentCompletion{Choices: append([]string(nil), arg.Choices...), Default: arg.Default, Source: arg.Completion, Suggest: arg.Suggest})
+	}
+	if len(skill.Args) == 0 {
+		completion = []ArgumentCompletion{{Suggest: true, Rest: true}}
 	}
 	hint := strings.TrimSpace(skill.ArgumentHint)
 	if hint == "" {
@@ -88,7 +93,8 @@ func skillCommand(skill *skills.Skill, name string) *Command {
 		hint = "[arguments]"
 	}
 	return &Command{
-		Name: commandName, Description: skill.Description, Usage: "/" + commandName + " " + hint,
+		Completion: completion,
+		Name:       commandName, Description: skill.Description, Usage: "/" + commandName + " " + hint,
 		Source: "skill:" + skill.Source, Trust: CommandTrustConfigured,
 		Category: CommandCategoryExtensions, DiscoveryTier: DiscoveryTierSecondary, DisplayOrder: 8100, PhaseScope: PhaseScopeIdleOnly,
 		Kind: CommandKindPromptWorkflow, Entrypoints: EntrypointsTUI | EntrypointsPlain,

@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,42 +14,47 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/creack/pty"
 
-	"github.com/abietic/yhc/engine/skills"
+	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/internal/tui/terminalcap"
 )
 
-func TestCommandArgumentGhostPTY(t *testing.T) {
-	const helperEnv = "YHC_COMMAND_HINT_PTY_HELPER"
+func TestArgumentCompletionPTY(t *testing.T) {
+	const helperEnv = "YHC_ARGUMENT_COMPLETION_PTY_HELPER"
 	if os.Getenv(helperEnv) == "1" {
 		t.Setenv("HOME", t.TempDir())
 		app := New(Config{Resumed: true})
-		source := skills.NewSkillRegistry()
-		source.Register(&skills.Skill{Name: "inspect", Description: "Inspect a package", ArgumentHint: "<package>", Content: "Inspect $ARGUMENTS"})
-		app.commandRegistry.SetSkillRegistry(source)
-		app.fullscreen = true
-		app.reducedMotion = true
+		calls := 0
+		if err := app.commandRegistry.Register(&commands.Command{Name: "inspect", Completion: []commands.ArgumentCompletion{{Choices: []string{"quick", "thorough"}}}, Execute: func(_ context.Context, ctx *commands.CommandContext) (*commands.CommandResult, error) {
+			calls++
+			return &commands.CommandResult{Output: "EXECUTED " + strings.Join(ctx.Args, " ")}, nil
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		app.fullscreen, app.reducedMotion = true, true
 		app.terminalCaps = terminalcap.Capabilities{Platform: "linux", Terminal: "xterm", Interactive: true, BracketedPaste: true}
 		app.statusLineHook = func(_, _ string) (string, string) {
 			marker := "OTHER"
 			switch app.textarea.Value() {
 			case "":
 				marker = "EMPTY"
-			case "/skill:inspect ":
-				marker = "READY"
-			case "/skill:inspect engine":
+			case "/inspect ":
+				marker = "PREFIX"
+			case "/inspect thorough ":
+				marker = "ACCEPTED"
+			case "/inspect q":
 				marker = "TYPED"
 			}
-			return fmt.Sprintf("HINT_%s %dx%d active=%t", marker, app.width, app.height, app.hasArgumentCompletionActivity()), ""
+			return fmt.Sprintf("ARG_%s calls=%d visible=%t %dx%d", marker, calls, len(app.argumentCandidates()) > 0, app.width, app.height), ""
 		}
 		program := tea.NewProgram(app)
 		app.SetProgram(program)
 		if _, err := program.Run(); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprint(os.Stdout, "HINT_PTY_RESTORED")
+		fmt.Fprint(os.Stdout, "ARG_PTY_RESTORED")
 		return
 	}
-	command := exec.Command(os.Args[0], "-test.run=^TestCommandArgumentGhostPTY$")
+	command := exec.Command(os.Args[0], "-test.run=^TestArgumentCompletionPTY$")
 	command.Env = append(os.Environ(), helperEnv+"=1", "TERM=xterm-256color")
 	terminal, err := pty.StartWithSize(command, &pty.Winsize{Cols: 80, Rows: 24})
 	if err != nil {
@@ -82,31 +88,27 @@ func TestCommandArgumentGhostPTY(t *testing.T) {
 			t.Error("PTY reader did not exit")
 		}
 	})
-	waitPTYContains(t, command, output, "HINT_EMPTY")
-	writePTY(t, terminal, "/inspect\t")
-	waitPTYContains(t, command, output, "HINT_READY")
-	if !strings.Contains(output.screenPlain(), "<package>") {
-		t.Fatalf("ghost missing from PTY frame: %s", output.screenPlain())
-	}
+	waitPTYContains(t, command, output, "ARG_EMPTY")
+	writePTY(t, terminal, "/inspect ")
+	waitPTYContains(t, command, output, "ARG_PREFIX calls=0 visible=true")
+	writePTY(t, terminal, "\x1b[B\x1b[B\r")
+	waitPTYContains(t, command, output, "ARG_ACCEPTED calls=0")
+	writePTY(t, terminal, "\r")
+	waitPTYContains(t, command, output, "EXECUTED thorough")
+	waitPTYContains(t, command, output, "ARG_EMPTY calls=1")
+	writePTY(t, terminal, "/inspect q")
+	waitPTYContains(t, command, output, "ARG_TYPED calls=1 visible=true")
 	if err := pty.Setsize(terminal, &pty.Winsize{Cols: 40, Rows: 24}); err != nil {
 		t.Fatal(err)
 	}
 	output.setSize(40, 24)
 	waitPTYContains(t, command, output, "40x24")
-	if !strings.Contains(output.screenPlain(), "<package>") {
-		t.Fatalf("ghost missing after resize: %s", output.screenPlain())
-	}
-	writePTY(t, terminal, "\t\x1b[Cengine")
-	waitPTYContains(t, command, output, "HINT_TYPED 40x24 active=true")
-	if strings.Contains(output.screenPlain(), "<package>") {
-		t.Fatalf("ghost survived real argument: %s", output.screenPlain())
-	}
 	mark := output.size()
 	writePTY(t, terminal, "\x1b")
-	waitPTYContainsAfter(t, command, output, mark, "HINT_TYPED 40x24 active=false")
+	waitPTYContainsAfter(t, command, output, mark, "ARG_TYPED calls=1 visible=false")
 	mark = output.size()
 	writePTY(t, terminal, "\x1b")
-	waitPTYContainsAfter(t, command, output, mark, "HINT_EMPTY")
+	waitPTYContainsAfter(t, command, output, mark, "ARG_EMPTY calls=1")
 	writePTY(t, terminal, "/quit\r")
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
@@ -120,13 +122,12 @@ func TestCommandArgumentGhostPTY(t *testing.T) {
 		_ = command.Process.Kill()
 		<-done
 		waited = true
-		t.Fatal("PTY quit timed out")
+		t.Fatalf("PTY quit timed out: %s", output.screenPlain())
 	}
 	_ = terminal.Close()
 	<-readDone
-	raw := output.raw()
-	for _, expected := range []string{"HINT_PTY_RESTORED", "\x1b[?25h", "\x1b[?1049l"} {
-		if !strings.Contains(raw, expected) {
+	for _, expected := range []string{"ARG_PTY_RESTORED", "\x1b[?25h", "\x1b[?1049l"} {
+		if !strings.Contains(output.raw(), expected) {
 			t.Fatalf("missing restoration %q", expected)
 		}
 	}
