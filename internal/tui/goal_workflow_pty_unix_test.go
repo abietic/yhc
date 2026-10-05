@@ -57,7 +57,9 @@ func TestP244GoalWorkflowPTY(t *testing.T) {
 
 	waitPTYContains(t, command, output, "goal active 0 active:0s")
 	writePTY(t, terminal, "/goal pause\r")
-	waitPTYContains(t, command, output, "goal paused 0 active:")
+	// Goal lifecycle state is projected before the request's terminal event.
+	// The next /goal command is idle-only, so wait for both facts together.
+	waitPTYContains(t, command, output, "● default · thread:main · goal paused 0 active:")
 	writePTY(t, terminal, "/goal budget 24000\r")
 	waitPTYContains(t, command, output, "goal paused 0/24.0k")
 	writePTY(t, terminal, "\x04")
