@@ -231,7 +231,9 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         routes = recorded_usage.get("routes") or []
         route_models = {route.get("model") for route in routes}
         mixed_routes = len(route_models) > 1
-        unpriced_routes = (bool(routes) and route_models != {model}) or (
+        # Routes name configured profiles (e.g. "bench"), not resolved vendor
+        # IDs. One known profile retains the explicit experiment-model scenario.
+        unpriced_routes = mixed_routes or "" in route_models or (
             "routes" in recorded_usage and tokens and tokens["total_tokens"] > 0 and not routes)
         reward = stat.get("reward")
         if isinstance(reward, dict):
@@ -243,7 +245,7 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
                      "provider_calls": (stat.get("usage") or {}).get("provider_calls"),
                      "cache_hit_rate": tokens["cached_prompt_tokens"] / tokens["prompt_tokens"] if tokens and tokens["prompt_tokens"] else None,
                      "cost_model_assumption": ("unpriced_mixed_routes" if mixed_routes else
-                         "unpriced_model_route_mismatch" if unpriced_routes else "experiment_model_applies_to_recorded_calls"),
+                         "unpriced_unknown_model_routes" if unpriced_routes else "experiment_model_applies_to_recorded_calls"),
                      "cost_scenarios": {card["name"]: None if unpriced_routes else estimate(tokens, model, card) for card in cards},
                      "actual_billed_cost": None})
     # Only this explicitly supplied cohort is covered, never the user's account total.

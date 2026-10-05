@@ -205,9 +205,10 @@ a currency spending cap or reconstruct provider invoices.
 
 The CLI checks each trial's Harbor `result.json` for continuation history, so
 an older summarizer's latest-segment-only usage cannot undercount the run.
-Continuation preserves every segment's model routes. Mixed models, a recorded
-route that disagrees with the experiment model, or missing routes in a partly
-described continuation remain unpriced. Older usage without any route fields
+Continuation preserves every segment's model routes. Route `model` values are
+configured profile names, not resolved vendor model IDs. Mixed or unknown
+profiles, or missing routes in a partly described continuation, remain unpriced.
+Older usage without any route fields
 retains the explicit experiment-model assumption; a single-model estimate assumes the
 experiment's recorded model applies to all counted calls and does not prove
 the provider's resolved model identity.

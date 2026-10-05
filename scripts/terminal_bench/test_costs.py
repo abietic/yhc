@@ -97,10 +97,9 @@ class CostTests(unittest.TestCase):
                     self.assertEqual(trial["cost_model_assumption"], "unpriced_mixed_routes")
                     self.assertIsNone(trial["cost_scenarios"]["scenario"])
 
-    def test_route_mismatch_or_missing_segment_model_is_not_priced_as_flash(self):
+    def test_unknown_or_missing_segment_model_is_not_priced_as_flash(self):
         flash = {**self.usage, "routes": [{"model": "flash"}]}
         for segments in ([flash, self.usage],
-                         [{**self.usage, "routes": [{"model": "pro"}]}],
                          [{**self.usage, "routes": [{"model": ""}]}],
                          [{**self.usage, "routes": []}]):
             with self.subTest(segments=segments):
@@ -111,6 +110,12 @@ class CostTests(unittest.TestCase):
                     trial = build_report([{**self.row, "usage": segments[0]}],
                                          [self.card])["trials"][0]
                     self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_named_profile_uses_explicit_experiment_model_assumption(self):
+        usage = sum_usage([{**self.usage, "routes": [{"model": "bench"}]}])
+        trial = build_report([{**self.row, "usage": usage}], [self.card])["trials"][0]
+        self.assertEqual(trial["cost_scenarios"]["scenario"], "0.098")
+        self.assertEqual(trial["cost_model_assumption"], "experiment_model_applies_to_recorded_calls")
 
     def test_incomplete_continuation_retains_known_mixed_models_without_pricing(self):
         first = {**self.usage, "routes": [{"model": "flash"}]}
