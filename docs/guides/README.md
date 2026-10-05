@@ -21,6 +21,7 @@ and operating YHC; implementation design belongs in the
 | Resume or inspect persisted conversations | [Sessions and transcripts](sessions-and-transcripts.md) |
 | Add MCP servers, skills, or plugin commands | [Extensions](extensions-mcp-skills-plugins.md) |
 | Diagnose a failed startup or missing feature | [Troubleshooting](troubleshooting.md) |
+| Synchronize reference snapshots and recover failed summaries | [Reference sync](reference-sync.md) |
 
 ## Current boundaries
 

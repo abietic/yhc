@@ -132,9 +132,11 @@ func generateModelSummaries(
 		factory = newConfiguredModelSummaryGenerator
 	}
 	cfg = cfg.normalized()
-	initCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-	generator, err := factory(initCtx, projectDir)
-	cancel()
+	generator, _, err := retryTransient(ctx, cfg.Retry, func() (modelSummaryGenerator, error) {
+		initCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
+		defer cancel()
+		return factory(initCtx, projectDir)
+	})
 	if err != nil {
 		safeError := sanitizeSummaryError(err.Error())
 		for _, index := range pending {
@@ -150,9 +152,8 @@ func generateModelSummaries(
 		result := &results[index]
 		result.SummaryProvider = providerName
 		result.SummaryModel = modelName
-		callCtx, callCancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		summary, summaryErr := generator.Generate(callCtx, buildModelSummaryPromptWithLimit(*result, cfg.MaxInputBytes))
-		callCancel()
+		summary, attempts, summaryErr := generateWithRetry(ctx, cfg.Retry, time.Duration(cfg.TimeoutSeconds)*time.Second, generator, buildModelSummaryPromptWithLimit(*result, cfg.MaxInputBytes))
+		result.SummaryAttempts = attempts
 		if summaryErr != nil {
 			safeError := sanitizeSummaryError(summaryErr.Error())
 			result.SummaryStatus = "failed"
