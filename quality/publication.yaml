@@ -945,17 +945,17 @@ privacy:
       match_sha256: 02d65186ce62ffc3f7cdf88384e8cdfc1b443a6a56fb0b2dc4c6f7718f976bad
       purpose: documentation-example
     - path: docs/contributing/verification.md
-      line: 93
+      line: 99
       rule_id: high-entropy-token
       match_sha256: f040877242f3f052f790666ed835b2c35a29d447ba76fb766268fd0a4243cbc4
       purpose: documentation-example
     - path: docs/contributing/verification.md
-      line: 95
+      line: 101
       rule_id: high-entropy-token
       match_sha256: 22742cce73d254feb5d67a6fef58ebbb50c1ea506b1c903366d022320eddfcc2
       purpose: documentation-example
     - path: docs/contributing/verification.md
-      line: 147
+      line: 153
       rule_id: high-entropy-token
       match_sha256: 5d7c4cb77a8e9606c8df07be152ac39ffdb1a4dbf4fd3372f20823341c9612f8
       purpose: documentation-example
@@ -4295,27 +4295,32 @@ privacy:
       match_sha256: a901a6328d27f8b1f5abf91fc6f464bbab60128d83d7c0753843c1be512476c7
       purpose: build-metadata
     - path: scripts/iteration/git_test.go
-      line: 203
+      line: 204
       rule_id: private-email
       match_sha256: 9790df1e5263edfdd18be9925c795501ac23e380266ea8143d3a62ddf1142726
       purpose: synthetic-security-fixture
     - path: scripts/iteration/git_test.go
-      line: 249
+      line: 256
       rule_id: private-email
       match_sha256: 9790df1e5263edfdd18be9925c795501ac23e380266ea8143d3a62ddf1142726
       purpose: synthetic-security-fixture
     - path: scripts/iteration/git_test.go
-      line: 279
+      line: 297
       rule_id: private-email
       match_sha256: 9790df1e5263edfdd18be9925c795501ac23e380266ea8143d3a62ddf1142726
       purpose: synthetic-security-fixture
     - path: scripts/iteration/git_test.go
-      line: 307
+      line: 327
       rule_id: private-email
       match_sha256: 9790df1e5263edfdd18be9925c795501ac23e380266ea8143d3a62ddf1142726
       purpose: synthetic-security-fixture
     - path: scripts/iteration/git_test.go
-      line: 333
+      line: 355
+      rule_id: private-email
+      match_sha256: 9790df1e5263edfdd18be9925c795501ac23e380266ea8143d3a62ddf1142726
+      purpose: synthetic-security-fixture
+    - path: scripts/iteration/git_test.go
+      line: 381
       rule_id: private-email
       match_sha256: 9790df1e5263edfdd18be9925c795501ac23e380266ea8143d3a62ddf1142726
       purpose: synthetic-security-fixture
