@@ -36,6 +36,9 @@ func TestDetectProvider_Prefixes(t *testing.T) {
 		{"deepseek v4 pro", "deepseek-v4-pro", ProviderDeepSeek},
 		{"deepseek v4 vision", "deepseek-v4-flash-vision-exp", ProviderDeepSeek},
 
+		// GLM
+		{"glm 5.3 flash", "glm-5.3-flash", ProviderGLM},
+
 		// Qwen
 		{"qwen max", "qwen-max", ProviderQwen},
 		{"qwen plus", "qwen-plus", ProviderQwen},
@@ -70,6 +73,9 @@ func TestDetectProvider_ProviderPrefix(t *testing.T) {
 		{"agenticopenai prefix", "agenticopenai:gpt-4o", ProviderOpenAI},
 		{"agenticgemini prefix", "agenticgemini:gemini-2.5-flash", ProviderGoogle},
 		{"agenticdeepseek prefix", "agenticdeepseek:deepseek-v4-pro", ProviderDeepSeek},
+		{"agenticglm prefix", "agenticglm:glm-5.3-flash", ProviderGLM},
+		{"zhipu prefix", "zhipu:glm-5.3-flash", ProviderGLM},
+		{"zai prefix", "zai:glm-5.3-flash", ProviderGLM},
 		{"agenticqwen prefix", "agenticqwen:qwen-max", ProviderQwen},
 		{"agenticark prefix", "agenticark:doubao-1.5-pro-32k", ProviderArk},
 	}
@@ -93,6 +99,7 @@ func TestDetectProvider_CaseInsensitive(t *testing.T) {
 		{"GPT-4o", ProviderOpenAI},
 		{"GEMINI-2.5-pro", ProviderGoogle},
 		{"DeepSeek-Chat", ProviderDeepSeek},
+		{"GLM-5.3-Flash", ProviderGLM},
 	}
 
 	for _, tt := range tests {
@@ -142,6 +149,7 @@ func TestGetProviderEnvConfig(t *testing.T) {
 		{ProviderOpenAI, false, "OPENAI_API_KEY"},
 		{ProviderGoogle, false, "GOOGLE_API_KEY"},
 		{ProviderDeepSeek, false, "DEEPSEEK_API_KEY"},
+		{ProviderGLM, false, "ZAI_API_KEY"},
 		{ProviderQwen, false, "DASHSCOPE_API_KEY"},
 		{ProviderArk, false, "ARK_API_KEY"},
 		{ProviderUnknown, true, ""},

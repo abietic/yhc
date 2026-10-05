@@ -24,6 +24,7 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 		{"OpenAI", 4},
 		{"Google", 2},
 		{"DeepSeek", 2},
+		{"GLM", 1},
 		{"Qwen", 2},
 	}
 
@@ -39,6 +40,26 @@ func TestDefaultRegistry_ByProvider(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDefaultRegistryPublishesExactGLM53Flash(t *testing.T) {
+	t.Parallel()
+
+	models := DefaultRegistry().ByProvider("GLM")
+	if len(models) != 3 {
+		t.Fatalf("GLM registry = %#v", models)
+	}
+	for _, entry := range models {
+		if !entry.SupportsThinking || !entry.SupportsToolCalls || entry.SupportsMedia != (entry.ModelID != "glm-5.3") || entry.CostTier == CostTierFree {
+			t.Fatalf("GLM registry capability projection = %#v", entry)
+		}
+		for _, provider := range []string{"agenticglm", "glm", "zhipu", "zai"} {
+			efforts, known := DefaultReasoningEfforts(provider, entry.ModelID)
+			if !known || len(efforts) != 3 {
+				t.Fatalf("%s %s efforts=%v, known=%t", provider, entry.ModelID, efforts, known)
+			}
+		}
 	}
 }
 

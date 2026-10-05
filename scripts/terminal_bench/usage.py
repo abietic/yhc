@@ -1,5 +1,7 @@
 """Provider-reported usage validation and aggregation, without inferred billing."""
 
+from __future__ import annotations
+
 USAGE_FIELDS = ("provider_calls", "known_calls", "unknown_calls", "in_flight",
                 "untracked_calls", "prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")

@@ -16,6 +16,7 @@ const (
 	ReasoningDialectArkResponses       ReasoningDialect = "ark-responses"
 	ReasoningDialectGeminiThinking     ReasoningDialect = "gemini-thinking"
 	ReasoningDialectDeepSeek           ReasoningDialect = "deepseek"
+	ReasoningDialectGLM                ReasoningDialect = "glm"
 )
 
 // ResolvedReasoningEffort is the adapter-owned lowering of one canonical
@@ -64,6 +65,12 @@ var reasoningAdapterPolicies = []reasoningAdapterPolicy{
 		aliases:  []string{"deepseek"},
 		dialect:  ReasoningDialectDeepSeek,
 		efforts:  []string{"none", "low", "high", "max"},
+	},
+	{
+		provider: "agenticglm",
+		aliases:  []string{"glm", "zhipu", "zai"},
+		dialect:  ReasoningDialectGLM,
+		efforts:  []string{"low", "high", "max"},
 	},
 	{
 		provider: "agenticqwen",
@@ -146,6 +153,13 @@ func DefaultReasoningEfforts(provider, modelID string) ([]string, bool) {
 	if policy.dialect == ReasoningDialectDeepSeek {
 		switch strings.ToLower(capabilities.Name) {
 		case "deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+		default:
+			return nil, false
+		}
+	}
+	if policy.dialect == ReasoningDialectGLM {
+		switch strings.ToLower(capabilities.Name) {
+		case "glm-5.3", "glm-5.3-flash", "glm-5.3-flashx":
 		default:
 			return nil, false
 		}

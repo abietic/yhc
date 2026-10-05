@@ -165,6 +165,7 @@ func SuggestProvider() (model.ProviderID, string) {
 		model.ProviderOpenAI,
 		model.ProviderGoogle,
 		model.ProviderDeepSeek,
+		model.ProviderGLM,
 		model.ProviderQwen,
 		model.ProviderArk,
 	}

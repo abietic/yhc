@@ -76,6 +76,15 @@ func TestGetCapabilities_KnownModel(t *testing.T) {
 			wantFirstParty: false,
 		},
 		{
+			name:           "glm-5.3-flash",
+			model:          "glm-5.3-flash",
+			wantContext:    1000000,
+			wantMaxOutput:  131072,
+			wantImages:     true,
+			wantThinking:   true,
+			wantFirstParty: false,
+		},
+		{
 			name:           "claude-3-5-haiku-20241022",
 			model:          "claude-3-5-haiku-20241022",
 			wantContext:    200000,

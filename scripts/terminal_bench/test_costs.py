@@ -27,6 +27,26 @@ class CostTests(unittest.TestCase):
         self.assertEqual(result["successful_trials"]["trials"], 1)
         self.assertIsNone(result["all_supplied_trials"]["actual_billed_cost"])
 
+    def test_official_glm_native_prices_and_unknown_calls(self):
+        path = Path(__file__).parent / "rates" / "glm-2026-10-05-cny.json"
+        card = json.loads(path.read_text())
+        expected = {"glm-5.3": "6", "glm-5.3-flash": "0.624", "glm-5.3-flashx": "1.556"}
+        for model, cost in expected.items():
+            row = {**self.row, "manifest": {"model_request": model},
+                   "usage": {**self.usage, "routes": [{"model": model}]}}
+            result = build_report([row], [card], settlement_currency="CNY")
+            estimate = result["all_supplied_trials"]["currency_estimates"][card["name"]]
+            self.assertEqual(estimate["known_amount"], cost)
+            self.assertEqual(estimate["currency"], "CNY")
+            self.assertTrue(estimate["complete"])
+        unknown = {**self.usage, "known_calls": 0, "unknown_calls": 1, "complete": False,
+                   "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                   "cached_prompt_tokens": 0, "reasoning_tokens": 0}
+        result = build_report([{**self.row, "usage": unknown}], [card])
+        self.assertFalse(result["all_supplied_trials"]["currency_estimates"][card["name"]]["complete"])
+        with self.assertRaises(ValueError):
+            build_report([self.row], [{**card, "as_of": "yesterday"}])
+
     def test_missing_and_recovered_usage_remain_unknown_and_lower_bound(self):
         partial = {**self.row, "usage": None, "partial_usage_lower_bound": {
             "complete": False, "totals": self.usage}}
@@ -139,6 +159,25 @@ class CostTests(unittest.TestCase):
                 trial = build_report([{**self.row, "usage": sum_usage(segments)}],
                                      [self.card])["trials"][0]
                 self.assertEqual(trial["cost_scenarios"]["scenario"], "0.196")
+
+    def test_nested_recovered_routes_do_not_price_mixed_profiles(self):
+        totals = sum_usage([{**self.usage, "routes": [{"model": "flash"}]},
+                            {**self.usage, "routes": [{"model": "pro"}]}])
+        row = {**self.row, "usage": None, "partial_usage_lower_bound": {
+            "complete": False, "totals": totals}}
+        trial = build_report([row], [self.card])["trials"][0]
+        self.assertEqual(trial["tokens"]["total_tokens"], 2200000)
+        self.assertEqual(trial["usage_coverage"], "lower_bound")
+        self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_invalid_profile_routes_fail_closed(self):
+        for routes in ([], [{"model": ""}], [{"model": " flash "}]):
+            with self.subTest(routes=routes):
+                row = {**self.row, "usage": {**self.usage, "routes": routes}}
+                self.assertIsNone(build_report([row], [self.card])["trials"][0]["cost_scenarios"]["scenario"])
+        for routes in (None, [{"other": "flash"}]):
+            with self.subTest(routes=routes), self.assertRaises(ValueError):
+                build_report([{**self.row, "usage": {**self.usage, "routes": routes}}], [self.card])
 
     def test_native_prices_and_fx_conversion_are_separate(self):
         native = {**self.card, "name": "native", "currency": "CNY"}

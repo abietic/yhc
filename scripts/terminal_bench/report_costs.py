@@ -6,6 +6,8 @@ Rates are explicit, dated cards with a source and cached/input/output prices per
 million tokens. No model call or provider balance access occurs.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -143,11 +145,13 @@ def usage_for_row(row: dict) -> tuple[dict | None, str]:
     if partial is not None:
         if not isinstance(partial, dict) or partial.get("complete") is not False:
             raise ValueError("Recovered usage must be explicitly marked incomplete")
-        if "routes" in partial and (not isinstance(partial["routes"], list)
+        totals = token_totals(partial.get("totals"))
+        route_usage = partial if "routes" in partial else partial["totals"]
+        if "routes" in route_usage and (not isinstance(route_usage["routes"], list)
                 or any(not isinstance(route, dict) or not isinstance(route.get("model"), str)
-                       for route in partial["routes"])):
+                       for route in route_usage["routes"])):
             raise ValueError("Invalid recovered model routes")
-        return token_totals(partial.get("totals")), "lower_bound"
+        return totals, "lower_bound"
     return None, "unknown"
 
 
@@ -156,6 +160,10 @@ def validate_rate_card(card: dict) -> dict:
                                         for key in ("name", "currency", "as_of", "source")):
         raise ValueError("Rates require name, currency, as_of and source")
     validate_currency(card["currency"])
+    try:
+        datetime.fromisoformat(card["as_of"].replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("Invalid rate card date") from exc
     if not isinstance(card.get("models"), dict) or not card["models"]:
         raise ValueError("Rates require explicit model prices")
     for prices in card["models"].values():
@@ -228,13 +236,16 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         manifest = stat.get("manifest") or {}
         model = manifest.get("model_request")
         recorded_usage = stat.get("usage") or stat.get("partial_usage_lower_bound") or {}
-        routes = recorded_usage.get("routes") or []
+        route_usage = (recorded_usage if "routes" in recorded_usage else
+                       recorded_usage.get("totals") or recorded_usage)
+        routes = route_usage.get("routes") or []
         route_models = {route.get("model") for route in routes}
         mixed_routes = len(route_models) > 1
         # Routes name configured profiles (e.g. "bench"), not resolved vendor
         # IDs. One known profile retains the explicit experiment-model scenario.
-        unpriced_routes = mixed_routes or "" in route_models or (
-            "routes" in recorded_usage and tokens and tokens["total_tokens"] > 0 and not routes)
+        unpriced_routes = mixed_routes or any(
+            not profile or profile != profile.strip() for profile in route_models) or (
+            "routes" in route_usage and tokens and tokens["total_tokens"] > 0 and not routes)
         reward = stat.get("reward")
         if isinstance(reward, dict):
             reward = reward.get("reward")

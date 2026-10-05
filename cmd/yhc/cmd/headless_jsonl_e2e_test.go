@@ -328,6 +328,164 @@ func TestHeadlessJSONLDeepSeekMissingTerminalCannotComplete(t *testing.T) {
 	}
 }
 
+func TestHeadlessJSONLGLMChatCompletionsProjectsCanonicalLifecycle(t *testing.T) {
+	repo := prepareHeadlessJSONLProviderTest(t)
+	target := filepath.Join(repo, "glm-result.txt")
+	const (
+		assistantOutput = "glm-fixed"
+		reasoningMarker = "glm-private-reasoning-marker"
+	)
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" {
+			http.Error(w, "unexpected endpoint", http.StatusNotFound)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+p430FakeKey {
+			t.Errorf("provider authorization = %q", got)
+			http.Error(w, "unexpected authorization", http.StatusUnauthorized)
+			return
+		}
+
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode GLM request: %v", err)
+			http.Error(w, "malformed request", http.StatusBadRequest)
+			return
+		}
+		requestJSON, err := json.Marshal(request)
+		if err != nil {
+			t.Errorf("marshal GLM request: %v", err)
+			http.Error(w, "malformed request", http.StatusBadRequest)
+			return
+		}
+		if request["model"] != "glm-5.3-flash" || request["stream"] != true ||
+			!bytes.Contains(requestJSON, []byte(`"name":"Write"`)) {
+			t.Errorf("unexpected GLM request: %s", requestJSON)
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+
+		writeChunk := func(payload any) {
+			data, marshalErr := json.Marshal(payload)
+			if marshalErr != nil {
+				t.Errorf("marshal GLM chunk: %v", marshalErr)
+				return
+			}
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch calls.Add(1) {
+		case 1:
+			arguments, marshalErr := json.Marshal(map[string]string{
+				"file_path": target,
+				"content":   "glm-write",
+			})
+			if marshalErr != nil {
+				t.Errorf("marshal GLM tool arguments: %v", marshalErr)
+				return
+			}
+			writeChunk(map[string]any{
+				"id": "chatcmpl-glm-tool", "model": "glm-5.3-flash",
+				"choices": []any{map[string]any{
+					"index": 0,
+					"delta": map[string]any{
+						"role": "assistant", "reasoning_content": reasoningMarker,
+						"tool_calls": []any{map[string]any{
+							"index": 0, "id": "call-glm-write", "type": "function",
+							"function": map[string]any{"name": "Write", "arguments": string(arguments)},
+						}},
+					},
+					"finish_reason": "tool_calls",
+				}},
+				"usage": map[string]any{
+					"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5,
+					"prompt_tokens_details":     map[string]any{"cached_tokens": 1},
+					"completion_tokens_details": map[string]any{"reasoning_tokens": 2},
+				},
+			})
+		case 2:
+			wantToolResult := fmt.Sprintf("Wrote %d bytes to %s", len("glm-write"), target)
+			for _, want := range []string{"call-glm-write", `"role":"tool"`, wantToolResult} {
+				if !bytes.Contains(requestJSON, []byte(want)) {
+					t.Errorf("GLM request missing %q: %s", want, requestJSON)
+					http.Error(w, "missing function result", http.StatusBadRequest)
+					return
+				}
+			}
+			writeChunk(map[string]any{
+				"id": "chatcmpl-glm-final", "model": "glm-5.3-flash",
+				"choices": []any{map[string]any{
+					"index":         0,
+					"delta":         map[string]any{"role": "assistant", "content": assistantOutput},
+					"finish_reason": "stop",
+				}},
+				"usage": map[string]any{
+					"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6,
+					"prompt_tokens_details":     map[string]any{"cached_tokens": 2},
+					"completion_tokens_details": map[string]any{"reasoning_tokens": 1},
+				},
+			})
+		default:
+			http.Error(w, "unexpected call count", http.StatusBadRequest)
+			return
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	stdout, stderr, err := executeGLMHeadlessJSONL(t, server.URL)
+	if err != nil {
+		t.Fatalf("GLM headless JSONL exec: %v; stderr=%s", err, stderr)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("provider calls = %d, want 2", got)
+	}
+	if content, readErr := os.ReadFile(target); readErr != nil || string(content) != "glm-write" {
+		t.Fatalf("GLM Write content = %q, err=%v", content, readErr)
+	}
+	if strings.Contains(stdout, reasoningMarker) {
+		t.Fatalf("provider-private reasoning leaked into JSONL: %s", stdout)
+	}
+
+	records := decodeHeadlessLifecycleRecords(t, stdout)
+	wantKinds := map[string]bool{
+		"assistant_delta": false,
+		"tool_start":      false,
+		"tool_input":      false,
+		"tool_terminal":   false,
+	}
+	resultCount := 0
+	for _, record := range records {
+		if record.Event != nil {
+			if _, ok := wantKinds[record.Event.Kind]; ok {
+				wantKinds[record.Event.Kind] = true
+			}
+		}
+		if record.Type == enginetransport.LifecycleRecordResult {
+			resultCount++
+		}
+	}
+	for kind, seen := range wantKinds {
+		if !seen {
+			t.Fatalf("missing GLM canonical %s event: %#v", kind, records)
+		}
+	}
+	final := records[len(records)-1]
+	if resultCount != 1 || final.Type != enginetransport.LifecycleRecordResult || final.Result == nil ||
+		final.Result.Status != "completed" || final.Result.Output != assistantOutput || final.Result.ExitCode != ExitSuccess {
+		t.Fatalf("GLM final lifecycle records = %#v", records)
+	}
+	usage := final.Result.Usage
+	if usage == nil || !usage.Complete || usage.ProviderCalls != 2 || usage.KnownCalls != 2 ||
+		usage.UnknownCalls != 0 || usage.InFlight != 0 || usage.PromptTokens != 6 ||
+		usage.CompletionTokens != 5 || usage.TotalTokens != 11 || usage.CachedPromptTokens != 3 ||
+		usage.ReasoningTokens != 3 {
+		t.Fatalf("GLM invocation usage = %#v; want two settled calls and 11 total tokens", usage)
+	}
+}
+
 func prepareHeadlessJSONLProviderTest(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -349,6 +507,7 @@ func prepareHeadlessJSONLProviderTest(t *testing.T) string {
 	}
 	for _, name := range []string{
 		"OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
+		"ZAI_API_KEY", "ZHIPUAI_API_KEY", "ZAI_BASE_URL", "ZHIPUAI_BASE_URL",
 		"PROV", "PROV_API_KEY", "PROV_BASE_URL", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSH_AUTH_SOCK",
 	} {
 		t.Setenv(name, "")
@@ -379,6 +538,23 @@ func executeDeepSeekHeadlessJSONL(t *testing.T, baseURL, maxTurns, tools string)
 		args = append(args, "--tools", tools)
 	}
 	rootCmd.SetArgs(args)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	err := rootCmd.ExecuteContext(ctx)
+	return stdout.String(), stderr.String(), err
+}
+
+func executeGLMHeadlessJSONL(t *testing.T, baseURL string) (string, string, error) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	rootCmd := newRootCommand()
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
+	rootCmd.SetArgs([]string{
+		"exec", "exercise GLM Chat Completions lifecycle", "--output-format", "jsonl",
+		"--provider", "glm", "--model", "glm-5.3-flash", "--base-url", baseURL,
+		"--api-key", p430FakeKey, "--max-turns", "2", "--permission-mode", "acceptEdits", "--tools", "Write",
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	err := rootCmd.ExecuteContext(ctx)

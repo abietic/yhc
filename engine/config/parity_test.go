@@ -234,6 +234,7 @@ func TestProviderDetectionAllPrefixes(t *testing.T) {
 		{"gemini-2.5-pro", model.ProviderGoogle},
 		{"deepseek-chat", model.ProviderDeepSeek},
 		{"deepseek-coder", model.ProviderDeepSeek},
+		{"glm-5.3-flash", model.ProviderGLM},
 		{"qwen-max", model.ProviderQwen},
 		{"qwen-turbo", model.ProviderQwen},
 		{"doubao-1.5-pro-32k", model.ProviderArk},

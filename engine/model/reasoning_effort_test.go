@@ -37,6 +37,23 @@ func TestDeepSeekV4RequestCapabilitiesExposeOnlyExactEfforts(t *testing.T) {
 	}
 }
 
+func TestGLM53FlashRequestCapabilitiesExposeOnlyExactEfforts(t *testing.T) {
+	t.Parallel()
+
+	for _, provider := range []string{"agenticglm", "glm", "zhipu", "zai"} {
+		efforts, ok := DefaultReasoningEfforts(provider, "glm-5.3-flash")
+		if !ok {
+			t.Fatalf("%s reasoning capability is unknown", provider)
+		}
+		if want := []string{"low", "high", "max"}; !reflect.DeepEqual(efforts, want) {
+			t.Fatalf("%s efforts = %#v, want %#v", provider, efforts, want)
+		}
+	}
+	if efforts, ok := DefaultReasoningEfforts("agenticglm", "acme/glm-5.3-flash"); ok || len(efforts) != 0 {
+		t.Fatalf("substring-matched GLM capability = %#v, %v", efforts, ok)
+	}
+}
+
 func TestResolveAdapterReasoningEffortSeparatesIntentFromWireDialect(t *testing.T) {
 	t.Parallel()
 
@@ -81,6 +98,22 @@ func TestResolveAdapterReasoningEffortSeparatesIntentFromWireDialect(t *testing.
 			name:     "deepseek compatibility aliases stay rejected",
 			provider: "agenticdeepseek",
 			effort:   "medium",
+			wantErr:  true,
+		},
+		{
+			name:     "glm low uses native Chat Completion effort",
+			provider: "zai",
+			effort:   "low",
+			want: ResolvedReasoningEffort{
+				CanonicalEffort: "low",
+				WireEffort:      "low",
+				Dialect:         ReasoningDialectGLM,
+			},
+		},
+		{
+			name:     "glm rejects unsupported none",
+			provider: "agenticglm",
+			effort:   "none",
 			wantErr:  true,
 		},
 		{

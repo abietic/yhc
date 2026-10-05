@@ -45,7 +45,7 @@ participate in conflict detection rather than forming one universal precedence
 step.
 
 Supported canonical adapters are Agentic Claude, OpenAI, Gemini, DeepSeek,
-Qwen, and Ark. Public aliases normalize to those IDs.
+GLM, Qwen, and Ark. Public aliases normalize to those IDs.
 
 ## Trusted portfolio compilation
 
@@ -340,6 +340,50 @@ days. This resource client shares typed, bounded, redacted API and transport
 failures with the Responses adapter but does not become conversation or Session
 state; callers remain responsible for deleting files they no longer need.
 
+GLM uses the project-owned
+[`agenticglm`](../../../engine/provider/agenticglm/model.go) Eino adapter. The
+audited Eino Ext snapshot has no GLM/Zhipu/Z.ai AgenticModel, while its
+DeepSeek and Qwen adapters delegate to an OpenAI Chat Completions ACL. YHC keeps
+the familiar `Config`, `New`, `Generate`, `Stream`, callback, and per-call tool
+shape, but posts directly to GLM's documented
+[`/chat/completions`](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)
+endpoint with project-owned wire types. This is a dedicated provider contract,
+not use of an OpenAI SDK.
+
+Only the exact `glm-5.3`, `glm-5.3-flash`, and `glm-5.3-flashx` models
+are admitted. The adapter preserves
+historical `reasoning_content`, sends `thinking.type=enabled` with
+`clear_thinking=false` by default, lowers only `low`, `high`, or `max`
+reasoning effort, and enables `tool_stream` for streaming tool calls. It accepts
+ordered text; only Flash and FlashX accept HTTP(S)/base64 images, HTTP(S)
+video, and URL/base64/`file_id` files. The effective per-call model is checked
+before dispatch. Unsupported forced tool choice, multimodal tool results, malformed
+provider envelopes, an SSE stream without `[DONE]`, and a stream without a
+finish reason fail locally or fail the attempt rather than downgrading.
+
+GLM terminal usage is validated before conversion and published exactly once,
+after `[DONE]`, including a final usage-only event after the finish reason.
+Callers abandoning an idle SSE stream must cancel its request context as well
+as close the Eino reader; Pipe Close alone cannot interrupt an HTTP read.
+Absent usage stays nil; malformed counts cannot become known-zero accounting.
+Cached input and reasoning output details survive both the Eino callback and
+classic runtime bridge. Native CNY prices are not inserted into the legacy
+USD-only cost fields or presented as free access. The opt-in canary exports
+counts for the offline native-currency reporter; the reproducible workflow and
+billing exclusions are owned by the
+[provider guide](../../guides/configuration-and-providers.md).
+
+The same package exposes a bounded
+[`FilesClient`](../../../engine/provider/agenticglm/files.go) for the official
+[`/files`](https://docs.bigmodel.cn/api-reference/%E6%96%87%E4%BB%B6-api/%E4%B8%8A%E4%BC%A0%E6%96%87%E4%BB%B6)
+resource lifecycle. It implements exact-size upload up to a conservative 20
+MiB, purpose-filtered cursor listing, and explicit deletion for the official
+`agent` and `user_data` purposes. `agent` resources belong to the Agent API;
+Chat Completions `file_id` input uses `user_data` and one of that purpose's
+document formats. The upload client sends a deterministic MIME type and rejects
+purpose/extension mismatches before dispatch. Remote file IDs are caller
+resources and are not persisted as conversation or Session state.
+
 `engine/auth` supplies provider-default credentials and exact named
 credentials only at client construction. `engine/model` owns model aliases,
 context-window and deprecation metadata, profile override validation,
@@ -545,6 +589,7 @@ exact value and the selected adapter to support exact lowering:
 | Agentic Ark Responses | `minimal`, `low`, `medium`, `high` | typed Ark reasoning |
 | Agentic Gemini | `low`, `high` | typed Gemini thinking level |
 | Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `low`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
+| Agentic GLM 5.3 / Flash / FlashX | `low`, `high`, `max` | native Chat Completion `reasoning_effort` with thinking enabled |
 | Agentic Qwen | none | provider default only |
 
 For DeepSeek V4, all four explicit values are emitted unchanged as Responses

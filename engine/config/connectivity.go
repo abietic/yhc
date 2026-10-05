@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/abietic/yhc/engine/model"
@@ -175,6 +176,8 @@ func buildCheckURL(provider model.ProviderID, baseURL string) string {
 		return baseURL + "/v1beta/models"
 	case model.ProviderDeepSeek:
 		return baseURL + "/models"
+	case model.ProviderGLM:
+		return strings.TrimRight(baseURL, "/") + "/files?purpose=agent&limit=1"
 	case model.ProviderQwen:
 		return baseURL + "/models"
 	case model.ProviderArk:
@@ -194,7 +197,7 @@ func setAuthHeaders(req *http.Request, provider model.ProviderID, apiKey string)
 	case model.ProviderAnthropic:
 		req.Header.Set("x-api-key", apiKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
-	case model.ProviderOpenAI, model.ProviderDeepSeek, model.ProviderQwen, model.ProviderArk:
+	case model.ProviderOpenAI, model.ProviderDeepSeek, model.ProviderGLM, model.ProviderQwen, model.ProviderArk:
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	case model.ProviderGoogle:
 		// Google uses query parameter for API key.
