@@ -103,8 +103,16 @@ def hydrate_continuation(stat: dict) -> dict:
         total = sum_usage(values)
         if total is not None:
             reported = validated_usage(metadata.get("usage"))
-            if reported is not None and reported != total:
+            # Older adapter aggregates omitted routes even when segment
+            # receipts retained them. Compare accounting totals independently.
+            if reported is not None and (
+                    {key: value for key, value in reported.items() if key != "routes"}
+                    != {key: value for key, value in total.items() if key != "routes"}):
                 raise ValueError("Continuation aggregate disagrees with segment usage")
+            if reported is not None and "routes" in reported and (
+                    {route["model"] for route in reported["routes"]}
+                    != {route["model"] for route in total.get("routes", [])}):
+                raise ValueError("Continuation aggregate disagrees with segment models")
             return {**stat, "usage": total}
     known = [value for value in values if validated_usage(value) is not None]
     total = sum_usage(known)
@@ -213,8 +221,12 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         tokens, coverage = usage_for_row(stat)
         manifest = stat.get("manifest") or {}
         model = manifest.get("model_request")
-        routes = (stat.get("usage") or {}).get("routes") or []
-        mixed_routes = len({route.get("model") for route in routes}) > 1
+        recorded_usage = stat.get("usage") or {}
+        routes = recorded_usage.get("routes") or []
+        route_models = {route.get("model") for route in routes}
+        mixed_routes = len(route_models) > 1
+        unpriced_routes = (bool(routes) and route_models != {model}) or (
+            "routes" in recorded_usage and recorded_usage.get("provider_calls", 0) > 0 and not routes)
         reward = stat.get("reward")
         if isinstance(reward, dict):
             reward = reward.get("reward")
@@ -224,8 +236,9 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
                      "agent_seconds": stat.get("agent_seconds"), "usage_coverage": coverage, "tokens": tokens,
                      "provider_calls": (stat.get("usage") or {}).get("provider_calls"),
                      "cache_hit_rate": tokens["cached_prompt_tokens"] / tokens["prompt_tokens"] if tokens and tokens["prompt_tokens"] else None,
-                     "cost_model_assumption": "unpriced_mixed_routes" if mixed_routes else "experiment_model_applies_to_recorded_calls",
-                     "cost_scenarios": {card["name"]: None if mixed_routes else estimate(tokens, model, card) for card in cards},
+                     "cost_model_assumption": ("unpriced_mixed_routes" if mixed_routes else
+                         "unpriced_model_route_mismatch" if unpriced_routes else "experiment_model_applies_to_recorded_calls"),
+                     "cost_scenarios": {card["name"]: None if unpriced_routes else estimate(tokens, model, card) for card in cards},
                      "actual_billed_cost": None})
     # Only this explicitly supplied cohort is covered, never the user's account total.
     successful = [row for row in rows if row["successful"]]

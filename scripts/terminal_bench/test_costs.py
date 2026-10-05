@@ -78,6 +78,48 @@ class CostTests(unittest.TestCase):
         result = build_report([self.row], [self.card])
         self.assertIsNone(result["trials"][0]["cost_scenarios"]["scenario"])
 
+    def test_continuation_retains_model_routes_in_harbor_history(self):
+        first = {**self.usage, "routes": [{"model": "flash"}]}
+        second = {**self.usage, "routes": [{"model": "pro"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = {"usage": sum_usage([first, second]), "continuation": {
+                "segments": 2, "history": [{"usage": first}, {"usage": second}]}}
+            for old_aggregate in (False, True):
+                with self.subTest(old_aggregate=old_aggregate):
+                    if old_aggregate:
+                        metadata["usage"].pop("routes")
+                    (Path(directory) / "result.json").write_text(json.dumps(
+                        {"agent_result": {"metadata": {"yhc": metadata}}}))
+                    result = build_report([hydrate_continuation(
+                        {**self.row, "trial_path": directory})], [self.card])
+                    trial = result["trials"][0]
+                    self.assertEqual(trial["tokens"]["total_tokens"], 2200000)
+                    self.assertEqual(trial["cost_model_assumption"], "unpriced_mixed_routes")
+                    self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_route_mismatch_or_missing_segment_model_is_not_priced_as_flash(self):
+        flash = {**self.usage, "routes": [{"model": "flash"}]}
+        for segments in ([flash, self.usage],
+                         [{**self.usage, "routes": [{"model": "pro"}]}],
+                         [{**self.usage, "routes": [{"model": ""}]}],
+                         [{**self.usage, "routes": []}]):
+            with self.subTest(segments=segments):
+                row = {**self.row, "usage": sum_usage(segments)}
+                trial = build_report([row], [self.card])["trials"][0]
+                self.assertIsNone(trial["cost_scenarios"]["scenario"])
+                if len(segments) == 1:
+                    trial = build_report([{**self.row, "usage": segments[0]}],
+                                         [self.card])["trials"][0]
+                    self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
+    def test_same_model_continuations_keep_price_and_old_usage_remains_compatible(self):
+        flash = {**self.usage, "routes": [{"model": "flash"}]}
+        for segments in ([flash, flash], [self.usage, self.usage]):
+            with self.subTest(segments=segments):
+                trial = build_report([{**self.row, "usage": sum_usage(segments)}],
+                                     [self.card])["trials"][0]
+                self.assertEqual(trial["cost_scenarios"]["scenario"], "0.196")
+
     def test_native_prices_and_fx_conversion_are_separate(self):
         native = {**self.card, "name": "native", "currency": "CNY"}
         fx = dict(base="USD", quote="CNY", rate="7", as_of="2026-10-03", source="fixture")
