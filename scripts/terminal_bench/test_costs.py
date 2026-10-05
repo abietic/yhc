@@ -112,6 +112,21 @@ class CostTests(unittest.TestCase):
                                          [self.card])["trials"][0]
                     self.assertIsNone(trial["cost_scenarios"]["scenario"])
 
+    def test_incomplete_continuation_retains_known_mixed_models_without_pricing(self):
+        first = {**self.usage, "routes": [{"model": "flash"}]}
+        second = {**self.usage, "routes": [{"model": "pro"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = {"continuation": {"segments": 3,
+                "history": [{"usage": first}, {"usage": second}]}}
+            (Path(directory) / "result.json").write_text(json.dumps(
+                {"agent_result": {"metadata": {"yhc": metadata}}}))
+            result = build_report([hydrate_continuation(
+                {**self.row, "trial_path": directory})], [self.card])
+            trial = result["trials"][0]
+            self.assertEqual(trial["usage_coverage"], "lower_bound")
+            self.assertEqual(trial["tokens"]["total_tokens"], 2200000)
+            self.assertIsNone(trial["cost_scenarios"]["scenario"])
+
     def test_same_model_continuations_keep_price_and_old_usage_remains_compatible(self):
         flash = {**self.usage, "routes": [{"model": "flash"}]}
         for segments in ([flash, flash], [self.usage, self.usage]):

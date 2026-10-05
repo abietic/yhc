@@ -117,8 +117,10 @@ def hydrate_continuation(stat: dict) -> dict:
     known = [value for value in values if validated_usage(value) is not None]
     total = sum_usage(known)
     # A missing latest stream remains unknown; retain only the proven lower bound.
-    return {**stat, "usage": None, "partial_usage_lower_bound": {
-        "complete": False, "totals": token_totals(total)} if total else None}
+    partial = {"complete": False, "totals": token_totals(total)} if total else None
+    if partial is not None and "routes" in total:
+        partial["routes"] = total["routes"]
+    return {**stat, "usage": None, "partial_usage_lower_bound": partial}
 
 
 def token_totals(value: object) -> dict:
@@ -141,6 +143,10 @@ def usage_for_row(row: dict) -> tuple[dict | None, str]:
     if partial is not None:
         if not isinstance(partial, dict) or partial.get("complete") is not False:
             raise ValueError("Recovered usage must be explicitly marked incomplete")
+        if "routes" in partial and (not isinstance(partial["routes"], list)
+                or any(not isinstance(route, dict) or not isinstance(route.get("model"), str)
+                       for route in partial["routes"])):
+            raise ValueError("Invalid recovered model routes")
         return token_totals(partial.get("totals")), "lower_bound"
     return None, "unknown"
 
@@ -221,12 +227,12 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         tokens, coverage = usage_for_row(stat)
         manifest = stat.get("manifest") or {}
         model = manifest.get("model_request")
-        recorded_usage = stat.get("usage") or {}
+        recorded_usage = stat.get("usage") or stat.get("partial_usage_lower_bound") or {}
         routes = recorded_usage.get("routes") or []
         route_models = {route.get("model") for route in routes}
         mixed_routes = len(route_models) > 1
         unpriced_routes = (bool(routes) and route_models != {model}) or (
-            "routes" in recorded_usage and recorded_usage.get("provider_calls", 0) > 0 and not routes)
+            "routes" in recorded_usage and tokens and tokens["total_tokens"] > 0 and not routes)
         reward = stat.get("reward")
         if isinstance(reward, dict):
             reward = reward.get("reward")
