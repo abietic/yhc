@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// IndependentVerificationConfig is an opt-in, invocation-local completion gate.
+// IndependentVerificationConfig is an opt-in, completion gate with opt-in durable continuation.
 // Zero MaxTurns disables it. Repairs and verifier calls share the root RunUsage.
 // This is model-directed checking, not an authoritative task grader or sandbox.
 type IndependentVerificationConfig struct {
@@ -60,6 +61,7 @@ type independentVerificationGate struct {
 	requirements string
 	repairs      int
 	passed       bool
+	cursor       verificationCursor
 }
 
 const independentVerificationPrompt = `You independently verify the ORIGINAL user requirements against the current workspace. Do not use the solver's claimed success, altered tests, or comments as the oracle. Inspect current artifacts and derive expected behavior from the requirements. Exercise relevant non-default settings and controlled blocked/intermediate concurrency states, not only final state. Do not inspect hidden benchmark graders or oracle solutions.
@@ -88,6 +90,9 @@ func prepareIndependentVerification(params *QueryParams) error {
 		return err
 	}
 	if cfg.MaxTurns == 0 {
+		if params.independentVerificationContinuation {
+			return fmt.Errorf("verification continuation requires an enabled gate")
+		}
 		return nil
 	}
 	if len(params.JSONSchema) > 0 {
@@ -100,6 +105,22 @@ func prepareIndependentVerification(params *QueryParams) error {
 	// treated as a fresh, independently verified invocation after restart.
 	if params.RuntimePermissionDecision != nil {
 		return fmt.Errorf("independent verification cannot resume an interrupted Graph invocation")
+	}
+	frozen := *params
+	frozen.independentVerification = nil
+	if params.independentVerificationContinuation {
+		if params.loadVerificationCursor == nil {
+			return fmt.Errorf("verification continuation requires durable state")
+		}
+		cursor, err := params.loadVerificationCursor()
+		if err != nil {
+			return err
+		}
+		if err := cursor.validate(params); err != nil {
+			return err
+		}
+		params.independentVerification = &independentVerificationGate{params: frozen, requirements: cursor.Requirements, repairs: cursor.Repairs, cursor: *cursor}
+		return nil
 	}
 	var requests []string
 	for _, m := range params.Messages {
@@ -118,11 +139,9 @@ func prepareIndependentVerification(params *QueryParams) error {
 	if requirements == "" || len(requirements) > 128*1024 {
 		return fmt.Errorf("independent verification requires nonempty original text requirements of at most 128 KiB")
 	}
-	frozen := *params
-	frozen.IndependentVerification = cfg
-	frozen.independentVerification = nil
-	params.independentVerification = &independentVerificationGate{params: frozen, requirements: requirements}
-	return nil
+	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, Phase: "solver"}
+	params.independentVerification = &independentVerificationGate{params: frozen, requirements: requirements, cursor: cursor}
+	return params.independentVerification.commit("solver", nil)
 }
 
 func parseIndependentVerificationReport(text string) (independentVerificationReport, error) {

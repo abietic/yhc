@@ -39,6 +39,7 @@ type headlessOptions struct {
 	Runtime                 runtimeFlags
 	UsageLimits             execution.RunUsageLimits
 	IndependentVerification engine.IndependentVerificationConfig
+	ResumeVerification      bool
 	Resume                  string
 	OutputFormat            string
 	Stdin                   io.Reader
@@ -101,6 +102,7 @@ func newExecCommand() *cobra.Command {
 	command.Flags().DurationVar(&options.Timeout, "timeout", 0, "Cancel this query and its children after this duration (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
+	command.Flags().BoolVar(&options.ResumeVerification, "resume-verification", false, "Continue a saved verification stage and repair allowance (requires --resume and matching verification options)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
 	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
 	return command
@@ -126,6 +128,9 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	}
 	if options.Timeout < 0 {
 		return renderHeadlessFailure(format, options, usageErrorf("timeout must be non-negative (0 disables)"), "usage_error", ExitUsage)
+	}
+	if options.ResumeVerification && (strings.TrimSpace(options.Resume) == "" || options.IndependentVerification.MaxTurns == 0) {
+		return renderHeadlessFailure(format, options, usageErrorf("--resume-verification requires --resume and enabled verification"), "usage_error", ExitUsage)
 	}
 	if err := options.IndependentVerification.Validate(options.UsageLimits); err != nil {
 		return renderHeadlessFailure(format, options, err, "usage_error", ExitUsage)
@@ -185,7 +190,12 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		queryCtx, cancelQuery = context.WithCancel(ctx)
 		defer cancelQuery()
 	}
-	events, _ := eng.SubmitMessage(queryCtx, prompt)
+	var events <-chan engine.QueryEvent
+	if options.ResumeVerification {
+		events, _ = eng.SubmitMessageWithMetadata(queryCtx, prompt, map[string]any{"is_meta": true, "verification_continuation": true})
+	} else {
+		events, _ = eng.SubmitMessage(queryCtx, prompt)
+	}
 	var result headlessResult
 	if format == outputFormatJSONL {
 		writer := enginetransport.NewLifecycleWriter(options.Stdout)

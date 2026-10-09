@@ -1025,6 +1025,12 @@ func (e *QueryEngine) SubmitMessageWithMetadata(
 	prompt string,
 	extra map[string]any,
 ) (<-chan QueryEvent, Terminal) {
+	// Continuation is runtime control, not an arbitrary new user instruction.
+	if continuation, _ := extra["verification_continuation"].(bool); continuation {
+		prompt = verificationContinuationPrompt
+		extra = cloneMessageExtra(extra)
+		extra["is_meta"] = true
+	}
 	e.recordPermissionReviewUserIntent(prompt)
 	return e.submitMessage(ctx, prompt, extra, nil)
 }
@@ -1819,31 +1825,41 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 
 		params := QueryParams{
 			IndependentVerification: e.config.IndependentVerification,
-			RunUsage:                e.config.RunUsage,
-			Messages:                baseMessages,
-			SystemPrompt:            systemPrompt,
-			SessionID:               e.config.SessionID,
-			UserContext:             userContext,
-			SystemContext:           systemContext,
-			CanUseTool:              e.wrappedCanUseTool,
-			RepeatedToolCallPrompt:  e.config.RepeatedToolCallPrompt,
-			ToolUseContext:          toolCtx,
-			FallbackModel:           e.config.FallbackModel,
-			QuerySource:             querySource,
-			MaxTurns:                &maxTurns,
-			TaskBudget:              e.config.TaskBudget,
-			TokenBudgetTracker:      e.config.TokenBudgetTracker,
-			ChatModel:               e.config.ChatModel,
-			modelCall:               e.modelCallIdentitySnapshot(),
-			modelResolver:           e.config.ModelResolver,
-			commandEntrypoint:       string(e.config.CommandEntrypoint),
-			SummaryModel:            e.config.SummaryModel,
-			ToolUseSummaryModel:     toolUseSummary.Model,
-			toolUseSummaryCall:      toolUseSummary.Identity,
-			EmitToolUseSummaries:    e.config.EmitToolUseSummaries,
-			InputCoordinator:        inputCoordinator,
-			ProjectGraphCheckpoint:  e.projectGraphCheckpoint,
-			ProjectGraphHITLEnabled: e.projectGraphHITLEnabled,
+			independentVerificationContinuation: func() bool {
+				if userMsg == nil {
+					return false
+				}
+				v, _ := userMsg.Extra["verification_continuation"].(bool)
+				return v
+			}(),
+			verificationWorkspace:    canonicalSessionDirectory(e.config.CWD),
+			loadVerificationCursor:   e.loadVerificationCursor,
+			commitVerificationCursor: e.commitVerificationCursor,
+			RunUsage:                 e.config.RunUsage,
+			Messages:                 baseMessages,
+			SystemPrompt:             systemPrompt,
+			SessionID:                e.config.SessionID,
+			UserContext:              userContext,
+			SystemContext:            systemContext,
+			CanUseTool:               e.wrappedCanUseTool,
+			RepeatedToolCallPrompt:   e.config.RepeatedToolCallPrompt,
+			ToolUseContext:           toolCtx,
+			FallbackModel:            e.config.FallbackModel,
+			QuerySource:              querySource,
+			MaxTurns:                 &maxTurns,
+			TaskBudget:               e.config.TaskBudget,
+			TokenBudgetTracker:       e.config.TokenBudgetTracker,
+			ChatModel:                e.config.ChatModel,
+			modelCall:                e.modelCallIdentitySnapshot(),
+			modelResolver:            e.config.ModelResolver,
+			commandEntrypoint:        string(e.config.CommandEntrypoint),
+			SummaryModel:             e.config.SummaryModel,
+			ToolUseSummaryModel:      toolUseSummary.Model,
+			toolUseSummaryCall:       toolUseSummary.Identity,
+			EmitToolUseSummaries:     e.config.EmitToolUseSummaries,
+			InputCoordinator:         inputCoordinator,
+			ProjectGraphCheckpoint:   e.projectGraphCheckpoint,
+			ProjectGraphHITLEnabled:  e.projectGraphHITLEnabled,
 			RuntimePermissionDecision: func() *RuntimePermissionDecision {
 				if !isGraphResume {
 					return nil

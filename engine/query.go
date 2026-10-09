@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -67,7 +68,7 @@ func queryWithKernel(
 
 	params.Deps = deps
 	if err := prepareIndependentVerification(&params); err != nil {
-		return Terminal{Reason: TerminalModelError, Err: err}
+		return verificationErrorTerminal(err)
 	}
 
 	queryCtx := ctx
@@ -83,12 +84,40 @@ func queryWithKernel(
 	)
 
 	consumedCommandUUIDs := make([]string, 0)
-	terminal := kernel.run(queryCtx, queryKernelRequest{
-		params:               params,
-		deps:                 deps,
-		consumedCommandUUIDs: &consumedCommandUUIDs,
-		yield:                projectionEmitter.Emit,
-	})
+	var terminal Terminal
+	var resumeErr error
+	if gate := params.independentVerification; gate != nil && params.independentVerificationContinuation {
+		if gate.cursor.Phase == "check" {
+			var attachment *schema.Message
+			attachment, resumeErr = gate.verify(queryCtx, projectionEmitter.Emit)
+			if resumeErr == nil && !gate.passed {
+				params.Messages = append(append([]*schema.Message{}, params.Messages...), attachment)
+			}
+		}
+		if resumeErr == nil && !gate.passed {
+			// The frozen original input remains available even after history compaction.
+			content := "Original requirements for the saved task:\n" + gate.requirements
+			if gate.cursor.Phase == "repair" && gate.cursor.Diagnostics != nil {
+				encoded, _ := json.Marshal(gate.cursor.Diagnostics)
+				content += "\nHistorical verification diagnostics for the pending repair; recheck current artifacts after fixing counterexamples: " + string(encoded)
+			}
+			attachment := &schema.Message{Role: schema.User, Content: content, Extra: map[string]any{"is_meta": true, "attachment_kind": "verification_resume_context"}}
+			params.Messages = append(append([]*schema.Message{}, params.Messages...), attachment)
+			projectionEmitter.Emit(QueryEvent{Type: EventAttachment, AttachmentMessage: attachment})
+		}
+	}
+	if resumeErr != nil {
+		terminal = verificationErrorTerminal(resumeErr)
+	} else if gate := params.independentVerification; gate != nil && gate.passed {
+		terminal = Terminal{Reason: TerminalCompleted}
+	} else {
+		terminal = kernel.run(queryCtx, queryKernelRequest{
+			params:               params,
+			deps:                 deps,
+			consumedCommandUUIDs: &consumedCommandUUIDs,
+			yield:                projectionEmitter.Emit,
+		})
+	}
 	if gate := params.independentVerification; gate != nil && terminal.Reason == TerminalCompleted && !gate.passed {
 		terminal = Terminal{Reason: TerminalModelError, Err: ErrIndependentVerification}
 	}

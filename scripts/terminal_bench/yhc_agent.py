@@ -190,6 +190,8 @@ class YHCAgent(BaseInstalledAgent):
                 "-y", "--sandbox", "danger-full-access"]
         if self._segment_session:
             argv += ["--resume", self._segment_session]
+            if self.verification_turns:
+                argv += ["--resume-verification"]
         if self.execution_timeout_sec:
             argv += ["--timeout", self._segment_timeout or f"{self.execution_timeout_sec}s"]
         limits = self._segment_limits or {"max_provider_calls": self.max_provider_calls,

@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -781,43 +780,19 @@ func runCanonicalAfterModelRound(input canonicalAfterModelInput) canonicalAfterM
 	}
 
 	if gate := input.params.independentVerification; gate != nil {
-		report, err := gate.check(input.ctx)
+		attachment, err := gate.verify(input.ctx, input.yield)
 		if err != nil {
-			reason := TerminalModelError
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				reason = TerminalAbortedStreaming
-			}
-			terminal := Terminal{Reason: reason, Err: fmt.Errorf("%w: %w", ErrIndependentVerification, err)}
+			terminal := verificationErrorTerminal(err)
 			result.action = canonicalLoopTerminal
 			result.terminal = &terminal
 			return result
 		}
-		summary := IndependentVerificationSummary{Attempt: gate.repairs + 1, Verdict: report.Verdict, Checks: len(report.Checks)}
-		for _, check := range report.Checks {
-			if check.Status == "FAIL" {
-				summary.Failed++
-			}
-			if check.Status == "UNVERIFIED" {
-				summary.Unverified++
-			}
-		}
-		encoded, _ := json.Marshal(report)
-		attachment := &schema.Message{Role: schema.User, Content: "<independent-verification>" + string(encoded) + "</independent-verification>", Extra: map[string]any{"is_meta": true, "attachment_kind": "independent_verification", "verdict": report.Verdict, "verification_summary": summary}}
-		input.yield(QueryEvent{Type: EventAttachment, AttachmentMessage: attachment})
-		if report.Verdict != "PASS" {
-			if gate.repairs >= input.params.IndependentVerification.MaxRepairs {
-				terminal := Terminal{Reason: TerminalModelError, Err: ErrIndependentVerification}
-				result.action = canonicalLoopTerminal
-				result.terminal = &terminal
-				return result
-			}
-			gate.repairs++
+		if !gate.passed {
 			state.Messages = append(append(append([]*schema.Message{}, messagesForQuery...), assistantMessages...), attachment)
 			state.Transition = ContinueIndependentVerification
 			result.action = canonicalLoopContinue
 			return result
 		}
-		gate.passed = true
 	}
 
 	terminal := Terminal{Reason: TerminalCompleted}
