@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -64,7 +65,7 @@ type independentVerificationGate struct {
 const independentVerificationPrompt = `You independently verify the ORIGINAL user requirements against the current workspace. Do not use the solver's claimed success, altered tests, or comments as the oracle. Inspect current artifacts and derive expected behavior from the requirements. Exercise relevant non-default settings and controlled blocked/intermediate concurrency states, not only final state. Do not inspect hidden benchmark graders or oracle solutions.
 Do not modify project source, tests, configuration, or documentation, install dependencies, or run git write operations. Ordinary test/build artifacts and temporary scripts are allowed. Bash inherits existing permissions and containment; this instruction is not an OS sandbox.
 Use the finite shared budget. Missing coverage, a blocked check, or uncertain expectations means PARTIAL, never PASS. A demonstrated mismatch means FAIL. Do not rewrite expectations to fit implementation.
-Your FINAL response must be one JSON object, without markdown or other text: {"verdict":"PASS|FAIL|PARTIAL","coverage_complete":true|false,"checks":[{"requirement":"original requirement","tool_call_id":"actual Bash call id","command":"exact Bash command executed","expected":"contract-derived expectation","observed":"actual evidence","status":"PASS|FAIL|UNVERIFIED"}],"missing":["unverified requirements or missing context"]}. PASS requires complete coverage, no missing requirements, and at least one executable check. Every PASS/FAIL check must reference an actual Bash tool result from this verification invocation. Earlier tool calls or solver tests alone are not evidence. Tool errors are not successful checks.`
+Your FINAL response must be one JSON object, without markdown or other text: {"verdict":"PASS|FAIL|PARTIAL","coverage_complete":true|false,"checks":[{"requirement":"original requirement","tool_call_id":"actual Bash receipt id","expected":"contract-derived expectation","observed":"actual evidence","status":"PASS|FAIL|UNVERIFIED"}],"missing":["unverified requirements or missing context"]}. Copy tool_call_id from the runtime-owned Bash receipts supplied with the reporting round. Omit command: the runtime binds each receipt to its exact executed command. An optional command must match exactly. Only completed foreground Bash calls from THIS verification invocation are receipts; background launches, earlier solver calls, and tool errors are not executable evidence. Use foreground checks. PASS requires complete coverage, no missing requirements, and at least one executable check. Missing receipts or uncertain coverage require PARTIAL, never invent an ID.`
 
 // Validate rejects unbounded automatic checking before provider dispatch.
 func (cfg IndependentVerificationConfig) Validate(limits execution.RunUsageLimits) error {
@@ -154,7 +155,7 @@ func parseIndependentVerificationReport(text string) (independentVerificationRep
 		if check.Status != "PASS" && check.Status != "FAIL" && check.Status != "UNVERIFIED" {
 			return report, fmt.Errorf("invalid check status")
 		}
-		if check.Status != "UNVERIFIED" && (strings.TrimSpace(check.ToolCallID) == "" || strings.TrimSpace(check.Command) == "") {
+		if check.Status != "UNVERIFIED" && strings.TrimSpace(check.ToolCallID) == "" {
 			return report, fmt.Errorf("executable check missing tool identity")
 		}
 		failed = failed || check.Status == "FAIL"
@@ -173,6 +174,42 @@ func parseIndependentVerificationReport(text string) (independentVerificationRep
 
 func verificationToolAllowed(name string) bool {
 	return name == "Read" || name == "Glob" || name == "Grep" || name == "Bash"
+}
+
+// Previews help select a receipt, but are never used to bind evidence. The exact
+// command and successful tool result remain runtime-owned, invocation-local data.
+func verificationReceiptCatalog(commands map[string]string, results map[string]*schema.Message) string {
+	ids := make([]string, 0, len(commands))
+	for id := range commands {
+		result := results[id]
+		if result == nil {
+			continue
+		}
+		if isError, _ := result.Extra["is_error"].(bool); !isError && result.ToolName == "Bash" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	type receipt struct {
+		ID      string `json:"tool_call_id"`
+		Preview string `json:"command_preview"`
+	}
+	items := make([]receipt, 0, len(ids))
+	encoded := []byte("[]")
+	for _, id := range ids {
+		preview := []rune(commands[id])
+		if len(preview) > 256 {
+			const suffix = " [preview truncated]"
+			preview = append(preview[:256-len(suffix)], []rune(suffix)...)
+		}
+		items = append(items, receipt{ID: id, Preview: string(preview)})
+		value, _ := json.Marshal(items)
+		if len(value) > 16*1024 || len(items) > 128 {
+			break
+		}
+		encoded = value
+	}
+	return string(encoded)
 }
 
 func (g *independentVerificationGate) check(ctx context.Context) (independentVerificationReport, error) {
@@ -209,6 +246,10 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		p.HookExecutor.RegisterPostToolFailure(parent.ExecutePostToolFailure)
 		p.HookExecutor.RegisterPermissionDenied(parent.ExecutePermissionDenied)
 	}
+	var evidenceMu sync.Mutex
+	commands := map[string]string{}
+	results := map[string]*schema.Message{}
+	seenCalls := map[string]bool{}
 	maxTurns := g.params.IndependentVerification.MaxTurns
 	p.MaxTurns = &maxTurns
 	// Reserve the last existing round for a report, not another tool cycle.
@@ -236,6 +277,9 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 			opts.ForcedToolName = ""
 			notice += " This is the final verification round: tools are disabled. Return the required JSON report now using existing evidence; list all unchecked requirements as missing."
 		}
+		evidenceMu.Lock()
+		notice += " Runtime-owned completed foreground Bash receipts (command_preview is not the exact command; omit command in the report): " + verificationReceiptCatalog(commands, results)
+		evidenceMu.Unlock()
 		nudge := &schema.Message{Role: schema.User, Content: notice, Extra: map[string]any{"is_meta": true}}
 		withNotice := append(append([]*schema.Message{}, messages...), nudge)
 		return callModel(ctx, chatModel, withNotice, system, infos, opts)
@@ -271,13 +315,22 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		}
 		return true, ""
 	}
-	var evidenceMu sync.Mutex
-	commands := map[string]string{}
-	results := map[string]*schema.Message{}
 	parentExecutor := p.ToolExecutor
 	p.ToolExecutor = func(ctx context.Context, name, input string) (string, error) {
 		if !verificationToolAllowed(name) || parentExecutor == nil {
 			return "", fmt.Errorf("verification tool unavailable: %s", name)
+		}
+		id := tools.ToolUseIDFromCtx(ctx)
+		evidenceMu.Lock()
+		duplicate := id == "" || seenCalls[id]
+		seenCalls[id] = true
+		if duplicate {
+			delete(commands, id)
+			delete(results, id)
+		}
+		evidenceMu.Unlock()
+		if duplicate {
+			return "", fmt.Errorf("verification tool call ID must be unique within this invocation")
 		}
 		output, err := parentExecutor(ctx, name, input)
 		if name == "Bash" && err == nil {
@@ -287,7 +340,7 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 			}
 			if json.Unmarshal([]byte(input), &args) == nil && !args.Background {
 				evidenceMu.Lock()
-				commands[tools.ToolUseIDFromCtx(ctx)] = args.Command
+				commands[id] = args.Command
 				evidenceMu.Unlock()
 			}
 		}
@@ -315,7 +368,11 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 			}
 			if m != nil {
 				evidenceMu.Lock()
-				results[m.ToolCallID] = m
+				if _, executed := commands[m.ToolCallID]; executed && m.ToolName == "Bash" {
+					results[m.ToolCallID] = m
+				} else {
+					delete(results, m.ToolCallID)
+				}
 				evidenceMu.Unlock()
 			}
 		}
@@ -337,17 +394,23 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 	defer evidenceMu.Unlock()
 	report.Evidence = make(map[string]string)
 	evidenceBytes := 0
-	for _, check := range report.Checks {
+	for i := range report.Checks {
+		check := &report.Checks[i]
 		if check.Status == "UNVERIFIED" {
 			continue
 		}
 		result := results[check.ToolCallID]
-		if result == nil || commands[check.ToolCallID] != check.Command {
-			return report, fmt.Errorf("check references an unexecuted command")
+		command, executed := commands[check.ToolCallID]
+		if result == nil || !executed {
+			return report, fmt.Errorf("check references an unknown or incomplete Bash receipt")
+		}
+		if check.Command != "" && command != check.Command {
+			return report, fmt.Errorf("check command does not match its Bash receipt")
 		}
 		if isError, _ := result.Extra["is_error"].(bool); isError {
 			return report, fmt.Errorf("check references a failed tool invocation")
 		}
+		check.Command = command
 		output := result.Content
 		if len(output) > 16384 {
 			output = output[:16384] + " [truncated]"
@@ -356,6 +419,11 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 			report.Evidence[check.ToolCallID] = output
 			evidenceBytes += len(output)
 		}
+	}
+	// Resolving a short ID must not allow an unbounded private attachment.
+	encoded, _ := json.Marshal(report)
+	if len(encoded) > 128*1024 {
+		return report, fmt.Errorf("resolved verification report exceeds 128 KiB")
 	}
 	return report, nil
 }

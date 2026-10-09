@@ -66,7 +66,14 @@ The checker can inspect with Read/Glob/Grep and exercise behavior with Bash;
 other tool dispatch is denied. Bash retains the existing execution policy and
 permissions. Instructions prohibit project changes, but this tool projection
 is **not** an OS-level read-only filesystem sandbox. Checks must reference an
-actual Bash call ID and exact effective command from this checker invocation;
+actual completed foreground Bash call ID from this checker invocation. A bounded,
+deterministic receipt catalog accompanies checker rounds; previews only help
+select an ID. Reports may omit the command, which the runtime resolves from its
+own execution record. An explicitly supplied command must still match exactly.
+Tool IDs must be unique across checker rounds; a reused ID invalidates its
+receipt and is rejected before another dispatch. Unknown IDs, background
+launches, and failed tool invocations cannot authorize
+a check. Resolved report attachments remain bounded to 128 KiB;
 bounded actual tool outputs accompany the verdict attachment. This validates
 execution provenance, not the truth of every model interpretation or complete
 coverage of arbitrary prose requirements.
