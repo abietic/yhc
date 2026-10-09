@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +73,120 @@ func TestIndependentVerificationReportFailsClosed(t *testing.T) {
 		if _, err := parseIndependentVerificationReport(text); err == nil {
 			t.Fatalf("accepted %s", text)
 		}
+	}
+}
+
+func TestIndependentVerificationRuntimeOwnedCommandReceipts(t *testing.T) {
+	for _, tc := range []struct {
+		name, id, command string
+		background        bool
+		toolFailed        bool
+		largeCommand      bool
+		failed            bool
+	}{
+		{name: "runtime-command", id: "verify-command"},
+		{name: "legacy-exact-command", id: "verify-command", command: "independent check"},
+		{name: "unknown-receipt", id: "solver-old-command", failed: true},
+		{name: "command-mismatch", id: "verify-command", command: "invented check", failed: true},
+		{name: "background-launch", id: "verify-command", background: true, failed: true},
+		{name: "failed-tool", id: "verify-command", toolFailed: true, failed: true},
+		{name: "resolved-report-bound", id: "verify-command", largeCommand: true, failed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3})
+			tool := verificationResponse("")
+			command := "independent check"
+			if tc.largeCommand {
+				command = strings.Repeat("x", 128*1024)
+			}
+			args, _ := json.Marshal(map[string]any{"command": command, "run_in_background": tc.background})
+			tool.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command", Type: "function", Function: schema.FunctionCall{Name: "Bash", Arguments: string(args)}}}
+			report := strings.Replace(verificationPass, `"tool_call_id":"verify-command"`, `"tool_call_id":"`+tc.id+`"`, 1)
+			if tc.command == "" {
+				report = strings.Replace(report, `,"command":"independent check"`, "", 1)
+			} else {
+				report = strings.Replace(report, `"command":"independent check"`, `"command":"`+tc.command+`"`, 1)
+			}
+			mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), tool, verificationResponse(report)}}
+			registry := tools.NewRegistry()
+			tools.RegisterDefaults(registry)
+			params := QueryParams{Messages: []*schema.Message{schema.UserMessage("original contract")}, ChatModel: mdl, RunUsage: usage, ToolRegistry: registry, IndependentVerification: IndependentVerificationConfig{MaxTurns: 2}, ToolExecutor: func(context.Context, string, string) (string, error) {
+				if tc.toolFailed {
+					return "", errors.New("tool failed")
+				}
+				return "observed evidence", nil
+			}}
+			params.Deps = &QueryDeps{ProviderUsage: usage, CallModel: func(ctx context.Context, chatModel model.BaseChatModel, messages []*schema.Message, system *schema.Message, infos []*schema.ToolInfo, opts execution.CallModelOptions) (*execution.CallModelResult, error) {
+				if opts.QuerySource == "independent_verification" && opts.ToolChoice == "none" && !tc.background && !tc.toolFailed && !strings.Contains(messages[len(messages)-1].Content, `"tool_call_id":"verify-command"`) {
+					t.Error("final report round lacks runtime-owned command receipts")
+				}
+				return execution.CallModel(ctx, chatModel, messages, system, infos, opts)
+			}}
+			events, terminal := collectEvents(t.Context(), params)
+			if (terminal.Err != nil) != tc.failed || usage.Snapshot().ProviderCalls != 3 {
+				t.Fatalf("terminal=%+v usage=%+v", terminal, usage.Snapshot())
+			}
+			if tc.failed {
+				return
+			}
+			found := false
+			for _, e := range events {
+				if e.AttachmentMessage != nil && e.AttachmentMessage.Extra["attachment_kind"] == "independent_verification" {
+					found = strings.Contains(e.AttachmentMessage.Content, `"command":"independent check"`)
+				}
+			}
+			if !found {
+				t.Error("accepted report lacks canonical executed command")
+			}
+		})
+	}
+}
+
+func TestVerificationReceiptCatalogIsBoundedAndInvocationLocal(t *testing.T) {
+	commands := map[string]string{"b": "second", "a": "first", "pending": "not finished", "failed": "not evidence"}
+	results := map[string]*schema.Message{"a": {ToolName: "Bash", Content: "private stdout"}, "b": {ToolName: "Bash"}, "failed": {ToolName: "Bash", Extra: map[string]any{"is_error": true}}, "old-solver": {}}
+	value := verificationReceiptCatalog(commands, results)
+	want := `[{"tool_call_id":"a","command_preview":"first"},{"tool_call_id":"b","command_preview":"second"}]`
+	if value != want {
+		t.Fatalf("catalog = %s", value)
+	}
+	for i := range 200 {
+		id := "unicode-" + strconv.Itoa(i)
+		commands[id] = strings.Repeat("验证", 1000)
+		results[id] = &schema.Message{ToolName: "Bash"}
+	}
+	value = verificationReceiptCatalog(commands, results)
+	var receipts []struct {
+		ID      string `json:"tool_call_id"`
+		Preview string `json:"command_preview"`
+	}
+	if len(value) > 16*1024 || json.Unmarshal([]byte(value), &receipts) != nil || len(receipts) > 128 || len(receipts) < 2 {
+		t.Fatal("receipt catalog is unbounded or malformed")
+	}
+	for _, receipt := range receipts {
+		if len([]rune(receipt.Preview)) > 256 {
+			t.Fatal("command preview is unbounded")
+		}
+	}
+}
+
+func TestIndependentVerificationRejectsReusedReceiptIDs(t *testing.T) {
+	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 4})
+	bash := verificationResponse("")
+	bash.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command", Type: "function", Function: schema.FunctionCall{Name: "Bash", Arguments: `{"command":"independent check"}`}}}
+	read := verificationResponse("")
+	read.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command", Type: "function", Function: schema.FunctionCall{Name: "Read", Arguments: `{"file_path":"/tmp/receipt-fixture"}`}}}
+	report := strings.Replace(verificationPass, `,"command":"independent check"`, "", 1)
+	mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), bash, read, verificationResponse(report)}}
+	registry := tools.NewRegistry()
+	tools.RegisterDefaults(registry)
+	executions := 0
+	_, terminal := collectEvents(t.Context(), QueryParams{Messages: []*schema.Message{schema.UserMessage("original contract")}, ChatModel: mdl, RunUsage: usage, Deps: &QueryDeps{ProviderUsage: usage}, ToolRegistry: registry, IndependentVerification: IndependentVerificationConfig{MaxTurns: 3}, ToolExecutor: func(context.Context, string, string) (string, error) {
+		executions++
+		return "observed evidence", nil
+	}})
+	if !errors.Is(terminal.Err, ErrIndependentVerification) || executions != 1 || usage.Snapshot().ProviderCalls != 4 {
+		t.Fatalf("mixed reused-ID evidence accepted: terminal=%+v executions=%d usage=%+v", terminal, executions, usage.Snapshot())
 	}
 }
 
@@ -200,7 +316,9 @@ func TestIndependentVerificationReservesFinalRoundForReport(t *testing.T) {
 	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 4})
 	tool := verificationResponse("")
 	tool.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command", Type: "function", Function: schema.FunctionCall{Name: "Bash", Arguments: `{"command":"independent check"}`}}}
-	mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), tool, tool, verificationResponse(verificationPass)}}
+	secondTool := verificationResponse("")
+	secondTool.chunks[0].ToolCalls = []schema.ToolCall{{ID: "verify-command-2", Type: "function", Function: schema.FunctionCall{Name: "Bash", Arguments: `{"command":"independent check"}`}}}
+	mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), tool, secondTool, verificationResponse(verificationPass)}}
 	registry := tools.NewRegistry()
 	tools.RegisterDefaults(registry)
 	verifierCalls := 0
