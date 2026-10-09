@@ -222,7 +222,7 @@ func TestVerificationCursorSurvivesBeforeAttachmentPublication(t *testing.T) {
 			if saved.validate(&params) == nil {
 				t.Fatal("stored completion authorized another resume")
 			}
-			if err := restarted.transcript.RecordMetadata(verificationCursorKey, `{"version":`); err != nil {
+			if err := restarted.transcript.RecordMetadata(verificationCursorMetadataName, `{"version":`); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := restarted.loadVerificationCursor(); err == nil {

@@ -12,7 +12,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const verificationCursorKey = "independent-verification-cursor-v1"
+const verificationCursorMetadataName = "independent-verification-cursor-v1"
 
 const verificationContinuationPrompt = "Resume the saved original task and verification stage with the configured finite allowance. Retain completed work, repair saved counterexamples, and execute fresh checks."
 
@@ -48,7 +48,7 @@ func (e *QueryEngine) loadVerificationCursor() (*verificationCursor, error) {
 		return nil, fmt.Errorf("verification continuation rejects a corrupt transcript")
 	}
 	for i := len(loaded.Metadata) - 1; i >= 0; i-- {
-		if loaded.Metadata[i].Key != verificationCursorKey {
+		if loaded.Metadata[i].Key != verificationCursorMetadataName {
 			continue
 		}
 		value := loaded.Metadata[i].Value
@@ -84,7 +84,7 @@ func (e *QueryEngine) commitVerificationCursor(cursor verificationCursor) error 
 	if recorder == nil {
 		return fmt.Errorf("verification requires a transcript")
 	}
-	if err := recorder.RecordMetadata(verificationCursorKey, string(encoded)); err != nil {
+	if err := recorder.RecordMetadata(verificationCursorMetadataName, string(encoded)); err != nil {
 		return err
 	}
 	return recorder.Flush()
