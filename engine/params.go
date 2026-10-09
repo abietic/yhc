@@ -109,48 +109,52 @@ type RuntimeItemAdmission func(context.Context, RuntimeItem) error
 // QueryParams holds immutable parameters for a single query() call.
 // Mirrors query.ts:181-199.
 type QueryParams struct {
-	independentVerification   *independentVerificationGate
-	IndependentVerification   IndependentVerificationConfig
-	RunUsage                  *execution.RunUsage // live invocation budget projection; never persisted
-	Messages                  []*schema.Message
-	SystemPrompt              *schema.Message
-	SessionID                 string
-	UserContext               map[string]string
-	SystemContext             map[string]string
-	CanUseTool                CanUseToolFn
-	RepeatedToolCallPrompt    RepeatedToolCallPromptFn
-	ToolUseContext            *ToolUseContext
-	FallbackModel             string
-	QuerySource               QuerySource
-	MaxOutputTokensOverride   *int
-	MaxTurns                  *int
-	SkipCacheWrite            bool
-	TaskBudget                *TaskBudget
-	TokenBudgetTracker        *budget.TokenBudget
-	Deps                      *QueryDeps
-	ChatModel                 model.BaseChatModel
-	modelCall                 *modelCallIdentity
-	modelResolver             ModelResolver
-	commandEntrypoint         string
-	retryBaseDelay            time.Duration
-	SummaryModel              model.BaseChatModel // compatibility owner for compaction and memory side calls
-	ToolUseSummaryModel       model.BaseChatModel // role-routed model used only by root tool-use summaries
-	toolUseSummaryCall        *modelCallIdentity
-	EmitToolUseSummaries      bool // feature gate for root tool use summary generation
-	InputCoordinator          *RuntimeInputCoordinator
-	CollectRuntimeItems       RuntimeItemCollector
-	AdmitRuntimeItem          RuntimeItemAdmission
-	ProjectGraphCheckpoint    *projectGraphCheckpointStore
-	ProjectGraphHITLEnabled   bool
-	RuntimePermissionDecision *RuntimePermissionDecision
-	ToolRegistry              *tools.Registry
-	ToolExecutor              ToolExecutor
-	TransitionPermissionMode  PermissionModeTransition
-	CancelToolInteraction     func(toolUseID string) bool
-	HookExecutor              *hooks.Executor
-	ResultStorage             *storage.ResultStorage
-	MemoryStore               *compact.MemoryStore // session memory for prefetch injection
-	SkillRegistry             *skills.SkillRegistry
+	independentVerification             *independentVerificationGate
+	independentVerificationContinuation bool
+	verificationWorkspace               string
+	loadVerificationCursor              func() (*verificationCursor, error)
+	commitVerificationCursor            func(verificationCursor) error
+	IndependentVerification             IndependentVerificationConfig
+	RunUsage                            *execution.RunUsage // live invocation budget projection; never persisted
+	Messages                            []*schema.Message
+	SystemPrompt                        *schema.Message
+	SessionID                           string
+	UserContext                         map[string]string
+	SystemContext                       map[string]string
+	CanUseTool                          CanUseToolFn
+	RepeatedToolCallPrompt              RepeatedToolCallPromptFn
+	ToolUseContext                      *ToolUseContext
+	FallbackModel                       string
+	QuerySource                         QuerySource
+	MaxOutputTokensOverride             *int
+	MaxTurns                            *int
+	SkipCacheWrite                      bool
+	TaskBudget                          *TaskBudget
+	TokenBudgetTracker                  *budget.TokenBudget
+	Deps                                *QueryDeps
+	ChatModel                           model.BaseChatModel
+	modelCall                           *modelCallIdentity
+	modelResolver                       ModelResolver
+	commandEntrypoint                   string
+	retryBaseDelay                      time.Duration
+	SummaryModel                        model.BaseChatModel // compatibility owner for compaction and memory side calls
+	ToolUseSummaryModel                 model.BaseChatModel // role-routed model used only by root tool-use summaries
+	toolUseSummaryCall                  *modelCallIdentity
+	EmitToolUseSummaries                bool // feature gate for root tool use summary generation
+	InputCoordinator                    *RuntimeInputCoordinator
+	CollectRuntimeItems                 RuntimeItemCollector
+	AdmitRuntimeItem                    RuntimeItemAdmission
+	ProjectGraphCheckpoint              *projectGraphCheckpointStore
+	ProjectGraphHITLEnabled             bool
+	RuntimePermissionDecision           *RuntimePermissionDecision
+	ToolRegistry                        *tools.Registry
+	ToolExecutor                        ToolExecutor
+	TransitionPermissionMode            PermissionModeTransition
+	CancelToolInteraction               func(toolUseID string) bool
+	HookExecutor                        *hooks.Executor
+	ResultStorage                       *storage.ResultStorage
+	MemoryStore                         *compact.MemoryStore // session memory for prefetch injection
+	SkillRegistry                       *skills.SkillRegistry
 	// AgentPauseCheckpoint acknowledges a requested pause before the next model
 	// request, then waits for resume or cancellation. It is never invoked in the
 	// middle of model streaming or tool execution.

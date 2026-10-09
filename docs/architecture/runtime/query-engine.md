@@ -46,7 +46,7 @@ tool permissions and invocation budgets still govern any selected checks.
 
 ## Optional independent completion verification
 
-`IndependentVerificationConfig` is invocation-local and disabled when `MaxTurns`
+`IndependentVerificationConfig` is disabled when `MaxTurns`
 is zero. When enabled, the canonical after-model boundary runs it only after
 normal completion, Stop hooks, and token-continuation decisions. Checker tool
 hooks forward to the parent owner; parent completion hooks are not re-run
@@ -88,16 +88,34 @@ terminal result remains the completion authority.
 
 All checker/repair calls share root RunUsage and deadline; there is no top-up,
 call reservation for verification, separate currency cap, or paid trial implied
-by enabling the feature. The gate cursor and checker history are not durable.
-An interrupted Graph decision cannot be resumed with this gate enabled; normal
-session continuation begins a new bounded invocation and may repeat checks.
-This first slice supports text requirements and invocation completion, not a
+by enabling the feature. QueryEngine fsyncs a bounded runtime cursor before
+solver/check/repair transitions. It holds original requirements and their digest,
+session/workspace identity, configuration, consumed repairs, and valid diagnostics.
+The headless `--resume-verification --resume <id>` option explicitly continues this
+cursor with matching verification options. Caller-supplied continuation text is replaced
+with a runtime-owned meta prompt before hooks, persistence, or model dispatch;
+new requirements require an ordinary user request. Ordinary user requests start a new gate. The Harbor
+adapter selects this option only for configured verification budget continuations;
+its finite allowances and original total deadline still bound the entire trial.
+
+A pending check resumes directly in a fresh checker invocation. Checker history
+and executable receipts are deliberately not restored; current artifacts must be
+checked again. Each fresh checker has the configured turn cap, so an interrupted
+check may repeat inspection, still within the finite shared allowance. A pending
+repair retains its consumed repair count and reinjects saved counterexamples even
+if a crash preceded attachment publication. Stored PASS/exhausted cursors, corrupt
+transcripts, unknown versions, and identity/configuration mismatches are rejected.
+Persistence failure stops before the next dispatch. No historical PASS authorizes
+completion. An interrupted Graph permission decision still cannot be resumed
+with this gate enabled.
+This slice supports text requirements and invocation completion, not a
 provider-independent proof, hidden benchmark grader, or automatic TUI rollout.
 Multimodal requests and synthetic structured-output completion are rejected
 when this gate is enabled.
 
 Code: [`independent_verification.go`](../../../engine/independent_verification.go),
-[`round_lifecycle.go`](../../../engine/round_lifecycle.go), and
+[`round_lifecycle.go`](../../../engine/round_lifecycle.go),
+[`verification_continuation.go`](../../../engine/verification_continuation.go), and
 [`headless verification tests`](../../../cmd/yhc/cmd/headless_verification_test.go).
 
 ## Durable Goal State And Projection

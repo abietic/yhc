@@ -147,6 +147,19 @@ class AgentTests(AgentFixture, unittest.TestCase):
                 with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                     self.agent(**kwargs)
 
+    def test_verification_continuation_is_explicit(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            agent = self.agent(max_provider_calls=8, verification_turns=2,
+                               verification_repairs=1)
+            self.assertNotIn("--resume-verification", agent.execution_command())
+            agent._segment_session = "saved-session"
+            command = agent.execution_command()
+            self.assertIn("--resume saved-session", command)
+            self.assertIn("--resume-verification", command)
+            ordinary = self.agent()
+            ordinary._segment_session = "saved-session"
+            self.assertNotIn("--resume-verification", ordinary.execution_command())
+
     def test_execution_timeout_is_opt_in_and_bounded(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
             self.assertNotIn("--timeout", self.agent().execution_command())

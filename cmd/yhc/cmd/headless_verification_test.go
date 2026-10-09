@@ -80,7 +80,7 @@ func TestExecIndependentVerificationRunsRealCheckAndSharesUsage(t *testing.T) {
 }
 
 func TestExecIndependentVerificationRejectsUnboundedOptionsBeforeProvider(t *testing.T) {
-	for _, flags := range [][]string{{"--verification-turns", "2"}, {"--verification-repairs", "1"}, {"--verification-turns", "33", "--max-provider-calls", "4"}} {
+	for _, flags := range [][]string{{"--resume-verification"}, {"--resume-verification", "--verification-turns", "2", "--max-provider-calls", "4"}, {"--verification-turns", "2"}, {"--verification-repairs", "1"}, {"--verification-turns", "33", "--max-provider-calls", "4"}} {
 		var out, stderr bytes.Buffer
 		cmd := newRootCommand()
 		cmd.SetOut(&out)
