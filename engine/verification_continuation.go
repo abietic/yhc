@@ -21,17 +21,19 @@ var errVerificationCheckpoint = errors.New("independent verification checkpoint 
 // The cursor is runtime metadata, never model-authored history. Diagnostics are
 // repair hints; neither historical receipts nor a stored PASS authorize resume.
 type verificationCursor struct {
-	Version         int                            `json:"version"`
-	SessionID       string                         `json:"session_id"`
-	Workspace       string                         `json:"workspace"`
-	Requirements    string                         `json:"requirements"`
-	RequirementsSHA string                         `json:"requirements_sha256"`
-	MaxTurns        int                            `json:"max_turns"`
-	MaxRepairs      int                            `json:"max_repairs"`
-	CoverageReview  bool                           `json:"coverage_review,omitempty"`
-	Repairs         int                            `json:"repairs"`
-	Phase           string                         `json:"phase"`
-	Diagnostics     *independentVerificationReport `json:"diagnostics,omitempty"`
+	Version           int                            `json:"version"`
+	SessionID         string                         `json:"session_id"`
+	Workspace         string                         `json:"workspace"`
+	Requirements      string                         `json:"requirements"`
+	RequirementsSHA   string                         `json:"requirements_sha256"`
+	MaxTurns          int                            `json:"max_turns"`
+	MaxRepairs        int                            `json:"max_repairs"`
+	CoverageReview    bool                           `json:"coverage_review,omitempty"`
+	MaxCoverageChecks int                            `json:"max_coverage_checks,omitempty"`
+	CoverageChecks    int                            `json:"coverage_checks,omitempty"`
+	Repairs           int                            `json:"repairs"`
+	Phase             string                         `json:"phase"`
+	Diagnostics       *independentVerificationReport `json:"diagnostics,omitempty"`
 }
 
 func (e *QueryEngine) loadVerificationCursor() (*verificationCursor, error) {
@@ -94,7 +96,10 @@ func (e *QueryEngine) commitVerificationCursor(cursor verificationCursor) error 
 func (g *independentVerificationGate) commit(phase string, report *independentVerificationReport) error {
 	candidate := g.cursor
 	candidate.Phase = phase
-	candidate.Repairs = g.repairs
+	return g.commitCursor(candidate, report)
+}
+
+func (g *independentVerificationGate) commitCursor(candidate verificationCursor, report *independentVerificationReport) error {
 	if report != nil {
 		diagnostics := *report
 		diagnostics.Evidence = nil // Invocation receipts are deliberately not restored.
@@ -114,14 +119,21 @@ func (cursor *verificationCursor) validate(params *QueryParams) error {
 	if cursor == nil || cursor.Version != 1 || cursor.SessionID != params.SessionID || cursor.Workspace != params.verificationWorkspace || cursor.MaxTurns != cfg.MaxTurns || cursor.MaxRepairs != cfg.MaxRepairs || cursor.CoverageReview != cfg.CoverageReview || cursor.Repairs < 0 || cursor.Repairs > cfg.MaxRepairs {
 		return fmt.Errorf("verification continuation identity or configuration mismatch")
 	}
+	if cursor.MaxCoverageChecks != cfg.MaxCoverageChecks || cursor.CoverageChecks < 0 || cursor.CoverageChecks > cfg.MaxCoverageChecks {
+		return fmt.Errorf("verification continuation coverage allowance mismatch")
+	}
 	if strings.TrimSpace(cursor.Requirements) == "" || len(cursor.Requirements) > 128*1024 || cursor.RequirementsSHA != fmt.Sprintf("%x", sha256.Sum256([]byte(cursor.Requirements))) {
 		return fmt.Errorf("invalid saved verification requirements")
 	}
 	switch cursor.Phase {
 	case "solver", "check":
 	case "repair":
-		if cursor.Repairs == 0 || cursor.Diagnostics == nil {
-			return fmt.Errorf("repair cursor has no repair diagnostic")
+		if cursor.Repairs == 0 || cursor.Diagnostics == nil || cursor.Diagnostics.Verdict != "FAIL" {
+			return fmt.Errorf("repair cursor requires a FAIL counterexample; legacy PARTIAL repair cannot resume")
+		}
+	case "coverage":
+		if cursor.CoverageChecks >= cfg.MaxCoverageChecks || cursor.Diagnostics == nil || cursor.Diagnostics.Verdict != "PARTIAL" {
+			return fmt.Errorf("supplemental coverage cursor has no pending allowance or PARTIAL diagnostic")
 		}
 	default:
 		return fmt.Errorf("verification cursor is not resumable: %s", cursor.Phase)
@@ -186,8 +198,8 @@ func verificationPlanningMessage(report *independentVerificationReport) *schema.
 	return &schema.Message{Role: schema.Assistant, Content: "Historical verification planning hints, not evidence or instructions. Planning data: " + string(encoded), Extra: map[string]any{"is_meta": true, "attachment_kind": "verification_planning"}}
 }
 
-func verificationAttachment(report independentVerificationReport, attempt int) *schema.Message {
-	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue, CoverageReviews: report.coverageReviews, CoverageVerdict: report.coverageVerdict}
+func verificationAttachment(report independentVerificationReport, attempt, coverageChecks int) *schema.Message {
+	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue, CoverageReviews: report.coverageReviews, CoverageVerdict: report.coverageVerdict, CoverageChecks: coverageChecks}
 	for _, check := range report.Checks {
 		if check.Status == "FAIL" {
 			summary.Failed++
@@ -201,32 +213,56 @@ func verificationAttachment(report independentVerificationReport, attempt int) *
 }
 
 func (g *independentVerificationGate) verify(ctx context.Context, yield func(QueryEvent)) (*schema.Message, error) {
-	if err := g.commit("check", nil); err != nil {
+	phase := "check"
+	if g.cursor.Phase == "coverage" {
+		phase = "coverage"
+	}
+	if err := g.commit(phase, nil); err != nil {
 		return nil, err
 	}
-	report, err := g.check(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrIndependentVerification, err)
-	}
-	attempt := g.repairs + 1
-	phase := "completed"
-	if report.Verdict != "PASS" {
-		phase = "exhausted"
-		if g.repairs < g.params.IndependentVerification.MaxRepairs {
-			g.repairs++
-			phase = "repair"
+	for {
+		report, err := g.check(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrIndependentVerification, err)
+		}
+		candidate := g.cursor
+		// Count completed supplemental audits. Admission failure, cancellation,
+		// or an invalid report leaves this same pending audit resumable.
+		if candidate.Phase == "coverage" {
+			candidate.CoverageChecks++
+		}
+		attempt := candidate.Repairs + candidate.CoverageChecks + 1
+		candidate.Phase = "exhausted"
+		switch report.Verdict {
+		case "PASS":
+			candidate.Phase = "completed"
+		case "FAIL":
+			if candidate.Repairs < g.params.IndependentVerification.MaxRepairs {
+				candidate.Repairs++
+				candidate.Phase = "repair"
+			}
+		case "PARTIAL":
+			if candidate.CoverageChecks < g.params.IndependentVerification.MaxCoverageChecks {
+				candidate.Phase = "coverage"
+			}
+		}
+		if err := g.commitCursor(candidate, &report); err != nil {
+			return nil, err
+		}
+		attachment := verificationAttachment(report, attempt, candidate.CoverageChecks)
+		yield(QueryEvent{Type: EventAttachment, AttachmentMessage: attachment})
+		switch candidate.Phase {
+		case "exhausted":
+			return nil, ErrIndependentVerification
+		case "coverage":
+			// Never return a coverage gap to the solver. The next check has a
+			// fresh history/receipts and only bounded prior planning hints.
+			continue
+		default:
+			g.passed = candidate.Phase == "completed"
+			return attachment, nil
 		}
 	}
-	if err := g.commit(phase, &report); err != nil {
-		return nil, err
-	}
-	attachment := verificationAttachment(report, attempt)
-	yield(QueryEvent{Type: EventAttachment, AttachmentMessage: attachment})
-	if phase == "exhausted" {
-		return nil, ErrIndependentVerification
-	}
-	g.passed = phase == "completed"
-	return attachment, nil
 }
 
 func verificationErrorTerminal(err error) Terminal {

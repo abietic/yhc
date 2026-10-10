@@ -13,11 +13,14 @@ import (
 )
 
 func TestExecVerificationBudgetResumeRetainsRepairLimitAndRequirements(t *testing.T) {
-	t.Run("repair", func(t *testing.T) { testExecVerificationBudgetResume(t, false) })
-	t.Run("coverage-review", func(t *testing.T) { testExecVerificationBudgetResume(t, true) })
+	for _, mode := range []string{"repair", "coverage-review", "supplemental-check"} {
+		t.Run(mode, func(t *testing.T) { testExecVerificationBudgetResume(t, mode) })
+	}
 }
 
-func testExecVerificationBudgetResume(t *testing.T, coverage bool) {
+func testExecVerificationBudgetResume(t *testing.T, mode string) {
+	coverage := mode == "coverage-review"
+	supplemental := mode == "supplemental-check"
 	prepareHeadlessJSONLProviderTest(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +30,7 @@ func testExecVerificationBudgetResume(t *testing.T, coverage bool) {
 			t.Error("caller control text reached resumed solver or checker")
 		}
 		checker := n == 2 || n == 3 || n == 5 || n == 6
-		if coverage {
+		if coverage || supplemental {
 			checker = n >= 2
 		}
 		if checker && (!bytes.Contains(body, []byte("ORIGINAL_REQUIREMENT")) || bytes.Contains(body, []byte("CONTINUATION_CONTROL"))) {
@@ -35,11 +38,17 @@ func testExecVerificationBudgetResume(t *testing.T, coverage bool) {
 		}
 		text := "solver completion"
 		item := ""
-		if n == 2 || (!coverage && n == 5) || (coverage && n == 4) {
+		if n == 2 || (!coverage && !supplemental && n == 5) || ((coverage || supplemental) && n == 4) {
 			item = fmt.Sprintf(`{"type":"function_call","id":"item-%d","call_id":"check-%d","name":"Bash","arguments":"{\"command\":\"printf counterexample\"}","status":"completed"}`, n, n)
 		}
-		if !coverage && (n == 3 || n == 6) {
+		if !coverage && !supplemental && (n == 3 || n == 6) {
 			text = fmt.Sprintf(`{"verdict":"FAIL","coverage_complete":true,"checks":[{"requirement":"ORIGINAL_REQUIREMENT","tool_call_id":"check-%d","expected":"correct","observed":"counterexample","status":"FAIL"}]}`, n-1)
+		}
+		if supplemental && (n == 3 || n == 5) {
+			text = `{"verdict":"PARTIAL","coverage_complete":false,"checks":[],"missing":["intermediate state not observed"]}`
+		}
+		if supplemental && n == 4 && (!bytes.Contains(body, []byte("Historical verification planning")) || bytes.Contains(body, []byte("solver completion"))) {
+			t.Error("resumed supplement lost planning or replayed solver")
 		}
 		if coverage && (n == 3 || n == 5) {
 			text = fmt.Sprintf(`{"verdict":"PASS","coverage_complete":true,"checks":[{"requirement":"ORIGINAL_REQUIREMENT","tool_call_id":"check-%d","expected":"counterexample","observed":"counterexample","status":"PASS"}]}`, n-1)
@@ -72,6 +81,9 @@ func testExecVerificationBudgetResume(t *testing.T, coverage bool) {
 		if coverage {
 			args = append(args, "--verification-coverage-review")
 		}
+		if supplemental {
+			args = append(args, "--verification-coverage-checks", "1")
+		}
 		if session != "" {
 			args = append(args, "--resume", session, "--resume-verification")
 		}
@@ -94,7 +106,18 @@ func testExecVerificationBudgetResume(t *testing.T, coverage bool) {
 	if coverage && (second.Status != "completed" || second.Error != nil || len(second.Verification) != 1 || second.Verification[0].Attempt != 1 || second.Verification[0].CoverageReviews != 1) {
 		t.Fatalf("coverage pause lost original stage or consumed a repair: %+v", second)
 	}
-	if calls.Load() != 6 || first.Usage == nil || second.Usage == nil || first.Usage.TotalTokens+second.Usage.TotalTokens != 84 {
+	wantCalls := int32(6)
+	if supplemental {
+		wantCalls = 5
+		if first.Verification[0].CoverageChecks != 0 || second.Verification[0].CoverageChecks != 1 {
+			t.Fatalf("supplemental allowance lost/reset: first=%+v second=%+v", first, second)
+		}
+		third := run("CONTINUATION_CONTROL", first.SessionID)
+		if third.Status != "failed" || third.Usage == nil || third.Usage.ProviderCalls != 0 {
+			t.Fatalf("exhausted supplement authorized more dispatch: %+v", third)
+		}
+	}
+	if calls.Load() != wantCalls || first.Usage == nil || second.Usage == nil || first.Usage.TotalTokens+second.Usage.TotalTokens != uint64(14*wantCalls) {
 		t.Fatal("continuation usage or dispatch count changed")
 	}
 }

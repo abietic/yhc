@@ -25,6 +25,9 @@ import (
 type IndependentVerificationConfig struct {
 	MaxTurns   int
 	MaxRepairs int
+	// MaxCoverageChecks allows at most one supplemental audit after PARTIAL,
+	// without dispatching the solver. Zero disables supplemental checking.
+	MaxCoverageChecks int
 	// CoverageReview adds one tool-free review of a provisional PASS. It shares
 	// the root budget and defaults off; it is not an authoritative grader.
 	CoverageReview bool
@@ -42,6 +45,7 @@ type IndependentVerificationSummary struct {
 	FormatIssue       string `json:"format_issue,omitempty"`
 	CoverageReviews   int    `json:"coverage_reviews,omitempty"`
 	CoverageVerdict   string `json:"coverage_verdict,omitempty"`
+	CoverageChecks    int    `json:"coverage_checks,omitempty"`
 }
 
 var ErrIndependentVerification = errors.New("independent verification did not establish completion")
@@ -72,7 +76,6 @@ type independentVerificationReport struct {
 type independentVerificationGate struct {
 	params       QueryParams
 	requirements string
-	repairs      int
 	passed       bool
 	cursor       verificationCursor
 }
@@ -90,6 +93,9 @@ Your FINAL response must be one JSON object, without markdown or other text: {"v
 func (cfg IndependentVerificationConfig) Validate(limits execution.RunUsageLimits) error {
 	if cfg.CoverageReview && cfg.MaxTurns == 0 {
 		return fmt.Errorf("coverage review requires independent verification")
+	}
+	if cfg.MaxCoverageChecks < 0 || cfg.MaxCoverageChecks > 1 || (cfg.MaxCoverageChecks != 0 && cfg.MaxTurns == 0) {
+		return fmt.Errorf("supplemental coverage checks require independent verification and accept 0..1")
 	}
 	if cfg.MaxTurns < 0 || cfg.MaxTurns > 32 || cfg.MaxRepairs < 0 || cfg.MaxRepairs > 3 || (cfg.MaxTurns == 0 && cfg.MaxRepairs != 0) {
 		return fmt.Errorf("independent verification requires 1..32 turns and 0..3 repairs, or both zero to disable")
@@ -139,7 +145,7 @@ func prepareIndependentVerification(params *QueryParams) error {
 		if err := cursor.validate(params); err != nil {
 			return err
 		}
-		params.independentVerification = &independentVerificationGate{params: frozen, requirements: cursor.Requirements, repairs: cursor.Repairs, cursor: *cursor}
+		params.independentVerification = &independentVerificationGate{params: frozen, requirements: cursor.Requirements, cursor: *cursor}
 		return nil
 	}
 	var requests []string
@@ -159,7 +165,7 @@ func prepareIndependentVerification(params *QueryParams) error {
 	if requirements == "" || len(requirements) > 128*1024 {
 		return fmt.Errorf("independent verification requires nonempty original text requirements of at most 128 KiB")
 	}
-	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, CoverageReview: cfg.CoverageReview, Phase: "solver"}
+	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, CoverageReview: cfg.CoverageReview, MaxCoverageChecks: cfg.MaxCoverageChecks, Phase: "solver"}
 	params.independentVerification = &independentVerificationGate{params: frozen, requirements: requirements, cursor: cursor}
 	return params.independentVerification.commit("solver", nil)
 }

@@ -46,12 +46,18 @@ func TestVerificationRecheckPlansFromPriorGaps(t *testing.T) {
 			}
 			encoded, _ := json.Marshal(prior)
 			fresh := strings.ReplaceAll(verificationPass, "verify-command", "new-receipt")
-			mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), planningBash("old-receipt", "private-old-command"), verificationResponse(string(encoded)), verificationResponse("repaired"), planningBash("new-receipt", "independent check"), verificationResponse(fresh)}}
+			mdl := &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), planningBash("old-receipt", "private-old-command"), verificationResponse(string(encoded))}}
+			wantCalls := uint64(5)
+			if verdict == "FAIL" {
+				mdl.responses = append(mdl.responses, verificationResponse("repaired"))
+				wantCalls++
+			}
+			mdl.responses = append(mdl.responses, planningBash("new-receipt", "independent check"), verificationResponse(fresh))
 			usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 6})
 			registry := tools.NewRegistry()
 			tools.RegisterDefaults(registry)
 			checkerCalls := 0
-			params := QueryParams{Messages: []*schema.Message{schema.UserMessage("ORIGINAL_CONTRACT")}, ChatModel: mdl, ToolRegistry: registry, RunUsage: usage, IndependentVerification: IndependentVerificationConfig{MaxTurns: 2, MaxRepairs: 1}, ToolExecutor: func(context.Context, string, string) (string, error) { return "current tool evidence", nil }}
+			params := QueryParams{Messages: []*schema.Message{schema.UserMessage("ORIGINAL_CONTRACT")}, ChatModel: mdl, ToolRegistry: registry, RunUsage: usage, IndependentVerification: IndependentVerificationConfig{MaxTurns: 2, MaxRepairs: 1, MaxCoverageChecks: 1}, ToolExecutor: func(context.Context, string, string) (string, error) { return "current tool evidence", nil }}
 			params.Deps = &QueryDeps{ProviderUsage: usage, CallModel: func(ctx context.Context, m model.BaseChatModel, messages []*schema.Message, system *schema.Message, infos []*schema.ToolInfo, opts execution.CallModelOptions) (*execution.CallModelResult, error) {
 				if opts.QuerySource == "independent_verification" {
 					checkerCalls++
@@ -76,7 +82,7 @@ func TestVerificationRecheckPlansFromPriorGaps(t *testing.T) {
 				return execution.CallModel(ctx, m, messages, system, infos, opts)
 			}}
 			_, terminal := collectEvents(t.Context(), params)
-			if terminal.Err != nil || checkerCalls != 4 || usage.Snapshot().ProviderCalls != 6 {
+			if terminal.Err != nil || checkerCalls != 4 || usage.Snapshot().ProviderCalls != wantCalls {
 				t.Fatalf("terminal=%+v checker calls=%d usage=%+v", terminal, checkerCalls, usage.Snapshot())
 			}
 		})

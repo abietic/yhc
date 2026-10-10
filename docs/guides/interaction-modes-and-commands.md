@@ -61,6 +61,18 @@ yhc exec "implement the requested behavior" --output-format jsonl \
 ```
 
 `--verification-turns` accepts 1..32; `--verification-repairs` accepts 0..3.
+Only FAIL with an executable counterexample permits solver repair. PARTIAL
+means insufficient evidence and stops without solver repair. Optionally add
+`--verification-coverage-checks 1` to give the checker one supplemental audit
+of missing coverage using the same shared allowance. It defaults to zero and
+accepts only 0..1. A fresh FAIL can then enter repair; another PARTIAL stops.
+This allowance is retained across budget continuations and repairs, not renewed
+per segment. A pending supplemental audit resumes with fresh checks, without
+repeating solver completion. Summaries report completed supplemental audits as
+`coverage_checks`; incomplete audits still contribute their dispatched calls
+to usage. Keep all verification options identical on `--resume-verification`.
+Legacy cursors without this option mean zero; a legacy pending PARTIAL repair
+is rejected, while a pending FAIL repair remains resumable.
 Add `--verification-coverage-review` to review each provisional PASS once
 without tools. It defaults off and consumes one additional model round from
 the same finite provider-call/token allowance and deadline. Evidence gaps
@@ -80,8 +92,9 @@ union. Invalid reports and exhausted repairs yield
 `run_budget_exceeded`. The model still chooses and interprets checks, so this
 is not proof of benchmark reward or exhaustive correctness.
 
-Harbor accepts `verification_turns`, `verification_repairs`, and boolean
-`verification_coverage_review` agent arguments; they default to zero/false.
+Harbor accepts `verification_turns`, `verification_repairs`,
+`verification_coverage_checks` (0..1), and boolean `verification_coverage_review`
+agent arguments; they default to zero/false.
 Every initial/continuation segment must include a
 finite provider-call limit when checking is enabled. No additional grant is
 created. Normal session resume preserves solver workspace and history, but
