@@ -25,6 +25,9 @@ import (
 type IndependentVerificationConfig struct {
 	MaxTurns   int
 	MaxRepairs int
+	// CoverageReview adds one tool-free review of a provisional PASS. It shares
+	// the root budget and defaults off; it is not an authoritative grader.
+	CoverageReview bool
 }
 
 // IndependentVerificationSummary is the bounded outward result. Detailed
@@ -37,6 +40,8 @@ type IndependentVerificationSummary struct {
 	Unverified        int    `json:"unverified"`
 	ReportCorrections int    `json:"report_corrections,omitempty"`
 	FormatIssue       string `json:"format_issue,omitempty"`
+	CoverageReviews   int    `json:"coverage_reviews,omitempty"`
+	CoverageVerdict   string `json:"coverage_verdict,omitempty"`
 }
 
 var ErrIndependentVerification = errors.New("independent verification did not establish completion")
@@ -60,6 +65,8 @@ type independentVerificationReport struct {
 	// as evidence. Provider usage remains the authoritative cross-segment ledger.
 	reportCorrections int
 	formatIssue       string
+	coverageReviews   int
+	coverageVerdict   string
 }
 
 type independentVerificationGate struct {
@@ -81,6 +88,9 @@ Your FINAL response must be one JSON object, without markdown or other text: {"v
 
 // Validate rejects unbounded automatic checking before provider dispatch.
 func (cfg IndependentVerificationConfig) Validate(limits execution.RunUsageLimits) error {
+	if cfg.CoverageReview && cfg.MaxTurns == 0 {
+		return fmt.Errorf("coverage review requires independent verification")
+	}
 	if cfg.MaxTurns < 0 || cfg.MaxTurns > 32 || cfg.MaxRepairs < 0 || cfg.MaxRepairs > 3 || (cfg.MaxTurns == 0 && cfg.MaxRepairs != 0) {
 		return fmt.Errorf("independent verification requires 1..32 turns and 0..3 repairs, or both zero to disable")
 	}
@@ -149,7 +159,7 @@ func prepareIndependentVerification(params *QueryParams) error {
 	if requirements == "" || len(requirements) > 128*1024 {
 		return fmt.Errorf("independent verification requires nonempty original text requirements of at most 128 KiB")
 	}
-	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, Phase: "solver"}
+	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, CoverageReview: cfg.CoverageReview, Phase: "solver"}
 	params.independentVerification = &independentVerificationGate{params: frozen, requirements: requirements, cursor: cursor}
 	return params.independentVerification.commit("solver", nil)
 }
@@ -459,40 +469,51 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 	if err != nil {
 		return report, err
 	}
-	evidenceMu.Lock()
-	defer evidenceMu.Unlock()
-	report.Evidence = make(map[string]string)
-	evidenceBytes := 0
-	for i := range report.Checks {
-		check := &report.Checks[i]
-		if check.Status == "UNVERIFIED" {
-			continue
+	// Bind and bound all receipts before reviewing; release the maps' lock before
+	// another production Query invocation.
+	report, err = func() (independentVerificationReport, error) {
+		evidenceMu.Lock()
+		defer evidenceMu.Unlock()
+		report.Evidence = make(map[string]string)
+		evidenceBytes := 0
+		for i := range report.Checks {
+			check := &report.Checks[i]
+			if check.Status == "UNVERIFIED" {
+				continue
+			}
+			result := results[check.ToolCallID]
+			command, executed := commands[check.ToolCallID]
+			if result == nil || !executed {
+				return report, fmt.Errorf("check references an unknown or incomplete Bash receipt")
+			}
+			if check.Command != "" && command != check.Command {
+				return report, fmt.Errorf("check command does not match its Bash receipt")
+			}
+			if isError, _ := result.Extra["is_error"].(bool); isError {
+				return report, fmt.Errorf("check references a failed tool invocation")
+			}
+			check.Command = command
+			output := result.Content
+			if len(output) > 16384 {
+				output = output[:16384] + " [truncated]"
+			}
+			if evidenceBytes+len(output) <= 65536 {
+				report.Evidence[check.ToolCallID] = output
+				evidenceBytes += len(output)
+			}
 		}
-		result := results[check.ToolCallID]
-		command, executed := commands[check.ToolCallID]
-		if result == nil || !executed {
-			return report, fmt.Errorf("check references an unknown or incomplete Bash receipt")
+		// Resolving a short ID must not allow an unbounded private attachment.
+		encoded, _ := json.Marshal(report)
+		if len(encoded) > 128*1024 {
+			return report, fmt.Errorf("resolved verification report exceeds 128 KiB")
 		}
-		if check.Command != "" && command != check.Command {
-			return report, fmt.Errorf("check command does not match its Bash receipt")
-		}
-		if isError, _ := result.Extra["is_error"].(bool); isError {
-			return report, fmt.Errorf("check references a failed tool invocation")
-		}
-		check.Command = command
-		output := result.Content
-		if len(output) > 16384 {
-			output = output[:16384] + " [truncated]"
-		}
-		if evidenceBytes+len(output) <= 65536 {
-			report.Evidence[check.ToolCallID] = output
-			evidenceBytes += len(output)
-		}
+		return report, nil
+	}()
+	if err != nil {
+		return report, err
 	}
-	// Resolving a short ID must not allow an unbounded private attachment.
-	encoded, _ := json.Marshal(report)
-	if len(encoded) > 128*1024 {
-		return report, fmt.Errorf("resolved verification report exceeds 128 KiB")
+	if report.Verdict == "PASS" && g.params.IndependentVerification.CoverageReview {
+		return g.reviewCoverage(ctx, p, report)
 	}
 	return report, nil
 }

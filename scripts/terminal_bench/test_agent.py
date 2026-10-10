@@ -135,12 +135,20 @@ class AgentTests(AgentFixture, unittest.TestCase):
     def test_independent_verification_is_opt_in_and_shares_finite_segment_caps(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
             self.assertNotIn("--verification-turns", self.agent().execution_command())
+            self.assertNotIn("--verification-coverage-review", self.agent().execution_command())
             command = self.agent(max_provider_calls=8, verification_turns=2,
                                  verification_repairs=1).execution_command()
             self.assertIn("--verification-turns 2", command)
             self.assertIn("--verification-repairs 1", command)
+            agent = self.agent(max_provider_calls=8, verification_turns=2,
+                               verification_coverage_review=True)
+            self.assertIn("--verification-coverage-review", agent.execution_command())
+            agent._segment_session = "saved-session"
+            self.assertIn("--verification-coverage-review", agent.execution_command())
             for kwargs in ({"verification_turns": True}, {"verification_turns": 33},
                            {"verification_repairs": 4}, {"verification_repairs": 1},
+                           {"verification_coverage_review": True},
+                           {"verification_coverage_review": "true"},
                            {"verification_turns": 2},
                            {"verification_turns": 2, "max_provider_calls": 8,
                             "continuation_budgets": [{"max_total_tokens": 100}]}):

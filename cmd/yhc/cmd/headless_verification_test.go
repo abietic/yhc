@@ -15,6 +15,18 @@ import (
 )
 
 func TestExecIndependentVerificationRunsRealCheckAndSharesUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name, review string
+	}{
+		{name: "default"},
+		{name: "supported", review: `{"verdict":"SUPPORTED","missing":[]}`},
+		{name: "insufficient", review: `{"verdict":"INSUFFICIENT","missing":["Required intermediate state was not observed."]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) { testExecVerificationCoverage(t, tc.name, tc.review) })
+	}
+}
+
+func testExecVerificationCoverage(t *testing.T, name, review string) {
 	prepareHeadlessJSONLProviderTest(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +48,12 @@ func TestExecIndependentVerificationRunsRealCheckAndSharesUsage(t *testing.T) {
 			}
 			text = `{"verdict":"PASS","coverage_complete":true,"checks":[{"requirement":"print independent evidence","tool_call_id":"verify-shell","command":"printf independent-evidence","expected":"independent-evidence","observed":"independent-evidence","status":"PASS"}]}`
 		}
+		if call == 4 {
+			if review == "" || !bytes.Contains(body, []byte("Review whether")) || !bytes.Contains(body, []byte("independent-evidence")) || !bytes.Contains(body, []byte(`"tool_choice":"none"`)) || bytes.Contains(body, []byte("solver success is provisional")) {
+				t.Error("coverage review did not receive bounded real evidence without tools or inherited solver history")
+			}
+			text = review
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		if item != "" {
 			_, _ = fmt.Fprintf(w, "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":0,\"output_index\":0,\"item\":%s}\n\n", item)
@@ -52,20 +70,33 @@ func TestExecIndependentVerificationRunsRealCheckAndSharesUsage(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&stderr)
 	cmd.SetIn(bytes.NewReader(nil))
-	cmd.SetArgs([]string{"exec", "print independent evidence", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--tools", "Bash", "--sandbox", "danger-full-access", "-y", "--max-provider-calls", "3", "--verification-turns", "2"})
+	expectedCalls, expectedVerdict := 3, "PASS"
+	args := []string{"exec", "print independent evidence", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--tools", "Bash", "--sandbox", "danger-full-access", "-y", "--max-provider-calls", "4", "--verification-turns", "2"}
+	if review != "" {
+		args = append(args, "--verification-coverage-review")
+		expectedCalls = 4
+	}
+	if name == "insufficient" {
+		expectedVerdict = "PARTIAL"
+	}
+	cmd.SetArgs(args)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	if err := cmd.ExecuteContext(ctx); err != nil {
+	if err := cmd.ExecuteContext(ctx); (err != nil) != (name == "insufficient") {
 		t.Fatalf("err=%v stderr=%s stdout=%s", err, stderr.String(), out.String())
 	}
 	var result headlessEnvelope
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Verification) != 1 || result.Verification[0].Verdict != "PASS" || result.Verification[0].Checks != 1 {
+	if len(result.Verification) != 1 || result.Verification[0].Verdict != expectedVerdict || result.Verification[0].Checks != 1 {
 		t.Fatalf("missing verification summary: %+v", result.Verification)
 	}
-	if calls.Load() != 3 || result.Status != "completed" || result.Usage == nil || result.Usage.ProviderCalls != 3 || result.Usage.TotalTokens != 42 {
+	expectedStatus := "completed"
+	if name == "insufficient" {
+		expectedStatus = "failed"
+	}
+	if calls.Load() != int32(expectedCalls) || result.Status != expectedStatus || result.Usage == nil || result.Usage.ProviderCalls != uint64(expectedCalls) || result.Usage.TotalTokens != uint64(14*expectedCalls) {
 		t.Fatalf("calls=%d result=%+v", calls.Load(), result)
 	}
 	found := false
@@ -77,10 +108,19 @@ func TestExecIndependentVerificationRunsRealCheckAndSharesUsage(t *testing.T) {
 	if !found {
 		t.Fatal("verification usage missing from shared report")
 	}
+	if review != "" {
+		found = false
+		for _, route := range result.Usage.Routes {
+			found = found || (route.Source == "independent_verification_coverage" && route.ProviderCalls == 1)
+		}
+		if !found || result.Verification[0].CoverageReviews != 1 {
+			t.Fatal("coverage review not separately counted")
+		}
+	}
 }
 
 func TestExecIndependentVerificationRejectsUnboundedOptionsBeforeProvider(t *testing.T) {
-	for _, flags := range [][]string{{"--resume-verification"}, {"--resume-verification", "--verification-turns", "2", "--max-provider-calls", "4"}, {"--verification-turns", "2"}, {"--verification-repairs", "1"}, {"--verification-turns", "33", "--max-provider-calls", "4"}} {
+	for _, flags := range [][]string{{"--resume-verification"}, {"--resume-verification", "--verification-turns", "2", "--max-provider-calls", "4"}, {"--verification-turns", "2"}, {"--verification-repairs", "1"}, {"--verification-coverage-review"}, {"--verification-turns", "33", "--max-provider-calls", "4"}} {
 		var out, stderr bytes.Buffer
 		cmd := newRootCommand()
 		cmd.SetOut(&out)
