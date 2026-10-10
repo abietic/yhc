@@ -168,7 +168,7 @@ func TestVerificationPlanningKeepsAssistantProvenanceOnDeepSeekWire(t *testing.T
 		_, _ = io.WriteString(w, "event: response.completed\n"+`data: {"type":"response.completed","sequence_number":0,"response":{"id":"fixture","object":"response","status":"completed","model":"deepseek-v4-flash","output":[{"type":"message","id":"msg-1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}}`+"\n\n")
 	}))
 	defer server.Close()
-	mdl, err := provider.NewChatModel(t.Context(), provider.Config{Provider: provider.ProviderAgenticDeepSeek, BaseURL: server.URL, APIKey: "fixture-key", Model: "deepseek-v4-flash"})
+	mdl, err := provider.NewChatModel(t.Context(), provider.Config{Provider: provider.ProviderAgenticDeepSeek, BaseURL: server.URL, APIKey: "sentinel-provider-credential", Model: "deepseek-v4-flash"})
 	if err != nil {
 		t.Fatal(err)
 	}
