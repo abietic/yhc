@@ -897,12 +897,12 @@ privacy:
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
     - path: docs/architecture/runtime/query-engine.md
-      line: 527
+      line: 553
       rule_id: high-entropy-token
       match_sha256: f6d692c9ceca6ed5379e3ff959c2afbb5297d4d2b46b3ff530be6211492fb885
       purpose: documentation-example
     - path: docs/architecture/runtime/query-engine.md
-      line: 528
+      line: 554
       rule_id: high-entropy-token
       match_sha256: 1c4bbc5d685983c9b30bca0939ed3da59e747dfb171ccc79ece13d1a4c394ef3
       purpose: documentation-example
@@ -5132,7 +5132,7 @@ privacy:
       match_sha256: 14e5a36ad5fa01c2da3fca63af3f65f20aa33dd89bc1b051b79ba7f777fc9cd1
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_agent.py
-      line: 523
+      line: 530
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
       purpose: synthetic-security-fixture

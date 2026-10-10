@@ -87,7 +87,7 @@ func queryWithKernel(
 	var terminal Terminal
 	var resumeErr error
 	if gate := params.independentVerification; gate != nil && params.independentVerificationContinuation {
-		if gate.cursor.Phase == "check" {
+		if gate.cursor.Phase == "check" || gate.cursor.Phase == "coverage" {
 			var attachment *schema.Message
 			attachment, resumeErr = gate.verify(queryCtx, projectionEmitter.Emit)
 			if resumeErr == nil && !gate.passed {

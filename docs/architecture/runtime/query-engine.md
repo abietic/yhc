@@ -114,8 +114,22 @@ This separates test construction from evidence review, but remains model-directe
 judgment rather than proof of arbitrary program semantics or benchmark reward.
 
 A structured PASS requires executable checks, all checks passing, complete
-claimed coverage, and no missing requirements. FAIL/PARTIAL may request at most
-`MaxRepairs` additional solver cycles (0..3), followed by fresh checks. Invalid
+claimed coverage, and no missing requirements. Routing distinguishes evidence
+gaps from demonstrated defects:
+
+| Verdict | Next stage |
+|---|---|
+| PASS | Complete the invocation after any configured coverage review. |
+| FAIL | Request at most `MaxRepairs` additional solver cycles (0..3), each followed by fresh checks. |
+| PARTIAL | Never dispatch solver repair. If `MaxCoverageChecks=1`, run one supplemental checker against current artifacts; otherwise stop. |
+
+`MaxCoverageChecks` defaults to zero and accepts only 0..1. Its allowance belongs
+to the whole saved task, separately from repairs; a later repair cannot reset it.
+The supplemental checker uses the existing narrow tool projection, fresh history
+and receipts, and bounded untrusted prior planning hints. It can establish PASS
+or a fresh FAIL counterexample. Another PARTIAL exhausts the allowance, including
+when the check has made no progress. This is a finite additional audit, not a
+guarantee that the model will derive a better test. Invalid
 reports, missing command evidence, exhausted repair allowance, budget admission
 failure, and checker errors fail closed. Parent cancellation propagates through
 the checker. Solver candidate text may already have streamed; the enclosing
@@ -124,8 +138,16 @@ terminal result remains the completion authority.
 All checker/repair calls share root RunUsage and deadline; there is no top-up,
 call reservation for verification, separate currency cap, or paid trial implied
 by enabling the feature. QueryEngine fsyncs a bounded runtime cursor before
-solver/check/repair transitions. It holds original requirements and their digest,
-session/workspace identity, configuration, consumed repairs, and valid diagnostics.
+solver/check/coverage/repair transitions. It holds original requirements and their
+digest, session/workspace identity, configuration, consumed repairs, completed
+supplemental checks, and valid diagnostics. Counts and phase are installed in
+memory only after persistence succeeds. A supplemental check is counted only
+after its valid report, including any configured coverage review, completes.
+Budget rejection, cancellation, malformed output, and interruption leave the
+same supplemental audit pending; every dispatched call is still charged to
+RunUsage. The `coverage_checks` outward summary is this completed-check count,
+not a provider-call or cost ledger. `attempt` numbers completed reports across
+both repair and supplemental checking.
 The headless `--resume-verification --resume <id>` option explicitly continues this
 cursor with matching verification options. Caller-supplied continuation text is replaced
 with a runtime-owned meta prompt before hooks, persistence, or model dispatch;
@@ -133,7 +155,7 @@ new requirements require an ordinary user request. Ordinary user requests start 
 adapter selects this option only for configured verification budget continuations;
 its finite allowances and original total deadline still bound the entire trial.
 
-A pending check resumes directly in a fresh checker invocation. Checker history
+A pending check or supplemental coverage stage resumes directly in a fresh checker invocation. Checker history
 and executable receipts are deliberately not restored; current artifacts must be
 checked again. Valid prior FAIL/PARTIAL diagnostics supply optional planning data:
 missing requirements and nonpassing concerns, with their expected/observed text.
@@ -153,6 +175,10 @@ check may repeat inspection, still within the finite shared allowance. A pending
 repair retains its consumed repair count and reinjects saved counterexamples even
 if a crash preceded attachment publication. Stored PASS/exhausted cursors, corrupt
 transcripts, unknown versions, and identity/configuration mismatches are rejected.
+Legacy cursors without supplemental settings mean zero allowance. Continuation
+cannot silently enable it. A legacy pending repair with PARTIAL diagnostics is
+rejected rather than converted to another stage or allowed to edit without a
+counterexample; pending FAIL repairs retain their existing behavior.
 Persistence failure stops before the next dispatch. No historical PASS authorizes
 completion. An interrupted Graph permission decision still cannot be resumed
 with this gate enabled.
