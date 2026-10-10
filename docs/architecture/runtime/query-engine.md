@@ -110,7 +110,20 @@ its finite allowances and original total deadline still bound the entire trial.
 
 A pending check resumes directly in a fresh checker invocation. Checker history
 and executable receipts are deliberately not restored; current artifacts must be
-checked again. Each fresh checker has the configured turn cap, so an interrupted
+checked again. Valid prior FAIL/PARTIAL diagnostics supply optional planning data:
+missing requirements and nonpassing concerns, with their expected/observed text.
+The projected JSON is bounded to 16 KiB; an oversized projection is omitted.
+Planning data retains assistant provenance on provider requests and precedes the
+original user requirements. The checker system policy treats it as untrusted
+data; local meta flags do not enforce that boundary. This does not provide an
+OS sandbox or guarantee resistance to every model-level prompt injection.
+Historical commands, tool IDs, and passing checks are never projected. The
+checker treats the data as untrusted ordering hints, validates them against the
+original contract, and still requires fresh evidence and complete coverage for
+PASS. Ordinary rechecks after repair use the same projection. PARTIAL can mean
+only missing coverage, without a demonstrated defect. This adds no model call,
+tool allowance, or durable state format.
+Each fresh checker has the configured turn cap, so an interrupted
 check may repeat inspection, still within the finite shared allowance. A pending
 repair retains its consumed repair count and reinjects saved counterexamples even
 if a crash preceded attachment publication. Stored PASS/exhausted cursors, corrupt
