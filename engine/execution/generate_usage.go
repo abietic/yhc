@@ -35,7 +35,7 @@ func GenerateWithUsage(ctx context.Context, client model.BaseChatModel, messages
 			return nil, ReleaseProviderUsageBeforeDispatch(call, err)
 		}
 	}
-	response, err := client.Generate(ctx, messages, opts...)
+	response, err := client.Generate(withProviderUsageResponseObserver(ctx, call), messages, opts...)
 	if err != nil {
 		return nil, MarkProviderUsageAmbiguous(call, err)
 	}

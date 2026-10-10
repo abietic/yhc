@@ -166,6 +166,19 @@ caching or thinking occurred. `provider_duration_ms` sums call lifetimes and
 may exceed invocation `elapsed_ms` when calls overlap. No price is inferred.
 A forced process kill may prevent the final summary from being written.
 
+`usage.call_ledger` adds up to 1,024 individual admission records per invocation:
+model/provider labels, source/role/effort, attempt/retry indices, timing,
+settlement state, and known cached/uncached input plus output/thinking tokens.
+`dropped_records` reports omitted details; aggregate totals still include those
+calls. Unsettled/unknown/released records have null tokens. `resolved_model` is
+observed from supported typed response metadata and otherwise says `unknown`.
+The [invocation usage contract](../architecture/runtime/budgets-and-limits.md#invocation-usage-and-per-call-history)
+explains identity, privacy, truncation, and supported entrypoint boundaries.
+Harbor continuation metadata retains one ledger per incremental invocation in
+`usage.call_ledgers`; `call_ledger_complete` describes history coverage separately
+from `usage.complete`. Older logs remain valid without synthesized history.
+
+
 The [Harbor adapter](../../scripts/terminal_bench/yhc_agent.py) accepts optional
 agent arguments `--ak max_provider_calls=30 --ak max_total_tokens=200000`.
 An optional `--ak execution_timeout_sec=1740` passes `--timeout 1740s` to YHC;
