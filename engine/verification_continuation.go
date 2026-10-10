@@ -144,7 +144,7 @@ func (cursor *verificationCursor) validate(params *QueryParams) error {
 }
 
 func verificationAttachment(report independentVerificationReport, attempt int) *schema.Message {
-	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks)}
+	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue}
 	for _, check := range report.Checks {
 		if check.Status == "FAIL" {
 			summary.Failed++

@@ -897,12 +897,12 @@ privacy:
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
     - path: docs/architecture/runtime/query-engine.md
-      line: 478
+      line: 489
       rule_id: high-entropy-token
       match_sha256: f6d692c9ceca6ed5379e3ff959c2afbb5297d4d2b46b3ff530be6211492fb885
       purpose: documentation-example
     - path: docs/architecture/runtime/query-engine.md
-      line: 479
+      line: 490
       rule_id: high-entropy-token
       match_sha256: 1c4bbc5d685983c9b30bca0939ed3da59e747dfb171ccc79ece13d1a4c394ef3
       purpose: documentation-example

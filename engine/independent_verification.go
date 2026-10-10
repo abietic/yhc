@@ -30,11 +30,13 @@ type IndependentVerificationConfig struct {
 // IndependentVerificationSummary is the bounded outward result. Detailed
 // commands and tool output stay in the private session attachment.
 type IndependentVerificationSummary struct {
-	Attempt    int    `json:"attempt"`
-	Verdict    string `json:"verdict"`
-	Checks     int    `json:"checks"`
-	Failed     int    `json:"failed"`
-	Unverified int    `json:"unverified"`
+	Attempt           int    `json:"attempt"`
+	Verdict           string `json:"verdict"`
+	Checks            int    `json:"checks"`
+	Failed            int    `json:"failed"`
+	Unverified        int    `json:"unverified"`
+	ReportCorrections int    `json:"report_corrections,omitempty"`
+	FormatIssue       string `json:"format_issue,omitempty"`
 }
 
 var ErrIndependentVerification = errors.New("independent verification did not establish completion")
@@ -54,6 +56,10 @@ type independentVerificationReport struct {
 	Checks           []independentVerificationCheck `json:"checks"`
 	Missing          []string                       `json:"missing,omitempty"`
 	Evidence         map[string]string              `json:"tool_evidence,omitempty"`
+	// Invocation-local diagnostics are never accepted from model JSON or restored
+	// as evidence. Provider usage remains the authoritative cross-segment ledger.
+	reportCorrections int
+	formatIssue       string
 }
 
 type independentVerificationGate struct {
@@ -152,41 +158,31 @@ func parseIndependentVerificationReport(text string) (independentVerificationRep
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&report); err != nil {
-		return report, err
+		return report, verificationJSONFormatError(err)
 	}
 	if err := dec.Decode(new(any)); err != io.EOF {
-		return report, fmt.Errorf("verification report must contain exactly one JSON object")
+		return report, &verificationReportFormatError{"json_single_object", "verification report must contain exactly one JSON object"}
 	}
-	if report.Evidence != nil {
-		return report, fmt.Errorf("tool evidence is runtime-owned")
+	if err := verificationReportSemantics(report); err != nil {
+		return report, err
 	}
 	if report.Verdict != "PASS" && report.Verdict != "FAIL" && report.Verdict != "PARTIAL" {
-		return report, fmt.Errorf("invalid verification verdict")
+		return report, &verificationReportFormatError{"verdict_enum", "invalid verification verdict"}
 	}
-	if len(report.Checks) > 128 || len(report.Missing) > 128 {
-		return report, fmt.Errorf("too many verification checks")
-	}
-	failed := false
 	for _, check := range report.Checks {
 		if strings.TrimSpace(check.Requirement) == "" || strings.TrimSpace(check.Expected) == "" || strings.TrimSpace(check.Observed) == "" {
-			return report, fmt.Errorf("verification check missing contract or evidence")
+			return report, &verificationReportFormatError{"check_fields", "verification check missing contract or evidence"}
 		}
 		if check.Status != "PASS" && check.Status != "FAIL" && check.Status != "UNVERIFIED" {
-			return report, fmt.Errorf("invalid check status")
+			category := "check_status_enum"
+			if check.Status == "" {
+				category = "check_status_missing"
+			}
+			return report, &verificationReportFormatError{category, "invalid check status"}
 		}
 		if check.Status != "UNVERIFIED" && strings.TrimSpace(check.ToolCallID) == "" {
 			return report, fmt.Errorf("executable check missing tool identity")
 		}
-		failed = failed || check.Status == "FAIL"
-		if report.Verdict == "PASS" && check.Status != "PASS" {
-			return report, fmt.Errorf("PASS contradicts a check")
-		}
-	}
-	if report.Verdict == "PASS" && (!report.CoverageComplete || len(report.Checks) == 0 || len(report.Missing) != 0) {
-		return report, fmt.Errorf("PASS requires complete executable coverage")
-	}
-	if report.Verdict == "FAIL" && !failed {
-		return report, fmt.Errorf("FAIL requires a counterexample")
 	}
 	return report, nil
 }
@@ -278,6 +274,7 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		callModel = execution.CallModel
 	}
 	var reportOnly atomic.Bool
+	var correcting atomic.Bool
 	rounds := map[string]int{}
 	p.Deps.CallModel = func(ctx context.Context, chatModel model.BaseChatModel, messages []*schema.Message, system *schema.Message, infos []*schema.ToolInfo, opts execution.CallModelOptions) (*execution.CallModelResult, error) {
 		if opts.QuerySource != "independent_verification" {
@@ -288,7 +285,7 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 			round = len(rounds) + 1
 			rounds[opts.UsageLogicalRoundID] = round
 		}
-		last := round >= maxTurns
+		last := correcting.Load() || round >= maxTurns
 		reportOnly.Store(last)
 		notice := fmt.Sprintf("Independent verification round %d of %d. Batch inspection and executable checks; leave the final round for the JSON report. Missing coverage must be PARTIAL. Report a demonstrated failure promptly rather than exhaustively auditing unrelated code.", round, maxTurns)
 		if last {
@@ -336,6 +333,9 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 	}
 	parentExecutor := p.ToolExecutor
 	p.ToolExecutor = func(ctx context.Context, name, input string) (string, error) {
+		if reportOnly.Load() {
+			return "", fmt.Errorf("independent verification reporting cannot execute tools")
+		}
 		if !verificationToolAllowed(name) || parentExecutor == nil {
 			return "", fmt.Errorf("verification tool unavailable: %s", name)
 		}
@@ -366,7 +366,7 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		return output, err
 	}
 	var final strings.Builder
-	terminal := Query(ctx, p, func(e QueryEvent) {
+	collect := func(e QueryEvent) {
 		if e.Type == EventStreamRequestStart {
 			final.Reset()
 		}
@@ -395,7 +395,8 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 				evidenceMu.Unlock()
 			}
 		}
-	})
+	}
+	terminal := Query(ctx, p, collect)
 	if err := ctx.Err(); err != nil {
 		return independentVerificationReport{}, err
 	}
@@ -406,6 +407,51 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		return independentVerificationReport{}, fmt.Errorf("verifier stopped: %s", terminal.Reason)
 	}
 	report, err := parseIndependentVerificationReport(final.String())
+	var formatErr *verificationReportFormatError
+	if errors.As(err, &formatErr) && formatErr.correctable() && len(rounds) < maxTurns {
+		// A correction stays in this check scope, with its invocation-local receipts.
+		// It traverses the same production kernel once, with no inspection/tool cycle.
+		evidenceMu.Lock()
+		referenceErr := verificationCorrectionReferences(report, commands, results)
+		evidence := verificationCorrectionEvidence(commands, results)
+		evidenceMu.Unlock()
+		if referenceErr != nil {
+			return report, referenceErr
+		}
+		if p.RunUsage != nil && !p.RunUsage.Snapshot().Complete {
+			return report, execution.ErrRunUsageUnknown
+		}
+		if err := ctx.Err(); err != nil {
+			return report, err
+		}
+		correctionRound := 1
+		p.MaxTurns = &correctionRound
+		p.Messages = []*schema.Message{
+			schema.UserMessage(g.requirements),
+			{Role: schema.User, Content: "Runtime-owned executable evidence from this verification check: " + evidence, Extra: map[string]any{"is_meta": true}},
+			schema.AssistantMessage(final.String(), nil),
+			{Role: schema.User, Content: "Correct the report format only: " + formatErr.Error() + ". Return one JSON object using the original requirements and existing evidence. Tools are disabled; do not add checks, change expectations, or claim missing coverage. This is the only format correction attempt.", Extra: map[string]any{"is_meta": true}},
+		}
+		correcting.Store(true)
+		final.Reset()
+		terminal = Query(ctx, p, collect)
+		if ctx.Err() != nil {
+			return report, ctx.Err()
+		}
+		if terminal.Err != nil {
+			return report, terminal.Err
+		}
+		if terminal.Reason != TerminalCompleted {
+			return report, fmt.Errorf("report correction stopped: %s", terminal.Reason)
+		}
+		original := report
+		report, err = parseIndependentVerificationReport(final.String())
+		report.reportCorrections = 1
+		report.formatIssue = formatErr.category
+		if err == nil {
+			err = verificationCorrectionPreservesReport(original, report)
+		}
+	}
 	if err != nil {
 		return report, err
 	}

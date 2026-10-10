@@ -40,7 +40,7 @@ func TestIndependentVerificationGate(t *testing.T) {
 		{name: "repair-and-recheck", config: IndependentVerificationConfig{MaxTurns: 2, MaxRepairs: 1}, limit: 8, responses: []string{"done", verificationFail, "repaired", verificationPass}, calls: 6},
 		{name: "repair-limit", config: IndependentVerificationConfig{MaxTurns: 2, MaxRepairs: 1}, limit: 8, responses: []string{"done", verificationFail, "repaired", verificationFail}, calls: 6, failed: true},
 		{name: "partial", config: IndependentVerificationConfig{MaxTurns: 2}, limit: 5, responses: []string{"done", `{"verdict":"PARTIAL","coverage_complete":false,"checks":[],"missing":["blocked concurrency check"]}`}, calls: 2, failed: true},
-		{name: "malformed", config: IndependentVerificationConfig{MaxTurns: 2}, limit: 5, responses: []string{"done", "PASS"}, calls: 2, failed: true},
+		{name: "malformed", config: IndependentVerificationConfig{MaxTurns: 1}, limit: 5, responses: []string{"done", "PASS"}, calls: 2, failed: true},
 		{name: "shared-budget", config: IndependentVerificationConfig{MaxTurns: 2}, limit: 1, responses: []string{"done"}, calls: 1, failed: true},
 		{name: "unbounded-rejected", config: IndependentVerificationConfig{MaxTurns: 2}, responses: nil, calls: 0, failed: true},
 	} {
