@@ -28,6 +28,7 @@ type verificationCursor struct {
 	RequirementsSHA string                         `json:"requirements_sha256"`
 	MaxTurns        int                            `json:"max_turns"`
 	MaxRepairs      int                            `json:"max_repairs"`
+	CoverageReview  bool                           `json:"coverage_review,omitempty"`
 	Repairs         int                            `json:"repairs"`
 	Phase           string                         `json:"phase"`
 	Diagnostics     *independentVerificationReport `json:"diagnostics,omitempty"`
@@ -110,7 +111,7 @@ func (g *independentVerificationGate) commit(phase string, report *independentVe
 
 func (cursor *verificationCursor) validate(params *QueryParams) error {
 	cfg := params.IndependentVerification
-	if cursor == nil || cursor.Version != 1 || cursor.SessionID != params.SessionID || cursor.Workspace != params.verificationWorkspace || cursor.MaxTurns != cfg.MaxTurns || cursor.MaxRepairs != cfg.MaxRepairs || cursor.Repairs < 0 || cursor.Repairs > cfg.MaxRepairs {
+	if cursor == nil || cursor.Version != 1 || cursor.SessionID != params.SessionID || cursor.Workspace != params.verificationWorkspace || cursor.MaxTurns != cfg.MaxTurns || cursor.MaxRepairs != cfg.MaxRepairs || cursor.CoverageReview != cfg.CoverageReview || cursor.Repairs < 0 || cursor.Repairs > cfg.MaxRepairs {
 		return fmt.Errorf("verification continuation identity or configuration mismatch")
 	}
 	if strings.TrimSpace(cursor.Requirements) == "" || len(cursor.Requirements) > 128*1024 || cursor.RequirementsSHA != fmt.Sprintf("%x", sha256.Sum256([]byte(cursor.Requirements))) {
@@ -186,7 +187,7 @@ func verificationPlanningMessage(report *independentVerificationReport) *schema.
 }
 
 func verificationAttachment(report independentVerificationReport, attempt int) *schema.Message {
-	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue}
+	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue, CoverageReviews: report.coverageReviews, CoverageVerdict: report.coverageVerdict}
 	for _, check := range report.Checks {
 		if check.Status == "FAIL" {
 			summary.Failed++

@@ -99,6 +99,7 @@ func newExecCommand() *cobra.Command {
 	bindRuntimeFlags(command.Flags(), &options.Runtime)
 	command.Flags().IntVar(&options.IndependentVerification.MaxTurns, "verification-turns", 0, "Independent verification rounds per completion check (1..32; 0 disables; requires --max-provider-calls)")
 	command.Flags().IntVar(&options.IndependentVerification.MaxRepairs, "verification-repairs", 0, "Maximum solver repair cycles after FAIL/PARTIAL (0..3; shares invocation budget)")
+	command.Flags().BoolVar(&options.IndependentVerification.CoverageReview, "verification-coverage-review", false, "Review provisional PASS coverage once without tools (requires verification; shares invocation budget)")
 	command.Flags().DurationVar(&options.Timeout, "timeout", 0, "Cancel this query and its children after this duration (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")

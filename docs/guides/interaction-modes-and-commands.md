@@ -61,6 +61,15 @@ yhc exec "implement the requested behavior" --output-format jsonl \
 ```
 
 `--verification-turns` accepts 1..32; `--verification-repairs` accepts 0..3.
+Add `--verification-coverage-review` to review each provisional PASS once
+without tools. It defaults off and consumes one additional model round from
+the same finite provider-call/token allowance and deadline. Evidence gaps
+downgrade PASS to PARTIAL; the review cannot create new counterexamples. If its
+admission runs out of budget, continuation executes fresh checks and review.
+The saved setting must match on `--resume-verification`; old cursors mean off.
+Usage attributes this call to `independent_verification_coverage`, and bounded
+summaries include `coverage_reviews` and `coverage_verdict`. This remains a
+model judgment and does not guarantee benchmark reward.
 A checker uses a fresh context containing original user requirements and checks
 the current workspace with the same admitted model and budget. A missing or
 failed check cannot be reported as completed. JSON/JSONL final results include bounded `verification` verdict/check-count
@@ -71,8 +80,9 @@ union. Invalid reports and exhausted repairs yield
 `run_budget_exceeded`. The model still chooses and interprets checks, so this
 is not proof of benchmark reward or exhaustive correctness.
 
-Harbor accepts `verification_turns` and `verification_repairs` agent arguments;
-they also default to zero. Every initial/continuation segment must include a
+Harbor accepts `verification_turns`, `verification_repairs`, and boolean
+`verification_coverage_review` agent arguments; they default to zero/false.
+Every initial/continuation segment must include a
 finite provider-call limit when checking is enabled. No additional grant is
 created. Normal session resume preserves solver workspace and history, but
 starts a new checker context; checker history is not resumable. The feature

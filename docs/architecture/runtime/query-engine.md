@@ -98,6 +98,21 @@ report's existing observed text records that evidence. This is model-directed
 checking guidance, not runtime proof that a command exercised every claimed
 property; the report schema and execution-provenance checks are unchanged.
 
+`CoverageReview` optionally reviews a provisional PASS in one additional,
+tool-free production Query round. It receives only original requirements and
+the bounded report with exact current commands and runtime-bound outputs, as
+untrusted assistant data. It inherits the admitted model, root RunUsage,
+deadline, and dispatch guards; usage is attributed to
+`independent_verification_coverage`. SUPPORTED retains PASS; INSUFFICIENT can
+only downgrade it to PARTIAL and add missing obligations. It cannot invent a
+FAIL or executable evidence. Malformed reviews, cancellation, and budget stops
+fail closed with the cursor still pending in check; resume executes fresh checks
+and a fresh review. The opt-in setting is part of cursor configuration identity.
+Legacy cursors without the setting mean disabled, and continuation cannot
+silently change it. Outward summaries expose coverage review count and verdict.
+This separates test construction from evidence review, but remains model-directed
+judgment rather than proof of arbitrary program semantics or benchmark reward.
+
 A structured PASS requires executable checks, all checks passing, complete
 claimed coverage, and no missing requirements. FAIL/PARTIAL may request at most
 `MaxRepairs` additional solver cycles (0..3), followed by fresh checks. Invalid
