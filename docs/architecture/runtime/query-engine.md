@@ -88,6 +88,16 @@ bounded actual tool outputs accompany the verdict attachment. This validates
 execution provenance, not the truth of every model interpretation or complete
 coverage of arbitrary prose requirements.
 
+The checker policy derives each behavioral check from its real entrypoint,
+prerequisite state, and observable outcome. Internal callback tests establish only
+component properties; caller completion and side effects require the real caller
+path. Concurrent checks must first observe the required intermediate state,
+then check behavior while it holds and after release. Unreached prerequisites
+remain PARTIAL; a demonstrated violation of required progress is FAIL. The
+report's existing observed text records that evidence. This is model-directed
+checking guidance, not runtime proof that a command exercised every claimed
+property; the report schema and execution-provenance checks are unchanged.
+
 A structured PASS requires executable checks, all checks passing, complete
 claimed coverage, and no missing requirements. FAIL/PARTIAL may request at most
 `MaxRepairs` additional solver cycles (0..3), followed by fresh checks. Invalid
