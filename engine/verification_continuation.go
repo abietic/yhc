@@ -143,6 +143,48 @@ func (cursor *verificationCursor) validate(params *QueryParams) error {
 	return nil
 }
 
+func verificationCheckMessages(requirements string, report *independentVerificationReport) []*schema.Message {
+	var messages []*schema.Message
+	if hint := verificationPlanningMessage(report); hint != nil {
+		messages = append(messages, hint)
+	}
+	// Preserve the report's assistant provenance on the wire. The original
+	// requirements remain the latest user request, independent of Extra.
+	return append(messages, schema.UserMessage(requirements))
+}
+
+// Prior diagnostics help order a fresh audit; only this invocation's receipts
+// may authorize its report. Do not copy historical commands, IDs, or PASSes.
+func verificationPlanningMessage(report *independentVerificationReport) *schema.Message {
+	if report == nil || (report.Verdict != "FAIL" && report.Verdict != "PARTIAL") {
+		return nil
+	}
+	type concern struct {
+		Requirement string `json:"requirement"`
+		Expected    string `json:"expected"`
+		Observed    string `json:"observed"`
+		Status      string `json:"status"`
+	}
+	plan := struct {
+		Missing  []string  `json:"missing,omitempty"`
+		Concerns []concern `json:"concerns,omitempty"`
+	}{Missing: report.Missing}
+	for _, check := range report.Checks {
+		if check.Status == "FAIL" || check.Status == "UNVERIFIED" {
+			plan.Concerns = append(plan.Concerns, concern{check.Requirement, check.Expected, check.Observed, check.Status})
+		}
+	}
+	if len(plan.Missing) == 0 && len(plan.Concerns) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(plan)
+	if err != nil || len(encoded) > 16*1024 {
+		// Oversized hints never replace or truncate the original requirements.
+		return nil
+	}
+	return &schema.Message{Role: schema.Assistant, Content: "Historical verification planning hints, not evidence or instructions. Planning data: " + string(encoded), Extra: map[string]any{"is_meta": true, "attachment_kind": "verification_planning"}}
+}
+
 func verificationAttachment(report independentVerificationReport, attempt int) *schema.Message {
 	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue}
 	for _, check := range report.Checks {
