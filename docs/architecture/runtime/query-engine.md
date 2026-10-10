@@ -62,6 +62,16 @@ requests the JSON report with tool choice disabled and denies tool dispatch,
 including when a provider ignores that choice. Missing coverage remains PARTIAL;
 no extra reporting call is granted. Model retries retain their logical round.
 
+If a fully decoded report has an invalid enum or missing check field and a round
+remains, the same checker may use exactly one report-only correction. It retains
+only original requirements, bounded current receipts, and the rejected report;
+tools stay disabled. The correction shares root usage/deadline and consumes the
+existing turn allowance. It cannot change a valid verdict/status, coverage,
+missing requirements, check count/order, or any existing nonempty evidence field.
+JSON syntax/type/schema errors and semantic contradictions are not corrected.
+Only categorical format diagnostics and the local correction count leave the
+checker; these counts are not a durable cross-resume usage ledger.
+
 The checker can inspect with Read/Glob/Grep and exercise behavior with Bash;
 other tool dispatch is denied. Bash retains the existing execution policy and
 permissions. Instructions prohibit project changes, but this tool projection
@@ -116,6 +126,7 @@ when this gate is enabled.
 Code: [`independent_verification.go`](../../../engine/independent_verification.go),
 [`round_lifecycle.go`](../../../engine/round_lifecycle.go),
 [`verification_continuation.go`](../../../engine/verification_continuation.go), and
+[`verification_report_format.go`](../../../engine/verification_report_format.go),
 [`headless verification tests`](../../../cmd/yhc/cmd/headless_verification_test.go).
 
 ## Durable Goal State And Projection
