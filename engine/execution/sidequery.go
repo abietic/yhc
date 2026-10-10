@@ -25,21 +25,22 @@ type SideQueryRetryConfig struct {
 // SideQueryOptions holds the narrow set of direct-model options needed by
 // helper/classifier-style calls outside the main query loop.
 type SideQueryOptions struct {
-	SystemPrompt        string
-	Messages            []*schema.Message
-	Tools               []*schema.ToolInfo
-	Model               string
-	Provider            string
-	ModelRole           string
-	ModelProfile        string
-	EffortValue         string
-	ToolChoice          string
-	ForcedToolName      string
-	MaxOutputTokens     *int
-	QuerySource         string
-	SessionID           string
-	ProviderUsage       ProviderUsageAdmitter
-	UsageLogicalRoundID string
+	SystemPrompt         string
+	Messages             []*schema.Message
+	Tools                []*schema.ToolInfo
+	Model                string
+	Provider             string
+	ModelRole            string
+	ModelProfile         string
+	EffortValue          string
+	ToolChoice           string
+	ForcedToolName       string
+	MaxOutputTokens      *int
+	QuerySource          string
+	SessionID            string
+	ProviderUsage        ProviderUsageAdmitter
+	UsageLogicalRoundID  string
+	UsageModelRetryIndex int
 }
 
 // SideQuery performs a lightweight direct model call that still reuses the
@@ -59,20 +60,21 @@ func SideQuery(ctx context.Context, chatModel model.BaseChatModel, opts SideQuer
 	}
 
 	callResult, err := CallModel(ctx, chatModel, opts.Messages, systemPrompt, opts.Tools, CallModelOptions{
-		SystemPrompt:        systemPrompt,
-		Signal:              ctx,
-		Model:               opts.Model,
-		Provider:            opts.Provider,
-		ModelRole:           opts.ModelRole,
-		ModelProfile:        opts.ModelProfile,
-		EffortValue:         opts.EffortValue,
-		ToolChoice:          opts.ToolChoice,
-		ForcedToolName:      opts.ForcedToolName,
-		MaxOutputTokens:     opts.MaxOutputTokens,
-		QuerySource:         opts.QuerySource,
-		SessionID:           opts.SessionID,
-		ProviderUsage:       opts.ProviderUsage,
-		UsageLogicalRoundID: opts.UsageLogicalRoundID,
+		SystemPrompt:         systemPrompt,
+		Signal:               ctx,
+		Model:                opts.Model,
+		Provider:             opts.Provider,
+		ModelRole:            opts.ModelRole,
+		ModelProfile:         opts.ModelProfile,
+		EffortValue:          opts.EffortValue,
+		ToolChoice:           opts.ToolChoice,
+		ForcedToolName:       opts.ForcedToolName,
+		MaxOutputTokens:      opts.MaxOutputTokens,
+		QuerySource:          opts.QuerySource,
+		SessionID:            opts.SessionID,
+		ProviderUsage:        opts.ProviderUsage,
+		UsageLogicalRoundID:  opts.UsageLogicalRoundID,
+		UsageModelRetryIndex: opts.UsageModelRetryIndex,
 	})
 	if err != nil {
 		return nil, err
@@ -121,7 +123,9 @@ func SideQueryWithRetry(ctx context.Context, chatModel model.BaseChatModel, opts
 
 	var lastErr error
 	for attempt := 0; ; attempt++ {
-		result, err := SideQuery(ctx, chatModel, opts)
+		attemptOpts := opts
+		attemptOpts.UsageModelRetryIndex = attempt
+		result, err := SideQuery(ctx, chatModel, attemptOpts)
 		if err == nil {
 			return result, nil
 		}

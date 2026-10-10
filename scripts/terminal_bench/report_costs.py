@@ -15,7 +15,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from scripts.terminal_bench.usage import sum_usage, validated_usage
+from scripts.terminal_bench.usage import LEDGER_FIELDS, sum_usage, validated_usage
 
 TOKEN_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")
@@ -108,8 +108,8 @@ def hydrate_continuation(stat: dict) -> dict:
             # Older adapter aggregates omitted routes even when segment
             # receipts retained them. Compare accounting totals independently.
             if reported is not None and (
-                    {key: value for key, value in reported.items() if key != "routes"}
-                    != {key: value for key, value in total.items() if key != "routes"}):
+                    {key: value for key, value in reported.items() if key not in ("routes", *LEDGER_FIELDS)}
+                    != {key: value for key, value in total.items() if key not in ("routes", *LEDGER_FIELDS)}):
                 raise ValueError("Continuation aggregate disagrees with segment usage")
             if reported is not None and "routes" in reported and (
                     {route["model"] for route in reported["routes"]}

@@ -241,3 +241,116 @@ class CostTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UsageLedgerTests(unittest.TestCase):
+    def usage(self, segment=None):
+        from uuid import uuid4
+        identity = str(uuid4())
+        tokens = dict(prompt_tokens=10, completion_tokens=4, total_tokens=14,
+                      cached_prompt_tokens=6, uncached_prompt_tokens=4, reasoning_tokens=2)
+        record = dict(ordinal=1, call_id=identity, logical_round_id=identity,
+                      logical_request_id="unknown", model_attempt_id="unknown", attempt_index=0,
+                      retry_index=0, provider="agenticdeepseek", requested_model="deepseek-flash",
+                      resolved_model="deepseek-v4-flash", source="agent", role="main", effort="low",
+                      state="known", started_offset_ms=0, provider_duration_ms=30, tokens=tokens)
+        return dict(provider_calls=1, known_calls=1, unknown_calls=0, in_flight=0,
+                    untracked_calls=0, released_calls=0, prompt_tokens=10, completion_tokens=4,
+                    total_tokens=14, cached_prompt_tokens=6, reasoning_tokens=2, complete=True,
+                    call_ledger=dict(version=1, segment_id=segment or str(uuid4()),
+                                     records=[record], dropped_records=0))
+
+    def test_each_invocation_delta_once_and_snapshots_detached(self):
+        from scripts.terminal_bench.usage import validated_usage
+        first, second = self.usage(), self.usage()
+        total = sum_usage([first, second])
+        self.assertEqual(total["provider_calls"], 2)
+        self.assertEqual(len(total["call_ledgers"]), 2)
+        self.assertTrue(total["call_ledger_complete"])
+        self.assertEqual(validated_usage(total), total)
+        self.assertIsNone(sum_usage([first, first]))
+        total["call_ledgers"][0]["records"][0]["tokens"]["total_tokens"] = 999
+        self.assertEqual(first["call_ledger"]["records"][0]["tokens"]["total_tokens"], 14)
+        legacy = dict(first)
+        legacy.pop("call_ledger")
+        mixed = sum_usage([first, legacy])
+        self.assertFalse(mixed["call_ledger_complete"])
+        self.assertEqual(validated_usage(mixed)["call_ledgers"], mixed["call_ledgers"])
+
+    def test_unknown_and_released_are_not_known_zero(self):
+        from scripts.terminal_bench.usage import validated_usage
+        for state in ("unknown", "in_flight", "released"):
+            value = self.usage()
+            value.update(known_calls=0, prompt_tokens=0, completion_tokens=0, total_tokens=0,
+                         cached_prompt_tokens=0, reasoning_tokens=0, complete=state == "released",
+                         provider_calls=int(state != "released"), unknown_calls=int(state == "unknown"),
+                         in_flight=int(state == "in_flight"), released_calls=int(state == "released"))
+            value["call_ledger"]["records"][0].update(state=state, tokens=None)
+            result = validated_usage(value)
+            self.assertTrue(result["call_ledger_complete"])
+            self.assertIsNone(result["call_ledger"]["records"][0]["tokens"])
+
+    def test_invalid_history_preserves_aggregate_but_loses_ledger_coverage(self):
+        from scripts.terminal_bench.usage import validated_usage
+        for mutation in (lambda ledger: ledger.update(version=True),
+                         lambda ledger: ledger["records"][0].update(ordinal=True),
+                         lambda ledger: ledger["records"][0].update(source="private text"),
+                         lambda ledger: ledger["records"][0]["tokens"].update(total_tokens=999),
+                         lambda ledger: ledger.update(dropped_records=1)):
+            value = self.usage()
+            mutation(value["call_ledger"])
+            result = validated_usage(value)
+            self.assertEqual(result["total_tokens"], 14)
+            self.assertFalse(result["call_ledger_complete"])
+            self.assertNotIn("call_ledger", result)
+
+    def test_projection_never_copies_payload_fields(self):
+        from scripts.terminal_bench.usage import validated_usage
+        value = self.usage()
+        value["call_ledger"]["prompt"] = "private payload"
+        value["call_ledger"]["records"][0]["thinking"] = "private payload"
+        value["call_ledger"]["records"][0]["tokens"]["command"] = "private payload"
+        self.assertNotIn("private payload", json.dumps(validated_usage(value)))
+
+    def test_truncation_retains_accurate_totals_and_explicit_missing_history(self):
+        from copy import deepcopy
+        from uuid import uuid4
+        from scripts.terminal_bench.usage import validated_usage
+        value = self.usage()
+        record = value["call_ledger"]["records"][0]
+        value["call_ledger"]["records"] = []
+        for i in range(1024):
+            item = deepcopy(record)
+            item.update(ordinal=i+1, call_id=str(uuid4()))
+            value["call_ledger"]["records"].append(item)
+        value["call_ledger"]["dropped_records"] = 1
+        for key in ("provider_calls", "known_calls", "prompt_tokens", "completion_tokens", "total_tokens", "cached_prompt_tokens", "reasoning_tokens"):
+            value[key] *= 1025
+        result = validated_usage(value)
+        self.assertTrue(result["complete"])
+        self.assertFalse(result["call_ledger_complete"])
+        self.assertEqual(len(result["call_ledger"]["records"]), 1024)
+        self.assertEqual(result["total_tokens"], 14350)
+        value["total_tokens"] = 14
+        value["prompt_tokens"] = value["completion_tokens"] = 0
+        value["cached_prompt_tokens"] = value["reasoning_tokens"] = 0
+        self.assertNotIn("call_ledger", validated_usage(value))
+
+    def test_report_hydrates_new_segment_ledgers_when_old_aggregate_has_no_history(self):
+        first, second = self.usage(), self.usage()
+        total = sum_usage([first, second])
+        with tempfile.TemporaryDirectory() as directory:
+            aggregate = {key: val for key, val in total.items() if not key.startswith("call_ledger")}
+            metadata = {"usage": aggregate, "continuation": {"segments": 2,
+                        "history": [{"usage": first}, {"usage": second}]}}
+            (Path(directory) / "result.json").write_text(json.dumps({"agent_result": {"metadata": {"yhc": metadata}}}))
+            recovered = hydrate_continuation({"trial_path": directory, "usage": aggregate})
+            self.assertTrue(recovered["usage"]["call_ledger_complete"])
+            self.assertEqual(len(recovered["usage"]["call_ledgers"]), 2)
+
+    def test_coverage_source_remains_distinct_in_continuation_history(self):
+        value=self.usage()
+        value["call_ledger"]["records"][0].update(source="independent_verification_coverage",role="summary")
+        total=sum_usage([value])
+        self.assertTrue(total["call_ledger_complete"])
+        self.assertEqual(total["call_ledgers"][0]["records"][0]["source"],"independent_verification_coverage")

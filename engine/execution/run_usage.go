@@ -59,20 +59,24 @@ type RunUsageSnapshot struct {
 	StopReason     string          `json:"stop_reason,omitempty"`
 	ElapsedMillis  int64           `json:"elapsed_ms"`
 	Routes         []RunUsageRoute `json:"routes"`
+	CallLedger     RunUsageLedger  `json:"call_ledger"`
 }
 
 // RunUsage is an invocation-local, concurrency-safe provider admission and
 // accounting capability. It is intentionally separate from the durable Goal ledger.
 type RunUsage struct {
-	mu         sync.Mutex
-	limits     RunUsageLimits
-	started    time.Time
-	totals     RunUsageTotals
-	denied     uint64
-	untracked  uint64
-	stopReason string
-	sealed     bool
-	routes     map[runUsageRouteKey]*RunUsageRoute
+	mu             sync.Mutex
+	limits         RunUsageLimits
+	started        time.Time
+	totals         RunUsageTotals
+	denied         uint64
+	untracked      uint64
+	stopReason     string
+	sealed         bool
+	routes         map[runUsageRouteKey]*RunUsageRoute
+	segmentID      string
+	records        []RunUsageRecord
+	droppedRecords uint64
 }
 
 type runUsageRouteKey struct{ model, source, role, effort string }
@@ -81,7 +85,7 @@ func NewRunUsage(limits RunUsageLimits) (*RunUsage, error) {
 	if limits.MaxProviderCalls < 0 || limits.MaxTotalTokens < 0 {
 		return nil, fmt.Errorf("run usage limits must be non-negative (0 disables)")
 	}
-	return &RunUsage{limits: limits, started: time.Now(), routes: make(map[runUsageRouteKey]*RunUsageRoute)}, nil
+	return &RunUsage{limits: limits, started: time.Now(), segmentID: uuid.NewString(), routes: make(map[runUsageRouteKey]*RunUsageRoute)}, nil
 }
 
 func (r *RunUsage) NewLogicalRoundID() string { return uuid.NewString() }
@@ -123,7 +127,9 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	r.totals.InFlight++
 	route.ProviderCalls++
 	route.InFlight++
-	return &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now()}, nil
+	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now()}
+	r.appendCallRecord(d, call)
+	return call, nil
 }
 
 func (r *RunUsage) Snapshot() RunUsageSnapshot {
@@ -138,6 +144,14 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 	}
 	for _, route := range r.routes {
 		s.Routes = append(s.Routes, *route)
+	}
+	s.CallLedger = RunUsageLedger{Version: 1, SegmentID: r.segmentID, DroppedRecords: r.droppedRecords, Records: make([]RunUsageRecord, len(r.records))}
+	for i, record := range r.records {
+		s.CallLedger.Records[i] = record
+		if record.Tokens != nil {
+			copied := *record.Tokens
+			s.CallLedger.Records[i].Tokens = &copied
+		}
 	}
 	sort.Slice(s.Routes, func(i, j int) bool {
 		a, b := s.Routes[i], s.Routes[j]
@@ -163,12 +177,15 @@ func runUsageErrorCode(err error) string {
 }
 
 type runUsageCall struct {
-	owner         *RunUsage
-	route         *RunUsageRoute
-	id            string
-	started       time.Time
-	settled       bool
-	settlementErr error
+	owner                 *RunUsage
+	route                 *RunUsageRoute
+	id                    string
+	started               time.Time
+	settled               bool
+	settlementErr         error
+	recordIndex           int
+	responseModelSeen     bool
+	responseModelConflict bool
 }
 
 func (c *runUsageCall) ProviderCallID() string                           { return c.id }
@@ -185,9 +202,16 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 		return c.settlementErr
 	}
 	c.settled = true
+	var record *RunUsageRecord
+	if c.recordIndex >= 0 {
+		record = &r.records[c.recordIndex]
+	}
 	r.totals.InFlight--
 	c.route.InFlight--
 	if release {
+		if record != nil {
+			record.State = "released"
+		}
 		r.totals.ProviderCalls--
 		c.route.ProviderCalls--
 		r.totals.ReleasedCalls++
@@ -195,6 +219,9 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 		return nil
 	}
 	duration := uint64(time.Since(c.started).Milliseconds())
+	if record != nil {
+		record.ProviderDurationMillis = duration
+	}
 	r.totals.ProviderDurationMillis += duration
 	c.route.ProviderDurationMillis += duration
 	values, valid := runUsageTokens(u)
@@ -202,6 +229,9 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 		valid = canAddRunTokens(r.totals, values) && canAddRunTokens(c.route.RunUsageTotals, values)
 	}
 	if !valid {
+		if record != nil {
+			record.State = "unknown"
+		}
 		r.totals.UnknownCalls++
 		c.route.UnknownCalls++
 		if r.limits.MaxTotalTokens > 0 {
@@ -209,6 +239,10 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 			r.stopReason = runUsageErrorCode(c.settlementErr)
 		}
 		return c.settlementErr
+	}
+	if record != nil {
+		record.State = "known"
+		record.Tokens = &RunUsageCallTokens{PromptTokens: values.PromptTokens, CompletionTokens: values.CompletionTokens, TotalTokens: values.TotalTokens, CachedPromptTokens: values.CachedPromptTokens, UncachedPromptTokens: values.PromptTokens - values.CachedPromptTokens, ReasoningTokens: values.ReasoningTokens}
 	}
 	addRunTokens(&r.totals, values)
 	addRunTokens(&c.route.RunUsageTotals, values)

@@ -150,6 +150,7 @@ func CallModel(
 				ModelAttemptIndex: opts.UsageModelAttemptIndex,
 				ModelRetryIndex:   opts.UsageModelRetryIndex,
 				Model:             opts.Model,
+				Provider:          opts.Provider,
 				QuerySource:       opts.QuerySource,
 				ModelRole:         opts.ModelRole,
 				ModelProfile:      opts.ModelProfile,
@@ -202,7 +203,7 @@ func CallModel(
 	// Stream from the model. The private dispatch state is created here so only
 	// the actual routing owner can publish the origin selected for this call.
 	dispatchCtx, dispatchState := providerorigin.WithDispatchState(ctx)
-	sr, err := chatModel.Stream(dispatchCtx, fullMessages, streamOpts...)
+	sr, err := chatModel.Stream(withProviderUsageResponseObserver(dispatchCtx, providerUsageCall), fullMessages, streamOpts...)
 	if err != nil {
 		streamErr := fmt.Errorf("model stream: %w", err)
 		return nil, MarkProviderUsageAmbiguous(providerUsageCall, streamErr)

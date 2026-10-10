@@ -83,6 +83,9 @@ func TestExecBudgetResumeKeepsCompletedToolAndFreshAllowance(t *testing.T) {
 	if err != nil || string(data) != "saved progress" || calls.Load() != 2 {
 		t.Fatalf("artifact=%q calls=%d err=%v", data, calls.Load(), err)
 	}
+	if first.Usage.CallLedger.SegmentID == second.Usage.CallLedger.SegmentID {
+		t.Fatal("resume reused invocation ledger identity")
+	}
 	for _, result := range []headlessEnvelope{first, second} {
 		if result.Usage == nil || !result.Usage.Complete || result.Usage.ProviderCalls != 1 || result.Usage.TotalTokens != 14 || result.Usage.Limits.MaxProviderCalls != 1 {
 			t.Fatalf("segment allowance/usage=%+v", result.Usage)
@@ -139,6 +142,14 @@ func TestExecRunUsageAndOptionalLimits(t *testing.T) {
 			u := result.Usage
 			if calls.Load() != tc.calls || u == nil || u.ProviderCalls != uint64(tc.calls) || u.TotalTokens != uint64(tc.calls)*14 || u.CachedPromptTokens != uint64(tc.calls)*6 || u.ReasoningTokens != uint64(tc.calls)*2 || !u.Complete {
 				t.Fatalf("calls=%d usage=%+v", calls.Load(), u)
+			}
+			if u.CallLedger.Version != 1 || len(u.CallLedger.Records) != int(tc.calls) || u.CallLedger.DroppedRecords != 0 {
+				t.Fatalf("ledger=%+v", u.CallLedger)
+			}
+			for _, record := range u.CallLedger.Records {
+				if record.State != "known" || record.Provider != "agenticdeepseek" || record.ResolvedModel != "deepseek-v4-flash" || record.Tokens == nil || record.Tokens.UncachedPromptTokens != 4 || record.Tokens.ReasoningTokens != 2 {
+					t.Fatalf("record=%+v", record)
+				}
 			}
 			if tc.failed && (result.Error == nil || result.Error.Code != "run_budget_exceeded" || result.ExitCode != 1) {
 				t.Fatalf("result=%+v", result)

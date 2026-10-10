@@ -18,6 +18,7 @@ type ProviderUsageDescriptor struct {
 	ModelAttemptIndex int
 	ModelRetryIndex   int
 	Model             string
+	Provider          string
 	QuerySource       string
 	ModelRole         string
 	ModelProfile      string

@@ -16,6 +16,7 @@ import (
 	openaischema "github.com/cloudwego/eino/schema/openai"
 	"google.golang.org/genai"
 
+	"github.com/abietic/yhc/engine/execution"
 	enginemessages "github.com/abietic/yhc/engine/messages"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 	"github.com/abietic/yhc/engine/provider/agenticglm"
@@ -280,6 +281,7 @@ func (a *agenticChatModel) generateTrusted(
 	if err != nil {
 		return nil, err
 	}
+	observeResponseModel(ctx, out)
 	return agenticToMessage(out), nil
 }
 
@@ -310,6 +312,7 @@ func (a *agenticChatModel) streamTrusted(
 		if am == nil {
 			return nil, nil
 		}
+		observeResponseModel(ctx, am)
 		converted := acc.convertChunk(am)
 		if converted.Content == "" && converted.ReasoningContent == "" && len(converted.AssistantGenMultiContent) == 0 && len(converted.ToolCalls) == 0 && converted.ResponseMeta == nil {
 			return nil, nil
@@ -987,4 +990,25 @@ func defaultArgs(s string) string {
 		return "{}"
 	}
 	return s
+}
+
+// observeResponseModel projects typed metadata only. Missing identities remain
+// unknown in accounting; requested aliases and response text are never evidence.
+func observeResponseModel(ctx context.Context, am *schema.AgenticMessage) {
+	if am == nil || am.ResponseMeta == nil {
+		return
+	}
+	meta := am.ResponseMeta
+	var name string
+	switch ext := meta.Extension.(type) {
+	case *agenticdeepseek.ResponseMetaExtension:
+		if ext != nil {
+			name = ext.Model
+		}
+	case *agenticglm.ResponseMetaExtension:
+		if ext != nil {
+			name = ext.Model
+		}
+	}
+	execution.ObserveProviderResponseModel(ctx, name)
 }
