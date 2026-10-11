@@ -109,6 +109,24 @@ test('status never decrypts or reveals the secret', async () => {
   assert.equal(JSON.stringify(status).includes(sentinel), false);
 });
 
+test('GLM profile round-trips through encrypted storage and the dedicated fallback tuple', async () => {
+  const path = await profilePath();
+  const safeStorage = fakeSafeStorage();
+  const input = { provider: 'glm', model: 'glm-5.3-flash', apiKey: sentinel };
+  const deps = { profilePath: path, safeStorage, platform: 'darwin' };
+  assert.deepEqual(await writeProviderProfile(deps, input), {
+    configured: true, provider: 'glm', model: 'glm-5.3-flash',
+  });
+  const stored = await readFile(path, 'utf8');
+  assert.equal(stored.includes(sentinel), false);
+  assert.deepEqual(await readProviderLaunchProfile(deps), input);
+  const environment = providerLaunchEnvironment({ PROV: 'openai' }, input);
+  assert.equal(environment.PROV, 'openai');
+  assert.equal(environment.YHC_DESKTOP_PROVIDER_FALLBACK, 'glm');
+  assert.equal(environment.YHC_DESKTOP_MODEL_FALLBACK, 'glm-5.3-flash');
+  assert.equal(environment.YHC_DESKTOP_API_KEY, sentinel);
+});
+
 test('malformed and undecryptable profiles fail closed', async () => {
   const path = await profilePath();
   await assert.rejects(
@@ -175,20 +193,30 @@ test('profile status distinguishes an absent profile from unreadable storage', a
   });
 });
 
-test('projects a cloned launch environment and removes stale optional base URL', () => {
-  const base = { PATH: '/bin', PROV_BASE_URL: 'https://stale.example.test', OTHER: 'keep' };
+test('vault profile is a dedicated fallback and preserves explicit provider environment', () => {
+  const base = {
+    PATH: '/bin', PROV: 'openai', PROV_MODEL: 'shared-model', PROV_API_KEY: 'explicit-key',
+    PROV_BASE_URL: 'https://explicit.example.test', OTHER: 'keep',
+    YHC_DESKTOP_BASE_URL_FALLBACK: 'https://stale.example.test',
+  };
   const withURL = providerLaunchEnvironment(base, {
     provider: 'ark', model: 'model-a', apiKey: sentinel, baseURL: 'https://api.example.test',
   });
   assert.deepEqual(withURL, {
-    PATH: '/bin', OTHER: 'keep', PROV: 'ark', PROV_MODEL: 'model-a',
-    PROV_API_KEY: sentinel, PROV_BASE_URL: 'https://api.example.test/',
+    ...base, YHC_DESKTOP_PROVIDER_FALLBACK: 'ark', YHC_DESKTOP_MODEL_FALLBACK: 'model-a',
+    YHC_DESKTOP_API_KEY: sentinel, YHC_DESKTOP_BASE_URL_FALLBACK: 'https://api.example.test/',
   });
   const withoutURL = providerLaunchEnvironment(base, {
     provider: 'google', model: 'default', apiKey: sentinel,
   });
-  assert.equal(withoutURL.PROV_BASE_URL, undefined);
-  assert.deepEqual(base, { PATH: '/bin', PROV_BASE_URL: 'https://stale.example.test', OTHER: 'keep' });
+  assert.equal(withoutURL.YHC_DESKTOP_BASE_URL_FALLBACK, undefined);
+  assert.equal(withoutURL.PROV_BASE_URL, 'https://explicit.example.test');
+  assert.equal(withoutURL.PROV_API_KEY, 'explicit-key');
+  assert.equal(base.YHC_DESKTOP_BASE_URL_FALLBACK, 'https://stale.example.test');
+  const fallbackOnly = providerLaunchEnvironment({}, { provider: 'openai', apiKey: sentinel });
+  assert.deepEqual(Object.keys(fallbackOnly).sort(), [
+    'YHC_DESKTOP_API_KEY', 'YHC_DESKTOP_MODEL_FALLBACK', 'YHC_DESKTOP_PROVIDER_FALLBACK',
+  ]);
 });
 
 test('detects only credible ambient provider environment without reading secrets', () => {
