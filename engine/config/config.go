@@ -63,7 +63,7 @@ type Config struct {
 	Theme string `json:"theme,omitempty"`
 	// ReducedMotion disables non-essential TUI animation
 	ReducedMotion bool `json:"reduced_motion,omitempty"`
-	// PromptSuggestions controls model-backed next-prompt ghost text in the TUI.
+	// PromptSuggestions controls model-backed next-prompt suggestions in supported interactive clients.
 	// A pointer preserves an explicit false across user/project merges.
 	PromptSuggestions *bool `json:"prompt_suggestions,omitempty"`
 	// Verbose enables verbose output
@@ -75,6 +75,8 @@ type Config struct {
 	Sandbox *SandboxConfig `json:"sandbox,omitempty"`
 
 	maxTurnsSet            bool
+	autoCompactSet         bool
+	reducedMotionSet       bool
 	portfolioDefinitionSet bool
 }
 
@@ -308,14 +310,9 @@ func applyOverrides(dst, src *Config, allowPortfolioDefinitions bool) {
 	if src.PermissionRules != nil {
 		dst.PermissionRules = src.PermissionRules
 	}
-	// AutoCompact: bool — only override if the source explicitly sets it.
-	// We use the JSON presence to determine intent; since Go unmarshals missing
-	// booleans as false, we always apply the source value when loading from a file
-	// that was successfully parsed. This means explicit "false" in a project config
-	// can disable the default "true".
-	// For a more granular approach we would use *bool, but the spec uses plain bool.
-	// We handle this by always copying the AutoCompact value from src.
-	dst.AutoCompact = src.AutoCompact
+	if src.autoCompactSet || src.AutoCompact {
+		dst.AutoCompact = src.AutoCompact
+	}
 
 	if src.MCPServers != nil {
 		if dst.MCPServers == nil {
@@ -334,8 +331,8 @@ func applyOverrides(dst, src *Config, allowPortfolioDefinitions bool) {
 	if src.Theme != "" {
 		dst.Theme = src.Theme
 	}
-	if src.ReducedMotion {
-		dst.ReducedMotion = true
+	if src.reducedMotionSet || src.ReducedMotion {
+		dst.ReducedMotion = src.ReducedMotion
 	}
 	if src.PromptSuggestions != nil {
 		enabled := *src.PromptSuggestions
@@ -520,6 +517,8 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	}
 	*c = Config(decoded)
 	_, c.maxTurnsSet = fields["max_turns"]
+	_, c.autoCompactSet = fields["auto_compact"]
+	_, c.reducedMotionSet = fields["reduced_motion"]
 	for key := range forbiddenProjectPortfolioKeys {
 		if _, ok := fields[key]; ok {
 			c.portfolioDefinitionSet = true

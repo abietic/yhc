@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -103,13 +104,13 @@ func newConfigCommand() *cobra.Command {
 	options := &inspectionCommandOptions{outputFormat: string(outputFormatText)}
 	command := &cobra.Command{
 		Use:   "config",
-		Short: "Inspect redacted effective configuration",
+		Short: "Inspect and update shared configuration",
 		Args:  inspectionAdministrationArgs("config", noArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return renderInspectionUsage(
 				cmd,
 				"config",
-				usageErrorf("config requires the show subcommand"),
+				usageErrorf("config requires one of: show, settings, set, reset"),
 			)
 		},
 	}
@@ -149,7 +150,87 @@ func newConfigCommand() *cobra.Command {
 			)
 		},
 	})
+	command.AddCommand(
+		newConfigSettingsCommand(),
+		newConfigSetCommand(),
+		newConfigResetCommand(),
+	)
 	return command
+}
+
+func newConfigSettingsCommand() *cobra.Command {
+	scope := "user"
+	command := &cobra.Command{
+		Use:   "settings",
+		Short: "Show shared editable settings and their sources as JSON",
+		Args:  exactArgs(0),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runConfigSettings(cmd, scope, nil)
+		},
+	}
+	command.Flags().StringVar(&scope, "scope", "user", "Settings scope (user or project)")
+	return command
+}
+
+func newConfigSetCommand() *cobra.Command {
+	scope := "user"
+	command := &cobra.Command{
+		Use:   "set <key> <json-value>",
+		Short: "Set a shared configuration value and print the resulting JSON snapshot",
+		Args:  exactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !json.Valid([]byte(args[1])) {
+				return usageErrorf("config set requires a valid JSON value")
+			}
+			return runConfigSettings(cmd, scope, map[string]json.RawMessage{
+				args[0]: json.RawMessage(args[1]),
+			})
+		},
+	}
+	command.Flags().StringVar(&scope, "scope", "user", "Settings scope (user or project)")
+	return command
+}
+
+func newConfigResetCommand() *cobra.Command {
+	scope := "user"
+	command := &cobra.Command{
+		Use:   "reset <key>",
+		Short: "Remove a scoped override and print the resulting JSON snapshot",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runConfigSettings(cmd, scope, map[string]json.RawMessage{
+				args[0]: json.RawMessage("null"),
+			})
+		},
+	}
+	command.Flags().StringVar(&scope, "scope", "user", "Settings scope (user or project)")
+	return command
+}
+
+func runConfigSettings(cmd *cobra.Command, scope string, changes map[string]json.RawMessage) error {
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve settings project directory: %w", err)
+	}
+	snapshot, err := engineconfig.SettingsSnapshot(projectDir, scope)
+	if err != nil {
+		return fmt.Errorf("read shared settings: %w", err)
+	}
+	if changes != nil {
+		if err := cmd.Context().Err(); err != nil {
+			return err
+		}
+		snapshot, err = engineconfig.SettingsPatchContext(cmd.Context(), projectDir, scope, snapshot.Revision, changes)
+		if err != nil {
+			return fmt.Errorf("update shared settings: %w", err)
+		}
+	}
+	encoder := json.NewEncoder(cmd.OutOrStdout())
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(snapshot)
 }
 
 func newDoctorCommand() *cobra.Command {
