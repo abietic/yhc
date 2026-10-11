@@ -16,6 +16,13 @@ the existing `QueryEngine` only after the user submits a prompt. While one Turn
 is active, the same composer can durably queue later text prompts without
 interrupting it.
 
+The Home screen is a safe starting view: it shows shared defaults and recent
+sessions without creating an empty session or calling a provider. On Desktop,
+review shared settings or open the existing secure credential flow first, then
+choose a workspace when you explicitly start work. The Web companion can show
+host-managed guidance but cannot manage local credentials or choose a native
+workspace.
+
 ## Prerequisites
 
 - Go and Node/npm compatible with this repository's lockfile.

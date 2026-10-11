@@ -734,6 +734,7 @@ var webAssetPaths = map[string]string{
 	"/replay.mjs":                 "assets/replay.mjs",
 	"/markdown.mjs":               "assets/markdown.mjs",
 	"/provider_setup.mjs":         "assets/provider_setup.mjs",
+	"/workbench_home.mjs":         "assets/workbench_home.mjs",
 	"/state.mjs":                  "assets/state.mjs",
 	"/styles.css":                 "assets/styles.css",
 	"/transport.mjs":              "assets/transport.mjs",

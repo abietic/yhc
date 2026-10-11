@@ -36,6 +36,33 @@ function event(id, type, data = {}, sessionID = 's1', turnID = 'turn-1') {
   };
 }
 
+test('workbench Home is presentation-only and background discovery never steals its selection', () => {
+  let state = reducer(initialState(), { type: 'SESSION_UPSERT', session: { id: 's1', live: true, status: 'running', draft: 'keep this draft' } });
+  const sessions = state.sessions;
+  state = reducer(state, { type: 'WORKBENCH_HOME' });
+  assert.equal(state.activeID, '');
+  assert.strictEqual(state.sessions, sessions);
+  assert.equal(state.sessions.s1.status, 'running');
+  state = reducer(state, { type: 'SESSION_UPSERT', session: { id: 's2', live: true } });
+  state = reducer(state, { type: 'DURABLE_SESSION_PAGE', sessions: [{ id: 'saved', resumable: true }] });
+  state = reducer(state, { type: 'EVENT', event: event(1, 'turn.accepted', {}, 's2') });
+  assert.equal(state.activeID, '');
+  assert.equal(state.sessions.s1.draft, 'keep this draft');
+  state = reducer(state, { type: 'SESSION_SELECT', id: 's1' });
+  assert.equal(state.activeID, 's1');
+});
+
+test('offline workbench Home can still browse preserved sessions without restoring capabilities', () => {
+  let state = reducer(initialState(), { type: 'SESSION_UPSERT', session: { id: 's1', live: true, draft: 'saved input' } });
+  state = reducer(state, { type: 'BACKEND_UNAVAILABLE' });
+  const sessions = state.sessions;
+  state = reducer(state, { type: 'WORKBENCH_HOME' });
+  assert.equal(state.activeID, '');
+  assert.strictEqual(state.sessions, sessions);
+  assert.equal(state.sessions.s1.live, false);
+  assert.equal(state.sessions.s1.draft, 'saved input');
+});
+
 test('ordinary admission clears only its still-owned unchanged draft', () => {
   const submitted = { prompt: 'send this', clientTurnID: 'turn-one' };
   assert.equal(canClearSubmittedDraft(submitted, submitted, '  send this  '), true);

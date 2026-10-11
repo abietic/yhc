@@ -60,6 +60,8 @@ const permissionRules = new Map();
 let creations = 0;
 let sessionSettingWrites = 0;
 let turnRequests = 0;
+let homeHistory = false;
+const observedOperations = [];
 const goals = new Map();
 const goalWrites = [];
 let conflictNextGoal = false;
@@ -102,6 +104,7 @@ function settings(scope = 'user') {
   ) };
 }
 function operation(op, input = {}, conversation = false) {
+  observedOperations.push(op);
   if (op === 'getGoal') return goalState(input.sessionID);
   if (op === 'controlGoal') {
     goalWrites.push(structuredClone(input));
@@ -236,7 +239,11 @@ function operation(op, input = {}, conversation = false) {
   if (op === 'createSession') { creations++; return session; }
   if (op === 'closeSession') return {};
   if (op === 'listSessions') return { sessions: conversation ? [session, secondSession] : [] };
-  if (op === 'listDurableSessions') return { sessions: [], has_more: false };
+  if (op === 'listDurableSessions') return { sessions: homeHistory ? [
+    { id: 'home-older', title: 'Older saved task', workspace_label: 'second-project', updated_at: '2026-10-01T00:00:00Z', resumable: true },
+    { id: 'home-newer', title: 'Most recent saved task', workspace_label: 'first-project', updated_at: '2026-10-02T00:00:00Z', resumable: true },
+  ] : [], has_more: false };
+  if (op === 'durableTranscriptPage') return { entries: [], has_more: false };
   if (op === 'transcriptPage') return { entries: [], has_more: false };
   if (op === 'snapshot') return { session: input.sessionID === secondSession.id ? secondSession : session, event_cursor: 1, messages, interactions: [], activity: [] };
   if (op === 'getExecutionSettings') return { model: 'default', models: [{ selector: 'default', display_name: 'Default model', provider: 'openai' }], reasoning_effort: 'default', reasoning_effort_options: ['default'], permission_mode: 'default', permission_mode_options: ['default', 'acceptEdits'] };
@@ -324,6 +331,9 @@ async function main() {
       if (url.pathname === '/fixture/rpc') {
         const input = await readBody(req);
         const body = operation(input.op, input.input, conversation);
+        if (input.op === 'getSettings' && holdNextSettingsRead) {
+          holdNextSettingsRead = false; heldReads.push({ res, body }); return;
+        }
         if (input.op === 'getTaskExplorer' && holdNextTasks) {
           holdNextTasks = false; heldTasks.push({ res, body }); return;
         }
@@ -379,6 +389,9 @@ async function main() {
         reply(res, body); return;
       }
       if (url.pathname === '/v1/durable-sessions') { reply(res, operation('listDurableSessions')); return; }
+      if (/^\/v1\/durable-sessions\/[^/]+\/transcript$/.test(url.pathname)) {
+        reply(res, operation('durableTranscriptPage', { sessionID: url.pathname.split('/').at(-2) })); return;
+      }
       if (url.pathname.endsWith('/events')) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write(': connected\n\n'); streams.set(res, url.pathname.split('/').at(-2)); req.on('close', () => streams.delete(res)); return;
@@ -438,18 +451,22 @@ async function main() {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     return page.screenshot({ path: path.join(outputDir, `${name}.png`), animations: 'disabled' });
   };
-  async function createPage(surface, conversation = false, noVault = false, savedProvider = 'openai', recovery = '') {
+  async function createPage(surface, conversation = false, noVault = false, savedProvider = 'openai', recovery = '', profile = null) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' });
     if (conversation) await context.addCookies([{ name: 'fixture', value: 'conversation', url: base }]);
     const page = await context.newPage();
     page.setDefaultTimeout(6000);
     page.on('pageerror', error => errors.push(error.message));
-    if (surface === 'desktop') await page.addInitScript(({ noVault, savedProvider, recovery }) => {
+    if (surface === 'desktop') await page.addInitScript(({ noVault, savedProvider, recovery, profile }) => {
       const recoveryState = { pickerCalls: 0, configureCalls: 0, createHandles: [], generation: 0, saved: false };
+      let fixtureProfile = profile || { provider: savedProvider, model: 'default', baseURL: '' };
+      window.__fixtureProviderSetupCalls = 0;
+      window.__fixtureProviderSubmitted = null;
       if (recovery) window.__workspaceRecovery = recoveryState;
       window.yhcDesktop = {
         getInfo: async () => ({ protocolVersion: 2, webAvailable: true }),
-        getProviderStatus: async () => ({ configured: !noVault, provider: noVault ? '' : savedProvider, model: 'default', launchReady: !noVault, secureStorageAvailable: true }),
+        getProviderStatus: async () => ({ configured: !noVault, ...fixtureProfile,
+          provider: noVault ? '' : fixtureProfile.provider, launchReady: !noVault, secureStorageAvailable: true }),
         api: async (op, input) => {
           const response = await fetch('/fixture/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, input }) });
           const body = await response.json();
@@ -487,21 +504,27 @@ async function main() {
           return noVault ? { workspace_handle: 'isolated-fixture-workspace', workspace_label: 'demo-workspace' } : null;
         },
         configureProvider: async (input) => {
-          if (!recovery) return { configured: true, provider: input.provider, model: input.model, launchReady: true, secureStorageAvailable: true };
-          recoveryState.configureCalls++;
+          if (recovery) recoveryState.configureCalls++;
+          window.__fixtureProviderSetupCalls++;
+          // Capture only public selection metadata and a presence bit, never a key.
+          window.__fixtureProviderSubmitted = { provider: input.provider, model: input.model,
+            baseURL: input.baseURL || '', credentialSupplied: Boolean(input.apiKey) };
           if (recovery === 'held-provider') {
             await new Promise(resolve => { window.__releaseProviderConfigure = resolve; });
           }
           if (recovery === 'save-failure') throw new Error('Fixture profile could not be saved.');
-          recoveryState.saved = true;
-          recoveryState.generation++;
-          return { configured: true, provider: input?.provider || savedProvider, model: input?.model || 'default', launchReady: true, secureStorageAvailable: true };
+          if (recovery) {
+            recoveryState.saved = true;
+            recoveryState.generation++;
+          }
+          fixtureProfile = { provider: input.provider, model: input.model, baseURL: input.baseURL || '' };
+          return { configured: true, ...fixtureProfile, launchReady: true, secureStorageAvailable: true };
         },
         openWeb: async () => {
           if (recovery === 'newer-notice') throw new Error('Fixture browser could not open.');
         },
       };
-    }, { noVault, savedProvider, recovery });
+    }, { noVault, savedProvider, recovery, profile });
     await page.goto(base);
     await page.waitForFunction(() => document.documentElement.dataset.yhcBootstrap === 'ready');
     return page;
@@ -700,6 +723,113 @@ async function main() {
       }
     });
     await settingsTimeout.close();
+    for (const provider of ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'qwen', 'ark']) {
+      await check(`Desktop saved ${provider} credentials retain their selection through cancel and explicit save`, async () => {
+        const profile = { provider, model: 'saved-fixture-model', baseURL: 'https://fixture.example.invalid/' };
+        const page = await createPage('desktop', false, false, 'openai', '', profile);
+        const before = observedOperations.length, writes = settingsWrites.length;
+        try {
+          await page.locator('#provider-settings').click();
+          assert.equal(await page.locator('#provider-select').inputValue(), provider);
+          assert.equal(await page.locator('#provider-model').inputValue(), profile.model);
+          assert.equal(await page.locator('#provider-base-url').inputValue(), profile.baseURL);
+          assert.equal(await page.locator('#provider-api-key').inputValue(), '');
+          assert.equal(await page.evaluate(() => window.__fixtureProviderSetupCalls), 0);
+          await page.locator('#provider-cancel').click();
+          assert.equal(await page.evaluate(() => window.__fixtureProviderSetupCalls), 0);
+          await page.locator('#provider-settings').click();
+          assert.equal(await page.locator('#provider-select').inputValue(), provider);
+          await page.locator('#provider-api-key').fill('isolated-fixture-key-not-a-real-credential');
+          await page.locator('#provider-save').click();
+          await page.waitForFunction(() => !document.querySelector('#provider-dialog').open);
+          assert.equal(await page.evaluate(() => window.__fixtureProviderSetupCalls), 1);
+          assert.deepEqual(await page.evaluate(() => window.__fixtureProviderSubmitted), { ...profile, credentialSupplied: true });
+          assert.equal(await page.locator('#provider-api-key').inputValue(), '');
+          assert.equal(settingsWrites.length, writes);
+          assert.equal(observedOperations.slice(before).some(op => ['createSession', 'attachTurn', 'startTurn', 'controlGoal'].includes(op)), false);
+        } finally { await page.context().close(); }
+      });
+    }
+    for (const surface of ['desktop', 'web']) {
+      homeHistory = true;
+      const home = await createPage(surface, false, true);
+      await home.locator('#workbench-home').click();
+      try {
+        await check(`${surface} workbench home explains configuration sources and keeps setup reachable`, async () => {
+          assert.equal(await home.locator('#empty-title').textContent(), 'Your workbench');
+          assert.equal(await home.locator('#home-model-title').textContent(), 'Shared defaults detected');
+          assert.match(await home.locator('#home-model-selection').textContent(), /openai.*User defaults/s);
+          assert.match(await home.locator('#home-model-detail').textContent(), /not a connection check/);
+          assert.equal(await home.locator('[data-empty-action="workspace"]').isVisible(), surface === 'desktop');
+          assert.equal(await home.locator('[data-empty-action="provider"]').isVisible(), surface === 'desktop');
+          await home.locator('[data-home-action="settings"]').click();
+          assert.equal(await home.locator('#settings-dialog').isVisible(), true);
+          await home.locator('#setting-provider').waitFor();
+          assert.equal(await home.locator('#settings-scope').inputValue(), 'user');
+          await home.locator('#settings-close').click();
+          await screenshot(home, `${surface}-workbench-home-wide`);
+        });
+        await check(`${surface} Home accepts an asynchronous defaults refresh without another session event`, async () => {
+          const hadModel = Object.hasOwn(stored, 'model'), originalModel = stored.model;
+          try {
+            await home.locator('[data-home-session-id="home-older"]').click();
+            await home.waitForFunction(() => document.querySelector('#session-title').textContent === 'Older saved task');
+            stored.model = 'home-refreshed-fixture-model';
+            holdNextSettingsRead = true;
+            const before = observedOperations.length;
+            await home.locator('#workbench-home').click();
+            await waitForHeldRead();
+            assert.doesNotMatch(await home.locator('#home-model-selection').textContent(), /home-refreshed-fixture-model/);
+            releaseReads();
+            await home.waitForFunction(() => document.querySelector('#home-model-selection').textContent.includes('home-refreshed-fixture-model'));
+            assert.equal(observedOperations.slice(before).some(op => ['updateSettings', 'createSession', 'attachTurn', 'startTurn', 'controlGoal'].includes(op)), false);
+          } finally {
+            holdNextSettingsRead = false;
+            releaseReads();
+            if (hadModel) stored.model = originalModel;
+            else delete stored.model;
+          }
+        });
+        await check(`${surface} narrow home fits and Browse all returns focus to session navigation`, async () => {
+          await home.setViewportSize({ width: 390, height: 844 });
+          assert.equal(await home.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+          await home.locator('[data-home-action="all-sessions"]').click();
+          assert.equal(await home.locator('#navigation').getAttribute('aria-modal'), 'true');
+          await focusIs(home, 'navigation-close');
+          await home.keyboard.press('Escape');
+          await home.waitForFunction(() => document.activeElement?.dataset.homeAction === 'all-sessions');
+          assert.equal(await home.evaluate(() => document.activeElement.dataset.homeAction), 'all-sessions');
+          await screenshot(home, `${surface}-workbench-home-narrow`);
+        });
+        await check(`${surface} recent saved history is newest first and never activates a runtime`, async () => {
+          assert.deepEqual(await home.locator('[data-home-session-id]').evaluateAll(rows => rows.map(row => row.dataset.homeSessionId)), ['home-newer', 'home-older']);
+          const before = observedOperations.length;
+          await home.locator('[data-home-session-id="home-newer"]').click();
+          await home.waitForFunction(() => document.querySelector('#session-title').textContent === 'Most recent saved task');
+          await home.waitForFunction(() => /Send a message to continue/.test(document.querySelector('#turn-state').textContent));
+          const actions = observedOperations.slice(before);
+          assert.equal(actions.includes('durableTranscriptPage'), true);
+          assert.equal(actions.some(op => ['createSession', 'attachTurn', 'startTurn', 'snapshot', 'getExecutionSettings', 'controlGoal'].includes(op)), false);
+          await home.locator('#navigation-toggle').click();
+          await home.locator('#workbench-home').click();
+          assert.equal(await home.locator('#timeline').evaluate(node => node.scrollTop), 0);
+        });
+      } finally { await home.context().close(); homeHistory = false; }
+      const conversationHome = await createPage(surface, true);
+      await check(`${surface} Home preserves live conversation drafts and never closes or starts work`, async () => {
+        await conversationHome.locator('.session-row').first().click();
+        await conversationHome.locator('#prompt').fill('Keep my input while I review the workbench.');
+        const before = observedOperations.length;
+        await conversationHome.locator('#workbench-home').click();
+        await conversationHome.locator('#empty-title').waitFor();
+        assert.equal(await conversationHome.locator('#composer').isVisible(), false);
+        await conversationHome.locator('[data-home-session-id="acceptance-session"]').click();
+        await conversationHome.locator('#prompt').waitFor();
+        assert.equal(await conversationHome.locator('#prompt').inputValue(), 'Keep my input while I review the workbench.');
+        assert.equal(observedOperations.slice(before).some(op => ['closeSession', 'createSession', 'attachTurn', 'startTurn', 'controlGoal'].includes(op)), false);
+      });
+      await conversationHome.context().close();
+    }
     for (const surface of ['desktop', 'web']) {
       goals.clear();
       const goalPage = await createPage(surface, true);
