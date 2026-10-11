@@ -251,14 +251,38 @@ func TestPromptSuggestionProviderCallPreservesMainRouteIdentity(t *testing.T) {
 	}
 }
 
-func TestGeneratePromptSuggestionFailsClosedOutsideEligibleTUI(t *testing.T) {
+func TestGeneratePromptSuggestionAppServerUsesSharedGenerator(t *testing.T) {
+	probe := &promptSuggestionProbeModel{result: "run the focused tests"}
+	eng := NewQueryEngine(QueryEngineConfig{
+		CWD: t.TempDir(), TranscriptDir: t.TempDir(), ChatModel: probe,
+		CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true,
+	})
+	t.Cleanup(eng.Close)
+	eng.mu.Lock()
+	eng.messages = []*schema.Message{{Role: schema.Assistant, Content: "one"}, {Role: schema.Assistant, Content: "two"}}
+	eng.mu.Unlock()
+	if got := eng.GeneratePromptSuggestion(context.Background()); got != "run the focused tests" {
+		t.Fatalf("app-server suggestion = %q", got)
+	}
+	calls, _, _, tools, tokens, _ := probe.snapshot()
+	if calls != 1 || tools != 0 || tokens != 64 || len(eng.GetMessages()) != 2 {
+		t.Fatalf("shared suggestion boundary: calls=%d tools=%d tokens=%d", calls, tools, tokens)
+	}
+}
+
+func TestGeneratePromptSuggestionFailsClosedOutsideEligibleClient(t *testing.T) {
 	tests := []struct {
 		name              string
 		config            QueryEngineConfig
 		pendingPermission bool
+		unfinishedGoal    bool
 	}{
 		{name: "disabled", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI}},
 		{name: "headless", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointHeadless, EnablePromptSuggestions: true}},
+		{name: "app disabled", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer}},
+		{name: "app plan", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true, PermissionMode: permission.ModePlan}},
+		{name: "app pending permission", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true}, pendingPermission: true},
+		{name: "app unfinished goal", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true}, unfinishedGoal: true},
 		{name: "child", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true, AgentID: "child"}},
 		{name: "plan", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true, PermissionMode: permission.ModePlan}},
 		{name: "pending permission", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true}, pendingPermission: true},
@@ -278,6 +302,11 @@ func TestGeneratePromptSuggestionFailsClosedOutsideEligibleTUI(t *testing.T) {
 				{Role: schema.Assistant, Content: "two"},
 			}
 			eng.mu.Unlock()
+			if test.unfinishedGoal {
+				if _, err := eng.goalService.create(goalCreateRequest{Objective: "test-owned unfinished goal"}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if test.pendingPermission {
 				key := permissionRequestKey{
 					engineID:  eng.permissionEngineID,

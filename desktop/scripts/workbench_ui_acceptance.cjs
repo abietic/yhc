@@ -17,6 +17,14 @@ const errors = [];
 const streams = new Map();
 const heldReads = [];
 const heldWrites = [];
+const heldSuggestions = [];
+const heldTurns = [];
+const heldCloses = [];
+let holdNextTurn = false;
+let holdNextClose = false;
+let failNextTurn = false;
+let holdNextSuggestion = false;
+let suggestionRequests = 0;
 let holdNextSettingsRead = false;
 let holdNextSettingsWrite = false;
 let failNextSettingsRead = false;
@@ -65,8 +73,20 @@ function settings(scope = 'user') {
   ) };
 }
 function operation(op, input = {}, conversation = false) {
+  if (op === 'promptSuggestion') {
+    suggestionRequests++;
+    return { session_id: input.sessionID, suggestion: 'run the focused tests' };
+  }
+  if (op === 'startTurn') {
+    turnRequests++;
+    if (failNextTurn) {
+      failNextTurn = false;
+      return { fixtureError: true, status: 503, code: 'fixture_unavailable', message: 'Fixture turn admission is unavailable.' };
+    }
+    return { session_id: input.sessionID, turn_id: input.clientTurnID, accepted: true };
+  }
   if (op === 'createSession') { creations++; return session; }
-  if (op === 'startTurn') { turnRequests++; return { turn_id: 'fixture-turn' }; }
+  if (op === 'closeSession') return {};
   if (op === 'listSessions') return { sessions: conversation ? [session, secondSession] : [] };
   if (op === 'listDurableSessions') return { sessions: [], has_more: false };
   if (op === 'transcriptPage') return { entries: [], has_more: false };
@@ -127,16 +147,18 @@ async function focusIs(page, id) {
     throw new Error(`Expected focus ${id}; observed ${JSON.stringify(observed)}`);
   }
 }
-async function waitForHeldRead(queue = heldReads) {
+async function waitForHeldRead(queue = heldReads, count = 1) {
   for (let attempt = 0; attempt < 100; attempt++) {
-    if (queue.length) return;
+    if (queue.length >= count) return;
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   throw new Error('The expected settings request was not received');
 }
+function releaseHeld(queue) {
+  for (const { res, body } of queue.splice(0)) reply(res, body);
+}
 function releaseReads() {
-  for (const { res, body } of heldReads.splice(0)) reply(res, body);
-  for (const { res, body } of heldWrites.splice(0)) reply(res, body);
+  for (const queue of [heldReads, heldWrites, heldSuggestions, heldTurns, heldCloses]) releaseHeld(queue);
 }
 async function main() {
   const args = process.argv.slice(2);
@@ -154,6 +176,15 @@ async function main() {
       if (url.pathname === '/fixture/rpc') {
         const input = await readBody(req);
         const body = operation(input.op, input.input, conversation);
+        if (input.op === 'startTurn' && holdNextTurn) {
+          holdNextTurn = false; heldTurns.push({ res, body }); return;
+        }
+        if (input.op === 'closeSession' && holdNextClose) {
+          holdNextClose = false; heldCloses.push({ res, body }); return;
+        }
+        if (input.op === 'promptSuggestion' && holdNextSuggestion) {
+          holdNextSuggestion = false; heldSuggestions.push({ res, body }); return;
+        }
         if (input.op === 'updateSettings' && holdNextSettingsWrite) {
           holdNextSettingsWrite = false; heldWrites.push({ res, body }); return;
         }
@@ -178,12 +209,28 @@ async function main() {
         reply(res, body); return;
       }
       if (url.pathname === '/v1/sessions') { reply(res, operation('listSessions', {}, conversation)); return; }
+      if (req.method === 'DELETE' && /^\/v1\/sessions\/[^/]+$/.test(url.pathname)) {
+        const body = operation('closeSession', { sessionID: url.pathname.split('/').at(-1) });
+        if (holdNextClose) { holdNextClose = false; heldCloses.push({ res, body }); return; }
+        reply(res, body); return;
+      }
       if (url.pathname === '/v1/durable-sessions') { reply(res, operation('listDurableSessions')); return; }
       if (url.pathname.endsWith('/events')) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write(': connected\n\n'); streams.set(res, url.pathname.split('/').at(-2)); req.on('close', () => streams.delete(res)); return;
       }
       const end = url.pathname.split('/').at(-1);
+      if (end === 'prompt-suggestion') {
+        const body = operation('promptSuggestion', { sessionID: url.pathname.split('/').at(-2) });
+        if (holdNextSuggestion) { holdNextSuggestion = false; heldSuggestions.push({ res, body }); return; }
+        reply(res, body); return;
+      }
+      if (end === 'turns' && req.method === 'POST') {
+        const input = await readBody(req);
+        const body = operation('startTurn', { sessionID: url.pathname.split('/').at(-2), prompt: input.prompt, clientTurnID: input.client_turn_id });
+        if (holdNextTurn) { holdNextTurn = false; heldTurns.push({ res, body }); return; }
+        reply(res, body); return;
+      }
       if (end === 'command-completions') { reply(res, operation('completeCommand', await readBody(req))); return; }
       if (end === 'execution-settings' && req.method === 'PATCH') sessionSettingWrites++;
       const mapped = { transcript: 'transcriptPage', snapshot: 'snapshot', 'execution-settings': 'getExecutionSettings', 'review-diff': 'reviewDiff', turns: 'startTurn' }[end];
@@ -200,17 +247,18 @@ async function main() {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     return page.screenshot({ path: path.join(outputDir, `${name}.png`), animations: 'disabled' });
   };
-  async function createPage(surface, conversation = false, noVault = false, savedProvider = 'openai') {
+  async function createPage(surface, conversation = false, noVault = false, savedProvider = 'openai', recovery = '') {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' });
     if (conversation) await context.addCookies([{ name: 'fixture', value: 'conversation', url: base }]);
     const page = await context.newPage();
     page.setDefaultTimeout(6000);
     page.on('pageerror', error => errors.push(error.message));
-    if (surface === 'desktop') await page.addInitScript(({ noVault, savedProvider }) => {
+    if (surface === 'desktop') await page.addInitScript(({ noVault, savedProvider, recovery }) => {
+      const recoveryState = { pickerCalls: 0, configureCalls: 0, createHandles: [], generation: 0, saved: false };
+      if (recovery) window.__workspaceRecovery = recoveryState;
       window.yhcDesktop = {
         getInfo: async () => ({ protocolVersion: 2, webAvailable: true }),
         getProviderStatus: async () => ({ configured: !noVault, provider: noVault ? '' : savedProvider, model: 'default', launchReady: !noVault, secureStorageAvailable: true }),
-        configureProvider: async (input) => ({ configured: true, provider: input.provider, model: input.model, launchReady: true, secureStorageAvailable: true }),
         api: async (op, input) => {
           const response = await fetch('/fixture/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, input }) });
           const body = await response.json();
@@ -218,6 +266,18 @@ async function main() {
           return body;
         },
         apiResult: async (op, input) => {
+          if (recovery && op === 'createSession') {
+            recoveryState.createHandles.push(input.workspaceHandle);
+            if (!recoveryState.saved && recovery === 'held-create') {
+              await new Promise(resolve => { window.__releaseWorkspaceCreate = resolve; });
+            }
+            if (!recoveryState.saved) return { ok: false, error: { status: 422, code: 'session_create_failed', message: 'Fixture provider configuration is required.' } };
+            if (recovery === 'newer-notice') {
+              await new Promise(resolve => { window.__releaseRecoveredCreate = resolve; });
+            }
+            const valid = input.workspaceHandle === `fixture-${recoveryState.generation}-${recoveryState.pickerCalls}`;
+            if (!valid) return { ok: false, error: { status: 422, code: 'workspace_handle_invalid', message: 'workspace_handle is invalid or already used' } };
+          }
           const response = await fetch('/fixture/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, input }) });
           const body = await response.json();
           return response.ok
@@ -226,9 +286,30 @@ async function main() {
         },
         onEventStream: () => () => {}, onBackendExit: () => () => {},
         startEvents: async () => ({ status: 'open' }), stopEvents: async () => {},
-        selectWorkspace: async () => noVault ? ({ workspace_handle: 'isolated-fixture-workspace', workspace_label: 'demo-workspace' }) : null, openWeb: async () => {},
+        selectWorkspace: async () => {
+          if (recovery) {
+            recoveryState.pickerCalls++;
+            if (recoveryState.saved && recovery === 'cancel') return null;
+            return { workspace_handle: `fixture-${recoveryState.generation}-${recoveryState.pickerCalls}`, workspace_label: 'demo-workspace' };
+          }
+          return noVault ? { workspace_handle: 'isolated-fixture-workspace', workspace_label: 'demo-workspace' } : null;
+        },
+        configureProvider: async (input) => {
+          if (!recovery) return { configured: true, provider: input.provider, model: input.model, launchReady: true, secureStorageAvailable: true };
+          recoveryState.configureCalls++;
+          if (recovery === 'held-provider') {
+            await new Promise(resolve => { window.__releaseProviderConfigure = resolve; });
+          }
+          if (recovery === 'save-failure') throw new Error('Fixture profile could not be saved.');
+          recoveryState.saved = true;
+          recoveryState.generation++;
+          return { configured: true, provider: input?.provider || savedProvider, model: input?.model || 'default', launchReady: true, secureStorageAvailable: true };
+        },
+        openWeb: async () => {
+          if (recovery === 'newer-notice') throw new Error('Fixture browser could not open.');
+        },
       };
-    }, { noVault, savedProvider });
+    }, { noVault, savedProvider, recovery });
     await page.goto(base);
     await page.waitForFunction(() => document.documentElement.dataset.yhcBootstrap === 'ready');
     return page;
@@ -922,6 +1003,123 @@ async function main() {
         });
       }
     }
+    for (const recovery of ['create', 'cancel', 'save-failure', 'held-create', 'held-provider', 'newer-notice']) {
+      await check(`Desktop provider recovery ${recovery} never reuses a retired workspace handle`, async () => {
+        const recovering = await createPage('desktop', false, true, 'openai', recovery);
+        const turnsBefore = turnRequests;
+        const settingsBefore = settingsWrites.length;
+        const creationsBefore = creations;
+        try {
+          await recovering.locator('[data-empty-action="workspace"]').click();
+          if (recovery === 'held-create') {
+            await recovering.waitForFunction(() => typeof window.__releaseWorkspaceCreate === 'function');
+            assert.equal(await recovering.locator('#provider-settings').isDisabled(), true);
+            assert.equal(await recovering.locator('[data-empty-action="provider"]').isDisabled(), true);
+            assert.equal(await recovering.locator('#provider-save').isDisabled(), true);
+            await recovering.evaluate(() => {
+              document.querySelector('#provider-settings').onclick();
+              document.querySelector('#provider-api-key').value = 'isolated-acceptance-fixture-key';
+              document.querySelector('#provider-form').dispatchEvent(new Event('submit', { cancelable: true }));
+            });
+            assert.equal(await recovering.locator('#provider-dialog').evaluate(node => node.open), false);
+            assert.equal(await recovering.evaluate(() => window.__workspaceRecovery.configureCalls), 0);
+            await recovering.evaluate(() => window.__releaseWorkspaceCreate());
+          }
+          await recovering.locator('#workbench-notice-copy').filter({ hasText: 'Fixture provider configuration is required.' }).waitFor();
+          assert.deepEqual(await recovering.evaluate(() => window.__workspaceRecovery.createHandles), ['fixture-0-1']);
+          await recovering.locator('[data-empty-action="provider"]').click();
+          await recovering.locator('#provider-dialog[open]').waitFor();
+          await recovering.locator('#provider-api-key').fill('isolated-acceptance-fixture-key');
+          await recovering.locator('#provider-save').click();
+          if (recovery === 'newer-notice') {
+            await recovering.waitForFunction(() => typeof window.__releaseRecoveredCreate === 'function');
+            await recovering.locator('#open-web').click();
+            await recovering.locator('#workbench-notice-copy').filter({ hasText: 'Fixture browser could not open.' }).waitFor();
+            await recovering.evaluate(() => window.__releaseRecoveredCreate());
+          }
+          if (recovery === 'held-provider') {
+            await recovering.waitForFunction(() => typeof window.__releaseProviderConfigure === 'function');
+            assert.equal(await recovering.locator('#new-session').isDisabled(), true);
+            assert.equal(await recovering.locator('[data-empty-action="workspace"]').isDisabled(), true);
+            await recovering.evaluate(() => {
+              document.querySelector('#new-session').onclick();
+              document.querySelector('[data-empty-action="workspace"]').onclick();
+            });
+            assert.equal(await recovering.evaluate(() => window.__workspaceRecovery.pickerCalls), 1);
+            assert.equal(await recovering.locator('#new-session').getAttribute('aria-busy'), 'false');
+            await recovering.evaluate(() => window.__releaseProviderConfigure());
+          }
+          if (recovery === 'save-failure') {
+            await recovering.locator('#provider-dialog-status').filter({ hasText: 'Fixture profile could not be saved.' }).waitFor();
+          } else {
+            await recovering.waitForFunction(() => window.__workspaceRecovery.pickerCalls === 2 && document.querySelector('#new-session').getAttribute('aria-busy') === 'false');
+            assert.equal(await recovering.locator('#provider-dialog').evaluate(node => node.open), false);
+          }
+          const observed = await recovering.evaluate(() => window.__workspaceRecovery);
+          assert.equal(observed.configureCalls, 1);
+          assert.equal(observed.pickerCalls, recovery === 'save-failure' ? 1 : 2);
+          const createsSession = ['create', 'held-create', 'held-provider', 'newer-notice'].includes(recovery);
+          assert.deepEqual(observed.createHandles, createsSession ? ['fixture-0-1', 'fixture-1-2'] : ['fixture-0-1']);
+          assert.equal(creations, creationsBefore + (createsSession ? 1 : 0));
+          assert.equal(await recovering.locator('#provider-api-key').inputValue(), '');
+          assert.equal(await recovering.locator('#composer').isVisible(), createsSession);
+          assert.equal(await recovering.locator('#workbench-notice').isVisible(), !createsSession || recovery === 'newer-notice');
+          assert.equal(await recovering.locator('#workbench-notice-copy').textContent(),
+            recovery === 'newer-notice' ? 'Fixture browser could not open.' : createsSession ? '' : 'Fixture provider configuration is required.');
+          assert.equal(turnRequests, turnsBefore);
+          assert.equal(settingsWrites.length, settingsBefore);
+          await screenshot(recovering, `provider-recovery-${recovery}`);
+        } finally {
+          await recovering.evaluate(() => {
+            window.__releaseWorkspaceCreate?.();
+            window.__releaseProviderConfigure?.();
+            window.__releaseRecoveredCreate?.();
+          });
+          await recovering.close();
+        }
+      });
+    }
+    await check('Desktop explicit workspace retry resolves only its earlier creation notice', async () => {
+      const recovering = await createPage('desktop', false, true, 'openai', 'manual-retry');
+      const turnsBefore = turnRequests;
+      const settingsBefore = settingsWrites.length;
+      try {
+        await recovering.locator('#new-session').click();
+        await recovering.locator('#workbench-notice-copy').filter({ hasText: 'Fixture provider configuration is required.' }).waitFor();
+        // Model a repaired runtime configuration, not a Desktop vault save.
+        await recovering.evaluate(() => { window.__workspaceRecovery.saved = true; });
+        await recovering.locator('#new-session').click();
+        await recovering.waitForFunction(() => document.querySelector('#new-session').getAttribute('aria-busy') === 'false' && document.querySelector('#session-title').textContent === 'Improve the search experience');
+        assert.equal(await recovering.locator('#workbench-notice').isVisible(), false);
+        assert.equal(await recovering.locator('#workbench-notice-copy').textContent(), '');
+        const observed = await recovering.evaluate(() => window.__workspaceRecovery);
+        assert.equal(observed.configureCalls, 0);
+        assert.equal(observed.pickerCalls, 2);
+        assert.deepEqual(observed.createHandles, ['fixture-0-1', 'fixture-0-2']);
+        assert.equal(turnRequests, turnsBefore);
+        assert.equal(settingsWrites.length, settingsBefore);
+        await screenshot(recovering, 'creation-notice-manual-retry');
+      } finally { await recovering.close(); }
+    });
+    await check('Desktop new-workspace failure preserves the selected conversation and draft', async () => {
+      const existing = await createPage('desktop', true, true, 'openai', 'manual-retry');
+      const turnsBefore = turnRequests;
+      const settingsBefore = settingsWrites.length;
+      try {
+        await existing.locator(`[data-session-id="${session.id}"] .session-select`).click();
+        await existing.locator('#composer').waitFor();
+        await existing.locator('#prompt').fill('Keep this conversation draft.');
+        const noticeBefore = await existing.locator('#turn-state').textContent();
+        await existing.locator('#new-session').click();
+        await existing.locator('#workbench-notice-copy').filter({ hasText: 'Fixture provider configuration is required.' }).waitFor();
+        assert.equal(await existing.locator('#session-title').textContent(), session.title);
+        assert.equal(await existing.locator('#prompt').inputValue(), 'Keep this conversation draft.');
+        assert.equal(await existing.locator('#turn-state').textContent(), noticeBefore);
+        assert.equal(turnRequests, turnsBefore);
+        assert.equal(settingsWrites.length, settingsBefore);
+        await screenshot(existing, 'creation-notice-existing-conversation');
+      } finally { await existing.close(); }
+    });
     const sharedConfig = await createPage('desktop', false, true);
     await check('Desktop without a vault profile delegates workspace creation to shared runtime configuration', async () => {
       const before = creations;
@@ -960,6 +1158,212 @@ async function main() {
       await prompt.fill('');
     });
     const desktopCommands = await createPage('desktop', true);
+    for (const surface of ['web', 'desktop']) {
+      async function settleHeldReply(page, queue, op, index = 0) {
+        const response = page.waitForResponse(response => {
+          if (surface === 'web') return op === 'startTurn'
+            ? response.request().method() === 'POST' && response.url().endsWith('/turns')
+            : response.request().method() === 'DELETE' && /\/v1\/sessions\/[^/]+$/.test(response.url());
+          return response.url().endsWith('/fixture/rpc') && response.request().postDataJSON()?.op === op;
+        });
+        const held = queue.splice(index, 1)[0];
+        assert.ok(held, 'the selected response is held');
+        reply(held.res, held.body);
+        await (await response).finished();
+        // Let the settled fetch promise and synchronous render run, then inspect
+        // the next painted frame. No timing sleep stands in for reply admission.
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      }
+      const settleHeldTurn = page => settleHeldReply(page, heldTurns, 'startTurn');
+      await check(`${surface} ordinary send clears only its unchanged draft`, async () => {
+        const page = await createPage(surface, true);
+        try {
+          const before = turnRequests;
+          await page.locator('#prompt').fill('  Submit this draft  ');
+          holdNextTurn = true;
+          await page.locator('#send').click();
+          await waitForHeldRead(heldTurns);
+          assert.equal(await page.locator('#prompt').inputValue(), '  Submit this draft  ');
+          await settleHeldTurn(page);
+          assert.equal(await page.locator('#prompt').inputValue(), '');
+          assert.equal(turnRequests, before + 1);
+        } finally { holdNextTurn = false; releaseReads(); await page.close(); }
+      });
+      await check(`${surface} late ordinary-send replies preserve new and restored input`, async () => {
+        for (const replacement of ['A newer draft', 'Submit this draft']) {
+          const page = await createPage(surface, true);
+          try {
+            const before = turnRequests;
+            await page.locator('#prompt').fill('Submit this draft');
+            holdNextTurn = true;
+            await page.locator('#send').click();
+            await waitForHeldRead(heldTurns);
+            await page.locator('#prompt').fill('A temporary edit');
+            await page.locator('#prompt').fill(replacement);
+            await settleHeldTurn(page);
+            assert.equal(await page.locator('#prompt').inputValue(), replacement);
+            assert.equal(turnRequests, before + 1, 'typing while pending never dispatches');
+          } finally { holdNextTurn = false; releaseReads(); await page.close(); }
+        }
+      });
+      await check(`${surface} late ordinary-send replies cannot clear another session draft`, async () => {
+        const page = await createPage(surface, true);
+        try {
+          const before = turnRequests;
+          const prompt = page.locator('#prompt');
+          await prompt.fill('Submit this draft');
+          holdNextTurn = true;
+          await page.locator('#send').click();
+          await waitForHeldRead(heldTurns);
+          await prompt.fill('A newer source-session draft');
+          await page.getByText(secondSession.title, { exact: true }).click();
+          await page.waitForFunction(() => document.querySelector('#session-title').textContent === 'Review the keyboard flow');
+          await prompt.fill('The other session draft');
+          await settleHeldTurn(page);
+          assert.equal(await prompt.inputValue(), 'The other session draft');
+          await page.getByText(session.title, { exact: true }).click();
+          await page.waitForFunction(() => document.querySelector('#session-title').textContent === 'Improve the search experience');
+          assert.equal(await prompt.inputValue(), 'A newer source-session draft');
+          assert.equal(turnRequests, before + 1);
+        } finally { holdNextTurn = false; releaseReads(); await page.close(); }
+      });
+      await check(`${surface} failed ordinary-send replies retain input and allow a later explicit send`, async () => {
+        const page = await createPage(surface, true);
+        try {
+          const before = turnRequests;
+          const prompt = page.locator('#prompt');
+          await prompt.fill('Submit this draft');
+          holdNextTurn = true; failNextTurn = true;
+          await page.locator('#send').click();
+          await waitForHeldRead(heldTurns);
+          await prompt.fill('The replacement draft');
+          await settleHeldTurn(page);
+          assert.equal(await prompt.inputValue(), 'The replacement draft');
+          assert.ok((await page.locator('#turn-state').textContent()).includes('Fixture turn admission is unavailable.'));
+          assert.equal(turnRequests, before + 1);
+          holdNextTurn = true;
+          await page.locator('#send').click();
+          await waitForHeldRead(heldTurns);
+          await settleHeldTurn(page);
+          assert.equal(await prompt.inputValue(), '');
+          assert.equal(turnRequests, before + 2, 'only the explicit second send dispatches');
+        } finally { holdNextTurn = false; failNextTurn = false; releaseReads(); await page.close(); }
+      });
+      await check(`${surface} closing a session retains the latest settled draft`, async () => {
+        for (const { editDuringClose, closeFirst } of [
+          { editDuringClose: false, closeFirst: false },
+          { editDuringClose: true, closeFirst: false },
+          { editDuringClose: false, closeFirst: true },
+        ]) {
+          const page = await createPage(surface, true);
+          try {
+            const prompt = page.locator('#prompt');
+            await prompt.fill('Submit this draft');
+            holdNextTurn = true;
+            await page.locator('#send').click();
+            await waitForHeldRead(heldTurns);
+            // Re-select through the public UI so the row captures the submitted
+            // draft, rather than only the empty bootstrap descriptor.
+            await page.locator(`[data-session-id="${session.id}"] .session-select`).click();
+            holdNextClose = true;
+            await page.locator(`[data-session-id="${session.id}"] .session-close`).click();
+            await page.locator('#confirm-accept').click();
+            await waitForHeldRead(heldCloses);
+            if (editDuringClose) await prompt.fill('Edited while closing');
+            const expected = closeFirst ? 'Submit this draft' : editDuringClose ? 'Edited while closing' : '';
+            if (!closeFirst) {
+              await settleHeldTurn(page);
+              assert.equal(await prompt.inputValue(), expected);
+            }
+            await settleHeldReply(page, heldCloses, 'closeSession');
+            await page.locator(`[data-session-id="${session.id}"] .session-close`).waitFor({ state: 'detached' });
+            assert.equal(await prompt.inputValue(), expected, 'closing cannot restore a stale captured draft');
+            if (closeFirst) {
+              await settleHeldTurn(page);
+              assert.equal(await prompt.inputValue(), expected, 'a retired attempt cannot clear the saved draft');
+            }
+          } finally { holdNextTurn = false; holdNextClose = false; releaseReads(); await page.close(); }
+        }
+      });
+      await check(`${surface} overlapping explicit sends keep attempt cleanup isolated`, async () => {
+        for (const order of ['older-first', 'newer-first', 'older-failure']) {
+          const page = await createPage(surface, true);
+          try {
+            const before = turnRequests;
+            const prompt = page.locator('#prompt');
+            await prompt.fill('First submitted draft');
+            holdNextTurn = true; failNextTurn = order === 'older-failure';
+            await page.locator('#send').click();
+            await waitForHeldRead(heldTurns);
+            await prompt.fill('Second submitted draft');
+            holdNextTurn = true;
+            await page.locator('#send').click();
+            await waitForHeldRead(heldTurns, 2);
+            if (order === 'newer-first') {
+              await settleHeldReply(page, heldTurns, 'startTurn', 1);
+              assert.equal(await prompt.inputValue(), '');
+              await prompt.fill('A third unsent draft');
+              await settleHeldTurn(page);
+              assert.equal(await prompt.inputValue(), 'A third unsent draft');
+            } else {
+              await settleHeldTurn(page);
+              assert.equal(await prompt.inputValue(), 'Second submitted draft');
+              await settleHeldTurn(page);
+              assert.equal(await prompt.inputValue(), '', 'older cleanup must not remove the newer attempt');
+            }
+            assert.equal(turnRequests, before + 2, 'only the two explicit sends dispatch');
+          } finally { holdNextTurn = false; failNextTurn = false; releaseReads(); await page.close(); }
+        }
+      });
+    }
+    for (const surface of ['web', 'desktop']) {
+      stored.prompt_suggestions = true; revision++;
+      const suggestionPage = await createPage(surface, true);
+      await check(`${surface} explicit next-step suggestion is draft-only and undoable`, async () => {
+        const beforeCalls = suggestionRequests, beforeTurns = turnRequests;
+        await suggestionPage.locator('#suggest-prompt').waitFor();
+        assert.equal(suggestionRequests, beforeCalls, 'opening a session never requests a suggestion');
+        await suggestionPage.locator('#suggest-prompt').click();
+        const candidate = suggestionPage.locator('#accept-suggestion');
+        await candidate.waitFor();
+        assert.equal(await suggestionPage.locator('#prompt').inputValue(), '');
+        assert.equal(suggestionRequests, beforeCalls + 1);
+        await screenshot(suggestionPage, `prompt-suggestion-${surface}`);
+        await candidate.click();
+        const prompt = suggestionPage.locator('#prompt');
+        assert.equal(await prompt.inputValue(), 'run the focused tests');
+        await focusIs(suggestionPage, 'prompt');
+        await prompt.press('ControlOrMeta+z');
+        assert.equal(await prompt.inputValue(), '');
+        await prompt.press('ControlOrMeta+Shift+z');
+        assert.equal(await prompt.inputValue(), 'run the focused tests');
+        assert.equal(turnRequests, beforeTurns, 'proposal, acceptance, undo and redo never send');
+        await prompt.fill('');
+      });
+      await check(`${surface} edited and switched drafts reject delayed suggestions`, async () => {
+        const prompt = suggestionPage.locator('#prompt');
+        holdNextSuggestion = true;
+        await suggestionPage.locator('#suggest-prompt').click();
+        await waitForHeldRead(heldSuggestions);
+        await prompt.fill('my own next step');
+        await prompt.fill('');
+        releaseReads();
+        await suggestionPage.waitForTimeout(100);
+        assert.equal(await suggestionPage.locator('#accept-suggestion').isVisible(), false);
+        assert.equal(await prompt.inputValue(), '');
+        holdNextSuggestion = true;
+        await suggestionPage.locator('#suggest-prompt').click();
+        await waitForHeldRead(heldSuggestions);
+        await suggestionPage.getByText(secondSession.title, { exact: true }).click();
+        await suggestionPage.waitForFunction(() => document.querySelector('#session-title').textContent === 'Review the keyboard flow');
+        releaseReads();
+        await suggestionPage.waitForTimeout(100);
+        assert.equal(await suggestionPage.locator('#accept-suggestion').isVisible(), false);
+        assert.equal(await prompt.inputValue(), '');
+        assert.equal(await suggestionPage.locator('#timeline').textContent().then(text => text.includes('run the focused tests')), false);
+        await suggestionPage.close();
+      });
+    }
     await check('Desktop command menu stays in the textarea and Tab does not submit', async () => {
       const prompt = desktopCommands.locator('#prompt');
       await prompt.fill('/mod');

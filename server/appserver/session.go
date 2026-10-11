@@ -120,12 +120,13 @@ type session struct {
 	rootCancel  context.CancelFunc
 	runtimeWake chan struct{}
 
-	activeTurnID          string
-	activePrompt          string
-	activeCancel          context.CancelFunc
-	immediateCancelTurnID string
-	runtimeDrainBlocked   bool
-	closed                bool
+	activeTurnID            string
+	activePrompt            string
+	activeCancel            context.CancelFunc
+	promptSuggestionRequest *promptSuggestionRequest
+	immediateCancelTurnID   string
+	runtimeDrainBlocked     bool
+	closed                  bool
 }
 
 func newSession(
@@ -431,6 +432,7 @@ func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
 		return StartTurnResponse{}, errSessionBusy
 	}
 	turnCtx, cancel := context.WithCancel(s.rootCtx)
+	s.cancelPromptSuggestionLocked()
 	s.activeTurnID = turnID
 	s.activePrompt = prompt
 	s.activeCancel = cancel

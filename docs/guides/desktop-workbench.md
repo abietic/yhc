@@ -28,6 +28,14 @@ The provider dialog intentionally refuses to change a profile while live
 Desktop sessions exist. Close them first so one process cannot silently mix
 provider credentials or routing inside an active conversation.
 
+Wait for workspace selection/creation to finish before opening provider setup;
+new creation is disabled during a provider save. If failed workspace creation
+is followed by a successful credential save, the restarted backend opens the
+native picker again. Choose the workspace anew; cancelling creates no session.
+A failed credential save keeps its error and does not reopen the picker. A
+successful creation clears only its earlier creation-error banner, preserving
+new unrelated errors and notices in existing conversations.
+
 On macOS, starting with no saved provider profile does not probe Keychain or
 request secure-storage approval. Saving the first profile or opening an
 existing encrypted profile may still require normal Keychain interaction and
@@ -273,6 +281,13 @@ for ownership and verification limits.
    questions, Plan approval, and repeated-tool calls each have their own typed
    controls. Do not answer one kind of card by pasting JSON into chat.
 
+An ordinary Send awaiting its admission reply does not prevent further typing.
+The reply clears only its untouched original draft. Later edits remain in their
+own session, even when edited back to the same text. Failure keeps the current
+draft; this does not introduce ordinary-Send retry idempotency. Closing a durable
+session similarly retains the latest draft when its reply arrives, without
+restoring already-cleared text or letting an old Send reply clear saved work.
+
 ### Insert a command without running it
 
 In an idle live session, type `/` to browse commands admitted by the app-server.
@@ -291,6 +306,19 @@ fallback still inserts text but does not guarantee undo history.
 Completion is unavailable in detached history or while a turn or decision is
 pending. It does not scan paths, enumerate session IDs or call a model. Only a
 later explicit Send executes the draft.
+
+### Suggest a next step explicitly
+
+For an empty draft in a live idle session, **Suggest next step** requests one
+ephemeral candidate through the current provider/model. This can incur model
+charges; there is no automatic Desktop/Web request. **Use** inserts one
+undoable draft edit, never a turn. Review it and send separately, or dismiss it.
+Typing and session/runtime changes invalidate old results rather than
+overwriting your draft.
+
+The shared `prompt_suggestions` preference disables these requests. Re-enabling
+a session that started disabled requires creating a new session. The request
+is unavailable during pending decisions, Plan mode or unfinished Goal accounting.
 
 When you quit while turns are active, choose **Quit and stop turns** only when
 you are ready to interrupt them. Normal shutdown is usually immediate, but YHC
