@@ -407,17 +407,17 @@ privacy:
       match_sha256: d5492840844fbac00a9cb4975f104e4d2c2a7514ef12f264571ffe6e29c24bba
       purpose: build-metadata
     - path: desktop/provider_setup.cjs
-      line: 71
+      line: 73
       rule_id: credential-assignment
       match_sha256: 3a1ad298bb0e023be215416c88d0e438bdd29df89262d8b799593b558781be32
       purpose: runtime-loopback
     - path: desktop/provider_setup.cjs
-      line: 227
+      line: 229
       rule_id: credential-assignment
       match_sha256: ed85de80098e055ff4ddd245a9ae380253b42b60c26e31d3a42bbd1d4661357d
       purpose: runtime-loopback
     - path: desktop/provider_setup.cjs
-      line: 250
+      line: 252
       rule_id: credential-assignment
       match_sha256: 795a63b98bda4946d23d3c13590bb1009b4ef993f891e5accc9dc44ba067dcd8
       purpose: runtime-loopback
@@ -607,87 +607,87 @@ privacy:
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 179
+      line: 200
       rule_id: private-url
       match_sha256: c84d649b7e1c47660b2e8277456d86551044db3a84e053cd15bf8e3bd5746ee4
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 181
+      line: 203
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 181
+      line: 203
       rule_id: private-url
       match_sha256: c6e4c37deae701e2aa9365fb7676fdfad4400ced35775f719ea80269db5c6de4
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 185
+      line: 207
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 185
+      line: 207
       rule_id: private-url
       match_sha256: 289d412cd8961bf0b2002eb3e8405c95f863cba264a4711884f7e43cbe975b63
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 188
+      line: 210
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 191
+      line: 215
       rule_id: private-url
       match_sha256: c84d649b7e1c47660b2e8277456d86551044db3a84e053cd15bf8e3bd5746ee4
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 197
+      line: 225
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 198
+      line: 226
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 199
+      line: 227
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 240
+      line: 268
       rule_id: private-url
       match_sha256: 2d0f5ab7fb0913eb507b28666c45180b4bfe2624a2c09c4deb3a449f8c0ac381
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 241
+      line: 269
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 248
+      line: 276
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 254
+      line: 282
       rule_id: private-url
       match_sha256: 2d0f5ab7fb0913eb507b28666c45180b4bfe2624a2c09c4deb3a449f8c0ac381
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 272
+      line: 300
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 273
+      line: 301
       rule_id: credential-assignment
       match_sha256: 464abb98918d17b0430c7af7a4df1ead47d6eaf6577db9afc9e78ce00a5d755c
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup.test.mjs
-      line: 288
+      line: 316
       rule_id: credential-assignment
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
@@ -5345,6 +5345,111 @@ privacy:
       line: 64
       rule_id: credential-assignment
       match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: desktop/test/provider_setup.test.mjs
+      line: 115
+      rule_id: credential-assignment
+      match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
+      purpose: synthetic-security-fixture
+    - path: desktop/test/provider_setup.test.mjs
+      line: 198
+      rule_id: credential-assignment
+      match_sha256: e595ce1d9c48c0bf02c7f4c3f962a8ab811581a0a9b9c82c35ab96423552a021
+      purpose: synthetic-security-fixture
+    - path: desktop/test/provider_setup.test.mjs
+      line: 199
+      rule_id: private-url
+      match_sha256: 0c987fcc047a9325fe494e7e328a225f10305b48dee3d8e18455c41ac6438f2b
+      purpose: synthetic-security-fixture
+    - path: desktop/test/provider_setup.test.mjs
+      line: 213
+      rule_id: private-url
+      match_sha256: 0c987fcc047a9325fe494e7e328a225f10305b48dee3d8e18455c41ac6438f2b
+      purpose: synthetic-security-fixture
+    - path: desktop/test/provider_setup.test.mjs
+      line: 216
+      rule_id: credential-assignment
+      match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 13
+      rule_id: credential-assignment
+      match_sha256: 1f7bac2ce1cc6331d25dafd516ab4cd71c77126f98159d343bd2697ae3d55174
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 19
+      rule_id: private-url
+      match_sha256: 91e8851c6514a8b3b97b0576ae58ba268544ec0ce537443d17a49b009033c259
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 30
+      rule_id: private-url
+      match_sha256: 91e8851c6514a8b3b97b0576ae58ba268544ec0ce537443d17a49b009033c259
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 51
+      rule_id: private-url
+      match_sha256: c9d8f298cc481f3592897b91ab6b22b78caf5a4d31122ce310659f443250488d
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 59
+      rule_id: private-url
+      match_sha256: 91e8851c6514a8b3b97b0576ae58ba268544ec0ce537443d17a49b009033c259
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 60
+      rule_id: private-url
+      match_sha256: a3d9c9d847e21f89d3a11ba60f2fcfa16546a2cb9d601c28c67ca7e079171fe2
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 61
+      rule_id: private-url
+      match_sha256: d3e9cbc4b320d49bcbcaaf97dcb356653e8890876255852904cb62309e9e4ce7
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 62
+      rule_id: private-url
+      match_sha256: 9d8a46a9a54b03b61c782992977fe21eddd824715f99daf25f79ddd4c5167dbe
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 63
+      rule_id: private-url
+      match_sha256: 49f14dd7fc8bf2f3265c2b82514663e9defb238fd61ff3285170bf24cef49e2e
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 64
+      rule_id: private-url
+      match_sha256: b51f16fcabfadc1165982beb4b968f8e48b675b248a460d5d93e020b4e10bbe2
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 77
+      rule_id: private-url
+      match_sha256: 91e8851c6514a8b3b97b0576ae58ba268544ec0ce537443d17a49b009033c259
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 80
+      rule_id: credential-assignment
+      match_sha256: 6facb710e7085c7a6d2d15d1b1b30ae7747d1329a2a29e9a6aeb791de8536915
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 86
+      rule_id: credential-assignment
+      match_sha256: 6facb710e7085c7a6d2d15d1b1b30ae7747d1329a2a29e9a6aeb791de8536915
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 141
+      rule_id: private-url
+      match_sha256: a3d9c9d847e21f89d3a11ba60f2fcfa16546a2cb9d601c28c67ca7e079171fe2
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 151
+      rule_id: private-url
+      match_sha256: 91e8851c6514a8b3b97b0576ae58ba268544ec0ce537443d17a49b009033c259
+      purpose: synthetic-security-fixture
+    - path: engine/provider/desktop_fallback_test.go
+      line: 173
+      rule_id: private-url
+      match_sha256: a3d9c9d847e21f89d3a11ba60f2fcfa16546a2cb9d601c28c67ca7e079171fe2
       purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml
