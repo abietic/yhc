@@ -199,7 +199,7 @@ func verificationPlanningMessage(report *independentVerificationReport) *schema.
 }
 
 func verificationAttachment(report independentVerificationReport, attempt, coverageChecks int) *schema.Message {
-	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue, CoverageReviews: report.coverageReviews, CoverageVerdict: report.coverageVerdict, CoverageIssue: report.coverageIssue, CoverageChecks: coverageChecks}
+	summary := IndependentVerificationSummary{Attempt: attempt, Verdict: report.Verdict, Checks: len(report.Checks), ReportCorrections: report.reportCorrections, FormatIssue: report.formatIssue, ReportIssue: report.reportIssue, CoverageReviews: report.coverageReviews, CoverageVerdict: report.coverageVerdict, CoverageIssue: report.coverageIssue, CoverageChecks: coverageChecks}
 	for _, check := range report.Checks {
 		if check.Status == "FAIL" {
 			summary.Failed++

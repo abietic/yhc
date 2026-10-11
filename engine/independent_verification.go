@@ -43,6 +43,7 @@ type IndependentVerificationSummary struct {
 	Unverified        int    `json:"unverified"`
 	ReportCorrections int    `json:"report_corrections,omitempty"`
 	FormatIssue       string `json:"format_issue,omitempty"`
+	ReportIssue       string `json:"report_issue,omitempty"`
 	CoverageReviews   int    `json:"coverage_reviews,omitempty"`
 	CoverageVerdict   string `json:"coverage_verdict,omitempty"`
 	CoverageIssue     string `json:"coverage_issue,omitempty"`
@@ -70,6 +71,7 @@ type independentVerificationReport struct {
 	// as evidence. Provider usage remains the authoritative cross-segment ledger.
 	reportCorrections int
 	formatIssue       string
+	reportIssue       string
 	coverageReviews   int
 	coverageVerdict   string
 	coverageIssue     string
@@ -475,7 +477,20 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		}
 	}
 	if err != nil {
-		return report, err
+		var semanticErr *verificationReportSemanticError
+		// A format correction may not alter existing claims, including by
+		// introducing a contradiction. Only the initial complete report can
+		// become a PARTIAL diagnostic, under the existing supplemental limit.
+		if report.reportCorrections != 0 || !errors.As(err, &semanticErr) {
+			return report, err
+		}
+		if p.RunUsage != nil && !p.RunUsage.Snapshot().Complete {
+			return report, execution.ErrRunUsageUnknown
+		}
+		report, err = verificationRecoverReportSemantics(report, semanticErr)
+		if err != nil {
+			return report, err
+		}
 	}
 	// Bind and bound all receipts before reviewing; release the maps' lock before
 	// another production Query invocation.
@@ -486,7 +501,10 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		evidenceBytes := 0
 		for i := range report.Checks {
 			check := &report.Checks[i]
-			if check.Status == "UNVERIFIED" {
+			// An unexecuted check may omit a receipt. A recovered contradictory
+			// report must validate every supplied reference, even UNVERIFIED;
+			// stale IDs or commands cannot enter its fresh planning diagnostic.
+			if check.Status == "UNVERIFIED" && (report.reportIssue == "" || (check.ToolCallID == "" && check.Command == "")) {
 				continue
 			}
 			result := results[check.ToolCallID]

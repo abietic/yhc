@@ -62,13 +62,14 @@ func TestVerificationFormatCorrectionUsesOnlyRemainingReportRound(t *testing.T) 
 func TestVerificationFormatCorrectionFailsClosed(t *testing.T) {
 	bad := strings.Replace(verificationPass, `"status":"PASS"`, `"status":"UNKNOWN_STATUS"`, 1)
 	for _, tc := range []struct {
-		name         string
-		turns        int
-		budget       int64
-		initial      string
-		correction   canonicalModelResponse
-		unknownUsage bool
-		calls        uint64
+		name           string
+		turns          int
+		budget         int64
+		initial        string
+		correction     canonicalModelResponse
+		unknownUsage   bool
+		coverageChecks int
+		calls          uint64
 	}{
 		{name: "no-remaining-turn", turns: 2, budget: 8, initial: bad, correction: verificationResponse(verificationPass), calls: 3},
 		{name: "one-correction-only", turns: 6, budget: 8, initial: bad, correction: verificationResponse(bad), calls: 4},
@@ -77,7 +78,7 @@ func TestVerificationFormatCorrectionFailsClosed(t *testing.T) {
 		{name: "unknown-initial-receipt", turns: 3, budget: 8, initial: strings.Replace(bad, "verify-command", "old-solver-id", 1), correction: verificationResponse(verificationPass), calls: 3},
 		{name: "unknown-corrected-receipt", turns: 3, budget: 8, initial: bad, correction: verificationResponse(strings.Replace(verificationPass, "verify-command", "old-solver-id", 1)), calls: 4},
 		{name: "contradiction", turns: 3, budget: 8, initial: strings.Replace(verificationPass, `"status":"PASS"`, `"status":"FAIL"`, 1), correction: verificationResponse(verificationPass), calls: 3},
-		{name: "corrected-contradiction", turns: 3, budget: 8, initial: bad, correction: verificationResponse(strings.Replace(verificationPass, `"status":"PASS"`, `"status":"FAIL"`, 1)), calls: 4},
+		{name: "corrected-contradiction", turns: 3, budget: 8, initial: bad, correction: verificationResponse(strings.Replace(verificationPass, `"status":"PASS"`, `"status":"FAIL"`, 1)), calls: 4, coverageChecks: 1},
 		{name: "correction-tools-denied", turns: 3, budget: 8, initial: bad, correction: verificationCorrectionTool("forbidden-correction-tool"), calls: 4},
 		{name: "oversized", turns: 3, budget: 8, initial: strings.Repeat("x", 65537), correction: verificationResponse(verificationPass), calls: 3},
 		{name: "runtime-evidence-spoof", turns: 3, budget: 8, initial: strings.Replace(verificationPass, `"checks":`, `"tool_evidence":{"fake":"value"},"checks":`, 1), correction: verificationResponse(verificationPass), calls: 3},
@@ -99,7 +100,7 @@ func TestVerificationFormatCorrectionFailsClosed(t *testing.T) {
 			registry := tools.NewRegistry()
 			tools.RegisterDefaults(registry)
 			executed := 0
-			_, terminal := collectEvents(t.Context(), QueryParams{Messages: []*schema.Message{schema.UserMessage("original contract")}, ChatModel: mdl, RunUsage: usage, ToolRegistry: registry, IndependentVerification: IndependentVerificationConfig{MaxTurns: tc.turns}, Deps: &QueryDeps{ProviderUsage: usage}, ToolExecutor: func(context.Context, string, string) (string, error) { executed++; return "observed evidence", nil }})
+			_, terminal := collectEvents(t.Context(), QueryParams{Messages: []*schema.Message{schema.UserMessage("original contract")}, ChatModel: mdl, RunUsage: usage, ToolRegistry: registry, IndependentVerification: IndependentVerificationConfig{MaxTurns: tc.turns, MaxCoverageChecks: tc.coverageChecks}, Deps: &QueryDeps{ProviderUsage: usage}, ToolExecutor: func(context.Context, string, string) (string, error) { executed++; return "observed evidence", nil }})
 			if terminal.Err == nil || !errors.Is(terminal.Err, ErrIndependentVerification) || usage.Snapshot().ProviderCalls != tc.calls || executed != 1 {
 				t.Fatalf("boundary failure: reason=%s error=%v calls=%d executed=%d", terminal.Reason, terminal.Err, usage.Snapshot().ProviderCalls, executed)
 			}

@@ -13,15 +13,21 @@ import (
 )
 
 func TestExecVerificationBudgetResumeRetainsRepairLimitAndRequirements(t *testing.T) {
-	for _, mode := range []string{"repair", "coverage-review", "supplemental-check", "invalid-review"} {
+	for _, mode := range []string{"repair", "coverage-review", "supplemental-check", "invalid-review", "contradictory-report"} {
 		t.Run(mode, func(t *testing.T) { testExecVerificationBudgetResume(t, mode) })
 	}
 }
 
 func testExecVerificationBudgetResume(t *testing.T, mode string) {
-	recovery := mode == "invalid-review"
+	reviewRecovery := mode == "invalid-review"
+	reportRecovery := mode == "contradictory-report"
+	recovery := reviewRecovery || reportRecovery
 	coverage := mode == "coverage-review" || recovery
 	supplemental := mode == "supplemental-check" || recovery
+	resumeTool := int32(4)
+	if reviewRecovery {
+		resumeTool = 5
+	}
 	prepareHeadlessJSONLProviderTest(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +45,7 @@ func testExecVerificationBudgetResume(t *testing.T, mode string) {
 		}
 		text := "solver completion"
 		item := ""
-		if n == 2 || (!coverage && !supplemental && n == 5) || ((coverage || supplemental) && !recovery && n == 4) || (recovery && n == 5) {
+		if n == 2 || (!coverage && !supplemental && n == 5) || ((coverage || supplemental) && n == resumeTool) {
 			item = fmt.Sprintf(`{"type":"function_call","id":"item-%d","call_id":"check-%d","name":"Bash","arguments":"{\"command\":\"printf counterexample\"}","status":"completed"}`, n, n)
 		}
 		if !coverage && !supplemental && (n == 3 || n == 6) {
@@ -48,24 +54,24 @@ func testExecVerificationBudgetResume(t *testing.T, mode string) {
 		if supplemental && !recovery && (n == 3 || n == 5) {
 			text = `{"verdict":"PARTIAL","coverage_complete":false,"checks":[],"missing":["intermediate state not observed"]}`
 		}
-		if supplemental && ((!recovery && n == 4) || (recovery && n == 5)) && (!bytes.Contains(body, []byte("Historical verification planning")) || bytes.Contains(body, []byte("solver completion"))) {
+		if supplemental && n == resumeTool && (!bytes.Contains(body, []byte("Historical verification planning")) || bytes.Contains(body, []byte("solver completion")) || bytes.Contains(body, []byte("check-2"))) {
 			t.Error("resumed supplement lost planning or replayed solver")
 		}
-		if coverage && (n == 3 || (!recovery && n == 5) || (recovery && n == 6)) {
+		if coverage && (n == 3 || n == resumeTool+1) {
 			text = fmt.Sprintf(`{"verdict":"PASS","coverage_complete":true,"checks":[{"requirement":"ORIGINAL_REQUIREMENT","tool_call_id":"check-%d","expected":"counterexample","observed":"counterexample","status":"PASS"}]}`, n-1)
-		}
-		if coverage && ((!recovery && n == 6) || (recovery && n == 7)) {
-			freshID := "check-4"
-			if recovery {
-				freshID = "check-5"
+			if reportRecovery && n == 3 {
+				text = strings.Replace(text, `"coverage_complete":true`, `"coverage_complete":false`, 1)
 			}
+		}
+		if coverage && n == resumeTool+2 {
+			freshID := fmt.Sprintf("check-%d", resumeTool)
 			if !bytes.Contains(body, []byte("Review whether")) || !bytes.Contains(body, []byte(freshID)) || bytes.Contains(body, []byte("check-2")) || !bytes.Contains(body, []byte(`"tool_choice":"none"`)) {
 				t.Error("resumed coverage review reused old receipts or lost tool-free policy")
 			}
 			text = `{"verdict":"SUPPORTED","missing":[]}`
 		}
 		usage := `{"input_tokens":10,"output_tokens":4,"total_tokens":14}`
-		if recovery && n == 4 {
+		if reviewRecovery && n == 4 {
 			// Native Responses usage counts thinking inside output tokens even
 			// when no visible report is returned. This is a local HTTP fixture.
 			text = ""
@@ -90,7 +96,7 @@ func testExecVerificationBudgetResume(t *testing.T, mode string) {
 		c.SetErr(&stderr)
 		c.SetIn(strings.NewReader(""))
 		args := []string{"exec", prompt, "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--tools", "Bash", "--sandbox", "danger-full-access", "-y", "--max-provider-calls", "3", "--verification-turns", "2", "--verification-repairs", "1"}
-		if recovery {
+		if reviewRecovery {
 			args = append(args, "--max-provider-calls", "4")
 		}
 		if coverage {
@@ -128,10 +134,16 @@ func testExecVerificationBudgetResume(t *testing.T, mode string) {
 	wantCalls := int32(6)
 	if supplemental {
 		wantCalls = 5
-		if recovery {
+		if reviewRecovery {
 			wantCalls = 7
 			if first.Verification[0].Verdict != "PARTIAL" || first.Verification[0].CoverageVerdict != "UNAVAILABLE" || first.Verification[0].CoverageIssue != "empty_output" || first.Usage.ReasoningTokens != 16384 {
 				t.Fatalf("invalid review lost diagnostic or thinking usage: %+v", first)
+			}
+		}
+		if reportRecovery {
+			wantCalls = 6
+			if first.Verification[0].Verdict != "PARTIAL" || first.Verification[0].ReportIssue != "pass_incomplete_coverage" || first.Verification[0].CoverageReviews != 0 || first.Verification[0].Failed != 0 {
+				t.Fatalf("contradictory report lost diagnostic or invented a failure: %+v", first)
 			}
 		}
 		if first.Verification[0].CoverageChecks != 0 || second.Verification[0].CoverageChecks != 1 {
@@ -143,7 +155,7 @@ func testExecVerificationBudgetResume(t *testing.T, mode string) {
 		}
 	}
 	wantTokens := uint64(14 * wantCalls)
-	if recovery {
+	if reviewRecovery {
 		wantTokens += 16384 - 4
 	}
 	if calls.Load() != wantCalls || first.Usage == nil || second.Usage == nil || first.Usage.TotalTokens+second.Usage.TotalTokens != wantTokens {
