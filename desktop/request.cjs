@@ -179,6 +179,38 @@ function desktopOperation(operation, payload = {}) {
       return [`/v1/sessions/${id()}`, 'DELETE'];
     case 'snapshot':
       return [`/v1/sessions/${id()}/snapshot`, 'GET'];
+    case 'getTaskExplorer':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+          Object.keys(payload).some((key) => key !== 'sessionID')) {
+        throw new TypeError('task overview requires only a session id');
+      }
+      return [`/v1/sessions/${id()}/tasks`, 'GET'];
+    case 'getAgentTranscript':
+    case 'getAgentExecutionDetail': {
+      const paging = operation === 'getAgentTranscript';
+      const fields = new Set(['sessionID', 'agentID', 'generation', 'executionSessionID', 'threadID', ...(paging ? ['cursor', 'limit'] : ['includeOutput'])]);
+      const validID = value => typeof value === 'string' && value.length > 0 && value.trim() === value &&
+        [...value].length <= 512 && !/\p{Cc}/u.test(value) && value.isWellFormed();
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+          Object.keys(payload).some(key => !fields.has(key)) ||
+          ![payload.agentID, payload.executionSessionID, payload.threadID].every(validID) ||
+          typeof payload.generation !== 'string' || !/^[1-9][0-9]{0,18}$/.test(payload.generation) ||
+          BigInt(payload.generation) > 9223372036854775807n ||
+          (payload.includeOutput !== undefined && typeof payload.includeOutput !== 'boolean') ||
+          (paging && payload.cursor !== undefined && (typeof payload.cursor !== 'string' || !/^[!-~]{1,128}$/.test(payload.cursor))) ||
+          (paging && payload.limit !== undefined && (!Number.isInteger(payload.limit) || payload.limit < 1 || payload.limit > 32))) {
+        throw new TypeError('Exact execution identity required.');
+      }
+      const query = new URLSearchParams({ agent_id: payload.agentID, generation: payload.generation,
+        execution_session_id: payload.executionSessionID, thread_id: payload.threadID });
+      if (paging) {
+        if (payload.cursor !== undefined) query.set('cursor', payload.cursor);
+        query.set('limit', String(payload.limit ?? 32));
+        return [`/v1/sessions/${id()}/agent-transcript?${query}`, 'GET'];
+      }
+      query.set('include_output', String(payload.includeOutput === true));
+      return [`/v1/sessions/${id()}/agent-execution-detail?${query}`, 'GET'];
+    }
     case 'transcriptPage': {
       const query = new URLSearchParams();
       if (payload.cursor) query.set('cursor', payload.cursor);

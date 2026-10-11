@@ -1311,11 +1311,58 @@ summary:focus-visible {
 }
 
 .activity,
+.tasks-view,
 .review-view {
   display: grid;
   min-height: 0;
   align-content: start;
   gap: 6px;
+}
+
+.task-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.task-toolbar label { display: grid; gap: 4px; color: var(--text-muted); font-size: 11px; min-width: 0; }
+.task-search { flex: 1 1 100%; }
+.task-toolbar input, .task-toolbar select {
+  width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border-subtle);
+  border-radius: 8px; color: var(--text); background: var(--control); font: inherit;
+}
+.task-summary { margin: 6px 0 0; font-size: 12px; color: var(--text); }
+.task-status, .task-notice { margin: 0; white-space: pre-line; overflow-wrap: anywhere; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.task-list { display: grid; min-width: 0; gap: 8px; }
+.task-row { min-width: 0; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--panel); }
+.task-row-heading { cursor: pointer; overflow-wrap: anywhere; font-size: 12px; }
+.task-kind { display: inline-block; margin-right: 6px; font-size: 10px; color: var(--text-muted); }
+.task-title { font-weight: 620; }
+.task-phase { display: block; margin: 4px 0 0; color: var(--text-muted); font-size: 11px; }
+.task-facts { margin: 12px 0 0; display: grid; gap: 8px; }
+.task-fact { display: grid; gap: 2px; font-size: 11px; min-width: 0; }
+.task-fact dt { color: var(--text-faint); }
+.task-fact dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--text-muted); }
+.task-overview, .execution-detail { display: grid; min-width: 0; gap: 6px; }
+.conversation.agent-reading > #timeline,
+.conversation.agent-reading > #load-earlier,
+.conversation.agent-reading > #interaction-panel,
+.conversation.agent-reading > #composer { display: none; }
+.agent-conversation { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.agent-conversation-header { padding: 16px clamp(12px, 3vw, 36px) 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; max-height: 45%; overflow-y: auto; }
+.agent-conversation-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.agent-conversation h2 { font-size: 17px; margin: 14px 0 8px; }
+.read-only-badge { font-size: 10px; font-weight: 500; color: var(--text-muted); padding: 4px 8px; border: 1px solid var(--border-subtle); border-radius: 6px; }
+.agent-conversation-identity, .agent-conversation-status { font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.5; }
+.agent-conversation-status { margin: 8px 0; }
+.agent-conversation-timeline { flex: 1; min-height: 0; overflow-y: auto; }
+.agent-tool-preview { white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-generation { display: block; margin-top: 4px; font: 10px var(--font-mono); color: var(--text-faint); }
+.task-actions { display: grid; justify-items: start; gap: 6px; }
+.task-inspect { margin-top: 2px; }
+.execution-detail-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.execution-detail h3 { margin: 8px 0 0; font-size: 15px; overflow-wrap: anywhere; }
+.execution-detail-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border-subtle); padding: 8px 0; }
+.execution-detail-tabs [aria-selected="true"] { background: var(--control); color: var(--text); }
+.execution-output {
+  margin: 8px 0 0; padding: 10px; min-height: 80px; max-height: 55vh; max-width: 100%;
+  overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6;
+  color: var(--text-muted); background: var(--panel); border: 1px solid var(--border-subtle); border-radius: 8px;
 }
 
 .activity-empty {
