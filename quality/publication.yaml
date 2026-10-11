@@ -1029,7 +1029,7 @@ privacy:
       match_sha256: 5d7c4cb77a8e9606c8df07be152ac39ffdb1a4dbf4fd3372f20823341c9612f8
       purpose: documentation-example
     - path: docs/guides/configuration-and-providers.md
-      line: 255
+      line: 294
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
@@ -5250,7 +5250,7 @@ privacy:
       match_sha256: c3e7031ea7179b777c194e75ebc2a1dc44233b9e40b0bae611c7c1fc6f62f369
       purpose: synthetic-security-fixture
     - path: docs/guides/configuration-and-providers.md
-      line: 282
+      line: 321
       rule_id: credential-assignment
       match_sha256: 1df4b07d05b9b3b1115b4b6b22af319a2f99564a2fa2573a34896063c7513c10
       purpose: documentation-example
@@ -5498,6 +5498,36 @@ privacy:
       line: 251
       rule_id: credential-assignment
       match_sha256: 50104afda5ea63c6c248af5c585c7c4c17400d72641543387a20f3b5c29f877a
+      purpose: synthetic-security-fixture
+    - path: tools/config_test.go
+      line: 216
+      rule_id: private-email
+      match_sha256: ceecf6b4e4151b4beafa1d17f1aad0f2b14b0cfd13a4b174cd1a3d383e2426c1
+      purpose: synthetic-security-fixture
+    - path: tools/config_test.go
+      line: 216
+      rule_id: private-url
+      match_sha256: 0d351db06a1696c4c2f2e83eb8c31bec214f5f7ed1898683d44edc2738995090
+      purpose: synthetic-security-fixture
+    - path: tools/config_test.go
+      line: 239
+      rule_id: private-email
+      match_sha256: f0f5336df7ade5f549d06e5f50c126faf1c0df70a182c9f76d55a2f8734a67f4
+      purpose: synthetic-security-fixture
+    - path: tools/config_test.go
+      line: 239
+      rule_id: private-url
+      match_sha256: 515e3838c8f1df81bdaf8132ad4407fff5fb85779f90ba6b282787d404a0f5e4
+      purpose: synthetic-security-fixture
+    - path: tools/config_test.go
+      line: 244
+      rule_id: private-url
+      match_sha256: 3bf8b512d9020714a393483bfc3222d451ace7965f26bbf0c50286423b8ae0ce
+      purpose: synthetic-security-fixture
+    - path: tools/config_test.go
+      line: 248
+      rule_id: private-url
+      match_sha256: 9055a651a135f11c7f95400ec5bb5bedc9df02f9f39976713e187c2de0fab322
       purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml
