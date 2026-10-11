@@ -45,6 +45,7 @@ type IndependentVerificationSummary struct {
 	FormatIssue       string `json:"format_issue,omitempty"`
 	CoverageReviews   int    `json:"coverage_reviews,omitempty"`
 	CoverageVerdict   string `json:"coverage_verdict,omitempty"`
+	CoverageIssue     string `json:"coverage_issue,omitempty"`
 	CoverageChecks    int    `json:"coverage_checks,omitempty"`
 }
 
@@ -71,6 +72,7 @@ type independentVerificationReport struct {
 	formatIssue       string
 	coverageReviews   int
 	coverageVerdict   string
+	coverageIssue     string
 }
 
 type independentVerificationGate struct {

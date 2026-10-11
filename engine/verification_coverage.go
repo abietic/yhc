@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -21,26 +22,41 @@ type verificationCoverageReview struct {
 	Missing []string `json:"missing"`
 }
 
+// Categories are runtime-owned diagnostics, never model-authored coverage gaps.
+type verificationCoverageError struct {
+	category string
+	message  string
+}
+
+func (e *verificationCoverageError) Error() string { return e.message }
+
+func coverageReviewError(category, message string) error {
+	return &verificationCoverageError{category: category, message: message}
+}
+
 func parseVerificationCoverageReview(text string) (verificationCoverageReview, error) {
 	var review verificationCoverageReview
 	if len(text) > 16*1024 {
-		return review, fmt.Errorf("coverage review exceeds 16 KiB")
+		return review, coverageReviewError("size_limit", "coverage review exceeds 16 KiB")
+	}
+	if strings.TrimSpace(text) == "" {
+		return review, coverageReviewError("empty_output", "coverage review has no visible report")
 	}
 	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&review); err != nil {
-		return review, fmt.Errorf("coverage review does not match required JSON schema")
+		return review, coverageReviewError("json_schema", "coverage review does not match required JSON schema")
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return review, fmt.Errorf("coverage review requires one JSON object")
+		return review, coverageReviewError("multiple_objects", "coverage review requires one JSON object")
 	}
 	if len(review.Missing) > 128 || (review.Verdict != "SUPPORTED" && review.Verdict != "INSUFFICIENT") ||
 		(review.Verdict == "SUPPORTED" && len(review.Missing) != 0) || (review.Verdict == "INSUFFICIENT" && len(review.Missing) == 0) {
-		return review, fmt.Errorf("coverage review contradicts its coverage verdict")
+		return review, coverageReviewError("contradictory_verdict", "coverage review contradicts its coverage verdict")
 	}
 	for _, missing := range review.Missing {
 		if strings.TrimSpace(missing) == "" {
-			return review, fmt.Errorf("coverage review has an empty coverage gap")
+			return review, coverageReviewError("empty_gap", "coverage review has an empty coverage gap")
 		}
 	}
 	return review, nil
@@ -99,16 +115,32 @@ func (g *independentVerificationGate) reviewCoverage(ctx context.Context, p Quer
 	if terminal.Reason != TerminalCompleted {
 		return report, fmt.Errorf("coverage review stopped: %s", terminal.Reason)
 	}
-	review, err := parseVerificationCoverageReview(final.String())
-	if err != nil {
-		return report, err
+	if p.RunUsage != nil && !p.RunUsage.Snapshot().Complete {
+		return report, execution.ErrRunUsageUnknown
 	}
+	review, err := parseVerificationCoverageReview(final.String())
 	report.coverageReviews = 1
-	report.coverageVerdict = review.Verdict
-	if review.Verdict == "INSUFFICIENT" {
+	if err != nil {
+		var invalid *verificationCoverageError
+		if !errors.As(err, &invalid) {
+			return report, err
+		}
+		// The reviewer supplied no usable coverage judgment. Preserve the fresh
+		// checker receipts as a PARTIAL diagnostic, without accepting any claims
+		// from the invalid response. The gate's existing supplemental allowance
+		// and root admission ledger bound recovery; this never authorizes repair.
 		report.Verdict = "PARTIAL"
 		report.CoverageComplete = false
-		report.Missing = review.Missing
+		report.Missing = []string{"Coverage review did not establish that the executed checks cover all original requirements. Execute fresh checks for the original behavioral obligations; prior passing receipts do not establish completion."}
+		report.coverageVerdict = "UNAVAILABLE"
+		report.coverageIssue = invalid.category
+	} else {
+		report.coverageVerdict = review.Verdict
+		if review.Verdict == "INSUFFICIENT" {
+			report.Verdict = "PARTIAL"
+			report.CoverageComplete = false
+			report.Missing = review.Missing
+		}
 	}
 	encoded, err = json.Marshal(report)
 	if err != nil || len(encoded) > 128*1024 {
