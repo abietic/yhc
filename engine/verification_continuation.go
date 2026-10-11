@@ -21,19 +21,23 @@ var errVerificationCheckpoint = errors.New("independent verification checkpoint 
 // The cursor is runtime metadata, never model-authored history. Diagnostics are
 // repair hints; neither historical receipts nor a stored PASS authorize resume.
 type verificationCursor struct {
-	Version           int                            `json:"version"`
-	SessionID         string                         `json:"session_id"`
-	Workspace         string                         `json:"workspace"`
-	Requirements      string                         `json:"requirements"`
-	RequirementsSHA   string                         `json:"requirements_sha256"`
-	MaxTurns          int                            `json:"max_turns"`
-	MaxRepairs        int                            `json:"max_repairs"`
-	CoverageReview    bool                           `json:"coverage_review,omitempty"`
-	MaxCoverageChecks int                            `json:"max_coverage_checks,omitempty"`
-	CoverageChecks    int                            `json:"coverage_checks,omitempty"`
-	Repairs           int                            `json:"repairs"`
-	Phase             string                         `json:"phase"`
-	Diagnostics       *independentVerificationReport `json:"diagnostics,omitempty"`
+	Version                 int                            `json:"version"`
+	SessionID               string                         `json:"session_id"`
+	Workspace               string                         `json:"workspace"`
+	Requirements            string                         `json:"requirements"`
+	RequirementsSHA         string                         `json:"requirements_sha256"`
+	MaxTurns                int                            `json:"max_turns"`
+	MaxRepairs              int                            `json:"max_repairs"`
+	CoverageReview          bool                           `json:"coverage_review,omitempty"`
+	MaxCoverageChecks       int                            `json:"max_coverage_checks,omitempty"`
+	CoverageChecks          int                            `json:"coverage_checks,omitempty"`
+	CheckerEffort           string                         `json:"checker_effort,omitempty"`
+	CheckerMaxOutputTokens  int                            `json:"checker_max_output_tokens,omitempty"`
+	CoverageEffort          string                         `json:"coverage_effort,omitempty"`
+	CoverageMaxOutputTokens int                            `json:"coverage_max_output_tokens,omitempty"`
+	Repairs                 int                            `json:"repairs"`
+	Phase                   string                         `json:"phase"`
+	Diagnostics             *independentVerificationReport `json:"diagnostics,omitempty"`
 }
 
 func (e *QueryEngine) loadVerificationCursor() (*verificationCursor, error) {
@@ -118,6 +122,9 @@ func (cursor *verificationCursor) validate(params *QueryParams) error {
 	cfg := params.IndependentVerification
 	if cursor == nil || cursor.Version != 1 || cursor.SessionID != params.SessionID || cursor.Workspace != params.verificationWorkspace || cursor.MaxTurns != cfg.MaxTurns || cursor.MaxRepairs != cfg.MaxRepairs || cursor.CoverageReview != cfg.CoverageReview || cursor.Repairs < 0 || cursor.Repairs > cfg.MaxRepairs {
 		return fmt.Errorf("verification continuation identity or configuration mismatch")
+	}
+	if cursor.CheckerEffort != normalizedVerificationEffort(cfg.CheckerEffort) || cursor.CheckerMaxOutputTokens != cfg.CheckerMaxOutputTokens || cursor.CoverageEffort != normalizedVerificationEffort(cfg.CoverageEffort) || cursor.CoverageMaxOutputTokens != cfg.CoverageMaxOutputTokens {
+		return fmt.Errorf("verification continuation call policy mismatch")
 	}
 	if cursor.MaxCoverageChecks != cfg.MaxCoverageChecks || cursor.CoverageChecks < 0 || cursor.CoverageChecks > cfg.MaxCoverageChecks {
 		return fmt.Errorf("verification continuation coverage allowance mismatch")

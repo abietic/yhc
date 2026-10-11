@@ -8,6 +8,7 @@ verifier/oracle data are never copied.
 import asyncio
 import hashlib
 import json
+import re
 import shlex
 import shutil
 import ssl
@@ -113,7 +114,10 @@ class YHCAgent(BaseInstalledAgent):
                  continuation_budgets: list | str | None = None,
                  verification_turns: int = 0, verification_repairs: int = 0,
                  verification_coverage_review: bool = False,
-                 verification_coverage_checks: int = 0, **kwargs):
+                 verification_coverage_checks: int = 0,
+                 verification_effort: str = "", verification_max_output_tokens: int = 0,
+                 verification_coverage_effort: str = "",
+                 verification_coverage_max_output_tokens: int = 0, **kwargs):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         if not model_name or not model_name.strip():
             raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
@@ -186,6 +190,25 @@ class YHCAgent(BaseInstalledAgent):
         self.verification_repairs = verification_repairs
         self.verification_coverage_review = verification_coverage_review
         self.verification_coverage_checks = verification_coverage_checks
+        self.verification_call_policy = {}
+        for stage, enabled, effort, cap in (
+                ("verification", verification_turns, verification_effort, verification_max_output_tokens),
+                ("verification_coverage", verification_turns and verification_coverage_review,
+                 verification_coverage_effort, verification_coverage_max_output_tokens)):
+            if (not isinstance(effort, str) or (effort and (
+                    effort.strip().lower() == "default" or
+                    re.fullmatch(r"[a-z][a-z0-9._-]{0,63}", effort.strip().lower()) is None or
+                    any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in effort)))
+                    or type(cap) is not int or not 0 <= cap < 2**63):
+                raise ValueError("Invalid verification effort or output limit")
+            if (effort or cap) and not enabled:
+                raise ValueError("Verification call policy requires its stage to be enabled")
+            if max_output_tokens_per_call and cap > max_output_tokens_per_call:
+                raise ValueError("Verification output limit cannot exceed the global per-call cap")
+            if effort:
+                self.verification_call_policy[stage + "_effort"] = effort.strip().lower()
+            if cap:
+                self.verification_call_policy[stage + "_max_output_tokens"] = cap
         self._segment_session = None
         self._segment_timeout = None
         self._segment_limits = None
@@ -277,6 +300,8 @@ class YHCAgent(BaseInstalledAgent):
             argv += ["--verification-coverage-review"]
         if self.verification_coverage_checks:
             argv += ["--verification-coverage-checks", str(self.verification_coverage_checks)]
+        for name, value in self.verification_call_policy.items():
+            argv += ["--" + name.replace("_", "-"), str(value)]
         if self.provider:
             argv += ["--provider", self.provider]
         path_setup = f'export PATH={shlex.quote(self.remote_dir)}:"$PATH"; ' if self.ripgrep_path else ""

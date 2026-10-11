@@ -162,6 +162,30 @@ class AgentTests(AgentFixture, unittest.TestCase):
                 with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                     self.agent(**kwargs)
 
+    def test_verification_stage_policy_survives_segments(self):
+        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
+            self.assertNotIn("--verification-effort", self.agent().execution_command())
+            agent = self.agent(max_provider_calls=8, verification_turns=2,
+                               verification_coverage_review=True,
+                               verification_effort=" HIGH ", verification_max_output_tokens=8192,
+                               verification_coverage_effort="low", verification_coverage_max_output_tokens=2048)
+            for resumed in (False, True):
+                if resumed:
+                    agent._segment_session = "saved-session"
+                command = agent.execution_command()
+                for flag in ("--verification-effort high", "--verification-max-output-tokens 8192",
+                             "--verification-coverage-effort low", "--verification-coverage-max-output-tokens 2048"):
+                    self.assertIn(flag, command)
+            for kwargs in ({"verification_effort": "low"}, {"verification_max_output_tokens": 1},
+                           {"verification_turns": 2, "verification_coverage_effort": "low"},
+                           {"verification_turns": 2, "verification_effort": "default"},
+                           {"verification_turns": 2, "verification_effort": "low\n"},
+                           {"verification_turns": 2, "verification_effort": True},
+                           {"verification_turns": 2, "verification_max_output_tokens": -1},
+                           {"verification_turns": 2, "verification_max_output_tokens": True}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                    self.agent(max_provider_calls=8, **kwargs)
+
     def test_verification_continuation_is_explicit(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
             agent = self.agent(max_provider_calls=8, verification_turns=2,

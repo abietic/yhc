@@ -1,7 +1,7 @@
 # Query Engine
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-12
 
 > **Ownership:** `engine.QueryEngine` for session lifetime and durable kernel
 > validation, Plan/Goal lifecycle serialization, and Session checkpoints; the
@@ -56,6 +56,19 @@ kernel, the root model binding and permission/tool dispatch, and a fresh system
 prompt and history containing original non-meta user text captured before
 compaction. Solver reasoning, success claims, and test outputs are not copied.
 It adds no separate model role or fallback selector.
+
+Optional checker and coverage call policies reuse the root route, capability
+admission, and canonical request/failover owner. They add no model role or
+profile selection. Explicit effort is admitted without constructing a client;
+route identity and metadata must still match the root binding. Each stage derives
+its intent independently from the root. The canonical model boundary applies a
+persistent invocation output ceiling before dispatch, even when the per-round
+recovery override has reset or asks for more output. The concrete prepared
+adapter freezes that effective limit into both the wire request and cost bound.
+The cursor stores additive empty/zero-compatible policy fields; a changed
+policy rejects continuation before any dispatch. Root bindings, shared budgets,
+repair and supplemental allowances remain unchanged. Configuration and CLI
+examples are owned by the [interaction guide](../../guides/interaction-modes-and-commands.md).
 
 Each checker round receives its bounded round number. The last existing round
 requests the JSON report with tool choice disabled and denies tool dispatch,
@@ -187,7 +200,8 @@ provider-independent proof, hidden benchmark grader, or automatic TUI rollout.
 Multimodal requests and synthetic structured-output completion are rejected
 when this gate is enabled.
 
-Code: [`independent_verification.go`](../../../engine/independent_verification.go),
+Code: [`applyVerificationCallPolicy`](../../../engine/verification_policy.go),
+[`independent_verification.go`](../../../engine/independent_verification.go),
 [`round_lifecycle.go`](../../../engine/round_lifecycle.go),
 [`verification_continuation.go`](../../../engine/verification_continuation.go), and
 [`verification_report_format.go`](../../../engine/verification_report_format.go),

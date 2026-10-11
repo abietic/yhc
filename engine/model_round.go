@@ -145,6 +145,10 @@ func runCanonicalModelRound(
 		EffortValue:      modelEffort,
 		ProviderUsage:    input.deps.ProviderUsage,
 	}
+	if cap := input.params.modelOutputTokenLimit; cap > 0 &&
+		(callOpts.MaxOutputTokens == nil || *callOpts.MaxOutputTokens > cap) {
+		callOpts.MaxOutputTokens = &cap
+	}
 	if input.usageLogicalRoundID != "" {
 		callOpts.UsageLogicalRoundID = input.usageLogicalRoundID
 	} else if input.deps.ProviderUsage != nil {

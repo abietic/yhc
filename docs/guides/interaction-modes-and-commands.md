@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-11
+**Last verified:** 2026-10-12
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -106,6 +106,30 @@ they do not trigger this recovery. A budget pause before the supplemental audit
 retains that pending stage; continuation executes fresh checks and review
 without renewing the allowance. Coverage review remains a model judgment and
 does not guarantee benchmark reward.
+Checker and coverage-review call settings are optional and independent. For example,
+keep the solver's configured effort and use high for executable checks and low
+for the tool-free review:
+
+```bash
+yhc exec "complete the task" --max-provider-calls 40 \
+  --verification-turns 8 --verification-coverage-review \
+  --verification-effort high --verification-max-output-tokens 16384 \
+  --verification-coverage-effort low --verification-coverage-max-output-tokens 8192
+```
+
+Empty effort and zero output limit inherit the root call configuration. An
+unset review setting inherits the root, not a checker override. Effort must be
+supported by the admitted root model and adapter; unsupported overrides fail
+before solver dispatch. Explicit output limits include reasoning tokens and
+remain ceilings through tool loops, retries, and max-output recovery. They may
+not exceed a configured global per-call cap or a known admitted model limit.
+Strict cost reservation uses the frozen request's effective output limit; these
+options neither enable a budget nor grant additional calls. Keep these four
+settings identical on `--resume-verification`; legacy cursors mean empty/zero.
+Changing one rejects continuation before dispatch. Usage records the applied
+effort under each stage's existing source. These controls do not guarantee a
+visible report or improve benchmark reward by themselves.
+
 A checker uses a fresh context containing original user requirements and checks
 the current workspace with the same admitted model and budget. A missing or
 failed check cannot be reported as completed. JSON/JSONL final results include bounded `verification` verdict/check-count
@@ -118,7 +142,10 @@ is not proof of benchmark reward or exhaustive correctness.
 
 Harbor accepts `verification_turns`, `verification_repairs`,
 `verification_coverage_checks` (0..1), and boolean `verification_coverage_review`
-agent arguments; they default to zero/false.
+agent arguments; they default to zero/false. The adapter also forwards
+`verification_effort`, `verification_max_output_tokens`,
+`verification_coverage_effort`, and `verification_coverage_max_output_tokens`
+unchanged across segments; they default to empty/zero.
 Every initial/continuation segment must include a
 finite provider-call limit when checking is enabled. No additional grant is
 created. Normal session resume preserves solver workspace and history, but

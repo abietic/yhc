@@ -31,6 +31,12 @@ type IndependentVerificationConfig struct {
 	// CoverageReview adds one tool-free review of a provisional PASS. It shares
 	// the root budget and defaults off; it is not an authoritative grader.
 	CoverageReview bool
+	// Empty effort and zero output limit inherit the root invocation. Explicit
+	// efforts are admitted against that same route, never an optional role model.
+	CheckerEffort           string
+	CheckerMaxOutputTokens  int
+	CoverageEffort          string
+	CoverageMaxOutputTokens int
 }
 
 // IndependentVerificationSummary is the bounded outward result. Detailed
@@ -95,6 +101,9 @@ Your FINAL response must be one JSON object, without markdown or other text: {"v
 
 // Validate rejects unbounded automatic checking before provider dispatch.
 func (cfg IndependentVerificationConfig) Validate(limits execution.RunUsageLimits) error {
+	if err := cfg.validateCallPolicies(limits); err != nil {
+		return err
+	}
 	if cfg.CoverageReview && cfg.MaxTurns == 0 {
 		return fmt.Errorf("coverage review requires independent verification")
 	}
@@ -127,6 +136,13 @@ func prepareIndependentVerification(params *QueryParams) error {
 	}
 	if len(params.JSONSchema) > 0 {
 		return fmt.Errorf("independent verification does not support synthetic structured-output completion")
+	}
+	// Reject unsupported explicit policies before the solver spends any budget.
+	for _, coverage := range []bool{false, true} {
+		probe := *params
+		if err := applyVerificationCallPolicy(&probe, *params, coverage); err != nil {
+			return err
+		}
 	}
 	if params.Deps.ProviderUsage == nil {
 		params.Deps.ProviderUsage = params.RunUsage
@@ -169,7 +185,7 @@ func prepareIndependentVerification(params *QueryParams) error {
 	if requirements == "" || len(requirements) > 128*1024 {
 		return fmt.Errorf("independent verification requires nonempty original text requirements of at most 128 KiB")
 	}
-	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, CoverageReview: cfg.CoverageReview, MaxCoverageChecks: cfg.MaxCoverageChecks, Phase: "solver"}
+	cursor := verificationCursor{Version: 1, SessionID: params.SessionID, Workspace: params.verificationWorkspace, Requirements: requirements, RequirementsSHA: fmt.Sprintf("%x", sha256.Sum256([]byte(requirements))), MaxTurns: cfg.MaxTurns, MaxRepairs: cfg.MaxRepairs, CoverageReview: cfg.CoverageReview, MaxCoverageChecks: cfg.MaxCoverageChecks, Phase: "solver", CheckerEffort: normalizedVerificationEffort(cfg.CheckerEffort), CheckerMaxOutputTokens: cfg.CheckerMaxOutputTokens, CoverageEffort: normalizedVerificationEffort(cfg.CoverageEffort), CoverageMaxOutputTokens: cfg.CoverageMaxOutputTokens}
 	params.independentVerification = &independentVerificationGate{params: frozen, requirements: requirements, cursor: cursor}
 	return params.independentVerification.commit("solver", nil)
 }
@@ -341,6 +357,9 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 		p.ToolUseContext.Options.ToolChoice = ""
 		p.ToolUseContext.Options.ForcedToolName = ""
 		p.ToolUseContext.Options.AppendSystemPrompt = ""
+	}
+	if err := applyVerificationCallPolicy(&p, g.params, false); err != nil {
+		return independentVerificationReport{}, err
 	}
 	parentCanUse := p.CanUseTool
 	p.CanUseTool = func(ctx context.Context, name string, input map[string]any, toolCtx *ToolUseContext) (bool, string) {
