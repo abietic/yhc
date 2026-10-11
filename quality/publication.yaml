@@ -4182,27 +4182,27 @@ privacy:
       match_sha256: 6da19f5057f0dd1085db2213932a52da09a1df6b9194447953db96f7e48663a7
       purpose: synthetic-security-fixture
     - path: internal/webui/assets/app.mjs
-      line: 1576
+      line: 1595
       rule_id: credential-assignment
       match_sha256: 7be5b39a6e1069827d150a278fb65d3c2390f796795f7bb7de3965780d39150c
       purpose: runtime-loopback
     - path: internal/webui/assets/index.html
-      line: 361
+      line: 365
       rule_id: private-url
       match_sha256: 53aee2ca762b9729196afeefd22bd5abdcbdf87a0f29cc0dd2f6902a22e73e4f
       purpose: documentation-example
     - path: internal/webui/assets/transport.mjs
-      line: 275
+      line: 287
       rule_id: credential-assignment
       match_sha256: '08837d97bf9c4c8062f6312eee5c277996dbb6d1adcca148a60259ec9aa9359e'
       purpose: runtime-loopback
     - path: internal/webui/assets/transport.mjs
-      line: 287
+      line: 299
       rule_id: credential-assignment
       match_sha256: 1291cff3f746c18486d68c284cffa0dfde36e68ec5ceda1f05c0b211f28fd88e
       purpose: runtime-loopback
     - path: internal/webui/assets/transport.mjs
-      line: 347
+      line: 359
       rule_id: credential-assignment
       match_sha256: 00c84d869449a83a830b1177e502e6afa6920c634bb22259c0ae1b0a70c048f7
       purpose: runtime-loopback
@@ -5017,7 +5017,7 @@ privacy:
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/server.go
-      line: 581
+      line: 582
       rule_id: bearer-token
       match_sha256: b9d90628453938c578c7f826de5e5bd2bcac29e10c5526888384ba74fcea563e
       purpose: runtime-loopback
@@ -5562,37 +5562,37 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 144
+      line: 150
       rule_id: private-url
       match_sha256: 8605b8ba08c20d42f9e455151871896d0e0de980596286fb736d11eec013e2a4
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 155
+      line: 161
       rule_id: credential-assignment
       match_sha256: be8a446e7fcc02bc94158f4bf97fe65b04e25a05b698b121229a30d13dcf6ceb
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 492
+      line: 499
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 493
+      line: 500
       rule_id: private-url
       match_sha256: 3e6eaf6ba5439370afdf75eb9fcb5e2a2ad980bd4c2dca895bc60eb4916dcbd9
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 562
+      line: 569
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 616
+      line: 623
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 650
+      line: 657
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
@@ -5625,6 +5625,26 @@ privacy:
       line: 28
       rule_id: credential-assignment
       match_sha256: 80a6b17207df72736d9f51c95e71f5a859ecc64ee75d4fb739ec23b024efe9ae
+      purpose: synthetic-security-fixture
+    - path: server/appserver/command_completion_test.go
+      line: 22
+      rule_id: credential-assignment
+      match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
+      purpose: synthetic-security-fixture
+    - path: server/appserver/command_completion_test.go
+      line: 70
+      rule_id: bearer-token
+      match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
+      purpose: synthetic-security-fixture
+    - path: server/appserver/command_completion_test.go
+      line: 109
+      rule_id: credential-assignment
+      match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
+      purpose: synthetic-security-fixture
+    - path: server/appserver/command_completion_test.go
+      line: 129
+      rule_id: bearer-token
+      match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml

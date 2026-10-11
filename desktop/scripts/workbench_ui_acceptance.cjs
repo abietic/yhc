@@ -71,6 +71,12 @@ function operation(op, input = {}, conversation = false) {
   if (op === 'transcriptPage') return { entries: [], has_more: false };
   if (op === 'snapshot') return { session: input.sessionID === secondSession.id ? secondSession : session, event_cursor: 1, messages, interactions: [], activity: [] };
   if (op === 'getExecutionSettings') return { model: 'default', models: [{ selector: 'default', display_name: 'Default model', provider: 'openai' }], reasoning_effort: 'default', reasoning_effort_options: ['default'], permission_mode: 'default', permission_mode_options: ['default', 'acceptEdits'] };
+  if (op === 'completeCommand') {
+    const suffix = input.input === '/model 😀中 suffix';
+    const values = input.input === '/mod' ? ['/model'] : input.input === '/model ' || suffix ? ['中文 model'] : [];
+    const argument = input.input.startsWith('/model ');
+    return { start: argument ? 7 : 0, end: suffix ? 9 : [...input.input].length, command: argument ? 'model' : '', hint: argument ? '[model]' : '', candidates: values.map(value => ({ value, description: 'Isolated completion fixture', source: argument ? 'model' : 'command', replacement: argument ? '"中文 model"' + (suffix ? '' : ' ') : '/model ' })) };
+  }
   if (op === 'getSettings') return settings(input.scope);
   if (op === 'updateSettings') {
     settingsWrites.push(structuredClone(input));
@@ -177,6 +183,7 @@ async function main() {
         res.write(': connected\n\n'); streams.set(res, url.pathname.split('/').at(-2)); req.on('close', () => streams.delete(res)); return;
       }
       const end = url.pathname.split('/').at(-1);
+      if (end === 'command-completions') { reply(res, operation('completeCommand', await readBody(req))); return; }
       if (end === 'execution-settings' && req.method === 'PATCH') sessionSettingWrites++;
       const mapped = { transcript: 'transcriptPage', snapshot: 'snapshot', 'execution-settings': 'getExecutionSettings', 'review-diff': 'reviewDiff', turns: 'startTurn' }[end];
       if (mapped) { reply(res, operation(mapped, { sessionID: url.pathname.split('/').at(-2) })); return; }
@@ -884,6 +891,92 @@ async function main() {
       assert.equal(await sharedConfig.locator('#composer').isVisible(), true);
     });
     const conversation = await createPage('web', true);
+    await check('Web command candidates edit the draft without submitting and share argument quoting', async () => {
+      const prompt = conversation.locator('#prompt');
+      await prompt.fill('/mod');
+      await conversation.locator('[role="option"]').first().waitFor();
+      assert.equal(await prompt.inputValue(), '/mod');
+      await prompt.press('ArrowDown');
+      assert.equal(await prompt.inputValue(), '/mod');
+      await prompt.press('Enter');
+      assert.equal(await prompt.inputValue(), '/model ');
+      await conversation.locator('[role="option"]').first().waitFor();
+      await prompt.press('Tab');
+      assert.equal(await prompt.inputValue(), '/model "中文 model" ');
+      await prompt.fill('/mod');
+      await conversation.locator('[role="option"]').first().waitFor();
+      await prompt.press('Escape');
+      assert.equal(await prompt.inputValue(), '/mod');
+      assert.equal(await conversation.locator('#command-completion').isVisible(), false);
+      await prompt.fill('/mod');
+      await prompt.evaluate(node => node.dispatchEvent(new CompositionEvent('compositionstart')));
+      assert.equal(await conversation.locator('#command-completion').isVisible(), false);
+      await prompt.evaluate(node => node.dispatchEvent(new CompositionEvent('compositionend')));
+      await conversation.locator('[role="option"]').first().waitFor();
+      await conversation.locator('[role="option"]').first().click();
+      assert.equal(await prompt.inputValue(), '/model ');
+      assert.equal(await conversation.locator('#status').textContent(), 'idle');
+      await prompt.fill('');
+    });
+    const desktopCommands = await createPage('desktop', true);
+    await check('Desktop command menu stays in the textarea and Tab does not submit', async () => {
+      const prompt = desktopCommands.locator('#prompt');
+      await prompt.fill('/mod');
+      await desktopCommands.locator('[role="option"]').first().waitFor();
+      await prompt.press('Tab');
+      assert.equal(await prompt.inputValue(), '/model ');
+      await focusIs(desktopCommands, 'prompt');
+      await desktopCommands.locator('[role="option"]').first().waitFor();
+      await screenshot(desktopCommands, 'command-completion');
+    });
+    for (const surface of ['web', 'desktop']) {
+      const completionUndo = await createPage(surface, true);
+      await check(`${surface} completion is one native undoable edit per accepted candidate`, async () => {
+        const prompt = completionUndo.locator('#prompt');
+        const before = turnRequests;
+        await prompt.pressSequentially('/mod');
+        await completionUndo.locator('[role="option"]').first().waitFor();
+        await prompt.press('Tab');
+        assert.equal(await prompt.inputValue(), '/model ');
+        await prompt.press('ControlOrMeta+z');
+        assert.equal(await prompt.inputValue(), '/mod');
+        await prompt.press('ControlOrMeta+Shift+z');
+        assert.equal(await prompt.inputValue(), '/model ');
+        await completionUndo.locator('[role="option"]').first().waitFor();
+        await completionUndo.locator('[role="option"]').first().click();
+        assert.equal(await prompt.inputValue(), '/model "中文 model" ');
+        await prompt.press('ControlOrMeta+z');
+        assert.equal(await prompt.inputValue(), '/model ');
+        await prompt.press('ControlOrMeta+Shift+z');
+        assert.equal(await prompt.inputValue(), '/model "中文 model" ');
+        assert.equal(turnRequests, before, 'acceptance, undo and redo never submit a turn');
+        await focusIs(completionUndo, 'prompt');
+        await completionUndo.close();
+      });
+    }
+    const suffixUndo = await createPage('web', true);
+    await check('Completion undo preserves the Unicode argument, suffix and draft across Settings', async () => {
+      const prompt = suffixUndo.locator('#prompt');
+      const before = turnRequests;
+      await prompt.pressSequentially('/model 😀中 suffix');
+      await prompt.evaluate(node => node.setSelectionRange(10, 10));
+      await suffixUndo.locator('[role="option"]').first().waitFor();
+      await prompt.press('Tab');
+      assert.equal(await prompt.inputValue(), '/model "中文 model" suffix');
+      assert.equal(await prompt.evaluate(node => node.selectionStart), 17);
+      await prompt.press('ControlOrMeta+z');
+      assert.equal(await prompt.inputValue(), '/model 😀中 suffix');
+      await suffixUndo.locator('#settings-open').click();
+      await suffixUndo.locator('#setting-model').waitFor();
+      await suffixUndo.locator('#settings-close').click();
+      await suffixUndo.waitForFunction(() => !document.querySelector('#settings-dialog').open);
+      assert.equal(await prompt.inputValue(), '/model 😀中 suffix', 'renderer state contains the undone draft');
+      await prompt.focus();
+      await prompt.press('ControlOrMeta+Shift+z');
+      assert.equal(await prompt.inputValue(), '/model "中文 model" suffix');
+      assert.equal(turnRequests, before);
+      await suffixUndo.close();
+    });
     for (const surface of ['desktop', 'web']) {
       await check(`${surface} narrow sheets restore their triggering toggle after Settings closes`, async () => {
         const page = await createPage(surface, true);
