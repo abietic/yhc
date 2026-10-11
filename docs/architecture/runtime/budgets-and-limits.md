@@ -162,6 +162,41 @@ threshold remains permissive. Shared children, retries and fallback use the
 same collector; external MCP/hook billing and hidden SDK retries remain outside
 its observation boundary.
 
+`--reserve-cost-before-dispatch` additionally enables a conservative admission
+ceiling on the declared estimate. It defaults to false and requires a positive
+cost limit, `--max-output-tokens-per-call`, an `upper_bound` card and explicit
+`api_model` route bindings. Only the local DeepSeek adapter currently supplies
+the required prepared-stream contract. Unsupported or opaque clients fail
+before dispatch rather than degrading to the response threshold.
+
+Preparation follows final routing, tool binding and input normalization. It
+freezes the encoded wire body, the validated HTTP client and transport, and the
+actual output cap (preserving any smaller configured cap). The adapter bounds
+input by the exact supported model's full context capacity, not a heuristic
+prompt tokenizer. This covers text, tools and images conservatively. The
+reservation equals that input bound times the higher cached/uncached rate plus
+the output bound times its rate. The output cap includes reasoning tokens.
+Prices and model capacity remain declared API assumptions; this is not an
+invoice guarantee. Use a card that covers the entire possible pricing window.
+
+Under the root usage mutex, known cost plus outstanding and retained
+reservations plus the new bound must fit the limit. Known final usage settles
+at the card rates and refunds the difference; a proven undispatched release
+refunds the whole reservation. Unknown usage or a violated token/cost bound
+retains the whole bound and terminates with `run_usage_unknown`. No retry or
+fallback follows that ambiguous response. Each runtime retry or fallback must
+pass admission again; strict transport dispatch is single-use, refuses opaque
+transports and disables redirects and replayable request bodies. A later
+combined Goal admission denial releases the earlier monetary reservation.
+
+Strict receipts set `limit_mode: "pre_dispatch_reservation"` and expose root
+`reservation` amounts (`outstanding_amount`, `retained_amount`,
+`peak_exposure_amount`, `bound_violations`) and per-call provider/model/token
+bounds and amounts. Complete cost evidence requires zero outstanding and
+retained amounts and no bound violation. Aggregates remain authoritative after
+bounded call-record retention. Default observation and response-threshold
+receipts keep their existing schema and behavior.
+
 Harbor accepts `price_card_path`, `max_estimated_cost` and explicit continuation
 grants containing a positive decimal `max_estimated_cost`. It uploads only the
 validated public pricing schema and uses the same fixed card across the trial.
@@ -170,6 +205,23 @@ Session identity, the existing global deadline and one of at most 16 declared
 grants. Each process receives a fresh incremental allowance; there is no
 unbounded automatic top-up. The original workspace and verification cursor
 remain under their existing owners.
+
+Harbor additionally accepts `reserve_cost_before_dispatch`,
+`max_output_tokens_per_call` and an optional `max_total_estimated_cost` envelope
+across those finite continuation grants. The same card and native currency
+apply throughout. Each next segment receives the lesser of its explicit grant
+and the remaining envelope; a call-only grant cannot disable strict money
+admission. Only a complete, reconciled receipt within the actual segment cap
+can release money for continuation. Unknown or retained exposure stops the
+trial. A budget pause preserves the workspace, Session and verification cursor
+inside the task environment. Operators must also retain or export the Harbor
+environment when ending a trial if they intend to resume it later; in-process
+continuation alone does not change Harbor's container cleanup policy.
+For Harbor 0.22 Docker environments, `environment.kwargs.keep_containers: true`
+stops and retains the container; `delete: false` alone still removes it. Export
+the agent workspace and `.yhc` before grading for a later solver restoration:
+the retained, graded environment may contain verifier feedback. Restored runs
+are continuation evidence and must not be counted as fresh solves.
 
 [`sum_usage`](../../../scripts/terminal_bench/usage.py) retains bounded
 `cost_segments`, rejects duplicate segment UUIDs and keeps mixed currencies

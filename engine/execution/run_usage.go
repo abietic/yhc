@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"sort"
 	"sync"
 	"time"
@@ -18,9 +19,11 @@ import (
 // admitted calls may overshoot it. MaxEstimatedCost is likewise a post-response
 // native-currency threshold with an explicit price card, never an invoice cap.
 type RunUsageLimits struct {
-	MaxProviderCalls int64  `json:"max_provider_calls"`
-	MaxTotalTokens   int64  `json:"max_total_tokens"`
-	MaxEstimatedCost string `json:"max_estimated_cost,omitempty"`
+	MaxProviderCalls          int64  `json:"max_provider_calls"`
+	MaxTotalTokens            int64  `json:"max_total_tokens"`
+	MaxEstimatedCost          string `json:"max_estimated_cost,omitempty"`
+	ReserveCostBeforeDispatch bool   `json:"reserve_cost_before_dispatch,omitempty"`
+	MaxOutputTokensPerCall    int    `json:"max_output_tokens_per_call,omitempty"`
 }
 
 var (
@@ -113,7 +116,21 @@ func newRunUsage(limits RunUsageLimits, card *RunPriceCard) (*RunUsage, error) {
 			r.cost.limit = limit
 		}
 	}
+	if limits.MaxOutputTokensPerCall < 0 || (limits.MaxOutputTokensPerCall > 0 && !limits.ReserveCostBeforeDispatch) || (limits.ReserveCostBeforeDispatch && (r.cost == nil || r.cost.limit == nil || limits.MaxOutputTokensPerCall <= 0 || r.cost.card.Window != "upper_bound")) {
+		return nil, fmt.Errorf("cost reservation requires a positive cost limit, output cap and upper_bound price card")
+	}
+	if limits.ReserveCostBeforeDispatch {
+		for _, route := range r.cost.card.Routes {
+			if route.APIModel == "" {
+				return nil, fmt.Errorf("cost reservation requires explicit API models in the price card")
+			}
+		}
+	}
 	return r, nil
+}
+
+func (r *RunUsage) ProviderCostReservationPolicy() (bool, int) {
+	return r.limits.ReserveCostBeforeDispatch, r.limits.MaxOutputTokensPerCall
 }
 
 func (r *RunUsage) NewLogicalRoundID() string { return uuid.NewString() }
@@ -135,7 +152,7 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	switch {
 	case r.cost != nil && r.cost.limit != nil && (r.cost.unpriced > 0 || r.untracked > 0 || priceIndex < 0):
 		cause = ErrRunUsageUnknown
-	case r.cost != nil && r.cost.limit != nil && r.cost.amount.Cmp(r.cost.limit) >= 0:
+	case r.cost != nil && r.cost.limit != nil && !r.limits.ReserveCostBeforeDispatch && r.cost.amount.Cmp(r.cost.limit) >= 0:
 		cause = ErrRunBudgetExceeded
 	case r.limits.MaxTotalTokens > 0 && r.totals.UnknownCalls > 0:
 		cause = ErrRunUsageUnknown
@@ -143,6 +160,11 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		cause = ErrRunBudgetExceeded
 	case r.limits.MaxTotalTokens > 0 && r.totals.TotalTokens >= uint64(r.limits.MaxTotalTokens):
 		cause = ErrRunBudgetExceeded
+	}
+	var reservation *RunCallReservation
+	var reserved *big.Int
+	if cause == nil {
+		reservation, reserved, cause = r.reserveCost(d, priceIndex)
 	}
 	if cause != nil {
 		r.denied++
@@ -163,7 +185,7 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	r.totals.InFlight++
 	route.ProviderCalls++
 	route.InFlight++
-	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now(), priceIndex: priceIndex}
+	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now(), priceIndex: priceIndex, reservation: reservation, reserved: reserved}
 	r.appendCallRecord(d, call)
 	return call, nil
 }
@@ -194,6 +216,10 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 			if copied.EstimatedAmount != nil {
 				value := *copied.EstimatedAmount
 				copied.EstimatedAmount = &value
+			}
+			if copied.Reservation != nil {
+				reservation := *copied.Reservation
+				copied.Reservation = &reservation
 			}
 			s.CallLedger.Records[i].Cost = &copied
 		}
@@ -232,6 +258,8 @@ type runUsageCall struct {
 	responseModelSeen     bool
 	responseModelConflict bool
 	priceIndex            int
+	reservation           *RunCallReservation
+	reserved              *big.Int
 }
 
 func (c *runUsageCall) ProviderCallID() string { return c.id }
@@ -257,7 +285,7 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 	r.totals.InFlight--
 	c.route.InFlight--
 	if release {
-		c.settleCost(RunUsageTotals{}, false, true)
+		_ = c.settleCost(RunUsageTotals{}, false, true)
 		if record != nil {
 			record.State = "released"
 		}
@@ -278,7 +306,7 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 		valid = canAddRunTokens(r.totals, values) && canAddRunTokens(c.route.RunUsageTotals, values)
 	}
 	if !valid {
-		c.settleCost(RunUsageTotals{}, false, false)
+		_ = c.settleCost(RunUsageTotals{}, false, false)
 		if record != nil {
 			record.State = "unknown"
 		}
@@ -296,8 +324,11 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 	}
 	addRunTokens(&r.totals, values)
 	addRunTokens(&c.route.RunUsageTotals, values)
-	c.settleCost(values, true, false)
-	return nil
+	c.settlementErr = c.settleCost(values, true, false)
+	if c.settlementErr != nil {
+		r.stopReason = runUsageErrorCode(c.settlementErr)
+	}
+	return c.settlementErr
 }
 
 func runUsageTokens(u *schema.TokenUsage) (RunUsageTotals, bool) {

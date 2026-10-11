@@ -229,6 +229,11 @@ func TestExecRejectsNegativeTimeoutBeforeProviderSetup(t *testing.T) {
 }
 
 func TestExecCostThresholdResumeKeepsProgressAndIncrementalCost(t *testing.T) {
+	t.Run("threshold", func(t *testing.T) { testExecCostResume(t, false) })
+	t.Run("reservation", func(t *testing.T) { testExecCostResume(t, true) })
+}
+
+func testExecCostResume(t *testing.T, reserve bool) {
 	repo := prepareHeadlessJSONLProviderTest(t)
 	artifact := filepath.Join(repo, "budget-progress.txt")
 	var calls atomic.Int32
@@ -257,13 +262,38 @@ func TestExecCostThresholdResumeKeepsProgressAndIncrementalCost(t *testing.T) {
 		_, _ = fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"id\":\"budget-response\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[%s],\"usage\":{\"input_tokens\":10,\"output_tokens\":4,\"total_tokens\":14}}}\n\n", item)
 	}))
 	defer server.Close()
+	cardPath := writeHeadlessPriceCard(t, repo)
+	limit := "0.000030"
+	if reserve {
+		var card map[string]any
+		data, err := os.ReadFile(cardPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal(data, &card); err != nil {
+			t.Fatal(err)
+		}
+		card["window"] = "upper_bound"
+		card["routes"].([]any)[0].(map[string]any)["api_model"] = "deepseek-v4-flash"
+		data, err = json.Marshal(card)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(cardPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		limit = "2.097168" // 1048576*2 + 4*4, native price per million.
+	}
 	run := func(resume string) (headlessEnvelope, error) {
 		var out, stderr bytes.Buffer
 		cmd := newRootCommand()
 		cmd.SetOut(&out)
 		cmd.SetErr(&stderr)
 		cmd.SetIn(bytes.NewReader(nil))
-		args := []string{"exec", "continue saved work", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--permission-mode", "acceptEdits", "--tools", "Write", "--price-card", writeHeadlessPriceCard(t, repo), "--max-estimated-cost", "0.000030"}
+		args := []string{"exec", "continue saved work", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--permission-mode", "acceptEdits", "--tools", "Write", "--price-card", cardPath, "--max-estimated-cost", limit}
+		if reserve {
+			args = append(args, "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "4")
+		}
 		if resume != "" {
 			args = append(args, "--resume", resume)
 		}
@@ -301,7 +331,10 @@ func TestExecCostThresholdResumeKeepsProgressAndIncrementalCost(t *testing.T) {
 		t.Fatal("resume reused invocation ledger identity")
 	}
 	for _, result := range []headlessEnvelope{first, second} {
-		if result.Usage == nil || !result.Usage.Complete || result.Usage.ProviderCalls != 1 || result.Usage.TotalTokens != 14 || result.Usage.Cost == nil || result.Usage.Cost.KnownEstimatedAmount != "0.000036000000" || result.Usage.Limits.MaxEstimatedCost != "0.000030" {
+		if reserve && (result.Usage.Cost.Reservation == nil || result.Usage.Cost.Reservation.OutstandingAmount != "0.000000000000" || result.Usage.Cost.Reservation.RetainedAmount != "0.000000000000" || result.Usage.Cost.LimitMode != "pre_dispatch_reservation") {
+			t.Fatalf("reservation=%+v", result.Usage.Cost)
+		}
+		if result.Usage == nil || !result.Usage.Complete || result.Usage.ProviderCalls != 1 || result.Usage.TotalTokens != 14 || result.Usage.Cost == nil || result.Usage.Cost.KnownEstimatedAmount != "0.000036000000" || result.Usage.Limits.MaxEstimatedCost != limit {
 			t.Fatalf("segment allowance/usage=%+v", result.Usage)
 		}
 	}
@@ -315,4 +348,63 @@ func writeHeadlessPriceCard(t *testing.T, repo string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestExecReservationDenialAndOverloadDoNotRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name, limit string
+		wantCalls   int32
+		code        string
+	}{
+		{name: "pre-dispatch denial", limit: "0.01", wantCalls: 0, code: "run_budget_exceeded"},
+		{name: "uncertain overload", limit: "5", wantCalls: 1, code: "run_usage_unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := prepareHeadlessJSONLProviderTest(t)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprint(w, `{"error":{"type":"overloaded","message":"fixture overload"}}`)
+			}))
+			defer server.Close()
+			path := writeHeadlessPriceCard(t, repo)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var card map[string]any
+			if err = json.Unmarshal(data, &card); err != nil {
+				t.Fatal(err)
+			}
+			card["window"] = "upper_bound"
+			card["routes"].([]any)[0].(map[string]any)["api_model"] = "deepseek-v4-flash"
+			data, err = json.Marshal(card)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var out, stderr bytes.Buffer
+			cmd := newRootCommand()
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.SetIn(bytes.NewReader(nil))
+			cmd.SetArgs([]string{"exec", "reservation probe", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--price-card", path, "--max-estimated-cost", tc.limit, "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "4"})
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			err = cmd.ExecuteContext(ctx)
+			var result headlessEnvelope
+			if e := json.Unmarshal(out.Bytes(), &result); e != nil {
+				t.Fatalf("decode: %v", e)
+			}
+			if err == nil || result.Error == nil || result.Error.Code != tc.code || calls.Load() != tc.wantCalls {
+				t.Fatalf("code=%+v calls=%d err=%v", result.Error, calls.Load(), err)
+			}
+			if tc.wantCalls == 1 && (result.Usage.Cost.Complete || result.Usage.Cost.Reservation.RetainedAmount != "2.097168000000" || result.Usage.ProviderCalls != 1) {
+				t.Fatalf("uncertain exposure=%+v", result.Usage)
+			}
+		})
+	}
 }

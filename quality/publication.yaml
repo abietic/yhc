@@ -5292,7 +5292,7 @@ privacy:
       match_sha256: 29add18e61d41760f69cb15c55069886bd480e96b9d3a64598a0283e39dee321
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/headless_usage_test.go
-      line: 313
+      line: 346
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
@@ -5317,24 +5317,34 @@ privacy:
       match_sha256: 0aaa69ac66922af05824d7faefb0b2923bc18bab9938358d05fcdddf0624a291
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 21
+      line: 25
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 97
+      line: 119
       rule_id: private-email
       match_sha256: 9200dbf872c5546a9359de16a0786b5df08137cd942a7797d0fe9148b05011ab
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 97
+      line: 119
       rule_id: private-url
       match_sha256: 0aaa69ac66922af05824d7faefb0b2923bc18bab9938358d05fcdddf0624a291
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 97
+      line: 119
       rule_id: private-url
       match_sha256: 5615950465cdf8def5c02d3c074e9699790a02e5d0814a68d98d592446d87571
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/cost_stream_test.go
+      line: 28
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/cost_stream_test.go
+      line: 64
+      rule_id: credential-assignment
+      match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
       purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml

@@ -107,6 +107,8 @@ func newExecCommand() *cobra.Command {
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
 	command.Flags().StringVar(&options.PriceCardFile, "price-card", "", "Explicit native currency price card JSON for invocation-fixed cost estimates")
 	command.Flags().StringVar(&options.UsageLimits.MaxEstimatedCost, "max-estimated-cost", "", "Stop new calls after estimated native cost reaches this decimal amount; in-flight calls may overshoot (0 or unset disables; requires --price-card)")
+	command.Flags().BoolVar(&options.UsageLimits.ReserveCostBeforeDispatch, "reserve-cost-before-dispatch", false, "Reserve a proven worst-case native estimate before dispatch (requires positive cost limit and upper_bound price card)")
+	command.Flags().IntVar(&options.UsageLimits.MaxOutputTokensPerCall, "max-output-tokens-per-call", 0, "Enforced maximum response tokens per reserved call, including reasoning (requires reservation mode)")
 	command.Flags().BoolVar(&options.ResumeVerification, "resume-verification", false, "Continue a saved verification stage and repair allowance (requires --resume and matching verification options)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
 	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
