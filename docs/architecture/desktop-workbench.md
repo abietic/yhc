@@ -45,6 +45,33 @@ sequenceDiagram
 
 ## Session ordering
 
+### Read-only command candidates
+
+`POST /v1/sessions/{session_id}/command-completions` reads only an already-live
+session. It accepts a bounded draft and rune cursor; missing sessions are not
+attached. `QueryEngine.CompleteCommandInput` delegates to
+`Registry.CompleteInputFor` with the app-server entrypoint, using the same
+capability admission, argument metadata and dispatch quoting as TUI. The
+app-server serializes this local snapshot with turn admission and session close.
+Busy or pending-decision state suppresses candidates. Completion does not
+dispatch a command, invoke a provider or append runtime/transcript data.
+
+Static choices, model/effort inventory and MCP names are supported sources;
+path scanning, session discovery and model-generated suggestions are excluded.
+The renderer fences results to the session, draft, rune cursor, selection and
+runtime state. IME composition suspends the menu. Explicit acceptance applies
+only the engine-produced edit and never submits it; a later Send still
+revalidates live capabilities.
+
+`insertCompletionEdit` inserts plain text through Chromium's native textarea
+editing path, preserving Undo/Redo. The normal input handler synchronizes
+history edits to the session draft. If native insertion is unavailable and has
+not changed the input, `setRangeText` is a compatibility fallback without an
+undo guarantee. A cancelled `beforeinput` is not bypassed, and an already-applied
+native edit is not inserted twice.
+
+### Activation ordering
+
 The server distinguishes durable discovery from activation. Durable session
 listing and transcript paging use the existing session/transcript owners
 without constructing an engine. [`admitDurableSession`](../../server/appserver/durable_sessions.go)
@@ -472,6 +499,15 @@ provider/tool dialect.
   oracle, identity-checked crash, and no-restart automation boundary.
 - [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs) owns intentional
   provider-replacement and quit shutdown; it does not provide crash restart.
+
+- [`Registry.CompleteInputFor`](../../engine/commands/input_completion.go) owns
+  entrypoint-specific candidates and shared argument edits;
+  [`QueryEngine.CompleteCommandInput`](../../engine/command_completion.go) binds
+  them to live capabilities.
+- [`handleCommandCompletion`](../../server/appserver/command_completion.go)
+  owns bounded live-session HTTP admission;
+  [`mountCommandCompletion`](../../internal/webui/assets/command_completion.mjs)
+  owns transient keyboard, IME and request-fenced presentation.
 
 Related owners: [entrypoints and transports](platform/entrypoints-and-transports.md),
 [sessions](state/sessions.md), [model providers](platform/model-providers.md),

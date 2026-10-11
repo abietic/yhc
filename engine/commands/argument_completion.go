@@ -146,6 +146,12 @@ func cloneArgumentCompletions(specs []ArgumentCompletion) []ArgumentCompletion {
 // PrepareArgumentCompletion resolves the command and editable argument without
 // enumerating runtime or filesystem values. It is safe on the editor loop.
 func (r *Registry) PrepareArgumentCompletion(ctx context.Context, request CompletionRequest, commandContext *CommandContext) (CompletionResult, ArgumentCompletion, bool) {
+	return r.PrepareArgumentCompletionFor(ctx, EntrypointTUI, request, commandContext)
+}
+
+// PrepareArgumentCompletionFor applies the same lexer and argument metadata
+// with the calling surface's discovery admission.
+func (r *Registry) PrepareArgumentCompletionFor(ctx context.Context, entrypoint Entrypoint, request CompletionRequest, commandContext *CommandContext) (CompletionResult, ArgumentCompletion, bool) {
 	text := []rune(request.Input)
 	if !utf8.ValidString(request.Input) || request.Cursor < 0 || request.Cursor > len(text) || strings.ContainsAny(request.Input, "\n\r\t") {
 		return CompletionResult{}, ArgumentCompletion{}, false
@@ -154,7 +160,7 @@ func (r *Registry) PrepareArgumentCompletion(ctx context.Context, request Comple
 	if len(tokens) == 0 || !strings.HasPrefix(tokens[0].value, "/") || request.Cursor <= tokens[0].end {
 		return CompletionResult{}, ArgumentCompletion{}, false
 	}
-	cmd := r.GetForContext(ctx, EntrypointTUI, commandContext, strings.TrimPrefix(tokens[0].value, "/"))
+	cmd := r.GetForContext(ctx, entrypoint, commandContext, strings.TrimPrefix(tokens[0].value, "/"))
 	if cmd == nil {
 		return CompletionResult{}, ArgumentCompletion{}, false
 	}
@@ -217,7 +223,11 @@ func (r *Registry) PrepareArgumentCompletion(ctx context.Context, request Comple
 }
 
 func (r *Registry) CompleteArguments(ctx context.Context, request CompletionRequest, commandContext *CommandContext) CompletionResult {
-	result, spec, ok := r.PrepareArgumentCompletion(ctx, request, commandContext)
+	return r.completeArgumentsFor(ctx, EntrypointTUI, request, commandContext)
+}
+
+func (r *Registry) completeArgumentsFor(ctx context.Context, entrypoint Entrypoint, request CompletionRequest, commandContext *CommandContext) CompletionResult {
+	result, spec, ok := r.PrepareArgumentCompletionFor(ctx, entrypoint, request, commandContext)
 	if !ok || ctx.Err() != nil {
 		return result
 	}
@@ -228,7 +238,12 @@ func (r *Registry) CompleteArguments(ctx context.Context, request CompletionRequ
 	if spec.Default != "" {
 		values = append([]ArgumentCandidate{{Value: spec.Default, Description: "default", Source: "default"}}, values...)
 	}
-	dynamic := r.argumentSourceValues(ctx, commandContext, spec.Source, result.Prefix)
+	var dynamic []ArgumentCandidate
+	// Browser-reachable callers never inherit the trusted local TUI's arbitrary
+	// path scanning or cross-project session discovery. New sources fail closed.
+	if entrypoint == EntrypointTUI || spec.Source == "models" || spec.Source == "efforts" || spec.Source == "mcp" {
+		dynamic = r.argumentSourceValues(ctx, commandContext, spec.Source, result.Prefix)
+	}
 	if spec.Source == "models" {
 		values = append(dynamic, values...)
 	} else {
