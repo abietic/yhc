@@ -2013,21 +2013,46 @@ summary:focus-visible {
 .sidebar { padding: 20px 12px 12px; gap: 8px; }
 .sidebar-header { margin-bottom: 16px; }
 .brand-name { font-size: 15px; letter-spacing: .06em; }
+#workbench-home { padding: 0; background: transparent; border: 0; text-align: left; }
 .new-session { min-height: 40px; justify-content: flex-start; padding-inline: 14px; border-radius: 9px; }
 .new-session.primary { background: var(--panel); color: var(--text); border: 1px solid var(--border); box-shadow: 0 1px 2px rgb(0 0 0 / 3%); }
 .new-session.primary:hover { background: var(--control); }
 .provider-card { box-shadow: none; background: transparent; border-color: var(--border-subtle); }
-.empty .empty-mark { width: 54px; height: 54px; border-radius: 16px; font-size: 23px; background: var(--accent-soft); color: var(--accent); margin: 0 auto 26px; transform: rotate(-6deg); }
-.empty .empty-eyebrow { font-size: 10px; letter-spacing: .14em; color: var(--text-muted); font-weight: 600; }
-.empty h2 { font-weight: 550; letter-spacing: -.045em; margin-top: 12px; }
-.empty #empty-copy { font-size: 14px; line-height: 1.8; max-width: 440px; margin-top: 15px; }
-.empty-actions { margin-top: 26px; gap: 10px; }
-.empty-actions button { min-height: 42px; padding-inline: 18px; }
-.welcome-guide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; text-align: left; margin: 66px 0 20px; padding-top: 26px; border-top: 1px solid var(--border-subtle); }
-.welcome-guide div { min-width: 0; }
-.welcome-guide span { display: block; font-size: 10px; color: var(--accent); font-family: var(--mono); margin-bottom: 12px; }
-.welcome-guide strong { display: block; color: var(--text); font-size: 12px; font-weight: 550; }
-.welcome-guide p { font-size: 12px; margin: 6px 0 0; color: var(--text-muted); }
+.empty.workbench-home { width: min(880px, 100%); margin: 22px auto; padding: 0; color: var(--text); text-align: left; }
+.home-heading h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.03em; }
+.home-heading #empty-copy { margin: 10px 0 26px; max-width: 680px; font-size: 13px; line-height: 1.7; }
+.home-setup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.home-card h3, .home-recent h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.home-card p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--text-muted); }
+.home-card .home-kicker { font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+.home-card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 8px; margin-top: auto; }
+.home-card-actions button { min-height: 36px; }
+.home-model-selection { display: grid; gap: 6px; margin: 0; }
+.home-model-selection:empty { display: none; }
+.home-model-entry { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; font-size: 11px; }
+.home-model-entry dt { color: var(--text-muted); }
+.home-model-entry dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.home-source { display: block; font-family: var(--sans); color: var(--text-muted); font-size: 10px; margin-top: 2px; }
+.home-recent { margin-top: 30px; }
+.home-recent header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.home-session-status:empty { display: none; }
+.home-session-status, .home-history-note { color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+.home-history-note { max-width: none; margin: 12px 0 0; }
+.home-sessions { display: grid; gap: 1px; border-radius: 10px; overflow: hidden; }
+.home-session { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .6fr) auto; align-items: center; gap: 16px; width: 100%; padding: 14px 16px; border: 1px solid var(--border-subtle); border-radius: 0; background: var(--panel); text-align: left; }
+.home-session:hover { background: var(--control); }
+.home-session strong, .home-session-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-session strong { font-size: 12px; font-weight: 550; }
+.home-session-project, .home-session-state { color: var(--text-muted); font-size: 11px; }
+@media (max-width: 759px) {
+  .empty.workbench-home { margin: 6px auto; }
+  .home-setup { grid-template-columns: minmax(0, 1fr); }
+  .home-card { padding: 16px; }
+  .home-session { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 12px; }
+  .home-session-project { grid-row: 2; }
+  .home-session-state { grid-column: 2; grid-row: 1 / 3; }
+}
 .composer { margin-bottom: 24px; border-radius: 18px; padding: 15px 16px 10px; flex-shrink: 0; }
 .composer-hint { color: var(--text-muted); font-size: 10px; margin: 10px 4px 0; }
 .prompt-suggestion { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
@@ -2143,8 +2168,6 @@ summary:focus-visible {
 @media (max-width: 759px) {
   .topbar { padding-inline: 16px; min-height: 62px; }
   .empty { margin-top: 30px; }
-  .welcome-guide { grid-template-columns: 1fr; gap: 18px; margin-top: 36px; }
-  .welcome-guide span { float: left; margin: 3px 12px 30px 0; }
   .settings-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 12px; }
   .settings-header, .settings-toolbar, .settings-context, .settings-categories, .settings-footer { padding-inline: 18px; }
   .settings-toolbar { flex-wrap: wrap; gap: 12px; }

@@ -14,10 +14,10 @@
     <main class="workbench" aria-label="YHC workbench">
       <aside id="navigation" class="sidebar" aria-label="Session navigation">
         <header class="sidebar-header">
-          <div class="brand">
+          <button id="workbench-home" class="brand" type="button" aria-label="Go to workbench" title="Go to workbench">
             <span class="mark" aria-hidden="true">Y</span>
             <span class="brand-name">YHC</span>
-          </div>
+          </button>
           <button
             id="navigation-close"
             class="icon-button sheet-close"
@@ -341,25 +341,39 @@
     </main>
 
     <template id="empty-state">
-      <div class="empty">
-        <span class="empty-mark" aria-hidden="true">Y</span>
-        <p class="empty-eyebrow">YOUR NEXT GOOD IDEA STARTS HERE</p>
-        <h2 id="empty-title">What are we building?</h2>
-        <p id="empty-copy">Connect a model provider, then open a folder to start coding.</p>
-        <div class="empty-actions">
-          <button data-empty-action="provider" class="primary" type="button">
-            Configure provider
-          </button>
-          <button data-empty-action="workspace" class="quiet" type="button">
-            Open workspace
-          </button>
+      <section class="empty workbench-home" aria-labelledby="empty-title">
+        <header class="home-heading">
+          <h2 id="empty-title">Your workbench</h2>
+          <p id="empty-copy">Continue a session or open a workspace. Browsing saved history does not start the agent.</p>
+        </header>
+        <div class="home-setup">
+          <section class="home-card" aria-labelledby="home-model-title">
+            <p class="home-kicker">Model &amp; configuration</p>
+            <h3 id="home-model-title">Checking configuration…</h3>
+            <dl id="home-model-selection" class="home-model-selection"></dl>
+            <p id="home-model-detail"></p>
+            <div class="home-card-actions">
+              <button data-home-action="settings" class="quiet" type="button">Review shared defaults</button>
+              <button data-empty-action="provider" class="quiet" type="button">Manage credentials</button>
+            </div>
+          </section>
+          <section class="home-card" aria-labelledby="home-start-title">
+            <p class="home-kicker">Start a task</p>
+            <h3 id="home-start-title">Open your project</h3>
+            <p id="home-start-detail">Choose a local folder. Its configuration is resolved by the runtime before the session opens.</p>
+            <div class="home-card-actions">
+              <button data-empty-action="workspace" class="primary" type="button">Open workspace</button>
+              <button data-home-action="browse" class="primary" type="button" hidden>Browse sessions</button>
+            </div>
+          </section>
         </div>
-        <div class="welcome-guide">
-          <div><span>01</span><strong>Bring your workspace</strong><p>Keep the conversation close to your code.</p></div>
-          <div><span>02</span><strong>Describe the outcome</strong><p>Ask a question, fix a bug, or build something new.</p></div>
-          <div><span>03</span><strong>Stay in control</strong><p>Review requests and inspect changes as you go.</p></div>
-        </div>
-      </div>
+        <section class="home-recent" aria-labelledby="home-recent-title">
+          <header><h3 id="home-recent-title">Recent sessions</h3><button data-home-action="all-sessions" class="quiet" type="button">Browse all</button></header>
+          <p id="home-session-status" class="home-session-status" role="status"></p>
+          <div id="home-sessions" class="home-sessions"></div>
+          <p class="home-history-note">Opening saved history only reads it. Send a message when you want to continue working.</p>
+        </section>
+      </section>
     </template>
     <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
       <header class="settings-header">

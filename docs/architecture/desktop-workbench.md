@@ -601,6 +601,10 @@ provider/tool dialect.
 - [`QueryEngine.ApplyGoalControl`](../../engine/goal_control.go) maps typed
   revision-bound controls to the existing Goal lifecycle; [`Server.handleGoal`](../../server/appserver/goal.go)
   owns owned-session admission and explicit turn start after a saved transition.
+- [`renderEmptyState`](../../internal/webui/assets/app.mjs) and
+  [`homeConfigurationSummary`](../../internal/webui/assets/workbench_home.mjs)
+  own Home's view-only projection; [`createSession`](../../internal/webui/assets/app.mjs)
+  reaches native workspace selection before the existing session-creation path.
 
 - [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
   renderer's draft-clearing fence, not Turn execution or retry idempotency.

@@ -84,6 +84,16 @@ settings GET / PATCH 的主机与 Web 请求有固定 15 秒 deadline，涵盖�
 写入保留原草稿，但冻结旧 revision 的编辑与保存；显式 Reload 经丢弃确认后才
 读取新快照。取消确认不会发起读取，已知写入前的 busy/validation 拒绝仍可纠正。
 
+## Home 与凭证入口
+
+Home 只是 view state：它投影共享 user defaults、最近 session 和现有凭证入口，
+不创建空 session，也不调用 provider。Desktop 先展示共享设置与安全凭证入口，再在
+用户选择开始工作时调用 native workspace picker；Web 不提供本机目录或凭证管理。
+
+renderer 不接收或回显已保存的 API key。打开凭证管理或取消确认不会写入新秘密，
+并保持 API-key 输入为空。Home 的任务文字仍是草稿，实际 Send / task 创建沿用既有
+明确确认与会话创建路径；切换到 Home 本身不应触发 provider 请求或创建运行时。
+
 消息 timeline 保持同会话节点身份及原生 details 状态。交互表单按 pending interaction
 和草稿签名更新，队列计数独立刷新，不因无关活动摧毁正在输入的问题答案。
 工作区配置由 runtime 实际解析，不能仅凭 Desktop vault 缺失就认定模型不可用。
@@ -116,7 +126,8 @@ HTTP SSE 和隔离 context。原生共享设置 smoke 经实际 form → preload
 
 当前 diff / HEAD 的 focused、clean committed merge 与 evidence-ready 才是本轮
 本地门禁。整合候选的原生结果不能当作每个拆分 HEAD 的逐项原生证明。
-工作台 Home 由其后续切片交付，不由本设置界面宣称已完成。
+Task Explorer、MCP、权限编辑、Goal 与工作台 Home 的当前能力边界分别由各自的
+架构和指南 owner 说明；本设置页不重复声明功能完成状态。
 
 主要 owner：
 

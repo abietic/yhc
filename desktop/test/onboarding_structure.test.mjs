@@ -1,13 +1,48 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const asset = (name) => new URL(`../../internal/webui/assets/${name}`, import.meta.url);
+
+test('provider dialog preserves every supported saved selection and never preloads a key', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const start = app.indexOf('function openProviderDialog(');
+  const end = app.indexOf('function closeProviderDialog(', start);
+  assert.ok(start >= 0 && end > start);
+  const providers = ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'qwen', 'ark'];
+  for (const provider of [...providers, 'unknown-provider']) {
+    const nodes = new Map();
+    const node = id => {
+      if (!nodes.has(id)) nodes.set(id, {
+        value: '', options: providers.map(value => ({ value })), open: false,
+        classList: { toggle() {} }, focus() {}, showModal() { this.open = true; },
+      });
+      return nodes.get(id);
+    };
+    node('provider-api-key').value = 'stale-test-input';
+    runInNewContext(`${app.slice(start, end)}\nopenProviderDialog();`, {
+      $: node, state: {}, sessionCreation: { busy: () => false },
+      backendAvailable: () => true,
+      providerSetup: { setupAvailable: true, configured: true, provider,
+        model: 'fixture-model', baseURL: 'https://fixture.example.invalid/' },
+      providerSetupMessage: () => '', renderProviderSetup() {},
+      requestAnimationFrame: callback => callback(),
+      api() { assert.fail('Opening provider setup must not perform an API operation.'); },
+    });
+    assert.equal(node('provider-select').value, providers.includes(provider) ? provider : 'openai', provider);
+    assert.equal(node('provider-model').value, 'fixture-model');
+    assert.equal(node('provider-base-url').value, 'https://fixture.example.invalid/');
+    assert.equal(node('provider-api-key').value, '');
+    assert.equal(node('provider-dialog').open, true);
+  }
+});
 
 test('renderer exposes a semantic Desktop provider setup and reachable history', async () => {
   const html = await readFile(asset('index.html'), 'utf8');
   assert.match(html, /class="mark"[^>]*>Y<\/span>/);
-  assert.match(html, /class="empty-mark"[^>]*>Y<\/span>/);
+  assert.match(html, /class="empty workbench-home"[^>]*aria-labelledby="empty-title"/);
+  assert.match(html, /id="home-sessions"/);
   assert.doesNotMatch(html, /class="(?:empty-)?mark"[^>]*>E<\/span>/);
   assert.match(html, /id="provider-settings"/);
   assert.match(html, /id="toggle-session-history"/);
@@ -39,8 +74,8 @@ test('Web onboarding offers browsing and does not expose a dead new-session acti
   assert.match(creationControls, /button\.hidden = surface === 'web'/);
   assert.match(creationControls, /button\.disabled = creating \|\| providerSetupBusy \|\| !backendAvailable\(state\)/);
   assert.match(empty, /workspaceButton\.hidden = surface === 'web'/);
-  assert.match(empty, /providerButton\.textContent = 'Browse sessions'/);
-  assert.match(empty, /openSheet\('navigation', providerButton\)/);
+  assert.match(empty, /browseButton\.hidden = surface !== 'web'/);
+  assert.match(empty, /openSheet\('navigation', trigger\)/);
   assert.match(empty, /\$\('session-filter'\)\.focus\(\)/);
 });
 
