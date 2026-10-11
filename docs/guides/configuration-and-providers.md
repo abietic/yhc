@@ -187,6 +187,45 @@ Implementation: [`workbench_settings.go`](../../engine/config/workbench_settings
 [`cmd_settings.go`](../../engine/commands/cmd_settings.go), and
 [`settings.go`](../../server/appserver/settings.go).
 
+### Model Config tool
+
+Config edits the same non-secret defaults. It remains a write tool subject to
+normal permissions even for reads, and is unavailable in Plan mode or when
+denied/disabled. Its default scope is **project**, resolved from the active
+engine's workspace, not a model-supplied path. Select `user` explicitly for
+user-wide defaults; TUI/CLI editor commands instead default to user scope.
+
+Example tool arguments (each is a separate invocation, not a slash command):
+
+```json
+{"action":"list","scope":"project"}
+{"setting":"max_turns","value":0,"scope":"project"}
+{"setting":"reduced_motion","value":false,"scope":"user"}
+{"setting":"max_turns","value":null,"scope":"project"}
+```
+
+String-form boolean/integer JSON such as `"false"` and `"0"` remains accepted
+for older callers. Legacy `action/key/value` works for supported fields;
+`permissions.defaultMode` and `provider.baseURL` are aliases for
+`permission_mode` and `api_base_url`. Native JSON integers must stay within
+the safe transport range (up to 9,007,199,254,740,991); larger integers require
+string-form JSON and remain subject to shared setting validation.
+
+Reads return stored/effective values, source, scope, apply=`new_session`, and
+revision. Supply that revision to update the version you inspected. A stale
+write fails: read again, inspect the change, then explicitly retry. A reset
+removes only the selected override, and current-session execution settings
+stay unchanged. Caller cancellation before the final commit also leaves the
+document unchanged.
+
+Config cannot read or edit credentials, permission-rule arrays, hooks,
+compaction or memory. Old `.yhc/settings.json` files remain intact without
+automatic migration or deletion, and `YHC_CONFIG_DIR` no longer selects the
+live Config store. After review, reapply desired supported defaults through
+the shared editor. The explicit state importer retains its historical format
+and does not make those files production defaults. Standalone `serve mcp`
+does not expose this tool.
+
 ## Provider environment variables
 
 | Provider | Key variables | Base URL variable |
@@ -362,7 +401,7 @@ tools; control those with permission rules or MCP configuration.
 | `YHC_DISABLE_ACP_COMMAND_UPDATES` | Disable ACP command-list notifications without changing dispatch |
 | `YHC_DISABLE_AUTO_MEMORY` | Disable automatic persistent memory |
 | `YHC_REMOTE_MEMORY_DIR` | Select the remote-memory base directory |
-| `YHC_CONFIG_DIR` | Override the user configuration directory |
+| `YHC_CONFIG_DIR` | Override memory/config-home and user keybinding roots; does not redirect shared settings |
 | `YHC_MEMORY_PATH_OVERRIDE` | Select one validated absolute automatic-memory path |
 | `YHC_TEAM_MEMORY_DIR` | Select one validated absolute team-memory path |
 | `YHC_SESSION_CATALOG` | Override the session-root catalog path |
