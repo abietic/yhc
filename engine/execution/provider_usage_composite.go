@@ -23,6 +23,22 @@ func CombineProviderUsage(first, second ProviderUsageAdmitter) ProviderUsageAdmi
 
 type combinedProviderUsage struct{ first, second ProviderUsageAdmitter }
 
+func (c *combinedProviderUsage) ProviderCostReservationPolicy() (bool, int) {
+	required, cap := false, 0
+	for _, owner := range []ProviderUsageAdmitter{c.first, c.second} {
+		if policy, ok := owner.(interface{ ProviderCostReservationPolicy() (bool, int) }); ok {
+			enabled, n := policy.ProviderCostReservationPolicy()
+			if enabled {
+				required = true
+				if cap == 0 || n < cap {
+					cap = n
+				}
+			}
+		}
+	}
+	return required, cap
+}
+
 func (c *combinedProviderUsage) NewLogicalRoundID() string { return c.second.NewLogicalRoundID() }
 func (c *combinedProviderUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescriptor) (ProviderUsageCall, error) {
 	a, err := c.first.AdmitProviderUsage(ctx, d)

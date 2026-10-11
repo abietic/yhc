@@ -25,35 +25,56 @@ type RunPriceCard struct {
 type RunPriceRoute struct {
 	Provider                string `json:"provider"`
 	Model                   string `json:"model"`
+	APIModel                string `json:"api_model,omitempty"`
 	CachedInputPerMillion   string `json:"cached_input_per_million"`
 	UncachedInputPerMillion string `json:"uncached_input_per_million"`
 	OutputPerMillion        string `json:"output_per_million"`
 }
 
 type RunCallCost struct {
-	State           string  `json:"state"`
-	PriceIndex      int     `json:"price_index"` // -1 means no matching price route.
-	EstimatedAmount *string `json:"estimated_amount"`
+	State           string              `json:"state"`
+	PriceIndex      int                 `json:"price_index"` // -1 means no matching price route.
+	EstimatedAmount *string             `json:"estimated_amount"`
+	Reservation     *RunCallReservation `json:"reservation,omitempty"`
+}
+
+type RunCallReservation struct {
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	InputTokens    uint64 `json:"input_tokens"`
+	OutputTokens   uint64 `json:"output_tokens"`
+	ReservedAmount string `json:"reserved_amount"`
+	RetainedAmount string `json:"retained_amount"`
+}
+
+type RunCostReservationSnapshot struct {
+	OutstandingAmount  string `json:"outstanding_amount"`
+	RetainedAmount     string `json:"retained_amount"`
+	PeakExposureAmount string `json:"peak_exposure_amount"`
+	BoundViolations    uint64 `json:"bound_violations"`
 }
 
 type RunCostSnapshot struct {
-	Version              int          `json:"version"`
-	SegmentID            string       `json:"segment_id"`
-	PriceCard            RunPriceCard `json:"price_card"`
-	KnownEstimatedAmount string       `json:"known_estimated_amount"`
-	ActualBilledAmount   *string      `json:"actual_billed_amount"`
-	PricedCalls          uint64       `json:"priced_calls"`
-	UnpricedCalls        uint64       `json:"unpriced_calls"`
-	Complete             bool         `json:"complete"`
-	LimitMode            string       `json:"limit_mode"`
+	Version              int                         `json:"version"`
+	SegmentID            string                      `json:"segment_id"`
+	PriceCard            RunPriceCard                `json:"price_card"`
+	KnownEstimatedAmount string                      `json:"known_estimated_amount"`
+	ActualBilledAmount   *string                     `json:"actual_billed_amount"`
+	PricedCalls          uint64                      `json:"priced_calls"`
+	UnpricedCalls        uint64                      `json:"unpriced_calls"`
+	Complete             bool                        `json:"complete"`
+	LimitMode            string                      `json:"limit_mode"`
+	Reservation          *RunCostReservationSnapshot `json:"reservation,omitempty"`
 }
 
 type runCostState struct {
-	card             RunPriceCard
-	prices           [][3]*big.Int
-	amount           big.Int // 10^-12 currency units, exact for rates with six decimals.
-	limit            *big.Int
-	priced, unpriced uint64
+	card                        RunPriceCard
+	prices                      [][3]*big.Int
+	amount                      big.Int // 10^-12 currency units, exact for rates with six decimals.
+	limit                       *big.Int
+	priced, unpriced            uint64
+	outstanding, retained, peak big.Int
+	boundViolations             uint64
 }
 
 // DecodeRunPriceCard accepts a bounded, strict public pricing document. It does
@@ -104,7 +125,7 @@ func compileRunPriceCard(card RunPriceCard) (*runCostState, error) {
 	seen := make(map[[2]string]bool)
 	for _, route := range card.Routes {
 		key := [2]string{route.Provider, route.Model}
-		if seen[key] || runUsageProvider(route.Provider) == "unknown" || runUsageModelLabel(route.Model) == "unknown" {
+		if seen[key] || runUsageProvider(route.Provider) == "unknown" || runUsageModelLabel(route.Model) == "unknown" || (route.APIModel != "" && runUsageModelLabel(route.APIModel) == "unknown") {
 			return nil, fmt.Errorf("price card requires unique canonical provider/model routes")
 		}
 		seen[key] = true
@@ -179,15 +200,59 @@ func (r *RunUsage) costSnapshot() *RunCostSnapshot {
 	if r.cost.limit != nil {
 		mode = "post_response_threshold"
 	}
-	return &RunCostSnapshot{Version: 1, SegmentID: r.segmentID, PriceCard: card, KnownEstimatedAmount: costAmount(&r.cost.amount), PricedCalls: r.cost.priced, UnpricedCalls: r.cost.unpriced, Complete: r.cost.unpriced == 0 && r.totals.InFlight == 0 && r.untracked == 0, LimitMode: mode}
+	s := &RunCostSnapshot{Version: 1, SegmentID: r.segmentID, PriceCard: card, KnownEstimatedAmount: costAmount(&r.cost.amount), PricedCalls: r.cost.priced, UnpricedCalls: r.cost.unpriced, Complete: r.cost.unpriced == 0 && r.totals.InFlight == 0 && r.untracked == 0 && r.cost.boundViolations == 0, LimitMode: mode}
+	if r.limits.ReserveCostBeforeDispatch {
+		s.LimitMode = "pre_dispatch_reservation"
+		s.Reservation = &RunCostReservationSnapshot{OutstandingAmount: costAmount(&r.cost.outstanding), RetainedAmount: costAmount(&r.cost.retained), PeakExposureAmount: costAmount(&r.cost.peak), BoundViolations: r.cost.boundViolations}
+	}
+	return s
 }
 
-func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool) {
+func (r *RunUsage) reserveCost(d ProviderUsageDescriptor, index int) (*RunCallReservation, *big.Int, error) {
+	if !r.limits.ReserveCostBeforeDispatch {
+		return nil, nil, nil
+	}
+	b := d.CostBound
+	if b == nil || index < 0 || b.Provider != d.Provider || b.Provider != "agenticdeepseek" || b.Model != r.cost.card.Routes[index].APIModel || runUsageModelLabel(b.Model) == "unknown" || b.InputTokens == 0 || b.OutputTokens == 0 || b.OutputTokens > uint64(r.limits.MaxOutputTokensPerCall) {
+		return nil, nil, ErrRunUsageUnknown
+	}
+	prices := r.cost.prices[index]
+	inputPrice := prices[1]
+	if prices[0].Cmp(inputPrice) > 0 {
+		inputPrice = prices[0]
+	}
+	amount := new(big.Int).Mul(new(big.Int).SetUint64(b.InputTokens), inputPrice)
+	amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(b.OutputTokens), prices[2]))
+	exposure := new(big.Int).Add(&r.cost.amount, &r.cost.outstanding)
+	exposure.Add(exposure, &r.cost.retained)
+	exposure.Add(exposure, amount)
+	if exposure.Cmp(r.cost.limit) > 0 {
+		return nil, nil, ErrRunBudgetExceeded
+	}
+	r.cost.outstanding.Add(&r.cost.outstanding, amount)
+	if exposure.Cmp(&r.cost.peak) > 0 {
+		r.cost.peak.Set(exposure)
+	}
+	return &RunCallReservation{Provider: b.Provider, Model: b.Model, InputTokens: b.InputTokens, OutputTokens: b.OutputTokens, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
+}
+
+func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool) error {
 	r := c.owner
 	if r.cost == nil {
-		return
+		return nil
 	}
-	result := &RunCallCost{State: "unpriced", PriceIndex: c.priceIndex}
+	var reservation *RunCallReservation
+	if c.reservation != nil {
+		copied := *c.reservation
+		reservation = &copied
+		r.cost.outstanding.Sub(&r.cost.outstanding, c.reserved)
+	}
+	violation := known && reservation != nil && (values.PromptTokens > reservation.InputTokens || values.CompletionTokens > reservation.OutputTokens)
+	if violation {
+		known = false
+		r.cost.boundViolations++
+	}
+	result := &RunCallCost{State: "unpriced", PriceIndex: c.priceIndex, Reservation: reservation}
 	switch {
 	case release:
 		result.State = "released"
@@ -204,8 +269,16 @@ func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool) {
 		result.EstimatedAmount = &value
 	default:
 		r.cost.unpriced++
+		if reservation != nil {
+			r.cost.retained.Add(&r.cost.retained, c.reserved)
+			reservation.RetainedAmount = reservation.ReservedAmount
+		}
 	}
 	if c.recordIndex >= 0 {
 		r.records[c.recordIndex].Cost = result
 	}
+	if violation {
+		return ErrRunUsageUnknown
+	}
+	return nil
 }

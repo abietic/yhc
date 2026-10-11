@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/abietic/yhc/engine/internal/providercost"
 )
 
 // ProviderUsageDescriptor names one logical model round before an actual
@@ -23,6 +25,7 @@ type ProviderUsageDescriptor struct {
 	ModelRole         string
 	ModelProfile      string
 	ReasoningEffort   string
+	CostBound         *providercost.Bound
 }
 
 // ProviderUsageAdmitter is the narrow provider-facing accounting capability.

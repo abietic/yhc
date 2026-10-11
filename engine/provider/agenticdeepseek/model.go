@@ -210,10 +210,14 @@ func (m *Model) Stream(
 	if err != nil {
 		return nil, err
 	}
+	return m.streamRequest(ctx, input, common.Tools, req, body, false)
+}
+
+func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessage, tools []*schema.ToolInfo, req *responseRequest, body []byte, bounded bool) (out *schema.StreamReader[*schema.AgenticMessage], err error) {
 	config := callbackConfig(req)
 	ctx = callbacks.OnStart(ctx, &model.AgenticCallbackInput{
 		Messages: input,
-		Tools:    common.Tools,
+		Tools:    tools,
 		Config:   config,
 	})
 	defer func() {
@@ -222,7 +226,7 @@ func (m *Model) Stream(
 		}
 	}()
 
-	response, err := m.do(ctx, body, true) //nolint:bodyclose // parser goroutine owns and closes a successful stream body
+	response, err := m.doRequest(ctx, body, true, bounded) //nolint:bodyclose // parser goroutine owns and closes a successful stream body
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +308,10 @@ func (m *Model) options(opts ...model.Option) (*model.Options, *callOptions) {
 }
 
 func (m *Model) do(ctx context.Context, body []byte, stream bool) (*http.Response, error) {
+	return m.doRequest(ctx, body, stream, false)
+}
+
+func (m *Model) doRequest(ctx context.Context, body []byte, stream, bounded bool) (*http.Response, error) {
 	var phase atomic.Uint32
 	setPhase := func(value transportPhase) {
 		for previous := phase.Load(); uint32(value) > previous; previous = phase.Load() {
@@ -336,7 +344,16 @@ func (m *Model) do(ctx context.Context, body []byte, stream bool) (*http.Respons
 	} else {
 		req.Header.Set("Accept", "application/json")
 	}
-	response, err := m.httpClient.Do(req)
+	client := m.httpClient
+	if bounded {
+		// Disable body replay and redirect-driven second requests. Opaque custom
+		// transports were rejected when preparing this exact wire body.
+		req.GetBody = nil
+		copied := *client
+		copied.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &copied
+	}
+	response, err := client.Do(req)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, &transportError{err: ctxErr, phase: transportPhase(phase.Load())}

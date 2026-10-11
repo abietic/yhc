@@ -160,6 +160,17 @@ Harbor continuation grants are owned by
 [budgets and limits](../architecture/runtime/budgets-and-limits.md#native-currency-estimates-and-stopping-threshold).
 A price card records an estimate; it does not read the provider's account bill.
 
+For a conservative pre-dispatch ceiling on that estimate, add
+`--reserve-cost-before-dispatch --max-output-tokens-per-call 16384` alongside a
+positive `--max-estimated-cost`. This optional mode is off by default. The card
+must declare `window: "upper_bound"` and an explicit `api_model` for every route.
+Currently only the built-in local DeepSeek adapter supports this mode. Each
+request reserves the full supported context capacity at the higher input rate
+plus the output bound before dispatch; known usage refunds the difference.
+Consequently a call can be denied while some budget remains. Unknown response
+cost retains the reservation and stops retries. This controls the declared
+estimate, not the provider's invoice or external tool charges.
+
 A rejected admission returns exit `1` with `error.code=run_budget_exceeded`;
 incomplete usage under a token or monetary threshold, or missing required pricing,
 returns `run_usage_unknown`. Cancellation
