@@ -722,12 +722,12 @@ privacy:
       match_sha256: 8a0341f354524156522524048227193d9d769c4e3ec7de9155f80b7983dceef0
       purpose: synthetic-security-fixture
     - path: desktop/test/state.test.mjs
-      line: 282
+      line: 309
       rule_id: credential-assignment
       match_sha256: 62dcc28a97cdaaa1b958b0edda36f58e9a8ec13069e6984f07b98869ba1dda5f
       purpose: synthetic-security-fixture
     - path: desktop/test/state.test.mjs
-      line: 331
+      line: 358
       rule_id: credential-assignment
       match_sha256: 121424b243a3a2638002f30b3c649e80ac52701c5cbaef855661ca6b843deae7
       purpose: synthetic-security-fixture
@@ -4182,12 +4182,12 @@ privacy:
       match_sha256: 6da19f5057f0dd1085db2213932a52da09a1df6b9194447953db96f7e48663a7
       purpose: synthetic-security-fixture
     - path: internal/webui/assets/app.mjs
-      line: 1719
+      line: 1751
       rule_id: credential-assignment
       match_sha256: 7be5b39a6e1069827d150a278fb65d3c2390f796795f7bb7de3965780d39150c
       purpose: runtime-loopback
     - path: internal/webui/assets/index.html
-      line: 441
+      line: 455
       rule_id: private-url
       match_sha256: 53aee2ca762b9729196afeefd22bd5abdcbdf87a0f29cc0dd2f6902a22e73e4f
       purpose: documentation-example
@@ -5562,37 +5562,37 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 321
+      line: 328
       rule_id: private-url
       match_sha256: 8605b8ba08c20d42f9e455151871896d0e0de980596286fb736d11eec013e2a4
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 350
+      line: 360
       rule_id: credential-assignment
       match_sha256: be8a446e7fcc02bc94158f4bf97fe65b04e25a05b698b121229a30d13dcf6ceb
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 1010
+      line: 1140
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 1011
+      line: 1141
       rule_id: private-url
       match_sha256: 3e6eaf6ba5439370afdf75eb9fcb5e2a2ad980bd4c2dca895bc60eb4916dcbd9
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 1080
+      line: 1210
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 1134
+      line: 1264
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 1168
+      line: 1298
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
@@ -5719,6 +5719,37 @@ privacy:
       line: 279
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
+      purpose: synthetic-security-fixture
+
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 728
+      rule_id: private-url
+      match_sha256: c4cbbc68a2b2421c95c56026ce85a6db91048719f4e139ab893616d36b4783f5
+      purpose: synthetic-security-fixture
+    - path: desktop/test/onboarding_structure.test.mjs
+      line: 28
+      rule_id: private-url
+      match_sha256: c4cbbc68a2b2421c95c56026ce85a6db91048719f4e139ab893616d36b4783f5
+      purpose: synthetic-security-fixture
+    - path: desktop/test/onboarding_structure.test.mjs
+      line: 35
+      rule_id: private-url
+      match_sha256: c4cbbc68a2b2421c95c56026ce85a6db91048719f4e139ab893616d36b4783f5
+      purpose: synthetic-security-fixture
+    - path: desktop/test/workbench_home.test.mjs
+      line: 10
+      rule_id: private-email
+      match_sha256: bed28cfad641b3e9390ae9908528d2b43cdbe2b94d72dbf44d132d5fe3a86723
+      purpose: synthetic-security-fixture
+    - path: desktop/test/workbench_home.test.mjs
+      line: 10
+      rule_id: private-url
+      match_sha256: efb2cd6d9f1cf70079a1252b4e672fa7e576432110e0bd47f75dc4f0e1b393d1
+      purpose: synthetic-security-fixture
+    - path: desktop/test/workbench_home.test.mjs
+      line: 39
+      rule_id: credential-assignment
+      match_sha256: d9e24c02f468d6af70ef89a1fbf126993ca519a890572aa520c912928f6be154
       purpose: synthetic-security-fixture
 
 dependencies:
