@@ -1,7 +1,7 @@
 # Runtime Services
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-10-11
 
 > **Ownership:** entrypoint-specific background-service construction, rebinding, shutdown, and disconnected helpers
 
@@ -113,12 +113,12 @@ configuration, hooks, tool input, and ACP clients cannot broaden the matrix.
 
 Entrypoints that construct an engine must close it. Adding a goroutine without a corresponding owner, cancellation path, and join boundary is a lifecycle bug.
 
-## TUI prompt suggestions
+## Interactive prompt suggestions
 
 The root TUI sets `EnablePromptSuggestions` from the merged
 `prompt_suggestions` setting. `NewQueryEngine` constructs
 [`PromptSuggestionService`](../../../engine/services/prompt_suggestion.go) only
-for a non-nil model, empty `AgentID`, TUI entrypoint, and non-administration,
+for a non-nil model, empty `AgentID`, TUI or AppServer entrypoint, and non-administration,
 non-restore-staging engine. Plain, headless, ACP, child, and administration
 engines do not construct it.
 
@@ -145,6 +145,31 @@ not consume the completed query's API task budget or continuation token
 tracker; the selected provider may still bill it. Set `prompt_suggestions` to
 `false` to remove that request entirely. Speculative execution and the
 service's legacy speculation API remain outside production wiring.
+
+Desktop/Web uses this same generator behind an explicit **Suggest next step**
+action, not an automatic post-turn request. `runServeApp` initializes enablement
+from the merged preference. The authenticated
+`POST /v1/sessions/{session_id}/prompt-suggestion` accepts only an empty object;
+it does not attach saved sessions or accept client conversation, paths or routes.
+
+[`session.promptSuggestion`](../../../server/appserver/prompt_suggestion.go)
+admits one request for an owned idle session and checks the shared effective
+preference before dispatch and before returning text. It releases the
+turn-admission lock before calling the provider. Direct/queued turn admission,
+execution-control changes and session shutdown cancel the request; shutdown
+joins it before closing the engine. Cancellation is cooperative, and request
+identity rejects late output. Re-enabling a startup-disabled session requires
+a new session; disabling the shared preference suppresses requests in existing
+sessions.
+
+The renderer fences an ephemeral candidate to the session, draft edit, runtime
+cursor, execution settings and request generation. Acceptance is one undoable
+plain-text draft edit, never Send. Typing, switching sessions or dismissing the
+candidate invalidates its UI projection; it does not undo provider cost or
+promise immediate IPC cancellation. No suggestion text is published as a
+durable event or stored until accepted into an ordinary draft. Evidence owners:
+[`prompt_suggestion_test.go`](../../../server/appserver/prompt_suggestion_test.go)
+and [`prompt_suggestion.test.mjs`](../../../desktop/test/prompt_suggestion.test.mjs).
 
 ## Other active service-like behavior
 

@@ -8,6 +8,7 @@ import {
   buildQuestionResolution,
   buildRepeatedToolResolution,
   canImportDurableSession,
+  canClearSubmittedDraft,
   canEditDraft,
   canQueuePrompt,
   canSubmitTurn,
@@ -49,7 +50,8 @@ import {
   synchronizeReplayGap,
 } from './replay.mjs';
 import { createTransport } from './transport.mjs';
-import { mountCommandCompletion } from './command_completion.mjs';
+import { mountCommandCompletion, insertCompletionEdit } from './command_completion.mjs';
+import { createPromptSuggestion } from './prompt_suggestion.mjs';
 import { createTimelineRenderer } from './timeline_view.mjs';
 import { applyAppearance, createSettingsView } from './settings_view.mjs';
 import {
@@ -65,6 +67,7 @@ const streams = new Map();
 const transcriptLoads = new Set();
 const attachAttempts = new Map();
 const queueAttempts = new Map();
+const turnDraftAttempts = new Map();
 let state = initialState();
 let transport;
 let surface = '';
@@ -80,6 +83,8 @@ let catalogSearchTimer = null;
 let historyExpanded = false;
 let providerSetup = providerSetupProjection('', {});
 let providerSetupBusy = false;
+let workbenchNoticeReceipt = null;
+let sessionCreationNoticeReceipt = null;
 let sharedSettings = null;
 let settingsProjectionRequest = 0;
 let interactionSignature = '';
@@ -125,6 +130,30 @@ const settingsView = createSettingsView({
     render();
   },
   manageCredentials: () => openProviderDialog(),
+});
+function promptSuggestionSnapshot() {
+  const current = activeSession(state);
+  return {
+    sessionID: current?.id,
+    input: $('prompt').value,
+    enabled: backendAvailable(state) && current?.live && canSubmitTurn(current) && current.status === 'idle' &&
+      current.execution?.permissionMode !== 'plan' && sharedSettings?.fields?.prompt_suggestions?.effective_value === true &&
+      !document.querySelector('dialog[open]') && !openSheetKind,
+    fence: JSON.stringify([current?.cursor, current?.execution, current?.active_turn_id]),
+  };
+}
+function paintPromptSuggestion(value) {
+  $('prompt-suggestion').hidden = !promptSuggestionSnapshot().enabled || $('prompt').value !== '';
+  $('suggest-prompt').disabled = value.busy;
+  $('suggest-prompt').hidden = Boolean(value.text);
+  $('accept-suggestion').hidden = !value.text;
+  $('accept-suggestion').textContent = value.text ? `Use “${value.text}”` : '';
+  $('dismiss-suggestion').hidden = value.busy || (!value.text && !value.status);
+  $('suggestion-note').hidden = Boolean(value.text) || value.busy;
+  $('suggestion-status').textContent = value.status;
+}
+const promptSuggestion = createPromptSuggestion({
+  snapshot: promptSuggestionSnapshot, request: payload => api('promptSuggestion', payload), publish: paintPromptSuggestion,
 });
 const sessionList = $('session-list');
 const activity = $('activity');
@@ -346,6 +375,7 @@ function render() {
     renderExecutionControls(null);
     $('composer').hidden = true;
     commandCompletion.dismiss();
+    promptSuggestion.dismiss();
     return;
   }
 
@@ -372,6 +402,7 @@ function render() {
   $('cancel').disabled = !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
   commandCompletion.refresh();
+  paintPromptSuggestion(promptSuggestion.current());
 
   if (current.messages.length === 0) {
     timelineRenderer.reset();
@@ -435,7 +466,7 @@ function renderSessionCreationControls() {
   const button = $('new-session');
   const label = button.querySelector('span');
   button.hidden = surface === 'web';
-  button.disabled = creating || !backendAvailable(state);
+  button.disabled = creating || providerSetupBusy || !backendAvailable(state);
   button.setAttribute('aria-busy', String(creating));
   if (label) label.textContent = creating ? 'Creating session…' : 'New session';
 }
@@ -517,7 +548,7 @@ function renderProviderSetup() {
   const hostGuidance = $('provider-host-guidance');
   const backendReady = backendAvailable(state);
   settings.hidden = !providerSetup.setupAvailable;
-  settings.disabled = providerSetupBusy || !backendAvailable(state);
+  settings.disabled = providerSetupBusy || sessionCreation.busy() || !backendReady;
   const settingsLabel = providerSetup.configured
     ? 'Change provider'
     : 'Configure provider';
@@ -566,13 +597,13 @@ function renderProviderSetup() {
       : 'Secure operating-system storage is unavailable.';
   }
 
-  $('provider-save').disabled = !backendReady || providerSetupBusy ||
+  $('provider-save').disabled = !backendReady || providerSetupBusy || sessionCreation.busy() ||
     providerSetup.submitDisabled || Object.values(state.sessions).some((session) => session.live);
   $('provider-live-warning').hidden = !Object.values(state.sessions).some((session) => session.live);
   $('provider-cancel').disabled = providerSetupBusy;
   for (const control of $('provider-form').elements) {
     if (!['provider-save', 'provider-cancel'].includes(control.id)) {
-      control.disabled = !backendReady || providerSetupBusy ||
+      control.disabled = !backendReady || providerSetupBusy || sessionCreation.busy() ||
         providerSetup.submitDisabled;
     }
   }
@@ -587,13 +618,13 @@ function renderEmptyState() {
   const backendReady = backendAvailable(state);
   timeline.querySelector('#empty-title').textContent = surface === 'web' ? 'Pick up where you left off.' : 'What are we building?';
   providerButton.hidden = !providerSetup.setupAvailable;
-  providerButton.disabled = !backendReady;
+  providerButton.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
   providerButton.textContent = providerSetup.configured
     ? 'Review provider setup'
     : 'Configure provider';
   providerButton.className = 'quiet';
   workspaceButton.hidden = surface === 'web';
-  workspaceButton.disabled = !backendReady || sessionCreation.busy();
+  workspaceButton.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
   workspaceButton.setAttribute('aria-busy', String(sessionCreation.busy()));
   workspaceButton.textContent = sessionCreation.busy()
     ? 'Creating session…'
@@ -1535,6 +1566,7 @@ function providerSetupMessage(reason = '') {
 }
 
 function openProviderDialog(reason = '') {
+  if (sessionCreation.busy()) return;
   if (!backendAvailable(state)) {
     $('turn-state').textContent = BACKEND_UNAVAILABLE_NOTICE;
     return;
@@ -1583,13 +1615,18 @@ function providerConfigurationFailure(error) {
 
 async function retryAfterProviderSetup() {
   if (backendAvailable(state) && pendingWorkspace.pending()) {
-    await sessionCreation.begin(() => pendingWorkspace.retry());
+    // Successful provider setup replaced the backend. Its predecessor's
+    // process-local workspace capability cannot be retried in this process.
+    // Re-enter normal native selection; never retain a renderer path or
+    // silently register the previous folder against the replacement backend.
+    pendingWorkspace.clear();
+    await sessionCreation.begin();
   }
 }
 
 async function configureProvider(event) {
   event.preventDefault();
-  if (!backendAvailable(state) || providerSetupBusy ||
+  if (!backendAvailable(state) || providerSetupBusy || sessionCreation.busy() ||
     !providerSetup.setupAvailable) return;
   const apiKeyInput = $('provider-api-key');
   let apiKey = apiKeyInput.value;
@@ -1602,7 +1639,7 @@ async function configureProvider(event) {
   providerSetupBusy = true;
   $('provider-dialog-status').textContent = 'Encrypting provider profile and restarting backend…';
   $('provider-dialog-status').classList.remove('error');
-  renderProviderSetup();
+  render();
   let configured = false;
   try {
     const status = await transport.configureProvider(submission);
@@ -1624,7 +1661,10 @@ async function configureProvider(event) {
   try {
     await retryAfterProviderSetup();
   } catch (error) {
-    showError(new Error(`Provider saved. Session could not start: ${error.message}`));
+    showSessionCreationError(sessionScopedError(
+      new Error(`Provider saved. Session could not start: ${error.message}`),
+      error?.yhcSessionID,
+    ));
   }
 }
 
@@ -1642,6 +1682,7 @@ async function createSessionForWorkspace(workspace) {
     activate(created) {
       prepareSessionHydration(created, '', false);
       dispatch({ type: 'SESSION_SELECT', id: created.id }, 'bottom');
+      clearSessionCreationNotice();
     },
     async hydrate(created) {
       await hydratePreparedSession(created);
@@ -1649,7 +1690,7 @@ async function createSessionForWorkspace(workspace) {
         await loadReview();
       }
     },
-  });
+  }).catch(error => { throw sessionScopedError(error, summary.id); });
 }
 
 async function createSession() {
@@ -1724,8 +1765,11 @@ async function closeSession(session) {
   }
   attachAttempts.delete(session.id);
   queueAttempts.delete(session.id);
+  turnDraftAttempts.delete(session.id);
   stopStream(session.id);
-  const retained = retainedClosedDescriptor(session);
+  const latest = state.sessions[session.id];
+  if (!latest) return;
+  const retained = retainedClosedDescriptor(latest);
   if (retained) {
     dispatch({
       type: 'SESSION_UPSERT',
@@ -1741,17 +1785,20 @@ function updateDraft(value) {
   if (!current) return;
   attachAttempts.delete(current.id);
   queueAttempts.delete(current.id);
+  turnDraftAttempts.delete(current.id);
   state = reducer(state, {
     type: 'SESSION_DRAFT',
     id: current.id,
     draft: value,
   });
   if (persistenceEnabled) persist();
+  promptSuggestion.dismiss();
 }
 
 async function send(event) {
   event.preventDefault();
   commandCompletion.dismiss();
+  promptSuggestion.dismiss();
   const current = activeSession(state);
   const prompt = $('prompt').value.trim();
   if (!current || !prompt ||
@@ -1791,16 +1838,22 @@ async function send(event) {
       }
       return;
     }
+    const attempt = { prompt, clientTurnID: crypto.randomUUID() };
+    turnDraftAttempts.set(current.id, attempt);
     try {
       await api('startTurn', {
         sessionID: current.id,
-        prompt,
-        clientTurnID: crypto.randomUUID(),
+        prompt: attempt.prompt,
+        clientTurnID: attempt.clientTurnID,
       });
+      if (canClearSubmittedDraft(turnDraftAttempts.get(current.id), attempt, state.sessions[current.id]?.draft)) {
+        dispatch({ type: 'SESSION_DRAFT', id: current.id, draft: '' });
+      }
     } catch (error) {
       throw sessionScopedError(error, current.id);
+    } finally {
+      if (turnDraftAttempts.get(current.id) === attempt) turnDraftAttempts.delete(current.id);
     }
-    dispatch({ type: 'SESSION_DRAFT', id: current.id, draft: '' });
     return;
   }
 
@@ -2366,8 +2419,7 @@ function showError(error) {
     : '';
   if (scopedID && !state.sessions[scopedID]) return;
   if (!scopedID || scopedID === state.activeID) {
-    $('workbench-notice-copy').textContent = error.message;
-    $('workbench-notice').hidden = false;
+    publishWorkbenchNotice(error.message);
   }
   const current = scopedID
     ? state.sessions[scopedID]
@@ -2381,6 +2433,37 @@ function showError(error) {
   } else {
     $('turn-state').textContent = error.message;
   }
+}
+
+function publishWorkbenchNotice(message) {
+  // A new publication owns a new receipt, even for the same Error or text.
+  workbenchNoticeReceipt = {};
+  $('workbench-notice-copy').textContent = message;
+  $('workbench-notice').hidden = false;
+  return workbenchNoticeReceipt;
+}
+
+function showSessionCreationError(error) {
+  if (typeof error?.yhcSessionID === 'string' && error.yhcSessionID) {
+    showError(error);
+    return;
+  }
+  sessionCreationNoticeReceipt = publishWorkbenchNotice(error.message);
+}
+
+function dismissWorkbenchNotice() {
+  workbenchNoticeReceipt = null;
+  sessionCreationNoticeReceipt = null;
+  $('workbench-notice').hidden = true;
+  $('workbench-notice-copy').textContent = '';
+}
+
+function clearSessionCreationNotice() {
+  if (backendAvailable(state) && sessionCreationNoticeReceipt &&
+    workbenchNoticeReceipt === sessionCreationNoticeReceipt) {
+    dismissWorkbenchNotice();
+  }
+  sessionCreationNoticeReceipt = null;
 }
 
 function sessionScopedError(error, sessionID) {
@@ -2447,16 +2530,16 @@ async function bootstrapApp() {
 }
 
 function beginSessionCreation() {
-  if (surface === 'web' || !backendAvailable(state)) return;
+  if (surface === 'web' || providerSetupBusy || !backendAvailable(state)) return;
   const creation = sessionCreation.begin();
   if (openSheetKind === 'navigation') closeSheet();
-  creation.catch(showError);
+  creation.catch(showSessionCreationError);
 }
 
 $('new-session').onclick = () => beginSessionCreation();
 $('provider-settings').onclick = () => openProviderDialog();
 $('settings-open').onclick = (event) => void settingsView.open(event.currentTarget);
-$('workbench-notice-dismiss').onclick = () => { $('workbench-notice').hidden = true; };
+$('workbench-notice-dismiss').onclick = () => dismissWorkbenchNotice();
 $('toggle-session-history').onclick = () => {
   historyExpanded = !historyExpanded;
   renderSessionList();
@@ -2495,6 +2578,15 @@ $('review-tab').onclick = () => showInspectorView('review');
 $('refresh-review').onclick = () => void loadReview();
 $('ignore-whitespace').onchange = () => void loadReview();
 $('prompt').oninput = () => updateDraft($('prompt').value);
+$('suggest-prompt').onclick = () => void promptSuggestion.request();
+$('dismiss-suggestion').onclick = () => { promptSuggestion.dismiss(); $('prompt').focus(); };
+$('accept-suggestion').onclick = () => {
+  const text = promptSuggestion.accept();
+  if (!text) return;
+  const input = $('prompt');
+  insertCompletionEdit(input, text, 0, 0);
+  updateDraft(input.value);
+};
 $('prompt').onkeydown = (event) => {
   if (commandCompletion.keydown(event)) {
     event.preventDefault();

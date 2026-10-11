@@ -1120,6 +1120,16 @@ export function sameQueueAttempt(current, expected) {
   );
 }
 
+// An admission reply owns only the untouched draft captured for that attempt.
+// Editing invalidates the caller's token, even if the text is later restored.
+export function canClearSubmittedDraft(currentAttempt, submittedAttempt, draft) {
+  return Boolean(
+    submittedAttempt && currentAttempt === submittedAttempt &&
+    typeof submittedAttempt.prompt === 'string' && submittedAttempt.prompt !== '' &&
+    typeof draft === 'string' && draft.trim() === submittedAttempt.prompt,
+  );
+}
+
 function interactionQueue(items) {
   return (Array.isArray(items) ? items : []).reduce(
     (queue, item) => mergeInteractions(queue, item),

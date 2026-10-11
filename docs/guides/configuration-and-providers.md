@@ -49,16 +49,14 @@ These fields are consumed by at least one CLI or ACP composition path:
 not consume them. Provider, model, base URL, max-turn, prompt, and permission
 fields are resolved by the composition roots described below.
 
-`prompt_suggestions` defaults to `true` and is consumed only by the root TUI.
-After an eligible completed turn it permits one extra request through the
-current provider/model route to predict the next prompt. The request receives a
-bounded current-conversation snapshot, has no tools, and is not stored in the
-conversation or transcript. It is capped at one provider dispatch and 64 output
-tokens; only a content-free auxiliary usage record is persisted.
-Provider-reported usage therefore survives Session restore but does not replace
-the active conversation's context-window reading. It can still incur provider
-charges. Set it to `false` at user or project level to disable both the ghost
-and the extra request.
+`prompt_suggestions` defaults to `true`. The root TUI may predict the next prompt
+after an eligible turn; Desktop/Web offers explicit **Suggest next step** for an
+empty draft in a live idle session. **Use** inserts the candidate into the draft;
+Send is separate. Both use the current provider/model and may incur charges.
+Set the user or project preference to `false` to suppress requests. Re-enabling
+a startup-disabled session requires a new session. Request limits, accounting
+and cancellation belong to
+[interactive prompt suggestions](../architecture/platform/runtime-services.md#interactive-prompt-suggestions).
 
 `goal.enabled` defaults to true in supported production composition roots. It
 exposes commands in saved-root TUI or Plain Sessions and also gates dedicated

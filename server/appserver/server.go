@@ -425,6 +425,7 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /v1/sessions/{session_id}/execution-settings", s.handleGetExecutionSettings)
 	api.HandleFunc("PATCH /v1/sessions/{session_id}/execution-settings", s.handleUpdateExecutionSettings)
 	api.HandleFunc("POST /v1/sessions/{session_id}/command-completions", s.handleCommandCompletion)
+	api.HandleFunc("POST /v1/sessions/{session_id}/prompt-suggestion", s.handlePromptSuggestion)
 	api.HandleFunc("GET /v1/sessions/{session_id}/queued-prompts", s.handleQueuedPrompts)
 	api.HandleFunc("POST /v1/sessions/{session_id}/queued-prompts", s.handleQueuePrompt)
 	api.HandleFunc("DELETE /v1/sessions/{session_id}/queued-prompts/{queue_id}", s.handleCancelQueuedPrompt)
@@ -711,6 +712,7 @@ var webAssetPaths = map[string]string{
 	"/app.mjs":                "assets/app.mjs",
 	"/catalog.mjs":            "assets/catalog.mjs",
 	"/command_completion.mjs": "assets/command_completion.mjs",
+	"/prompt_suggestion.mjs":  "assets/prompt_suggestion.mjs",
 	"/layout.mjs":             "assets/layout.mjs",
 	"/timeline_view.mjs":      "assets/timeline_view.mjs",
 	"/settings_view.mjs":      "assets/settings_view.mjs",
