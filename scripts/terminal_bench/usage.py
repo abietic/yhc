@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
+from scripts.terminal_bench.native_cost import cost_projection, sum_costs, validated_call_cost
+
 USAGE_FIELDS = ("provider_calls", "known_calls", "unknown_calls", "in_flight",
                 "untracked_calls", "prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")
@@ -36,6 +38,7 @@ def validated_usage(value: object) -> dict | None:
                 return None
             result[key] = value[key]
     _ledger_projection(value, result)
+    cost_projection(value, result)
     return result
 
 
@@ -67,10 +70,13 @@ def sum_usage(values: list) -> dict | None:
         result["call_ledgers"] = ledgers
         result["call_ledger_complete"] = all(value.get("call_ledger_complete", False) for value in usages)
 
+    if not sum_costs(usages, result):
+        return None
     return result
 
 
 LEDGER_FIELDS = ("call_ledger", "call_ledgers", "call_ledger_complete")
+COST_FIELDS = ("cost", "cost_segments", "cost_complete")
 LEDGER_TOKEN_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens",
                       "cached_prompt_tokens", "uncached_prompt_tokens", "reasoning_tokens")
 
@@ -129,6 +135,10 @@ def validated_ledger(value: object) -> dict | None:
             return None
         projected = {key: record[key] for key in (*identities, *numbers, "ordinal", "call_id", "requested_model", "resolved_model", "provider", "source", "role", "effort", "state")}
         records.append({**projected, "tokens": tokens})
+        if "cost" in record:
+            cost = validated_call_cost(record["cost"], record["state"])
+            if cost is not None:
+                records[-1]["cost"] = cost
     return {"version": 1, "segment_id": value["segment_id"], "dropped_records": value["dropped_records"], "records": records}
 
 

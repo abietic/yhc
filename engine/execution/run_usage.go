@@ -15,15 +15,17 @@ import (
 
 // RunUsageLimits applies to one invocation and all engines sharing its collector.
 // Zero disables each limit. Tokens are a post-response stop threshold: already
-// admitted calls may overshoot it. No currency or provider-side retry bound is implied.
+// admitted calls may overshoot it. MaxEstimatedCost is likewise a post-response
+// native-currency threshold with an explicit price card, never an invoice cap.
 type RunUsageLimits struct {
-	MaxProviderCalls int64 `json:"max_provider_calls"`
-	MaxTotalTokens   int64 `json:"max_total_tokens"`
+	MaxProviderCalls int64  `json:"max_provider_calls"`
+	MaxTotalTokens   int64  `json:"max_total_tokens"`
+	MaxEstimatedCost string `json:"max_estimated_cost,omitempty"`
 }
 
 var (
 	ErrRunBudgetExceeded = errors.New("run usage budget exceeded")
-	ErrRunUsageUnknown   = errors.New("run token budget cannot continue with unknown usage")
+	ErrRunUsageUnknown   = errors.New("run budget cannot continue with unknown usage or pricing")
 )
 
 // RunUsageTotals counts known provider usage, never estimates missing usage.
@@ -52,14 +54,15 @@ type RunUsageRoute struct {
 
 type RunUsageSnapshot struct {
 	RunUsageTotals
-	Limits         RunUsageLimits  `json:"limits"`
-	DeniedCalls    uint64          `json:"denied_calls"`
-	UntrackedCalls uint64          `json:"untracked_calls"`
-	Complete       bool            `json:"complete"`
-	StopReason     string          `json:"stop_reason,omitempty"`
-	ElapsedMillis  int64           `json:"elapsed_ms"`
-	Routes         []RunUsageRoute `json:"routes"`
-	CallLedger     RunUsageLedger  `json:"call_ledger"`
+	Limits         RunUsageLimits   `json:"limits"`
+	DeniedCalls    uint64           `json:"denied_calls"`
+	UntrackedCalls uint64           `json:"untracked_calls"`
+	Complete       bool             `json:"complete"`
+	StopReason     string           `json:"stop_reason,omitempty"`
+	ElapsedMillis  int64            `json:"elapsed_ms"`
+	Routes         []RunUsageRoute  `json:"routes"`
+	CallLedger     RunUsageLedger   `json:"call_ledger"`
+	Cost           *RunCostSnapshot `json:"cost,omitempty"`
 }
 
 // RunUsage is an invocation-local, concurrency-safe provider admission and
@@ -77,15 +80,40 @@ type RunUsage struct {
 	segmentID      string
 	records        []RunUsageRecord
 	droppedRecords uint64
+	cost           *runCostState
 }
 
 type runUsageRouteKey struct{ model, source, role, effort string }
 
 func NewRunUsage(limits RunUsageLimits) (*RunUsage, error) {
+	return newRunUsage(limits, nil)
+}
+
+func newRunUsage(limits RunUsageLimits, card *RunPriceCard) (*RunUsage, error) {
 	if limits.MaxProviderCalls < 0 || limits.MaxTotalTokens < 0 {
 		return nil, fmt.Errorf("run usage limits must be non-negative (0 disables)")
 	}
-	return &RunUsage{limits: limits, started: time.Now(), segmentID: uuid.NewString(), routes: make(map[runUsageRouteKey]*RunUsageRoute)}, nil
+	r := &RunUsage{limits: limits, started: time.Now(), segmentID: uuid.NewString(), routes: make(map[runUsageRouteKey]*RunUsageRoute)}
+	if card != nil {
+		var err error
+		r.cost, err = compileRunPriceCard(*card)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if limits.MaxEstimatedCost != "" {
+		limit, err := costDecimal(limits.MaxEstimatedCost, 12)
+		if err != nil {
+			return nil, fmt.Errorf("max estimated cost must be a nonnegative decimal string with at most twelve decimal places")
+		}
+		if limit.Sign() > 0 {
+			if r.cost == nil {
+				return nil, fmt.Errorf("max estimated cost requires an explicit native currency price card")
+			}
+			r.cost.limit = limit
+		}
+	}
+	return r, nil
 }
 
 func (r *RunUsage) NewLogicalRoundID() string { return uuid.NewString() }
@@ -100,7 +128,15 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		return nil, &ProviderUsageTerminalError{Err: context.Canceled}
 	}
 	var cause error
+	priceIndex := -1
+	if r.cost != nil {
+		priceIndex = r.cost.route(d)
+	}
 	switch {
+	case r.cost != nil && r.cost.limit != nil && (r.cost.unpriced > 0 || r.untracked > 0 || priceIndex < 0):
+		cause = ErrRunUsageUnknown
+	case r.cost != nil && r.cost.limit != nil && r.cost.amount.Cmp(r.cost.limit) >= 0:
+		cause = ErrRunBudgetExceeded
 	case r.limits.MaxTotalTokens > 0 && r.totals.UnknownCalls > 0:
 		cause = ErrRunUsageUnknown
 	case r.limits.MaxProviderCalls > 0 && r.totals.ProviderCalls >= uint64(r.limits.MaxProviderCalls):
@@ -127,7 +163,7 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	r.totals.InFlight++
 	route.ProviderCalls++
 	route.InFlight++
-	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now()}
+	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now(), priceIndex: priceIndex}
 	r.appendCallRecord(d, call)
 	return call, nil
 }
@@ -140,6 +176,7 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 		DeniedCalls: r.denied, UntrackedCalls: r.untracked, StopReason: r.stopReason,
 		Complete:      r.untracked == 0 && r.totals.UnknownCalls == 0 && r.totals.InFlight == 0,
 		ElapsedMillis: time.Since(r.started).Milliseconds(),
+		Cost:          r.costSnapshot(),
 		Routes:        make([]RunUsageRoute, 0, len(r.routes)),
 	}
 	for _, route := range r.routes {
@@ -151,6 +188,14 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 		if record.Tokens != nil {
 			copied := *record.Tokens
 			s.CallLedger.Records[i].Tokens = &copied
+		}
+		if record.Cost != nil {
+			copied := *record.Cost
+			if copied.EstimatedAmount != nil {
+				value := *copied.EstimatedAmount
+				copied.EstimatedAmount = &value
+			}
+			s.CallLedger.Records[i].Cost = &copied
 		}
 	}
 	sort.Slice(s.Routes, func(i, j int) bool {
@@ -186,10 +231,13 @@ type runUsageCall struct {
 	recordIndex           int
 	responseModelSeen     bool
 	responseModelConflict bool
+	priceIndex            int
 }
 
-func (c *runUsageCall) ProviderCallID() string                           { return c.id }
-func (c *runUsageCall) FailClosedOnAmbiguousUsage() bool                 { return c.owner.limits.MaxTotalTokens > 0 }
+func (c *runUsageCall) ProviderCallID() string { return c.id }
+func (c *runUsageCall) FailClosedOnAmbiguousUsage() bool {
+	return c.owner.limits.MaxTotalTokens > 0 || c.owner.cost != nil && c.owner.cost.limit != nil
+}
 func (c *runUsageCall) CompleteProviderUsage(u *schema.TokenUsage) error { return c.settle(u, false) }
 func (c *runUsageCall) MarkProviderUsageAmbiguous(error) error           { return c.settle(nil, false) }
 func (c *runUsageCall) ReleaseProviderUsageBeforeDispatch() error        { return c.settle(nil, true) }
@@ -209,6 +257,7 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 	r.totals.InFlight--
 	c.route.InFlight--
 	if release {
+		c.settleCost(RunUsageTotals{}, false, true)
 		if record != nil {
 			record.State = "released"
 		}
@@ -229,12 +278,13 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 		valid = canAddRunTokens(r.totals, values) && canAddRunTokens(c.route.RunUsageTotals, values)
 	}
 	if !valid {
+		c.settleCost(RunUsageTotals{}, false, false)
 		if record != nil {
 			record.State = "unknown"
 		}
 		r.totals.UnknownCalls++
 		c.route.UnknownCalls++
-		if r.limits.MaxTotalTokens > 0 {
+		if c.FailClosedOnAmbiguousUsage() {
 			c.settlementErr = ErrRunUsageUnknown
 			r.stopReason = runUsageErrorCode(c.settlementErr)
 		}
@@ -246,6 +296,7 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 	}
 	addRunTokens(&r.totals, values)
 	addRunTokens(&c.route.RunUsageTotals, values)
+	c.settleCost(values, true, false)
 	return nil
 }
 
@@ -274,7 +325,7 @@ func addRunTokens(a *RunUsageTotals, b RunUsageTotals) {
 }
 
 func (r *RunUsage) LimitsEnabled() bool {
-	return r.limits.MaxProviderCalls > 0 || r.limits.MaxTotalTokens > 0
+	return r.limits.MaxProviderCalls > 0 || r.limits.MaxTotalTokens > 0 || r.cost != nil && r.cost.limit != nil
 }
 
 // RecordUntrackedCall flags an opaque embedded extension whose provider calls

@@ -38,6 +38,7 @@ type headlessOptions struct {
 	Timeout                 time.Duration
 	Runtime                 runtimeFlags
 	UsageLimits             execution.RunUsageLimits
+	PriceCardFile           string
 	IndependentVerification engine.IndependentVerificationConfig
 	ResumeVerification      bool
 	Resume                  string
@@ -104,6 +105,8 @@ func newExecCommand() *cobra.Command {
 	command.Flags().DurationVar(&options.Timeout, "timeout", 0, "Cancel this query and its children after this duration (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
+	command.Flags().StringVar(&options.PriceCardFile, "price-card", "", "Explicit native currency price card JSON for invocation-fixed cost estimates")
+	command.Flags().StringVar(&options.UsageLimits.MaxEstimatedCost, "max-estimated-cost", "", "Stop new calls after estimated native cost reaches this decimal amount; in-flight calls may overshoot (0 or unset disables; requires --price-card)")
 	command.Flags().BoolVar(&options.ResumeVerification, "resume-verification", false, "Continue a saved verification stage and repair allowance (requires --resume and matching verification options)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
 	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
@@ -139,6 +142,20 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	}
 	options = normalizeHeadlessWriters(options)
 	usage, err := execution.NewRunUsage(options.UsageLimits)
+	if options.PriceCardFile != "" {
+		var file *os.File
+		file, err = os.Open(options.PriceCardFile)
+		if err == nil {
+			var card execution.RunPriceCard
+			card, err = execution.DecodeRunPriceCard(file)
+			_ = file.Close()
+			if err == nil {
+				usage, err = execution.NewPricedRunUsage(options.UsageLimits, card)
+			}
+		} else {
+			err = fmt.Errorf("price card cannot be opened")
+		}
+	}
 	if err != nil {
 		return renderHeadlessFailure(format, options, err, "usage_error", ExitUsage)
 	}

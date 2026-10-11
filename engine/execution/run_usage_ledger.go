@@ -42,6 +42,7 @@ type RunUsageRecord struct {
 	StartedOffsetMillis    int64               `json:"started_offset_ms"`
 	ProviderDurationMillis uint64              `json:"provider_duration_ms"`
 	Tokens                 *RunUsageCallTokens `json:"tokens"`
+	Cost                   *RunCallCost        `json:"cost,omitempty"`
 }
 
 // RunUsageLedger is one process invocation's bounded incremental history. It is
@@ -68,6 +69,9 @@ func (r *RunUsage) appendCallRecord(d ProviderUsageDescriptor, call *runUsageCal
 		Source: runUsageSource(d.QuerySource), Role: runUsageRole(d.ModelRole), Effort: runUsageEffort(d.ReasoningEffort),
 		State: "in_flight", StartedOffsetMillis: call.started.Sub(r.started).Milliseconds(),
 	})
+	if r.cost != nil {
+		r.records[call.recordIndex].Cost = &RunCallCost{State: "in_flight", PriceIndex: call.priceIndex}
+	}
 }
 
 func runUsageUUID(value string) string {
