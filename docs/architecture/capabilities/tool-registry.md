@@ -120,6 +120,38 @@ QueryEngine phase, exact-file identity, reviewed-byte settlement, or
 interactive resume owner, so even a custom executable alias carrying the
 transition marker cannot expose Enter/Exit through standalone MCP.
 
+## Shared Config tool
+
+`ConfigTool` is a normal permission-gated write tool, not a separate settings
+store or a runtime-control shortcut. It uses `engine/config.SettingsSnapshot`
+and `SettingsPatchContext`, shared with TUI, CLI and the AppServer settings
+API. The settings owner supplies validation, provenance, revision CAS,
+locking and atomic replacement; caller cancellation reaches that boundary.
+
+The default scope is project. QueryEngine injects its trusted workspace with
+`WithExecutionCWD`, including child engines; model input cannot choose a path
+or change process CWD. User scope must be explicit. Persisting defaults does
+not rebind the current model or permission mode. Plan filtering, explicit deny,
+capability generation and dispatch leases remain authoritative. Standalone MCP
+does not expose Config.
+
+Both `setting/value` and legacy `action/key/value` forms are supported for the
+shared allowlist. Only `permissions.defaultMode` and `provider.baseURL` alias
+`permission_mode` and `api_base_url`. `null` removes an override. List/get
+return scoped values, provenance and revision, never unknown file fields.
+An explicit stale revision is rejected without retry. Without a revision,
+the adapter reads a snapshot and performs the same compare-and-set write.
+Credentials, rule arrays, hooks, compaction and memory are rejected without
+echoing submitted values. Native integers outside the float64-safe range are
+rejected; string-form JSON preserves precision before shared validation.
+
+The old `.yhc/settings.json` writer and its private store helpers are retired.
+Config does not read, migrate, delete or redirect to that store or its old
+`YHC_CONFIG_DIR` override. The explicit `SettingsMigrationSpec` retains its
+historical serialized format, not an automatic runtime-defaults migration.
+Examples and recovery guidance are in the
+[configuration guide](../../guides/configuration-and-providers.md#model-config-tool).
+
 ## Invariants and edge cases
 
 - Registry completeness is required for dispatch even when a tool is not model
@@ -162,6 +194,9 @@ transition marker cannot expose Enter/Exit through standalone MCP.
 - [`RegisterDefaults`](../../../tools/registry.go)
 - [`SetAgentTypeDescriptionsForRegistry`](../../../tools/agent.go)
 - [`TodoWriteTool`](../../../tools/todo_write.go)
+- [`ConfigTool`](../../../tools/config.go)
+- [`SettingsSnapshot` and `SettingsPatchContext`](../../../engine/config/workbench_settings.go)
+- [`SettingsMigrationSpec`](../../../tools/config_migration.go)
 - [`Registry.List`](../../../tools/registry.go)
 - [`Registry.ReplaceOwnedTools`](../../../tools/registry.go)
 - [`Registry.RemoveOwnedTools`](../../../tools/registry.go)
