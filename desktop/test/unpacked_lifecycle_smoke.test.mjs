@@ -301,6 +301,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: true,
       disableSandbox: true,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -310,6 +311,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: true,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -319,6 +321,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: true,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -328,6 +331,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: false,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.throws(
@@ -482,6 +486,7 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
       crashBackend: false,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -492,6 +497,7 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
       crashBackend: true,
       disableSandbox: true,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -502,6 +508,7 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
       crashBackend: false,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   for (const invalid of [
@@ -1072,12 +1079,14 @@ test('window-reopen arguments and platform admission fail closed', () => {
     crashBackend: false,
     disableSandbox: false,
     reopenWindow: true,
+    sharedSettings: false,
   });
   assert.deepEqual(validatePlatformOptions('darwin', { reopenWindow: true }), {
     crashActiveTurn: false,
     crashBackend: false,
     disableSandbox: false,
     reopenWindow: true,
+    sharedSettings: false,
   });
   for (const invalid of [
     ['--app', app, '--reopen-window', '--reopen-window'],

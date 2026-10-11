@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <main class="workbench">
+    <main class="workbench" aria-label="YHC workbench">
       <aside id="navigation" class="sidebar" aria-label="Session navigation">
         <header class="sidebar-header">
           <div class="brand">
@@ -31,7 +31,7 @@
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
           <span>New session</span>
         </button>
-        <button id="open-web" class="quiet" type="button" hidden>Open Web</button>
+        <button id="open-web" class="quiet" type="button" hidden>Continue in browser ↗</button>
         <div class="sidebar-search">
           <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/></svg>
           <input
@@ -44,6 +44,7 @@
             spellcheck="false"
           >
         </div>
+        <p class="section-label">Your sessions</p>
         <nav id="session-list" aria-label="Sessions"></nav>
         <button id="toggle-session-history" class="history-toggle" type="button" hidden>
           Show session history
@@ -72,8 +73,12 @@
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 2.5h2.4l.4 1.7 1.5.6 1.4-1 1.7 1.7-1 1.4.6 1.5 1.7.4v2.4l-1.7.4-.6 1.5 1 1.4-1.7 1.7-1.4-1-1.5.6-.4 1.7H6.8l-.4-1.7-1.5-.6-1.4 1-1.7-1.7 1-1.4-.6-1.5-1.7-.4V8.2l1.7-.4.6-1.5-1-1.4 1.7-1.7 1.4 1 1.5-.6z"/><circle cx="8" cy="8" r="2"/></svg>
           </button>
         </section>
+        <button id="settings-open" class="settings-launcher" type="button">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.5"/><circle cx="10" cy="8" r="1.5"/><circle cx="6" cy="12" r="1.5"/></svg>
+          <span>Settings</span><kbd id="settings-shortcut">⌘,</kbd>
+        </button>
         <div class="sidebar-foot">
-          <span>Local agent workspace</span>
+          <span>Built for your workspace</span>
           <span id="build-identity" hidden></span>
         </div>
       </aside>
@@ -110,6 +115,10 @@
             </button>
           </div>
         </header>
+        <div id="workbench-notice" class="workbench-notice" role="alert" hidden>
+          <span id="workbench-notice-copy"></span>
+          <button id="workbench-notice-dismiss" class="icon-button" type="button" aria-label="Dismiss notification">×</button>
+        </div>
         <div id="timeline" class="timeline" aria-live="polite"></div>
         <button id="load-earlier" class="quiet load-earlier" type="button" hidden>
           Load earlier
@@ -134,6 +143,7 @@
         <form id="composer" class="composer">
           <textarea
             id="prompt"
+            aria-label="Message YHC"
             rows="3"
             placeholder="Ask YHC to help with your code…"
           ></textarea>
@@ -180,6 +190,7 @@
               </button>
             </div>
           </div>
+          <p id="execution-scope" class="composer-hint">Changes here apply to this session. Set defaults in Settings.</p>
         </form>
       </section>
 
@@ -254,8 +265,9 @@
 
     <template id="empty-state">
       <div class="empty">
-        <span class="empty-mark" aria-hidden="true">YHC</span>
-        <h2>Start with a workspace</h2>
+        <span class="empty-mark" aria-hidden="true">Y</span>
+        <p class="empty-eyebrow">YOUR NEXT GOOD IDEA STARTS HERE</p>
+        <h2 id="empty-title">What are we building?</h2>
         <p id="empty-copy">Connect a model provider, then open a folder to start coding.</p>
         <div class="empty-actions">
           <button data-empty-action="provider" class="primary" type="button">
@@ -265,16 +277,51 @@
             Open workspace
           </button>
         </div>
+        <div class="welcome-guide">
+          <div><span>01</span><strong>Bring your workspace</strong><p>Keep the conversation close to your code.</p></div>
+          <div><span>02</span><strong>Describe the outcome</strong><p>Ask a question, fix a bug, or build something new.</p></div>
+          <div><span>03</span><strong>Stay in control</strong><p>Review requests and inspect changes as you go.</p></div>
+        </div>
       </div>
     </template>
+    <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+      <header class="settings-header">
+        <div><p class="dialog-kicker">YOUR WORKBENCH</p><h2 id="settings-title">Settings</h2></div>
+        <button id="settings-close" class="icon-button" type="button" aria-label="Close settings">×</button>
+      </header>
+      <div class="settings-toolbar">
+        <label class="settings-search"><span class="sr-only">Search settings</span><input id="settings-search" type="search" placeholder="Find a setting…" autocomplete="off"></label>
+        <label class="settings-scope-label">Apply to <select id="settings-scope"><option value="user">User defaults</option><option value="project">This workspace</option></select></label>
+      </div>
+      <p id="settings-context" class="settings-context"></p>
+      <div id="settings-categories" class="settings-categories" role="group" aria-label="Settings categories"></div>
+      <form id="settings-form">
+        <div id="settings-body" class="settings-body">
+          <details id="settings-credentials" class="settings-credentials">
+            <summary>Provider credentials <span>Host-managed · separate from these defaults</span></summary>
+            <div class="settings-credentials-body">
+              <p id="settings-credentials-copy">Credentials are managed on the host. API keys are never displayed here.</p>
+              <button id="settings-credentials-open" class="quiet" type="button">Manage credentials</button>
+            </div>
+          </details>
+          <div id="settings-fields" class="settings-fields"></div>
+        </div>
+        <footer class="settings-footer">
+          <p id="settings-status" role="status" aria-live="polite"></p>
+          <button id="settings-reload" class="quiet" type="button">Reload</button>
+          <button id="settings-save" class="primary" type="submit" disabled>Save changes</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog id="provider-dialog" class="workspace-dialog provider-dialog">
       <form id="provider-form">
-        <p class="dialog-kicker">First-run setup</p>
+        <p class="dialog-kicker">Provider credentials</p>
         <h2>Connect a model provider</h2>
         <p>
           Your API key is encrypted by the operating system and never returned
           to this window after saving.
         </p>
+        <p id="provider-live-warning" class="settings-context" hidden>Close live sessions before replacing credentials. Your saved history will remain available.</p>
         <div class="provider-fields">
           <label for="provider-select">
             Provider
@@ -283,6 +330,7 @@
               <option value="openai">OpenAI</option>
               <option value="google">Google Gemini</option>
               <option value="deepseek">DeepSeek</option>
+              <option value="glm">GLM (Z.ai)</option>
               <option value="qwen">Qwen</option>
               <option value="ark">Volcengine Ark</option>
             </select>
@@ -335,7 +383,7 @@
     </dialog>
     <dialog id="confirm-dialog" class="workspace-dialog">
       <form id="confirm-form">
-        <p class="dialog-kicker">Session lifecycle</p>
+        <p class="dialog-kicker">Confirm action</p>
         <h2 id="confirm-title">Close session?</h2>
         <p id="confirm-copy"></p>
         <div class="dialog-actions">

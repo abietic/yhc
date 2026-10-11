@@ -38,7 +38,6 @@ import {
   executionForDisplay,
   prioritizeSessionRows,
   providerSetupProjection,
-  shouldDeferWorkspaceForProvider,
 } from './provider_setup.mjs';
 import {
   activateCreatedSession,
@@ -51,6 +50,7 @@ import {
 } from './replay.mjs';
 import { createTransport } from './transport.mjs';
 import { createTimelineRenderer } from './timeline_view.mjs';
+import { applyAppearance, createSettingsView } from './settings_view.mjs';
 import {
   buildIdentityViewModel,
   interactionViewModel,
@@ -79,10 +79,36 @@ let catalogSearchTimer = null;
 let historyExpanded = false;
 let providerSetup = providerSetupProjection('', {});
 let providerSetupBusy = false;
+let sharedSettings = null;
+let settingsProjectionRequest = 0;
+let interactionSignature = '';
+const primaryModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 const $ = (id) => document.getElementById(id);
 const timeline = $('timeline');
 const timelineRenderer = createTimelineRenderer(timeline, renderMessage);
+const settingsView = createSettingsView({
+  api,
+  context: () => ({
+    sessionID: activeSession(state)?.live ? state.activeID : undefined,
+    workspace: activeSession(state)?.workspace_label,
+    manageCredentials: providerSetup.setupAvailable,
+    legacyProfile: providerSetup.configured,
+  }),
+  confirmDiscard: () => requestConfirmation('Discard unsaved settings?', 'Your saved configuration will stay unchanged.', 'Discard changes'),
+  confirmModelSelection: ({ scope, selectedLabel, conflictLabels }) => requestConfirmation(
+    'Replace model overrides?',
+    'Save ' + selectedLabel + ' and remove ' + conflictLabels.join(', ') + ' overrides from ' + (scope === 'project' ? 'Workspace overrides' : 'User defaults') + '? Other scopes and current sessions will stay unchanged.',
+    'Replace overrides and save',
+  ),
+  onSaved: (snapshot) => {
+    settingsProjectionRequest++;
+    sharedSettings = snapshot;
+    applyAppearance(snapshot);
+    render();
+  },
+  manageCredentials: () => openProviderDialog(),
+});
 const sessionList = $('session-list');
 const activity = $('activity');
 const pendingWorkspace = createPendingWorkspaceRetry(createSessionForWorkspace);
@@ -103,7 +129,12 @@ function timelinePosition() {
 
 function dispatch(action, scrollMode = 'preserve') {
   const before = timelinePosition();
+  const previousLiveID = activeSession(state)?.live ? state.activeID : '';
   state = reducer(state, action);
+  if (before.activeID !== state.activeID ||
+      previousLiveID !== (activeSession(state)?.live ? state.activeID : '')) {
+    void refreshSharedSettings();
+  }
   if (persistenceEnabled) persist();
   render();
   if (before.activeID !== state.activeID || scrollMode === 'bottom') {
@@ -144,6 +175,19 @@ function api(operation, payload) {
   return transport.api(operation, payload);
 }
 
+async function refreshSharedSettings() {
+  if (!transport) return;
+  const request = ++settingsProjectionRequest;
+  const sessionID = activeSession(state)?.live ? state.activeID : undefined;
+  try {
+    const snapshot = await api('getSettings', { scope: 'user', sessionID });
+    if (request !== settingsProjectionRequest) return;
+    sharedSettings = snapshot;
+    applyAppearance(snapshot);
+    renderProviderSetup();
+  } catch { /* Do not interrupt conversation when preferences are unavailable. */ }
+}
+
 function element(tag, className, text) {
   const value = document.createElement(tag);
   if (className) value.className = className;
@@ -151,11 +195,11 @@ function element(tag, className, text) {
   return value;
 }
 
-function projectSheetRegion(region, hidden, expanded, inert = hidden) {
+function projectSheetRegion(region, hidden, expanded, inert = hidden, modal = true) {
   region.classList.toggle('sheet-open', expanded);
   region.setAttribute('aria-hidden', String(hidden));
   region.inert = inert;
-  if (expanded) {
+  if (expanded && modal) {
     region.setAttribute('role', 'dialog');
     region.setAttribute('aria-modal', 'true');
   } else {
@@ -181,6 +225,7 @@ function renderSheets() {
     projection.inspectorHidden,
     projection.inspectorExpanded,
     projection.inspectorInert,
+    projection.backdropVisible,
   );
   $('conversation').inert = projection.conversationInert;
   $('navigation-toggle').setAttribute(
@@ -193,9 +238,11 @@ function renderSheets() {
   );
   $('sheet-backdrop').hidden = !projection.backdropVisible;
   document.body.classList.toggle('sheet-open', projection.backdropVisible);
+  document.querySelector('.workbench').classList.toggle('inspector-open', projection.inspectorExpanded);
 }
 
 function openSheet(kind, trigger) {
+  if (openSheetKind === kind) { closeSheet(); return; }
   const nextKind = normalizeOpenSheet(window.innerWidth, kind);
   if (!nextKind) return;
   openSheetKind = nextKind;
@@ -204,7 +251,11 @@ function openSheet(kind, trigger) {
   const close = nextKind === 'navigation'
     ? $('navigation-close')
     : $('inspector-close');
-  requestAnimationFrame(() => close.focus());
+  // Visibility transitions begin on the first painted frame. Focus after that
+  // frame, and never steal focus if the sheet was closed in the meantime.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (openSheetKind === nextKind) close.focus();
+  }));
 }
 
 function closeSheet(returnFocus = true) {
@@ -263,12 +314,12 @@ function render() {
       timeline.replaceChildren($('empty-state').content.cloneNode(true));
     }
     renderEmptyState();
-    $('session-title').textContent = 'New session';
-    $('session-path').textContent = 'Choose a workspace';
-    $('status').textContent = 'Offline';
+    $('session-title').textContent = 'Your workspace';
+    $('session-path').textContent = surface === 'web' ? 'Browser companion' : 'YHC';
+    $('status').textContent = !surface ? 'Connecting' : backendReady ? 'Connected' : 'Offline';
     $('status').className = 'status';
     $('turn-state').textContent = backendReady
-      ? 'Create a session to begin.'
+      ? (surface === 'web' ? 'Choose a session from the sidebar.' : 'Open a workspace to begin.')
       : BACKEND_UNAVAILABLE_NOTICE;
     $('prompt').value = '';
     $('prompt').disabled = true;
@@ -276,10 +327,12 @@ function render() {
     $('send').querySelector('span').textContent = 'Send';
     $('cancel').disabled = true;
     renderExecutionControls(null);
+    $('composer').hidden = true;
     return;
   }
 
   const busy = ['running', 'stopping'].includes(current.status);
+  $('composer').hidden = false;
   $('session-title').textContent = current.title || 'Untitled';
   $('session-path').textContent = current.workspace_label || 'Workspace unavailable';
   $('status').textContent = backendReady ? (current.status || 'idle') : 'Offline';
@@ -287,7 +340,7 @@ function render() {
   $('turn-state').textContent = (!backendReady ? BACKEND_UNAVAILABLE_NOTICE : current.notice) ||
     (!current.live
       ? (current.resumable
-        ? 'Select this saved session to resume it.'
+        ? 'Send a message to continue this saved session.'
         : 'This catalog entry cannot be resumed in Desktop.')
       : (busy ? 'Agent is working.' : 'Ready'));
   if ($('prompt').value !== (current.draft || '')) {
@@ -297,7 +350,7 @@ function render() {
   const queueAdmission = canQueuePrompt(current);
   $('send').disabled = !backendReady || !(canSubmitTurn(current) || canQueuePrompt(current));
   $('send').querySelector('span').textContent = queueAdmission ? 'Queue' : 'Send';
-  $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (⌘⏎)`;
+  $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (${primaryModifier}⏎)`;
   $('cancel').disabled = !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
 
@@ -310,7 +363,7 @@ function render() {
         ? BACKEND_UNAVAILABLE_NOTICE
         : current.live
         ? 'This session is ready. Describe the change you want to make.'
-        : 'Select a resumable session or create a new workspace session.',
+        : 'Read your saved history, then send a message to continue.',
     ));
   } else {
     timelineRenderer.render(current.id, current.messages);
@@ -362,6 +415,7 @@ function renderSessionCreationControls() {
   const creating = sessionCreation.busy();
   const button = $('new-session');
   const label = button.querySelector('span');
+  button.hidden = surface === 'web';
   button.disabled = creating || !backendAvailable(state);
   button.setAttribute('aria-busy', String(creating));
   if (label) label.textContent = creating ? 'Creating session…' : 'New session';
@@ -378,8 +432,7 @@ function option(value, label, selected = false, disabled = false) {
 
 function modelLabel(model) {
   const display = model?.display_name || model?.selector || 'Unnamed model';
-  const details = [model?.provider, model?.api_model].filter(Boolean).join(' · ');
-  return details ? `${display} — ${details}` : display;
+  return display;
 }
 
 function renderExecutionControls(session) {
@@ -391,6 +444,9 @@ function renderExecutionControls(session) {
   const rebind = $('model-rebind');
   const execution = executionForDisplay(session);
   $('execution-controls').hidden = !session;
+  $('execution-scope').textContent = session?.active_turn_id
+    ? 'Session controls unlock when the agent finishes. You can queue your next message now.'
+    : 'Applies to this session · Set defaults in Settings';
   const controlled = backendAvailable(state) && Boolean(session?.live) &&
     !session.active_turn_id &&
     !['running', 'stopping', 'offline', 'restoring', 'saved'].includes(session.status) &&
@@ -406,7 +462,7 @@ function renderExecutionControls(session) {
   ));
   const safeModes = execution?.permissionModeOptions || [];
   const permissionOptions = safeModes.map((value) => option(
-    value, value, value === execution?.permissionMode,
+    value, ({default:'Ask before actions',plan:'Plan only',acceptEdits:'Allow edits',dontAsk:'No prompts',auto:'Auto review'})[value] || value, value === execution?.permissionMode,
   ));
   if (execution?.permissionMode && !safeModes.includes(execution.permissionMode)) {
     permissionOptions.unshift(option(
@@ -468,11 +524,15 @@ function renderProviderSetup() {
   } else if (!surface) {
     $('provider-status').textContent = 'Starting…';
     $('provider-detail').textContent = 'Checking local provider setup.';
+  } else if (sharedSettings?.fields?.provider?.effective_value || sharedSettings?.fields?.model_profile?.effective_value) {
+    $('provider-status').textContent = sharedSettings.fields.model_profile?.effective_value ||
+      providerDisplayName(sharedSettings.fields.provider.effective_value);
+    $('provider-detail').textContent = 'Shared defaults · runtime validates credentials on session creation.';
   } else if (providerSetup.configured) {
-    $('provider-status').textContent = providerDisplayName(providerSetup.provider);
+    $('provider-status').textContent = 'Desktop credentials saved';
     $('provider-detail').textContent = [
-      providerSetup.model || 'default',
-      providerSetup.baseURL,
+      providerDisplayName(providerSetup.provider),
+      'Fallback only',
     ].filter(Boolean).join(' · ');
   } else if (providerSetup.errorCode === 'stored_profile_unavailable') {
     $('provider-status').textContent = 'Profile unavailable';
@@ -488,7 +548,8 @@ function renderProviderSetup() {
   }
 
   $('provider-save').disabled = !backendReady || providerSetupBusy ||
-    providerSetup.submitDisabled;
+    providerSetup.submitDisabled || Object.values(state.sessions).some((session) => session.live);
+  $('provider-live-warning').hidden = !Object.values(state.sessions).some((session) => session.live);
   $('provider-cancel').disabled = providerSetupBusy;
   for (const control of $('provider-form').elements) {
     if (!['provider-save', 'provider-cancel'].includes(control.id)) {
@@ -505,21 +566,20 @@ function renderEmptyState() {
   if (!providerButton || !workspaceButton || !copy) return;
 
   const backendReady = backendAvailable(state);
+  timeline.querySelector('#empty-title').textContent = surface === 'web' ? 'Pick up where you left off.' : 'What are we building?';
   providerButton.hidden = !providerSetup.setupAvailable;
   providerButton.disabled = !backendReady;
   providerButton.textContent = providerSetup.configured
     ? 'Review provider setup'
     : 'Configure provider';
-  providerButton.className = providerSetup.launchReady ? 'quiet' : 'primary';
+  providerButton.className = 'quiet';
   workspaceButton.hidden = surface === 'web';
   workspaceButton.disabled = !backendReady || sessionCreation.busy();
   workspaceButton.setAttribute('aria-busy', String(sessionCreation.busy()));
   workspaceButton.textContent = sessionCreation.busy()
     ? 'Creating session…'
     : 'Open workspace';
-  workspaceButton.className = providerSetup.launchReady || providerSetup.hostGuidance
-    ? 'primary'
-    : 'quiet';
+  workspaceButton.className = 'primary';
   copy.textContent = !backendReady
     ? BACKEND_UNAVAILABLE_NOTICE
     : surface === 'web'
@@ -527,10 +587,20 @@ function renderEmptyState() {
     : (providerSetup.hostGuidance
       ? 'Open a workspace on this host to start a coding session.'
     : (providerSetup.launchReady
-      ? 'Your provider is ready. Open a folder to start coding.'
-      : 'Connect a model provider, then open a folder to start coding.'));
+      ? 'Open a folder to start coding with your existing configuration.'
+      : 'Open a folder to use its configuration, or connect a provider first.'));
   providerButton.onclick = () => openProviderDialog();
   workspaceButton.onclick = () => beginSessionCreation();
+  timeline.querySelector('.welcome-guide').hidden = surface === 'web';
+  if (surface === 'web') {
+    providerButton.hidden = false;
+    providerButton.textContent = 'Browse sessions';
+    providerButton.className = 'primary';
+    providerButton.onclick = () => {
+      if (window.innerWidth < 760) openSheet('navigation', providerButton);
+      else $('session-filter').focus();
+    };
+  }
 }
 
 function sessionDotClass(session) {
@@ -541,6 +611,9 @@ function sessionDotClass(session) {
 }
 
 function renderSessionList() {
+  const focusedRow = document.activeElement?.closest?.('[data-session-id]');
+  const focusedSessionID = focusedRow?.dataset.sessionId;
+  const focusedRole = document.activeElement?.classList.contains('session-close') ? '.session-close' : '.session-select';
   const query = $('session-filter').value;
   const matching = Object.values(state.sessions)
     .filter((session) => sessionMatchesQuery(
@@ -558,13 +631,15 @@ function renderSessionList() {
       'div',
       `session-row ${session.id === state.activeID ? 'active' : ''}`,
     );
+    row.dataset.sessionId = session.id;
     const select = element('button', 'session-select');
     select.type = 'button';
+    select.setAttribute('aria-current', session.id === state.activeID ? 'page' : 'false');
     select.append(element('strong', '', session.title || 'Untitled'));
     select.append(element(
       'small',
       '',
-      [session.status, session.workspace_label].filter(Boolean).join(' · ') || 'Unavailable',
+      [session.workspace_label, ({idle:'Ready',saved:'Saved',running:'Working',stopping:'Stopping',restoring:'Opening'})[session.status] || session.status].filter(Boolean).join(' · ') || 'Unavailable',
     ));
     if (session.attention) {
       select.append(element('span', 'attention', 'Needs attention'));
@@ -587,6 +662,13 @@ function renderSessionList() {
     }
     return row;
   }));
+  if (!projection.visible.length) sessionList.append(element('p', 'session-list-empty', query ? 'No matching sessions.' : 'Your sessions will appear here.'));
+  if (focusedSessionID) {
+    const replacement = [...sessionList.children].find((row) => row.dataset.sessionId === focusedSessionID);
+    const focusTarget = replacement?.querySelector(focusedRole) ||
+      replacement?.querySelector('.session-select') || $('session-filter');
+    focusTarget.focus({ preventScroll: true });
+  }
 
   const history = $('toggle-session-history');
   history.hidden = Boolean(query) || compact.hiddenCount === 0;
@@ -844,9 +926,26 @@ function setInteractionDraft(sessionID, requestID, patch, rerender = false) {
     return;
   }
   state = reducer(state, action);
+  if (sessionID === state.activeID && Object.hasOwn(patch, 'error')) {
+    $('interaction-error').hidden = !patch.error;
+    $('interaction-error').textContent = patch.error || '';
+  }
+  interactionSignature = currentInteractionSignature(activeSession(state));
+}
+
+function currentInteractionSignature(session) {
+  const pending = activeInteraction(session);
+  const activeDraft = pending ? interactionDraft(session, pending.request_id || pending.requestID) : null;
+  return JSON.stringify([session?.id, pending, activeDraft, backendAvailable(state)]);
 }
 
 function renderInteraction(session) {
+  const queueSize = Math.max(0, (session?.interactions?.length || 0) - 1);
+  $('interaction-queue').hidden = queueSize === 0;
+  $('interaction-queue').textContent = `${queueSize} more waiting`;
+  const signature = currentInteractionSignature(session);
+  if (signature === interactionSignature) return;
+  interactionSignature = signature;
   const pending = activeInteraction(session);
   const panel = $('interaction-panel');
   panel.hidden = !pending;
@@ -859,7 +958,6 @@ function renderInteraction(session) {
 
   const interaction = interactionViewModel(pending);
   const draft = interactionDraft(session, interaction.requestID);
-  const queueSize = Math.max(0, (session.interactions?.length || 0) - 1);
   $('interaction-kind').textContent = interaction.kind.replaceAll('_', ' ');
   $('interaction-queue').hidden = queueSize === 0;
   $('interaction-queue').textContent = `${queueSize} more waiting`;
@@ -1427,8 +1525,8 @@ function openProviderDialog(reason = '') {
       'Provider setup is managed by the Desktop App or host process.';
     return;
   }
-  const providers = new Set(['anthropic', 'openai', 'google', 'deepseek', 'qwen', 'ark']);
-  $('provider-select').value = providers.has(providerSetup.provider)
+  const providerSelect = $('provider-select');
+  providerSelect.value = [...providerSelect.options].some(option => option.value === providerSetup.provider)
     ? providerSetup.provider
     : 'openai';
   $('provider-model').value = providerSetup.model || 'default';
@@ -1507,7 +1605,7 @@ async function configureProvider(event) {
   try {
     await retryAfterProviderSetup();
   } catch (error) {
-    openProviderDialog(`Provider saved, but the session could not start: ${error.message}`);
+    showError(new Error(`Provider saved. Session could not start: ${error.message}`));
   }
 }
 
@@ -1539,20 +1637,9 @@ async function createSession() {
   if (!backendAvailable(state)) return null;
   const workspace = await selectWorkspace();
   if (!workspace) return;
-  if (shouldDeferWorkspaceForProvider(surface, providerSetup)) {
-    pendingWorkspace.defer(workspace);
-    openProviderDialog();
-    return null;
-  }
-  try {
-    return await pendingWorkspace.attempt(workspace);
-  } catch (error) {
-    if (surface === 'desktop') {
-      openProviderDialog(`The session could not start: ${error.message}`);
-      return null;
-    }
-    throw error;
-  }
+  // Only the runtime can resolve project settings and host credentials.
+  // Missing Desktop vault metadata must never block a valid shared setup.
+  return pendingWorkspace.attempt(workspace);
 }
 
 async function loadExecutionSettings(sessionID, mutation = null) {
@@ -2258,6 +2345,10 @@ function showError(error) {
     ? error.yhcSessionID
     : '';
   if (scopedID && !state.sessions[scopedID]) return;
+  if (!scopedID || scopedID === state.activeID) {
+    $('workbench-notice-copy').textContent = error.message;
+    $('workbench-notice').hidden = false;
+  }
   const current = scopedID
     ? state.sessions[scopedID]
     : activeSession(state);
@@ -2294,6 +2385,12 @@ async function bootstrapApp() {
     throw new Error('Backend protocol mismatch');
   }
   surface = info.surface;
+  $('settings-shortcut').textContent = primaryModifier + ',';
+  $('send').querySelector('kbd').textContent = primaryModifier + '⏎';
+  try {
+    sharedSettings = await api('getSettings', { scope: 'user' });
+    applyAppearance(sharedSettings);
+  } catch { /* Settings can be retried from their panel. */ }
   const buildIdentity = buildIdentityViewModel(info);
   const buildIdentityNode = $('build-identity');
   buildIdentityNode.hidden = !buildIdentity.visible;
@@ -2338,6 +2435,8 @@ function beginSessionCreation() {
 
 $('new-session').onclick = () => beginSessionCreation();
 $('provider-settings').onclick = () => openProviderDialog();
+$('settings-open').onclick = (event) => void settingsView.open(event.currentTarget);
+$('workbench-notice-dismiss').onclick = () => { $('workbench-notice').hidden = true; };
 $('toggle-session-history').onclick = () => {
   historyExpanded = !historyExpanded;
   renderSessionList();
@@ -2377,7 +2476,8 @@ $('refresh-review').onclick = () => void loadReview();
 $('ignore-whitespace').onchange = () => void loadReview();
 $('prompt').oninput = () => updateDraft($('prompt').value);
 $('prompt').onkeydown = (event) => {
-  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+  if (!event.isComposing && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
     $('composer').requestSubmit();
   }
 };
@@ -2431,7 +2531,13 @@ $('confirm-dialog').oncancel = (event) => {
 };
 document.addEventListener('keydown', (event) => {
   const dialogOpen = $('provider-dialog').open ||
-    $('confirm-dialog').open;
+    $('confirm-dialog').open || settingsView.isOpen();
+  if (!dialogOpen && (event.metaKey || event.ctrlKey) && event.key === ',') {
+    event.preventDefault();
+    const trigger = sheetTrigger || document.activeElement;
+    closeSheet(false);
+    void settingsView.open(trigger);
+  }
   if (
     shouldCloseSheetOnEscape(event.key, dialogOpen, openSheetKind) &&
     closeSheet()
@@ -2440,6 +2546,13 @@ document.addEventListener('keydown', (event) => {
     event.stopPropagation();
   }
 });
+for (const [id, other, view] of [['activity-tab', 'review-tab', 'review'], ['review-tab', 'activity-tab', 'activity']]) {
+  $(id).onkeydown = (event) => {
+    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault(); showInspectorView(view); $(other).focus();
+    }
+  };
+}
 window.addEventListener('resize', handleViewportResize);
 
 render();

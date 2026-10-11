@@ -204,57 +204,57 @@ privacy:
       match_sha256: 6b92323c3a3f154c0a30cc602002b87ff41486d6cba571162e1bae16d7761997
       purpose: build-metadata
     - path: Makefile
-      line: 242
+      line: 245
       rule_id: high-entropy-token
       match_sha256: be5a952a6bf7286e30dbcf02b692f61f9eda1e48315ea565d19a20d171b5efa4
       purpose: build-metadata
     - path: Makefile
-      line: 243
+      line: 246
       rule_id: high-entropy-token
       match_sha256: '08bf8be3232a88279a98d478ee129562e25717876c4971f05c2f1cd5b1ce86cf'
       purpose: build-metadata
     - path: Makefile
-      line: 243
+      line: 246
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: Makefile
-      line: 243
+      line: 246
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: Makefile
-      line: 249
+      line: 252
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: Makefile
-      line: 249
+      line: 252
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: Makefile
-      line: 272
+      line: 275
       rule_id: high-entropy-token
       match_sha256: 3e65235a27bbcecb29b9801c637879b03b56c4fa668c171909e6d6413b657ff7
       purpose: build-metadata
     - path: Makefile
-      line: 272
+      line: 275
       rule_id: high-entropy-token
       match_sha256: b33316611b26917bfaddccabc5fdf8c03017815a0cb8d19597b7699f7aced5d9
       purpose: build-metadata
     - path: Makefile
-      line: 285
+      line: 288
       rule_id: high-entropy-token
       match_sha256: d2e744ec70d978e984e880c92094942b9d29bffedd0d0f76ec3544a516317b7d
       purpose: build-metadata
     - path: Makefile
-      line: 305
+      line: 308
       rule_id: credential-assignment
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 334
+      line: 337
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
@@ -459,7 +459,7 @@ privacy:
       match_sha256: 795a63b98bda4946d23d3c13590bb1009b4ef993f891e5accc9dc44ba067dcd8
       purpose: runtime-loopback
     - path: desktop/scripts/unpacked_lifecycle_smoke.cjs
-      line: 618
+      line: 619
       rule_id: credential-assignment
       match_sha256: 5f1a6d0874f34755f0e9db5aba7bfce7a91e5c02d3172e9806e893ca245c21f8
       purpose: runtime-loopback
@@ -729,27 +729,27 @@ privacy:
       match_sha256: 2b7847b7b705781d7cf21a05e9c1bb37cbf078aea103bc3edcc6aca52ab65453
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup_view.test.mjs
-      line: 72
+      line: 71
       rule_id: credential-assignment
       match_sha256: 98757961c82ec03e675e20f30ab5f11211d4371b3ab6257247bda2507552db10
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup_view.test.mjs
-      line: 72
+      line: 71
       rule_id: private-email
       match_sha256: bed28cfad641b3e9390ae9908528d2b43cdbe2b94d72dbf44d132d5fe3a86723
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup_view.test.mjs
-      line: 72
+      line: 71
       rule_id: private-url
       match_sha256: d1d783d9a5d4f69558021b6d11a11d5b62a847f62fe0a0571b94629f4d39c64a
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup_view.test.mjs
-      line: 74
+      line: 73
       rule_id: credential-assignment
       match_sha256: d9e24c02f468d6af70ef89a1fbf126993ca519a890572aa520c912928f6be154
       purpose: synthetic-security-fixture
     - path: desktop/test/provider_setup_view.test.mjs
-      line: 87
+      line: 86
       rule_id: private-url
       match_sha256: 5c0729d9006c2f14413a12b54d12d206efb5e2a35ae3cf42b497bba322c8d43e
       purpose: synthetic-security-fixture
@@ -814,102 +814,102 @@ privacy:
       match_sha256: afaf8f548d345122de316103c8d241e7a1e22c67b7d1df1102f67ca65d8929d7
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 529
+      line: 536
       rule_id: credential-assignment
       match_sha256: 92819818173d453054080948e9076af601304d743dfc51ad8f45e7ac3b55e961
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 530
+      line: 537
       rule_id: private-url
       match_sha256: 0f01f942f0175fbd9fe7b349159bfc91f7cd9c1c3c23b57fd24c6e2c9e072251
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 531
+      line: 538
       rule_id: credential-assignment
       match_sha256: ec9121032890bc1ecefba65ebc4d3221258029a89a10db63f8f5b628eb0c6076
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 535
+      line: 542
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 540
+      line: 547
       rule_id: credential-assignment
       match_sha256: faf3baa7e6aea236c6ccd3b8a4890c4822b30493851f0d1d5ebc55a9a559aeec
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 546
+      line: 553
       rule_id: credential-assignment
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
-      purpose: synthetic-security-fixture
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 547
-      rule_id: private-url
-      match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
-      purpose: synthetic-security-fixture
-    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 553
-      rule_id: private-url
-      match_sha256: 5d1c61513b9fdb13e891e2e765fb70ff6f8d87830c7338c57e3173d324e45b02
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
       line: 554
       rule_id: private-url
+      match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 560
+      rule_id: private-url
+      match_sha256: 5d1c61513b9fdb13e891e2e765fb70ff6f8d87830c7338c57e3173d324e45b02
+      purpose: synthetic-security-fixture
+    - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
+      line: 561
+      rule_id: private-url
       match_sha256: 12439ce80393777b37cc147d85e3cf956e43c5cb60eeb99c8c488d0f389c2dcc
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 555
+      line: 562
       rule_id: private-url
       match_sha256: 6e55782268e2bec58a1826ca8e81b66e77054eb192b453c1eaa712455c44e7e2
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 592
+      line: 599
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 596
+      line: 603
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 612
+      line: 619
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 620
+      line: 627
       rule_id: private-url
       match_sha256: 4aa4724c61274ec9b7c3ad39e608584c3cbcc8a63e3c6041cfe9496a4af73d07
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 669
+      line: 676
       rule_id: bearer-token
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 679
+      line: 686
       rule_id: bearer-token
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 699
+      line: 706
       rule_id: bearer-token
       match_sha256: 1d1fd27244d90de190bf388c33bc7821b510e20372306c9eb81313952907f008
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 972
+      line: 979
       rule_id: credential-assignment
       match_sha256: 92819818173d453054080948e9076af601304d743dfc51ad8f45e7ac3b55e961
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 973
+      line: 980
       rule_id: credential-assignment
       match_sha256: ec9121032890bc1ecefba65ebc4d3221258029a89a10db63f8f5b628eb0c6076
       purpose: synthetic-security-fixture
     - path: desktop/test/unpacked_lifecycle_smoke.test.mjs
-      line: 1046
+      line: 1053
       rule_id: high-entropy-token
       match_sha256: 4fa34f0ebeccb0b16dccb24d2fbe510ffc0b2babed711fd73a191d2c53d517ac
       purpose: build-metadata
@@ -4219,27 +4219,27 @@ privacy:
       match_sha256: 6da19f5057f0dd1085db2213932a52da09a1df6b9194447953db96f7e48663a7
       purpose: synthetic-security-fixture
     - path: internal/webui/assets/app.mjs
-      line: 1478
+      line: 1576
       rule_id: credential-assignment
       match_sha256: 7be5b39a6e1069827d150a278fb65d3c2390f796795f7bb7de3965780d39150c
       purpose: runtime-loopback
     - path: internal/webui/assets/index.html
-      line: 313
+      line: 361
       rule_id: private-url
       match_sha256: 53aee2ca762b9729196afeefd22bd5abdcbdf87a0f29cc0dd2f6902a22e73e4f
       purpose: documentation-example
     - path: internal/webui/assets/transport.mjs
-      line: 258
+      line: 275
       rule_id: credential-assignment
       match_sha256: '08837d97bf9c4c8062f6312eee5c277996dbb6d1adcca148a60259ec9aa9359e'
       purpose: runtime-loopback
     - path: internal/webui/assets/transport.mjs
-      line: 270
+      line: 287
       rule_id: credential-assignment
       match_sha256: 1291cff3f746c18486d68c284cffa0dfde36e68ec5ceda1f05c0b211f28fd88e
       purpose: runtime-loopback
     - path: internal/webui/assets/transport.mjs
-      line: 318
+      line: 347
       rule_id: credential-assignment
       match_sha256: 00c84d869449a83a830b1177e502e6afa6920c634bb22259c0ae1b0a70c048f7
       purpose: runtime-loopback
@@ -4924,62 +4924,62 @@ privacy:
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 77
+      line: 85
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 108
+      line: 117
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 129
+      line: 138
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 153
+      line: 162
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 173
+      line: 182
       rule_id: bearer-token
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 199
+      line: 208
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 233
+      line: 242
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 266
+      line: 305
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 296
+      line: 335
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 319
+      line: 358
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 378
+      line: 418
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/execution_settings_test.go
-      line: 427
+      line: 467
       rule_id: credential-assignment
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
@@ -5633,6 +5633,81 @@ privacy:
       line: 173
       rule_id: private-url
       match_sha256: a3d9c9d847e21f89d3a11ba60f2fcfa16546a2cb9d601c28c67ca7e079171fe2
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/shared_settings_acceptance.cjs
+      line: 168
+      rule_id: private-url
+      match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/shared_settings_acceptance.cjs
+      line: 172
+      rule_id: private-url
+      match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 144
+      rule_id: private-url
+      match_sha256: 8605b8ba08c20d42f9e455151871896d0e0de980596286fb736d11eec013e2a4
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 155
+      rule_id: credential-assignment
+      match_sha256: be8a446e7fcc02bc94158f4bf97fe65b04e25a05b698b121229a30d13dcf6ceb
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 492
+      rule_id: private-url
+      match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 493
+      rule_id: private-url
+      match_sha256: 3e6eaf6ba5439370afdf75eb9fcb5e2a2ad980bd4c2dca895bc60eb4916dcbd9
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 562
+      rule_id: private-url
+      match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 616
+      rule_id: private-url
+      match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
+      purpose: synthetic-security-fixture
+    - path: desktop/scripts/workbench_ui_acceptance.cjs
+      line: 650
+      rule_id: private-url
+      match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
+      purpose: synthetic-security-fixture
+    - path: desktop/test/ipc_api_error.test.mjs
+      line: 71
+      rule_id: credential-assignment
+      match_sha256: c09eb36fcc6af7593256999af93603a1ea47c204fdbbc1631bf97bc7257af66f
+      purpose: synthetic-security-fixture
+    - path: desktop/test/ipc_api_error.test.mjs
+      line: 71
+      rule_id: private-url
+      match_sha256: 1a54438fdda67e0ae13c8eb1c96ec8319a323c7bd06de5eece16f90b607c0f80
+      purpose: synthetic-security-fixture
+    - path: desktop/test/ipc_api_error.test.mjs
+      line: 116
+      rule_id: private-url
+      match_sha256: 1a54438fdda67e0ae13c8eb1c96ec8319a323c7bd06de5eece16f90b607c0f80
+      purpose: synthetic-security-fixture
+    - path: desktop/test/ipc_api_error.test.mjs
+      line: 204
+      rule_id: credential-assignment
+      match_sha256: eacb9ab8f6db03232e40f809d83464809bdfd41203c70051cc4b42e380732afa
+      purpose: synthetic-security-fixture
+    - path: desktop/test/settings_transport.test.mjs
+      line: 58
+      rule_id: credential-assignment
+      match_sha256: f59e32eee73fe6f0661f68c40b4a7f23a839fe4bf91c8419662af569eadaeb2c
+      purpose: synthetic-security-fixture
+    - path: desktop/test/shared_settings_native.test.mjs
+      line: 28
+      rule_id: credential-assignment
+      match_sha256: 80a6b17207df72736d9f51c95e71f5a859ecc64ee75d4fb739ec23b024efe9ae
       purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml

@@ -10,7 +10,6 @@ export function responsiveMode(width) {
 
 export function normalizeOpenSheet(width, requestedKind) {
   const mode = responsiveMode(width);
-  if (mode === 'wide') return null;
   if (requestedKind === 'inspector') return requestedKind;
   if (mode === 'compact' && requestedKind === 'navigation') return requestedKind;
   return null;
@@ -21,9 +20,9 @@ export function sheetProjection(width, requestedKind) {
   const openSheetKind = normalizeOpenSheet(width, requestedKind);
   const navigationExpanded = openSheetKind === 'navigation';
   const inspectorExpanded = openSheetKind === 'inspector';
-  const backdropVisible = Boolean(openSheetKind);
+  const backdropVisible = Boolean(openSheetKind) && mode !== 'wide';
   const navigationHidden = mode === 'compact' && !navigationExpanded;
-  const inspectorHidden = mode !== 'wide' && !inspectorExpanded;
+  const inspectorHidden = !inspectorExpanded;
 
   return {
     mode,
@@ -33,7 +32,7 @@ export function sheetProjection(width, requestedKind) {
     navigationExpanded,
     inspectorExpanded,
     backdropVisible,
-    navigationInert: navigationHidden || inspectorExpanded,
+    navigationInert: navigationHidden || (inspectorExpanded && backdropVisible),
     conversationInert: backdropVisible,
     inspectorInert: inspectorHidden || navigationExpanded,
   };
