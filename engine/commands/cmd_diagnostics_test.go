@@ -60,7 +60,7 @@ func TestDiagnosticCompatibilityAliasesAreRemoved(t *testing.T) {
 	RegisterDefaults(registry)
 	ctx := &CommandContext{Engine: fixedDiagnosticsEngine{snapshot: diagnosticCommandFixture()}}
 
-	for _, input := range []string{"/stats", "/cost", "/settings"} {
+	for _, input := range []string{"/stats", "/cost"} {
 		alias, err := registry.Dispatch(context.Background(), EntrypointHeadless, ctx, input)
 		if err != nil {
 			t.Fatalf("dispatch %s: %v", input, err)
