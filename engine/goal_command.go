@@ -8,7 +8,11 @@ import (
 	"github.com/abietic/yhc/engine/commands"
 )
 
-const goalInitialPrompt = "Begin or continue working toward the active Goal. Re-evaluate the remaining required work before acting."
+// GoalInitialPrompt is the shared user-authorized initial prompt; automatic
+// continuations must still use SubmitGoalContinuation with an exact cursor.
+const GoalInitialPrompt = "Begin or continue working toward the active Goal. Re-evaluate the remaining required work before acting."
+
+const goalInitialPrompt = GoalInitialPrompt
 
 func (e *QueryEngine) applyGoalCommand(
 	result *commands.CommandResult,

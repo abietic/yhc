@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -16,6 +17,9 @@ const (
 	GoalControlResume GoalControlOperation = "resume"
 	GoalControlBudget GoalControlOperation = "budget"
 	GoalControlClear  GoalControlOperation = "clear"
+	// Continue requests an explicit initial turn for an active idle Goal. It
+	// neither mutates durable state nor claims an automatic continuation.
+	GoalControlContinue GoalControlOperation = "continue"
 )
 
 // GoalControlRequest binds one typed transition to the exact detached Goal
@@ -77,6 +81,28 @@ func (e *QueryEngine) ApplyGoalControl(
 		err   error
 	)
 	switch request.Operation {
+	case GoalControlContinue:
+		e.planMu.Lock()
+		e.goalMu.Lock()
+		state := cloneGoalState(e.goalState)
+		err := mutableGoalStateError(state)
+		if err == nil {
+			snapshot := goalSnapshotFromState(state)
+			err = validateGoalControlExpectation(request, &snapshot, true)
+		}
+		if err == nil && (e.planActiveTurnID != "" || e.goalTurnRuntime != nil) {
+			err = errGoalTransitionInFlight
+		}
+		if err == nil && state.Status != goalStatusActive {
+			err = errors.New("goal must be active before continuing")
+		}
+		e.goalMu.Unlock()
+		e.planMu.Unlock()
+		if err != nil {
+			return GoalControlResult{}, err
+		}
+		snapshot := goalSnapshotFromState(state)
+		return GoalControlResult{Goal: &snapshot, RequiresPrompt: true}, nil
 	case GoalControlCreate:
 		state, err = e.goalService.create(goalCreateRequest{
 			Objective:   request.Objective,

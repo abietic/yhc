@@ -237,7 +237,7 @@ func (s *Server) activateAttach(
 		s.mu.Lock()
 		delete(s.activating, sessionID)
 		if err == nil && !s.closing {
-			s.sessions[sessionID] = owned
+			s.publishAttachedSessionLocked(owned)
 			s.attachReceipts[sessionID] = attachReceipt{
 				clientTurnID: input.ClientTurnID,
 				promptDigest: flight.promptDigest,
@@ -272,6 +272,7 @@ func (s *Server) activateAttach(
 	if err != nil {
 		return
 	}
+	owned.server = s
 	if interaction, recoveredErr := owned.restorePendingProjectGraph(); recoveredErr != nil {
 		err = recoveredErr
 		return
@@ -297,4 +298,13 @@ func (s *Server) activateAttach(
 		ClientTurnID: input.ClientTurnID,
 		TurnID:       started.TurnID,
 	}
+}
+
+// publishAttachedSessionLocked closes the activation-to-pump handoff. A fast
+// initial turn may finish before map ownership is published; its earlier wake
+// cannot dispatch yet, so publication must always re-wake idle draining.
+// Caller owns Server.mu.
+func (s *Server) publishAttachedSessionLocked(owned *session) {
+	s.sessions[owned.id] = owned
+	owned.signalRuntimeDrain()
 }
