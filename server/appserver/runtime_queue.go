@@ -231,6 +231,10 @@ func (s *session) startRuntimeInputPump() {
 	}
 	s.runtimePumpOnce.Do(func() {
 		ready := controller.SubscribeRuntimeItems()
+		var goalReady <-chan struct{}
+		if goal, ok := s.engine.(sessionGoalController); ok {
+			goalReady = goal.SubscribeGoalContinuations()
+		}
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
@@ -243,6 +247,12 @@ func (s *session) startRuntimeInputPump() {
 					}
 					s.tryStartNextRuntimeItem()
 				case <-s.runtimeWake:
+					s.tryStartNextRuntimeItem()
+				case _, open := <-goalReady:
+					if !open {
+						goalReady = nil
+						continue
+					}
 					s.tryStartNextRuntimeItem()
 				case <-s.rootCtx.Done():
 					return
@@ -292,6 +302,13 @@ func (s *session) tryStartNextRuntimeItem() {
 // lock remains held across durable claim and active-turn publication, so close
 // or a direct turn cannot split claim from active-turn ownership.
 func (s *session) startNextRuntimeItemLocked() {
+	if s.server != nil {
+		s.server.mu.RLock()
+		defer s.server.mu.RUnlock()
+		if s.server.closing || s.server.sessions[s.id] != s {
+			return
+		}
+	}
 	if _, ok := s.runtimeQueueController(); !ok {
 		return
 	}
@@ -302,6 +319,15 @@ func (s *session) startNextRuntimeItemLocked() {
 	}
 	s.mu.Unlock()
 	item, claimed, err := s.engine.ClaimNextRuntimeItem()
+	// Explicit user work is always offered first. Goal has its own wake,
+	// claimant and submitter; generic runtime APIs remain unchanged.
+	if err == nil && !claimed {
+		if goal, ok := s.engine.(sessionGoalController); ok {
+			if available, _ := goal.GoalCommandAvailability(); available {
+				item, claimed, err = goal.ClaimNextGoalContinuation()
+			}
+		}
+	}
 	if err != nil {
 		s.mu.Lock()
 		s.runtimeDrainBlocked = true
@@ -356,7 +382,14 @@ func (s *session) runRuntimeItem(
 	item engine.RuntimeItem,
 ) {
 	defer s.wg.Done()
-	events, terminal := s.engine.SubmitRuntimeItem(ctx, item)
+	var events <-chan engine.QueryEvent
+	var terminal engine.Terminal
+	if item.Kind == engine.RuntimeItemGoalContinuation {
+		// The interface that supplied the dedicated claim also owns admission.
+		events, terminal = s.engine.(sessionGoalController).SubmitGoalContinuation(ctx, item)
+	} else {
+		events, terminal = s.engine.SubmitRuntimeItem(ctx, item)
+	}
 	reason, err := s.driveEvents(ctx, turnID, events, terminal)
 	if reason == "" {
 		if ctx.Err() != nil {

@@ -52,6 +52,7 @@ import {
 import { createTransport } from './transport.mjs';
 import { mountCommandCompletion, insertCompletionEdit } from './command_completion.mjs';
 import { createPromptSuggestion } from './prompt_suggestion.mjs';
+import { createGoalView } from './goal.mjs';
 import { createTimelineRenderer } from './timeline_view.mjs';
 import { canReadTaskExplorer, createTaskExplorerView } from './task_explorer.mjs';
 import { createAgentExecutionDetailView, executionDetailEligibility } from './agent_execution_detail.mjs';
@@ -97,6 +98,18 @@ const primaryModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ct
 const $ = (id) => document.getElementById(id);
 const timeline = $('timeline');
 const timelineRenderer = createTimelineRenderer(timeline, renderMessage);
+const goalView = createGoalView({
+  root: $('goal-panel'), api,
+  context: () => {
+    const session = activeSession(state);
+    return { sessionID: session?.id, live: session?.live === true,
+      backendReady: backendAvailable(state), activeTurnID: session?.active_turn_id || '',
+      parentView: !agentConversationView.isOpen() };
+  },
+  confirm: (copy, operation) => requestConfirmation(
+    operation === 'reload' ? '丢弃 Goal 草稿？' : '清除 Goal？', copy,
+    operation === 'reload' ? '丢弃' : '清除'),
+});
 let parentReadingState = null;
 const agentConversationView = createAgentConversationView({
   document, read: payload => api('getAgentTranscript', payload),
@@ -393,6 +406,7 @@ function render() {
   renderInteraction(current);
   renderLegacyImport(current);
   renderQueuedPrompts(current);
+  goalView.updateContext();
 
   const loadEarlier = $('load-earlier');
   loadEarlier.hidden = !current?.transcriptHasMore;
@@ -2476,6 +2490,10 @@ function handleEventStream(payload) {
     dispatch({ type: 'EVENT', event: payload.event });
     if (['terminal', 'turn.finished'].includes(payload.event.type)) {
       void loadExecutionSettings(payload.sessionID);
+    }
+    if (payload.sessionID === state.activeID &&
+      ['goal.updated', 'terminal', 'turn.finished'].includes(payload.event.type)) {
+      void goalView.refresh();
     }
     return;
   }

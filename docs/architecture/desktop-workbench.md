@@ -116,6 +116,20 @@ state, exposed tools, diagnostics, and revision. Its route uses the existing
 session manager and does not load configuration. It cannot authorize a new
 connection, toggle a server, or refresh/restart MCP runtime state.
 
+### Goal is a QueryEngine lifecycle projection
+
+Goal controls create, start, pause, resume, edit budget, continue, or clear one
+Goal through the existing `QueryEngine` lifecycle. Lifecycle mutations are bound
+to the observed Goal ID and revision and require an owned idle session;
+conflicts do not retry a different state. During an active Goal turn, Pause uses
+the existing immediate-cancel boundary; runtime aftercare determines the final
+status. Creation and resume may request an explicit initial turn only after the
+durable transition succeeds; clearing requires explicit renderer confirmation.
+
+Token budget, active-time accounting, and usage coverage belong to the existing
+Goal owner. The newer upstream-cost reservation is a headless flag concern and
+is not injected into Desktop; this panel does not claim a cost UI.
+
 ## Trust and privacy boundary
 
 The host's native picker registers a workspace path once. The server stores a
@@ -579,6 +593,10 @@ provider/tool dialect.
   The [permission controller](../../internal/webui/assets/permission_settings.mjs)
   retires the old revision after conflicts or uncertain writes; only an explicit
   Reload with draft-discard confirmation permits editing a fresh snapshot.
+
+- [`QueryEngine.ApplyGoalControl`](../../engine/goal_control.go) maps typed
+  revision-bound controls to the existing Goal lifecycle; [`Server.handleGoal`](../../server/appserver/goal.go)
+  owns owned-session admission and explicit turn start after a saved transition.
 
 - [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
   renderer's draft-clearing fence, not Turn execution or retry idempotency.
