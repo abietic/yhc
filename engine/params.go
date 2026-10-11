@@ -127,6 +127,7 @@ type QueryParams struct {
 	FallbackModel                       string
 	QuerySource                         QuerySource
 	MaxOutputTokensOverride             *int
+	modelOutputTokenLimit               int // invocation ceiling; recovery cannot raise it
 	MaxTurns                            *int
 	SkipCacheWrite                      bool
 	TaskBudget                          *TaskBudget

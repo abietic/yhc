@@ -65,6 +65,9 @@ func parseVerificationCoverageReview(text string) (verificationCoverageReview, e
 // reviewCoverage can only weaken a fresh, receipt-bound PASS. It shares the
 // root admission ledger and deadline and never replays a persisted PASS.
 func (g *independentVerificationGate) reviewCoverage(ctx context.Context, p QueryParams, report independentVerificationReport) (independentVerificationReport, error) {
+	if err := applyVerificationCallPolicy(&p, g.params, true); err != nil {
+		return report, err
+	}
 	encoded, err := json.Marshal(report)
 	if err != nil {
 		return report, err

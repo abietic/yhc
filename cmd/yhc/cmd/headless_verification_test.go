@@ -19,6 +19,7 @@ func TestExecIndependentVerificationRunsRealCheckAndSharesUsage(t *testing.T) {
 		name, review string
 	}{
 		{name: "default"},
+		{name: "policy", review: `{"verdict":"SUPPORTED","missing":[]}`},
 		{name: "supported", review: `{"verdict":"SUPPORTED","missing":[]}`},
 		{name: "insufficient", review: `{"verdict":"INSUFFICIENT","missing":["Required intermediate state was not observed."]}`},
 	} {
@@ -31,6 +32,23 @@ func testExecVerificationCoverage(t *testing.T, name, review string) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		if name == "policy" {
+			var request map[string]any
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Error(err)
+			}
+			next := calls.Load() + 1
+			if next > 1 {
+				effort, cap := "low", float64(8192)
+				if next == 4 {
+					effort, cap = "none", 2048
+				}
+				reasoning, _ := request["reasoning"].(map[string]any)
+				if reasoning["effort"] != effort || request["max_output_tokens"] != cap {
+					t.Errorf("stage %d effort=%v cap=%v", next, reasoning, request["max_output_tokens"])
+				}
+			}
+		}
 		call := calls.Add(1)
 		text := "solver success is provisional"
 		item := ""
@@ -75,6 +93,9 @@ func testExecVerificationCoverage(t *testing.T, name, review string) {
 	if review != "" {
 		args = append(args, "--verification-coverage-review")
 		expectedCalls = 4
+	}
+	if name == "policy" {
+		args = append(args, "--verification-effort", "low", "--verification-max-output-tokens", "8192", "--verification-coverage-effort", "none", "--verification-coverage-max-output-tokens", "2048")
 	}
 	if name == "insufficient" {
 		expectedVerdict = "PARTIAL"
