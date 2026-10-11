@@ -18,6 +18,40 @@ def decimal_amount(value: object, places: int = 12) -> str:
     return value
 
 
+def _receipt_amount(value: object) -> bool:
+    """Amounts in a receipt are fixed-scale and may exceed a configured cap."""
+    return isinstance(value, str) and re.fullmatch(r"[0-9]{1,60}\.[0-9]{12}", value) is not None
+
+
+def _model_label(value: object) -> bool:
+    return (isinstance(value, str) and 0 < len(value) <= 128 and "//" not in value
+            and re.fullmatch(r"[A-Za-z0-9_.:/\[\]-]+", value) is not None)
+
+
+def _reservation(value: object) -> dict | None:
+    keys = {"provider", "model", "input_tokens", "output_tokens", "reserved_amount", "retained_amount"}
+    if not isinstance(value, dict) or set(value) != keys:
+        return None
+    if (not isinstance(value["provider"], str) or value["provider"] not in PROVIDERS
+            or not _model_label(value["model"]) or value["model"] == "unknown"
+            or any(type(value[key]) is not int or not 0 < value[key] <= 2**64 - 1
+                   for key in ("input_tokens", "output_tokens"))
+            or not _receipt_amount(value["reserved_amount"])
+            or not _receipt_amount(value["retained_amount"])
+            or Decimal(value["retained_amount"]) > Decimal(value["reserved_amount"])):
+        return None
+    return dict(value)
+
+
+def _root_reservation(value: object) -> dict | None:
+    keys = {"outstanding_amount", "retained_amount", "peak_exposure_amount", "bound_violations"}
+    if (not isinstance(value, dict) or set(value) != keys
+            or any(not _receipt_amount(value[key]) for key in keys - {"bound_violations"})
+            or type(value["bound_violations"]) is not int or value["bound_violations"] < 0):
+        return None
+    return dict(value)
+
+
 def validate_price_card(card: object) -> dict:
     keys = {"version", "currency", "source", "as_of", "window", "routes"}
     if not isinstance(card, dict) or set(card) != keys or type(card["version"]) is not int or card["version"] != 1:
@@ -42,7 +76,7 @@ def validate_price_card(card: object) -> dict:
     seen = set()
     route_keys = {"provider", "model", "cached_input_per_million", "uncached_input_per_million", "output_per_million"}
     for route in routes:
-        if not isinstance(route, dict) or set(route) != route_keys:
+        if not isinstance(route, dict) or set(route) not in (route_keys, route_keys | {"api_model"}):
             raise ValueError("Invalid public price route")
         model = route["model"]
         if (not isinstance(route["provider"], str) or route["provider"] not in PROVIDERS or not isinstance(model, str) or model == "unknown"
@@ -52,6 +86,8 @@ def validate_price_card(card: object) -> dict:
         if key in seen:
             raise ValueError("Duplicate price route")
         seen.add(key)
+        if "api_model" in route and (not _model_label(route["api_model"]) or route["api_model"] == "unknown"):
+            raise ValueError("Price route api_model requires a canonical model label")
         for rate in route_keys - {"provider", "model"}:
             decimal_amount(route[rate], 6)
     return {**card, "routes": [dict(route) for route in routes]}
@@ -61,24 +97,40 @@ def validated_cost(value: object, usage: dict) -> dict | None:
     try:
         keys = {"version", "segment_id", "price_card", "known_estimated_amount", "actual_billed_amount",
                 "priced_calls", "unpriced_calls", "complete", "limit_mode"}
-        if not isinstance(value, dict) or set(value) != keys or type(value["version"]) is not int or value["version"] != 1:
+        if not isinstance(value, dict) or set(value) not in (keys, keys | {"reservation"}) or type(value["version"]) is not int or value["version"] != 1:
             return None
         segment = value["segment_id"]
         if not isinstance(segment, str) or len(segment) != 36 or str(UUID(segment)) != segment or UUID(segment).int == 0:
             return None
         card = validate_price_card(value["price_card"])
+        strict = value.get("limit_mode") == "pre_dispatch_reservation"
+        if strict and (card["window"] != "upper_bound" or any(not route.get("api_model") for route in card["routes"])):
+            return None
         amount = value["known_estimated_amount"]
         # Aggregates may exceed the bounded user-configured decimal amount.
-        if not isinstance(amount, str) or not re.fullmatch(r"[0-9]{1,60}\.[0-9]{12}", amount):
+        if not _receipt_amount(amount):
             return None
         if (value["actual_billed_amount"] is not None or type(value["complete"]) is not bool
-                or value["limit_mode"] not in ("disabled", "post_response_threshold")
+                or value["limit_mode"] not in ("disabled", "post_response_threshold", "pre_dispatch_reservation")
                 or any(type(value[key]) is not int or value[key] < 0 for key in ("priced_calls", "unpriced_calls"))):
             return None
-        if (value["priced_calls"] > usage["known_calls"] or usage["known_calls"] > usage["provider_calls"]
-                or value["priced_calls"] + value["unpriced_calls"] + usage["in_flight"] != usage["provider_calls"]
-                or value["complete"] != (not (value["unpriced_calls"] or usage["in_flight"] or usage["untracked_calls"]))):
-            return None
+        reservation = _root_reservation(value.get("reservation")) if "reservation" in value else None
+        with localcontext() as ctx:
+            ctx.prec = 90
+            reservation_open = bool(reservation and (
+                reservation["bound_violations"] or Decimal(reservation["outstanding_amount"])
+                or Decimal(reservation["retained_amount"])))
+            if ("reservation" in value and reservation is None
+                    or strict and reservation is None
+                    or value["priced_calls"] > usage["known_calls"] or usage["known_calls"] > usage["provider_calls"]
+                    or value["priced_calls"] + value["unpriced_calls"] + usage["in_flight"] != usage["provider_calls"]
+                    or value["complete"] != (not (value["unpriced_calls"] or usage["in_flight"]
+                                                    or usage["untracked_calls"] or reservation_open))):
+                return None
+            if reservation is not None and (Decimal(amount) + Decimal(reservation["outstanding_amount"])
+                                            + Decimal(reservation["retained_amount"])
+                                            > Decimal(reservation["peak_exposure_amount"])):
+                return None
         if "call_ledger" in usage and segment != usage["call_ledger"]["segment_id"]:
             return None
         if value["priced_calls"] == 0 and Decimal(amount) != 0:
@@ -93,6 +145,7 @@ def validated_cost(value: object, usage: dict) -> dict | None:
 def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
     priced = unpriced = 0
     observed = Decimal(0)
+    outstanding = retained = Decimal(0)
     with localcontext() as ctx:
         ctx.prec = 90
         for record in ledger["records"]:
@@ -100,7 +153,9 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
             if value is None:
                 return False
             index = value["price_index"]
-            if index >= len(cost["price_card"]["routes"]):
+            strict = cost["limit_mode"] == "pre_dispatch_reservation"
+            if (index >= len(cost["price_card"]["routes"])
+                    or (strict or "reservation" in cost) and index < 0):
                 return False
             if index >= 0:
                 route = cost["price_card"]["routes"][index]
@@ -114,30 +169,70 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
                     ("completion_tokens", "output_per_million"))) / Decimal(1000000)
                 if expected != Decimal(value["estimated_amount"]):
                     return False
+                if "reservation" in cost:
+                    reservation = value.get("reservation")
+                    if (reservation is None or expected > Decimal(reservation["reserved_amount"])
+                            or tokens["prompt_tokens"] > reservation["input_tokens"]
+                            or tokens["completion_tokens"] > reservation["output_tokens"]):
+                        return False
                 observed += expected
                 priced += 1
             elif value["state"] == "unpriced":
                 unpriced += 1
+            if "reservation" in cost:
+                reservation = value.get("reservation")
+                if reservation is None:
+                    return False
+                if (reservation["provider"] != record["provider"]
+                        or reservation["model"] != route.get("api_model", record["requested_model"])):
+                    return False
+                bound = (Decimal(reservation["input_tokens"]) * max(
+                    Decimal(route["cached_input_per_million"]), Decimal(route["uncached_input_per_million"]))
+                         + Decimal(reservation["output_tokens"]) * Decimal(route["output_per_million"])) / Decimal(1000000)
+                if Decimal(reservation["reserved_amount"]) != bound:
+                    return False
+                if value["state"] == "in_flight":
+                    outstanding += Decimal(reservation["reserved_amount"])
+                elif value["state"] == "unpriced":
+                    retained += Decimal(reservation["retained_amount"])
+        if "reservation" in cost:
+            root = cost["reservation"]
+            if ledger["dropped_records"]:
+                if outstanding > Decimal(root["outstanding_amount"]) or retained > Decimal(root["retained_amount"]):
+                    return False
+            elif (outstanding != Decimal(root["outstanding_amount"])
+                  or retained != Decimal(root["retained_amount"])):
+                return False
     if ledger["dropped_records"]:
         return priced <= cost["priced_calls"] and unpriced <= cost["unpriced_calls"] and observed <= Decimal(cost["known_estimated_amount"])
     return priced == cost["priced_calls"] and unpriced == cost["unpriced_calls"] and observed == Decimal(cost["known_estimated_amount"])
 
 
 def validated_call_cost(value: object, state: str) -> dict | None:
-    if not isinstance(value, dict) or set(value) != {"state", "price_index", "estimated_amount"}:
+    keys = {"state", "price_index", "estimated_amount"}
+    if not isinstance(value, dict) or set(value) not in (keys, keys | {"reservation"}):
         return None
     price = value["price_index"]
     cost_state, amount = value["state"], value["estimated_amount"]
     if type(price) is not int or not -1 <= price < 128:
         return None
+    reservation = _reservation(value.get("reservation")) if "reservation" in value else None
+    if "reservation" in value and reservation is None:
+        return None
     if cost_state == "priced":
-        if state != "known" or price < 0 or not isinstance(amount, str) or not re.fullmatch(r"[0-9]{1,60}\.[0-9]{12}", amount):
+        if state != "known" or price < 0 or not _receipt_amount(amount):
             return None
     elif cost_state in ("in_flight", "released", "unpriced"):
         if amount is not None or (cost_state != "unpriced" and cost_state != state) or (cost_state == "unpriced" and state not in ("known", "unknown")):
             return None
     else:
         return None
+    if reservation is not None:
+        retained = Decimal(reservation["retained_amount"])
+        reserved = Decimal(reservation["reserved_amount"])
+        if ((cost_state in ("priced", "released", "in_flight") and retained != 0)
+                or (cost_state == "unpriced" and retained != reserved)):
+            return None
     return dict(value)
 
 

@@ -14,7 +14,7 @@ import ssl
 import tempfile
 import time
 import uuid
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from pathlib import Path, PurePosixPath
 
 from harbor.agents.installed.base import BaseInstalledAgent, NonZeroAgentExitCodeError
@@ -107,6 +107,9 @@ class YHCAgent(BaseInstalledAgent):
                  ca_bundle_path: str | None = None, max_provider_calls: int = 0,
                  max_total_tokens: int = 0, execution_timeout_sec: int = 0,
                  price_card_path: str | None = None, max_estimated_cost: str = "0",
+                 reserve_cost_before_dispatch: bool = False,
+                 max_output_tokens_per_call: int = 0,
+                 max_total_estimated_cost: str = "0",
                  continuation_budgets: list | str | None = None,
                  verification_turns: int = 0, verification_repairs: int = 0,
                  verification_coverage_review: bool = False,
@@ -127,6 +130,16 @@ class YHCAgent(BaseInstalledAgent):
         self.max_total_tokens = max_total_tokens
         decimal_amount(max_estimated_cost)
         self.max_estimated_cost = max_estimated_cost
+        if type(reserve_cost_before_dispatch) is not bool:
+            raise ValueError("reserve_cost_before_dispatch must be a bool")
+        if (type(max_output_tokens_per_call) is not int
+                or not 0 <= max_output_tokens_per_call <= 2**63 - 1):
+            raise ValueError("max_output_tokens_per_call must be a nonnegative int64; 0 disables")
+        decimal_amount(max_total_estimated_cost)
+        self.reserve_cost_before_dispatch = reserve_cost_before_dispatch
+        self.max_output_tokens_per_call = max_output_tokens_per_call
+        self.max_total_estimated_cost = max_total_estimated_cost
+        self._total_estimated_spent = Decimal(0)
         self.price_card = None
         if price_card_path:
             data = Path(price_card_path).expanduser().read_bytes()
@@ -138,6 +151,22 @@ class YHCAgent(BaseInstalledAgent):
             raise ValueError("Estimated-cost limits require an explicit public native price card")
         if self.continuation_budgets and not (max_provider_calls or max_total_tokens or Decimal(max_estimated_cost) > 0):
             raise ValueError("continuation_budgets requires a finite initial usage limit")
+        strict = self.reserve_cost_before_dispatch
+        if max_output_tokens_per_call and not strict:
+            raise ValueError("max_output_tokens_per_call requires pre-dispatch reservation")
+        if strict and (Decimal(max_estimated_cost) <= 0 or not max_output_tokens_per_call
+                       or self.price_card is None or self.price_card["window"] != "upper_bound"):
+            raise ValueError("Pre-dispatch reservation requires a positive estimated-cost limit, output bound, and upper-bound price card")
+        if strict and any(not route.get("api_model") for route in self.price_card["routes"]):
+            raise ValueError("Pre-dispatch reservation requires api_model on every priced route")
+        if Decimal(max_total_estimated_cost) > 0 and not strict:
+            raise ValueError("max_total_estimated_cost requires pre-dispatch reservation")
+        if Decimal(max_total_estimated_cost) > 0 and self.price_card is None:
+            raise ValueError("max_total_estimated_cost requires an explicit public native price card")
+        if strict:
+            for grant in self.continuation_budgets:
+                if Decimal(grant.get("max_estimated_cost", "0")) <= 0 and Decimal(max_total_estimated_cost) <= 0:
+                    raise ValueError("Pre-dispatch continuation requires an explicit cost grant or total envelope")
         for name, value, upper in (("verification_turns", verification_turns, 32),
                                    ("verification_repairs", verification_repairs, 3),
                                    ("verification_coverage_checks", verification_coverage_checks, 1)):
@@ -224,11 +253,23 @@ class YHCAgent(BaseInstalledAgent):
         limits = self._segment_limits or {"max_provider_calls": self.max_provider_calls,
                                           "max_total_tokens": self.max_total_tokens,
                                           "max_estimated_cost": self.max_estimated_cost}
+        limits = dict(limits)
+        if Decimal(self.max_total_estimated_cost) > 0:
+            with localcontext() as ctx:
+                ctx.prec = 90
+                remaining = Decimal(self.max_total_estimated_cost) - self._total_estimated_spent
+                if remaining <= 0:
+                    raise ValueError("Total estimated-cost envelope exhausted before dispatch")
+                explicit = Decimal(limits.get("max_estimated_cost", "0"))
+                limits["max_estimated_cost"] = str(min(explicit, remaining) if explicit > 0 else remaining)
         for name, value in limits.items():
             if value and (name != "max_estimated_cost" or Decimal(value) > 0):
                 argv += ["--" + name.replace("_", "-"), str(value)]
         if self.price_card is not None:
             argv += ["--price-card", self.remote_dir + "/price-card.json"]
+        if self.reserve_cost_before_dispatch:
+            argv += ["--reserve-cost-before-dispatch", "--max-output-tokens-per-call",
+                     str(self.max_output_tokens_per_call)]
         if self.verification_turns:
             argv += ["--verification-turns", str(self.verification_turns),
                      "--verification-repairs", str(self.verification_repairs)]
@@ -245,6 +286,26 @@ class YHCAgent(BaseInstalledAgent):
         return (f"{path_setup}{pid_setup}exec {shlex.join(argv)} < {shlex.quote(self.remote_prompt)}"
                 f" > {shlex.quote(str(self.environment_logs_dir / 'yhc.jsonl'))}"
                 f" 2> {shlex.quote(str(self.environment_logs_dir / 'yhc.stderr.log'))}")
+
+    def _strict_segment_cost(self, usage: dict | None, limit: Decimal) -> dict | None:
+        """Accept only one exact upper-bound receipt for the dispatched segment."""
+        if usage is None or usage.get("cost_complete") is not True or "cost" not in usage or "cost_segments" in usage:
+            return None
+        cost = usage["cost"]
+        reservation = cost.get("reservation")
+        if (cost.get("limit_mode") != "pre_dispatch_reservation" or cost.get("price_card") != self.price_card
+                or not isinstance(reservation, dict)):
+            return None
+        if (reservation.get("outstanding_amount") != "0.000000000000"
+                or reservation.get("retained_amount") != "0.000000000000"
+                or reservation.get("bound_violations") != 0):
+            return None
+        with localcontext() as ctx:
+            ctx.prec = 90
+            if (Decimal(cost["known_estimated_amount"]) > limit
+                    or Decimal(reservation.get("peak_exposure_amount", "-1")) > limit):
+                return None
+        return cost
 
     async def install(self, environment: BaseEnvironment) -> None:
         arch = await self.exec_as_agent(environment, command="uname -m")
@@ -319,6 +380,7 @@ class YHCAgent(BaseInstalledAgent):
         self._segment_session = None
         self._segment_timeout = None
         self._segment_limits = None
+        self._total_estimated_spent = Decimal(0)
         await self.upload_instruction(instruction, environment)
         deadline = time.monotonic() + self.execution_timeout_sec if self.execution_timeout_sec else None
         segment = 0
@@ -350,19 +412,38 @@ class YHCAgent(BaseInstalledAgent):
             if self._segment_session and session_id != self._segment_session:
                 self.populate_context_post_run(context)
                 raise ValueError("YHC continuation changed session identity")
+            active_limits = self._segment_limits or {"max_estimated_cost": self.max_estimated_cost}
+            with localcontext() as ctx:
+                ctx.prec = 90
+                limit = Decimal(active_limits.get("max_estimated_cost", "0"))
+                if Decimal(self.max_total_estimated_cost) > 0:
+                    remaining = Decimal(self.max_total_estimated_cost) - self._total_estimated_spent
+                    limit = min(limit, remaining) if limit > 0 else remaining
+                strict_cost = self._strict_segment_cost(usage, limit) if self.reserve_cost_before_dispatch else None
+                strict_usage = not self.reserve_cost_before_dispatch or strict_cost is not None
+                if strict_cost is not None:
+                    self._total_estimated_spent += Decimal(strict_cost["known_estimated_amount"])
+                over_total = (Decimal(self.max_total_estimated_cost) > 0
+                              and self._total_estimated_spent > Decimal(self.max_total_estimated_cost))
             can_continue = (
                 execution.return_code == result["exit_code"] == 1
                 and result["status"] == "failed"
                 and result.get("terminal_reason") == "run_budget_exceeded"
                 and isinstance(error, dict) and error.get("code") == "run_budget_exceeded"
-                and usage is not None and usage["complete"]
+                and usage is not None and usage["complete"] and strict_usage
                 and (Decimal(self.max_estimated_cost if self._segment_limits is None else self._segment_limits.get("max_estimated_cost", "0")) == 0
                      or usage.get("cost_complete") is True)
                 and isinstance(session_id, str) and bool(session_id.strip())
                 and segment < len(self.continuation_budgets)
+                and (Decimal(self.max_total_estimated_cost) == 0
+                     or self._total_estimated_spent < Decimal(self.max_total_estimated_cost))
             )
             if not can_continue:
                 self.populate_context_post_run(context)
+                if self.reserve_cost_before_dispatch and not strict_usage:
+                    raise ValueError("YHC strict reservation receipt is incomplete or exceeds its dispatched limit")
+                if over_total:
+                    raise ValueError("YHC strict reservation receipt exceeds the total estimated-cost envelope")
                 if execution.return_code != 0:
                     raise NonZeroAgentExitCodeError(
                         f"YHC exited with code {execution.return_code}; inspect yhc.jsonl and segment logs")

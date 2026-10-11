@@ -70,7 +70,7 @@ func (r *RunUsage) appendCallRecord(d ProviderUsageDescriptor, call *runUsageCal
 		State: "in_flight", StartedOffsetMillis: call.started.Sub(r.started).Milliseconds(),
 	})
 	if r.cost != nil {
-		r.records[call.recordIndex].Cost = &RunCallCost{State: "in_flight", PriceIndex: call.priceIndex}
+		r.records[call.recordIndex].Cost = &RunCallCost{State: "in_flight", PriceIndex: call.priceIndex, Reservation: call.reservation}
 	}
 }
 

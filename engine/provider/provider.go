@@ -17,6 +17,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/abietic/yhc/engine/execution"
+	"github.com/abietic/yhc/engine/internal/providercost"
 	enginemessages "github.com/abietic/yhc/engine/messages"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 	"github.com/abietic/yhc/engine/provider/agenticglm"
@@ -307,6 +308,10 @@ func (a *agenticChatModel) streamTrusted(
 	if err != nil {
 		return nil, err
 	}
+	return convertAgenticStream(ctx, sr), nil
+}
+
+func convertAgenticStream(ctx context.Context, sr *schema.StreamReader[*schema.AgenticMessage]) *schema.StreamReader[*schema.Message] {
 	acc := newToolCallAccumulator()
 	return schema.StreamReaderWithConvert(sr, func(am *schema.AgenticMessage) (*schema.Message, error) {
 		if am == nil {
@@ -318,7 +323,42 @@ func (a *agenticChatModel) streamTrusted(
 			return nil, nil
 		}
 		return converted, nil
-	}), nil
+	})
+}
+
+func (a *agenticChatModel) PrepareBudgetStream(ctx context.Context, input []*schema.Message, outputCap int, opts ...model.Option) (providercost.Stream, error) {
+	return a.prepareBudgetStreamTrusted(ctx, input, nil, outputCap, opts...)
+}
+
+func (a *agenticChatModel) prepareBudgetStreamTrusted(ctx context.Context, input []*schema.Message, proof *routeProof, outputCap int, opts ...model.Option) (providercost.Stream, error) {
+	preparer, ok := a.inner.(providercost.AgenticPreparer)
+	if !ok {
+		return nil, providercost.ErrUnsupported
+	}
+	agenticInput, err := a.prepareAgenticInput(input, proof)
+	if err != nil {
+		return nil, err
+	}
+	opts = normalizeAgenticOptions(opts)
+	if len(a.tools) > 0 {
+		opts = append(opts, model.WithTools(a.tools))
+	}
+	prepared, err := preparer.PrepareBudgetStream(ctx, agenticInput, outputCap, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &budgetChatStream{inner: prepared}, nil
+}
+
+type budgetChatStream struct{ inner providercost.AgenticStream }
+
+func (s *budgetChatStream) CostBound() providercost.Bound { return s.inner.CostBound() }
+func (s *budgetChatStream) Stream(ctx context.Context) (*schema.StreamReader[*schema.Message], error) {
+	sr, err := s.inner.Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return convertAgenticStream(ctx, sr), nil
 }
 
 func (a *agenticChatModel) prepareAgenticInput(
