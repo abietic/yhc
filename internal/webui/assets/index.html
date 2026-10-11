@@ -367,7 +367,7 @@
       </header>
       <div class="settings-toolbar">
         <label class="settings-search"><span class="sr-only">Search settings</span><input id="settings-search" type="search" placeholder="Find a setting…" autocomplete="off"></label>
-        <label class="settings-scope-label">Apply to <select id="settings-scope"><option value="user">User defaults</option><option value="project">This workspace</option></select></label>
+        <label id="settings-scope-label" class="settings-scope-label">Apply to <select id="settings-scope"><option value="user">User defaults</option><option value="project">This workspace</option></select></label>
       </div>
       <p id="settings-context" class="settings-context"></p>
       <div id="settings-categories" class="settings-categories" role="group" aria-label="Settings categories"></div>
@@ -381,6 +381,7 @@
             </div>
           </details>
           <div id="settings-fields" class="settings-fields"></div>
+          <section id="settings-mcp" class="settings-mcp" aria-label="Current-session MCP inventory" hidden></section>
         </div>
         <footer class="settings-footer">
           <p id="settings-status" role="status" aria-live="polite"></p>

@@ -109,6 +109,13 @@ fence, at most 32 messages per page, and a total 256-item display window.
 Neither view controls an Agent, switches the parent session, nor changes the
 parent draft, selection, or Undo history.
 
+### MCP inventory is observation, not administration
+
+The MCP panel reads the current owned session's inventory snapshot: server
+state, exposed tools, diagnostics, and revision. Its route uses the existing
+session manager and does not load configuration. It cannot authorize a new
+connection, toggle a server, or refresh/restart MCP runtime state.
+
 ## Trust and privacy boundary
 
 The host's native picker registers a workspace path once. The server stores a
@@ -228,7 +235,7 @@ and return the active composer to idle. An unowned cancellation or a stop
 request rejected before it produces a terminal remains an error.
 
 When a reconnect cursor falls behind the bounded event log,
-[`recoverReplayGap`](../../internal/webui/assets/app.mjs#L2054) uses
+[`recoverReplayGap`](../../internal/webui/assets/app.mjs) uses
 [`synchronizeReplayGap`](../../internal/webui/assets/replay.mjs#L1) to apply
 the server snapshot before refreshing durable transcript history. The snapshot
 advances the event cursor and restores live interactions, Activity, and turn
@@ -530,8 +537,8 @@ provider/tool dialect.
   [`session.startNextRuntimeItemLocked`](../../server/appserver/runtime_queue.go#L295)
   own Desktop queue projection and serialized idle admission without taking
   engine settlement authority.
-- [`send`](../../internal/webui/assets/app.mjs#L1640) and
-  [`canQueuePrompt`](../../internal/webui/assets/state.mjs#L1320) own the
+- [`send`](../../internal/webui/assets/app.mjs) and
+  [`canQueuePrompt`](../../internal/webui/assets/state.mjs) own the
   retry-stable renderer request and active-Turn-only control projection.
 - [`unpacked_lifecycle_smoke.cjs`](../../desktop/scripts/unpacked_lifecycle_smoke.cjs)
   owns the isolated loopback fixture, canonical preseed, public snapshot
@@ -555,6 +562,10 @@ provider/tool dialect.
   owns the bounded child-conversation projection; the renderer's
   [`createAgentConversationView`](../../internal/webui/assets/agent_conversation.mjs)
   preserves parent reading state while that projection is open.
+
+- [`Server.handleMCPInventory`](../../server/appserver/mcp_inventory.go) projects
+  the owned session's existing MCP snapshot only; [`createMCPInventoryView`](../../internal/webui/assets/mcp_inventory.mjs)
+  renders that observation without a connection-management control.
 
 - [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
   renderer's draft-clearing fence, not Turn execution or retry idempotency.
