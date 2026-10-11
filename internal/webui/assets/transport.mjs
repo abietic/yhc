@@ -1,3 +1,6 @@
+import { executionDetailQuery } from './agent_execution_detail.mjs';
+import { agentConversationQuery } from './agent_conversation.mjs';
+
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const UUID_PATTERN = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const ATTACH_TURN_FIELDS = new Set(['sessionID', 'prompt', 'clientTurnID']);
@@ -192,6 +195,20 @@ function operationPath(operation, payload = {}) {
       return [`/v1/sessions/${id()}`, 'DELETE'];
     case 'snapshot':
       return [`/v1/sessions/${id()}/snapshot`, 'GET'];
+    case 'getTaskExplorer':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+          Object.keys(payload).some((key) => key !== 'sessionID')) {
+        throw new TypeError('task overview requires only a session id');
+      }
+      return [`/v1/sessions/${id()}/tasks`, 'GET'];
+    case 'getAgentExecutionDetail': {
+      const query = executionDetailQuery(payload);
+      return [`/v1/sessions/${id()}/agent-execution-detail?${query}`, 'GET'];
+    }
+    case 'getAgentTranscript': {
+      const query = agentConversationQuery(payload);
+      return [`/v1/sessions/${id()}/agent-transcript?${query}`, 'GET'];
+    }
     case 'transcriptPage': {
       const query = new URLSearchParams();
       if (payload.cursor) query.set('cursor', payload.cursor);

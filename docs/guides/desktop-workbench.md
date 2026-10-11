@@ -275,6 +275,22 @@ for ownership and verification limits.
    questions, Plan approval, and repeated-tool calls each have their own typed
    controls. Do not answer one kind of card by pasting JSON into chat.
 
+### Inspect tasks without controlling them
+
+Open **Tasks** only while the selected session is live. Refresh reads that
+session's work items and Agent executions; it does not attach saved history or
+control an Agent. Open an execution only when its full execution session and
+thread identity are available. Its terminal-output preview is limited to 64 KiB.
+That is the only explicitly requested full-output payload; shown metadata text
+is independently bounded.
+
+**Open conversation** reads the selected child transcript in pages of at most
+32 messages, within a total 256-item display window. It does not switch the
+parent session or alter its draft, cursor selection, or Undo history. If the
+execution is replay-only, pre-dispatch, incomplete, or has changed since the
+read began, return to Tasks and refresh instead of assuming a different Agent's
+data is equivalent.
+
 An ordinary Send awaiting its admission reply does not prevent further typing.
 The reply clears only its untouched original draft. Later edits remain in their
 own session, even when edited back to the same text. Failure keeps the current

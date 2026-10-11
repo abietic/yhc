@@ -109,7 +109,7 @@
               type="button"
               aria-controls="inspector"
               aria-expanded="false"
-              aria-label="Show activity and changes"
+              aria-label="Show activity, tasks and changes"
             >
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5h11v11h-11z"/><path d="M9.5 2.5v11"/></svg>
             </button>
@@ -120,6 +120,20 @@
           <button id="workbench-notice-dismiss" class="icon-button" type="button" aria-label="Dismiss notification">×</button>
         </div>
         <div id="timeline" class="timeline" aria-live="polite"></div>
+        <section id="agent-conversation" class="agent-conversation" aria-labelledby="agent-conversation-title" hidden>
+          <header class="agent-conversation-header">
+            <div class="agent-conversation-toolbar">
+              <button id="back-to-parent-conversation" class="quiet" type="button">← Parent conversation</button>
+              <button id="refresh-agent-conversation" class="quiet" type="button">Refresh newest</button>
+            </div>
+            <h2 id="agent-conversation-title">Agent conversation <span class="read-only-badge">Read only</span></h2>
+            <p id="agent-conversation-identity" class="agent-conversation-identity"></p>
+            <p class="composer-hint">Viewing does not attach, resume, or send work. Return to the parent conversation to act.</p>
+            <p id="agent-conversation-status" class="agent-conversation-status" role="status"></p>
+            <button id="agent-conversation-older" class="quiet" type="button" hidden>Load older messages</button>
+          </header>
+          <div id="agent-conversation-timeline" class="timeline agent-conversation-timeline" aria-label="Read-only Agent messages"></div>
+        </section>
         <button id="load-earlier" class="quiet load-earlier" type="button" hidden>
           Load earlier
         </button>
@@ -205,7 +219,7 @@
         </form>
       </section>
 
-      <aside id="inspector" class="inspector" aria-label="Activity and changes">
+      <aside id="inspector" class="inspector" aria-label="Activity, tasks and changes">
         <header class="inspector-header">
           <div class="inspector-tabs" role="tablist" aria-label="Inspector">
             <button
@@ -217,12 +231,22 @@
               aria-selected="true"
             >Activity</button>
             <button
+              id="tasks-tab"
+              class="inspector-tab"
+              type="button"
+              role="tab"
+              aria-controls="tasks-view"
+              aria-selected="false"
+              tabindex="-1"
+            >Tasks</button>
+            <button
               id="review-tab"
               class="inspector-tab"
               type="button"
               role="tab"
               aria-controls="review-view"
               aria-selected="false"
+              tabindex="-1"
             >Changes</button>
           </div>
           <div class="inspector-header-actions">
@@ -231,7 +255,7 @@
               id="inspector-close"
               class="icon-button sheet-close"
               type="button"
-              aria-label="Close activity and changes"
+              aria-label="Close activity, tasks and changes"
             >
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
             </button>
@@ -243,6 +267,47 @@
           aria-labelledby="activity-tab"
         >
           <div id="activity" class="activity"></div>
+        </section>
+        <section id="tasks-view" class="tasks-view" role="tabpanel" aria-labelledby="tasks-tab" hidden>
+          <div id="task-overview" class="task-overview">
+          <div class="task-toolbar">
+            <label class="task-search">Search tasks
+              <input id="task-search" type="search" maxlength="512" placeholder="Title, agent, owner…">
+            </label>
+            <label>Show
+              <select id="task-kind">
+                <option value="all">All tasks</option>
+                <option value="work">Work items</option>
+                <option value="execution">Executions</option>
+              </select>
+            </label>
+            <button id="refresh-tasks" class="quiet" type="button">Refresh</button>
+          </div>
+          <p id="task-summary" class="task-summary">Read-only task overview</p>
+          <p id="task-status" class="task-status" role="status" aria-live="polite"></p>
+          <div id="task-list" class="task-list"></div>
+          </div>
+          <section id="execution-detail" class="execution-detail" aria-label="Exact execution detail" hidden>
+            <div class="execution-detail-toolbar">
+              <button id="back-to-tasks" class="quiet" type="button">← Tasks</button>
+              <button id="refresh-execution-detail" class="quiet" type="button">Refresh detail</button>
+            </div>
+            <h3 id="execution-detail-title"></h3>
+            <p id="execution-detail-identity" class="task-status"></p>
+            <div class="execution-detail-tabs" role="tablist" aria-label="Execution detail">
+              <button id="execution-lineage-tab" class="quiet" type="button" role="tab" aria-selected="true" aria-controls="execution-lineage-panel">Lineage</button>
+              <button id="execution-output-tab" class="quiet" type="button" role="tab" aria-selected="false" aria-controls="execution-output-panel" tabindex="-1">Output</button>
+            </div>
+            <p id="execution-detail-status" class="task-status" role="status" aria-live="polite"></p>
+            <section id="execution-lineage-panel" role="tabpanel" aria-labelledby="execution-lineage-tab">
+              <button id="open-agent-conversation" class="quiet" type="button" disabled>Open conversation</button>
+              <dl id="execution-lineage-facts" class="task-facts"></dl>
+            </section>
+            <section id="execution-output-panel" role="tabpanel" aria-labelledby="execution-output-tab" hidden>
+              <p id="execution-output-note" class="task-status"></p>
+              <pre id="execution-output" class="execution-output" tabindex="0" aria-label="Read-only execution output"></pre>
+            </section>
+          </section>
         </section>
         <section
           id="review-view"

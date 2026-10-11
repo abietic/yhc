@@ -53,6 +53,9 @@ import { createTransport } from './transport.mjs';
 import { mountCommandCompletion, insertCompletionEdit } from './command_completion.mjs';
 import { createPromptSuggestion } from './prompt_suggestion.mjs';
 import { createTimelineRenderer } from './timeline_view.mjs';
+import { canReadTaskExplorer, createTaskExplorerView } from './task_explorer.mjs';
+import { createAgentExecutionDetailView, executionDetailEligibility } from './agent_execution_detail.mjs';
+import { createAgentConversationView } from './agent_conversation.mjs';
 import { applyAppearance, createSettingsView } from './settings_view.mjs';
 import {
   buildIdentityViewModel,
@@ -77,6 +80,7 @@ let inspectorView = 'activity';
 let openSheetKind = null;
 let sheetTrigger = null;
 let reviewRequestID = 0;
+let taskRequestID = 0;
 let executionRequestID = 0;
 let catalog;
 let catalogSearchTimer = null;
@@ -93,6 +97,43 @@ const primaryModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ct
 const $ = (id) => document.getElementById(id);
 const timeline = $('timeline');
 const timelineRenderer = createTimelineRenderer(timeline, renderMessage);
+let parentReadingState = null;
+const agentConversationView = createAgentConversationView({
+  document, read: payload => api('getAgentTranscript', payload),
+  onToggle: (open, target) => {
+    if (open) {
+      parentReadingState = { sessionID: target.sessionID, scrollTop: timeline.scrollTop,
+        selectionStart: $('prompt').selectionStart, selectionEnd: $('prompt').selectionEnd,
+        direction: $('prompt').selectionDirection };
+      commandCompletion.dismiss(); promptSuggestion.dismiss(); closeSheet(false);
+    } else if (parentReadingState?.sessionID === state.activeID) {
+      const retained = parentReadingState;
+      requestAnimationFrame(() => {
+        if (state.activeID === retained.sessionID && !agentConversationView.isOpen()) timeline.scrollTop = retained.scrollTop;
+      });
+    }
+    queueMicrotask(render);
+  },
+  returnFocus: target => {
+    if (state.activeID !== target.sessionID) { $('navigation-toggle').focus(); return; }
+    render();
+    const input = $('prompt');
+    input.focus({ preventScroll: true });
+    if (parentReadingState?.sessionID === target.sessionID) {
+      input.setSelectionRange(parentReadingState.selectionStart, parentReadingState.selectionEnd, parentReadingState.direction);
+    }
+  },
+});
+const taskExplorerView = createTaskExplorerView({
+  document, list: $('task-list'), status: $('task-status'), summary: $('task-summary'),
+  refresh: $('refresh-tasks'), search: $('task-search'), kind: $('task-kind'),
+  onInspect: row => agentDetailView.select(row), inspectionReason: executionDetailEligibility,
+});
+const agentDetailView = createAgentExecutionDetailView({
+  document, root: $('execution-detail'), overview: $('task-overview'),
+  read: payload => api('getAgentExecutionDetail', payload), returnFocus: target => taskExplorerView.focusExecution(target),
+  openConversation: target => agentConversationView.open(target),
+});
 const commandCompletion = mountCommandCompletion({
   input: $('prompt'), popup: $('command-completion'), status: $('command-completion-status'),
   request: payload => api('completeCommand', payload),
@@ -104,7 +145,7 @@ const commandCompletion = mountCommandCompletion({
       sessionID: current?.id, input: input.value,
       cursor: [...input.value.slice(0, input.selectionStart)].length,
       selectionEnd: [...input.value.slice(0, input.selectionEnd)].length,
-      enabled: backendAvailable(state) && current?.live && canSubmitTurn(current) && !document.querySelector('dialog[open]') && !openSheetKind,
+      enabled: !agentConversationView.isOpen() && backendAvailable(state) && current?.live && canSubmitTurn(current) && !document.querySelector('dialog[open]') && !openSheetKind,
       fence: JSON.stringify([current?.cursor, current?.execution, current?.active_turn_id]),
     };
   },
@@ -136,7 +177,7 @@ function promptSuggestionSnapshot() {
   return {
     sessionID: current?.id,
     input: $('prompt').value,
-    enabled: backendAvailable(state) && current?.live && canSubmitTurn(current) && current.status === 'idle' &&
+    enabled: !agentConversationView.isOpen() && backendAvailable(state) && current?.live && canSubmitTurn(current) && current.status === 'idle' &&
       current.execution?.permissionMode !== 'plan' && sharedSettings?.fields?.prompt_suggestions?.effective_value === true &&
       !document.querySelector('dialog[open]') && !openSheetKind,
     fence: JSON.stringify([current?.cursor, current?.execution, current?.active_turn_id]),
@@ -285,6 +326,7 @@ function renderSheets() {
   $('sheet-backdrop').hidden = !projection.backdropVisible;
   document.body.classList.toggle('sheet-open', projection.backdropVisible);
   document.querySelector('.workbench').classList.toggle('inspector-open', projection.inspectorExpanded);
+  if (projection.inspectorHidden && agentDetailView.isOpen()) agentDetailView.close();
 }
 
 function openSheet(kind, trigger) {
@@ -294,6 +336,7 @@ function openSheet(kind, trigger) {
   openSheetKind = nextKind;
   sheetTrigger = trigger || document.activeElement;
   renderSheets();
+  renderTasks(activeSession(state));
   const close = nextKind === 'navigation'
     ? $('navigation-close')
     : $('inspector-close');
@@ -341,6 +384,8 @@ function render() {
   renderSessionCreationControls();
   renderSessionList();
   renderActivity(current);
+  renderTasks(current);
+  agentConversationView.render(current, backendReady);
   renderReview(current);
   renderInteraction(current);
   renderLegacyImport(current);
@@ -394,12 +439,12 @@ function render() {
   if ($('prompt').value !== (current.draft || '')) {
     $('prompt').value = current.draft || '';
   }
-  $('prompt').disabled = !backendReady || !canEditDraft(current);
+  $('prompt').disabled = agentConversationView.isOpen() || !backendReady || !canEditDraft(current);
   const queueAdmission = canQueuePrompt(current);
-  $('send').disabled = !backendReady || !(canSubmitTurn(current) || canQueuePrompt(current));
+  $('send').disabled = agentConversationView.isOpen() || !backendReady || !(canSubmitTurn(current) || canQueuePrompt(current));
   $('send').querySelector('span').textContent = queueAdmission ? 'Queue' : 'Send';
   $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (${primaryModifier}⏎)`;
-  $('cancel').disabled = !backendReady || !current.active_turn_id;
+  $('cancel').disabled = agentConversationView.isOpen() || !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
   commandCompletion.refresh();
   paintPromptSuggestion(promptSuggestion.current());
@@ -862,6 +907,16 @@ function renderReview(current) {
   }).join('\n\n');
 }
 
+function renderTasks(current) {
+  taskExplorerView.render(current, backendAvailable(state));
+  agentDetailView.render(current, backendAvailable(state), inspectorView === 'tasks' &&
+    !sheetProjection(window.innerWidth, openSheetKind).inspectorHidden);
+  if (inspectorView === 'tasks') {
+    const snapshot = canReadTaskExplorer(current, backendAvailable(state)) ? current?.tasks?.snapshot : null;
+    $('activity-count').textContent = String(snapshot ? snapshot.work_items.length + snapshot.executions.length : 0);
+  }
+}
+
 function formatReviewTime(value) {
   const timestamp = Date.parse(value || '');
   if (!Number.isFinite(timestamp)) return 'just now';
@@ -873,23 +928,38 @@ function formatReviewTime(value) {
 }
 
 function showInspectorView(view) {
-  inspectorView = view === 'review' ? 'review' : 'activity';
-  const reviewSelected = inspectorView === 'review';
-  $('activity-view').hidden = reviewSelected;
-  $('review-view').hidden = !reviewSelected;
-  $('activity-tab').classList.toggle('active', !reviewSelected);
-  $('activity-tab').setAttribute('aria-selected', String(!reviewSelected));
-  $('review-tab').classList.toggle('active', reviewSelected);
-  $('review-tab').setAttribute('aria-selected', String(reviewSelected));
+  inspectorView = ['activity', 'tasks', 'review'].includes(view) ? view : 'activity';
+  for (const name of ['activity', 'tasks', 'review']) {
+    const selected = inspectorView === name;
+    $(`${name}-view`).hidden = !selected;
+    $(`${name}-tab`).classList.toggle('active', selected);
+    $(`${name}-tab`).setAttribute('aria-selected', String(selected));
+    $(`${name}-tab`).tabIndex = selected ? 0 : -1;
+  }
   render();
   const current = activeSession(state);
   if (
-    reviewSelected &&
+    inspectorView === 'review' &&
     backendAvailable(state) &&
     current?.live &&
     !['offline', 'restoring', 'saved'].includes(current.status)
   ) {
     void loadReview();
+  }
+  if (inspectorView === 'tasks') void loadTasks();
+}
+
+async function loadTasks() {
+  const current = activeSession(state);
+  if (!canReadTaskExplorer(current, backendAvailable(state)) || current.tasks.status === 'loading') return;
+  agentDetailView.close();
+  const requestID = ++taskRequestID;
+  dispatch({ type: 'SESSION_TASKS_LOADING', id: current.id, requestID });
+  try {
+    const response = await api('getTaskExplorer', { sessionID: current.id });
+    dispatch({ type: 'SESSION_TASKS_SUCCESS', id: current.id, requestID, response });
+  } catch (error) {
+    dispatch({ type: 'SESSION_TASKS_FAILED', id: current.id, requestID, error: error.message });
   }
 }
 
@@ -1689,6 +1759,7 @@ async function createSessionForWorkspace(workspace) {
       if (inspectorView === 'review' && state.activeID === created.id) {
         await loadReview();
       }
+      if (inspectorView === 'tasks' && state.activeID === created.id) await loadTasks();
     },
   }).catch(error => { throw sessionScopedError(error, summary.id); });
 }
@@ -1746,6 +1817,7 @@ async function selectSession(id) {
     startStream(id);
   }
   if (inspectorView === 'review') await loadReview();
+  if (inspectorView === 'tasks') await loadTasks();
 }
 
 async function closeSession(session) {
@@ -1797,6 +1869,7 @@ function updateDraft(value) {
 
 async function send(event) {
   event.preventDefault();
+  if (agentConversationView.isOpen()) return;
   commandCompletion.dismiss();
   promptSuggestion.dismiss();
   const current = activeSession(state);
@@ -2574,6 +2647,10 @@ $('load-earlier').onclick = () => {
   }
 };
 $('activity-tab').onclick = () => showInspectorView('activity');
+$('tasks-tab').onclick = () => showInspectorView('tasks');
+$('refresh-tasks').onclick = () => void loadTasks();
+$('task-search').oninput = () => { agentDetailView.close(); renderTasks(activeSession(state)); };
+$('task-kind').onchange = () => { agentDetailView.close(); renderTasks(activeSession(state)); };
 $('review-tab').onclick = () => showInspectorView('review');
 $('refresh-review').onclick = () => void loadReview();
 $('ignore-whitespace').onchange = () => void loadReview();
@@ -2655,6 +2732,12 @@ document.addEventListener('keydown', (event) => {
     closeSheet(false);
     void settingsView.open(trigger);
   }
+  if (!dialogOpen && event.key === 'Escape' && agentDetailView.isOpen()) {
+    event.preventDefault(); event.stopPropagation(); agentDetailView.close(true); return;
+  }
+  if (!dialogOpen && event.key === 'Escape' && !openSheetKind && agentConversationView.isOpen()) {
+    event.preventDefault(); event.stopPropagation(); agentConversationView.close(true); return;
+  }
   if (
     shouldCloseSheetOnEscape(event.key, dialogOpen, openSheetKind) &&
     closeSheet()
@@ -2663,13 +2746,19 @@ document.addEventListener('keydown', (event) => {
     event.stopPropagation();
   }
 });
-for (const [id, other, view] of [['activity-tab', 'review-tab', 'review'], ['review-tab', 'activity-tab', 'activity']]) {
-  $(id).onkeydown = (event) => {
-    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) {
-      event.preventDefault(); showInspectorView(view); $(other).focus();
+const inspectorTabs = ['activity', 'tasks', 'review'];
+inspectorTabs.forEach((view, index) => {
+  $(`${view}-tab`).onkeydown = (event) => {
+    let target;
+    if (event.key === 'ArrowLeft') target = (index + inspectorTabs.length - 1) % inspectorTabs.length;
+    if (event.key === 'ArrowRight') target = (index + 1) % inspectorTabs.length;
+    if (event.key === 'Home') target = 0;
+    if (event.key === 'End') target = inspectorTabs.length - 1;
+    if (target !== undefined) {
+      event.preventDefault(); showInspectorView(inspectorTabs[target]); $(`${inspectorTabs[target]}-tab`).focus();
     }
   };
-}
+});
 window.addEventListener('resize', handleViewportResize);
 
 render();
