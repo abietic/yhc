@@ -116,7 +116,7 @@ HTTP SSE 和隔离 context。原生共享设置 smoke 经实际 form → preload
 
 当前 diff / HEAD 的 focused、clean committed merge 与 evidence-ready 才是本轮
 本地门禁。整合候选的原生结果不能当作每个拆分 HEAD 的逐项原生证明。
-Goal 和工作台 Home 由各自后续切片交付，不由本设置界面宣称已完成。
+工作台 Home 由其后续切片交付，不由本设置界面宣称已完成。
 
 主要 owner：
 

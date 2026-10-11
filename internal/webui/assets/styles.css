@@ -979,6 +979,16 @@ summary:focus-visible {
   font-size: 12px;
 }
 
+/* ---------- Goal ---------- */
+.goal-panel { width: min(calc(100% - 40px), 780px); margin: 0 auto 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-m); background: var(--panel); }
+.goal-toggle { width: 100%; padding: 8px 12px; border: 0; text-align: left; font-weight: 620; background: transparent; }
+.goal-body { display: grid; gap: 8px; padding: 0 12px 12px; border-top: 1px solid var(--border-subtle); }
+.goal-body textarea, .goal-body input { width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--canvas); }
+.goal-status { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; }
+.goal-field { display: grid; gap: 4px; color: var(--text-muted); font-size: 12px; }
+.goal-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.goal-actions .danger { color: var(--danger); }
+
 /* ---------- Composer ---------- */
 
 .composer,

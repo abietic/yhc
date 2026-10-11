@@ -362,6 +362,23 @@ The shared `prompt_suggestions` preference disables these requests. Re-enabling
 a session that started disabled requires creating a new session. The request
 is unavailable during pending decisions, Plan mode or unfinished Goal accounting.
 
+### Run a Goal with explicit lifecycle controls
+
+In an idle live session, open **Goal**, enter an objective and optionally a
+positive token budget, then choose **Create and start**. Token and active-time
+accounting, plus usage coverage, remain owned by the existing Goal runtime;
+the panel projects its supported Goal state. Pause, Resume, Continue, budget edits, and Clear are separate
+revision-bound actions; a changed Goal requires reload rather than a blind
+retry. Clearing always asks for confirmation.
+
+While a Goal turn is active, Pause requests immediate cancellation; runtime
+aftercare owns final status. Other lifecycle mutations require idle state and
+no pending Plan approval. A saved
+transition can report that its initial turn did not start; reload and choose an
+explicit continuation if appropriate. The Desktop panel does not display or
+reserve upstream provider cost; headless cost-reservation flags do not create a
+Desktop cost control.
+
 When you quit while turns are active, choose **Quit and stop turns** only when
 you are ready to interrupt them. Normal shutdown is usually immediate, but YHC
 allows a running local backend 17 seconds to finish bounded cleanup and, if

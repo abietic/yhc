@@ -176,6 +176,11 @@ function operationPath(operation, payload = {}) {
 	}
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
+    case 'getGoal':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('invalid goal payload');
+      return [`/v1/sessions/${id()}/goal`, 'GET'];
+    case 'controlGoal':
+      return [`/v1/sessions/${id()}/goal/control`, 'POST', goalControlPayload(payload)];
     case 'getMCPInventory':
       if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('MCP inventory requires only a session id');
       return [`/v1/sessions/${id()}/mcp-inventory`, 'GET'];
@@ -303,6 +308,18 @@ function operationPath(operation, payload = {}) {
     default:
       throw new TypeError('unsupported client API operation');
   }
+}
+
+function goalControlPayload(payload) {
+  const allowed = new Set(['sessionID', 'operation', 'expected_goal_id', 'expected_revision', 'objective', 'token_budget']);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !allowed.has(key)) || !['create', 'edit', 'pause', 'resume', 'budget', 'clear', 'continue'].includes(payload.operation) || typeof payload.expected_goal_id !== 'string' || typeof payload.expected_revision !== 'string' || !/^(0|[1-9][0-9]*)$/.test(payload.expected_revision) || (payload.objective !== undefined && (typeof payload.objective !== 'string' || !payload.objective.isWellFormed() || payload.objective.includes('\0') || [...payload.objective].length > 4000)) || (payload.token_budget !== undefined && (typeof payload.token_budget !== 'string' || !/^[1-9][0-9]*$/.test(payload.token_budget)))) throw new TypeError('invalid goal payload');
+  if (payload.expected_goal_id.length > 256 || !payload.expected_goal_id.isWellFormed() || payload.expected_goal_id.includes('\0') || (payload.operation === 'create' && (payload.expected_goal_id !== '' || payload.expected_revision !== '0' || typeof payload.objective !== 'string')) || (payload.operation === 'edit' && (typeof payload.objective !== 'string' || payload.token_budget !== undefined)) || (payload.operation === 'budget' && (typeof payload.token_budget !== 'string' || payload.objective !== undefined)) || (!['create', 'edit', 'budget'].includes(payload.operation) && (payload.objective !== undefined || payload.token_budget !== undefined))) throw new TypeError('invalid goal payload');
+  if (payload.expected_revision.length > 20 || BigInt(payload.expected_revision) > 18446744073709551615n || (payload.token_budget !== undefined && (payload.token_budget.length > 20 || BigInt(payload.token_budget) > 18446744073709551615n)) || (payload.operation !== 'create' && (!payload.expected_goal_id || payload.expected_revision === '0')) || (['create', 'edit'].includes(payload.operation) && !payload.objective.trim())) throw new TypeError('invalid goal payload');
+  requireSessionID(payload.sessionID);
+  const result = { operation: payload.operation, expected_goal_id: payload.expected_goal_id, expected_revision: payload.expected_revision };
+  if (payload.objective !== undefined) result.objective = payload.objective;
+  if (payload.token_budget !== undefined) result.token_budget = payload.token_budget;
+  return result;
 }
 
 function commandCompletionInput(payload) {
