@@ -50,6 +50,7 @@ import {
   synchronizeReplayGap,
 } from './replay.mjs';
 import { createTransport } from './transport.mjs';
+import { createTimelineRenderer } from './timeline_view.mjs';
 import {
   buildIdentityViewModel,
   interactionViewModel,
@@ -81,6 +82,7 @@ let providerSetupBusy = false;
 
 const $ = (id) => document.getElementById(id);
 const timeline = $('timeline');
+const timelineRenderer = createTimelineRenderer(timeline, renderMessage);
 const sessionList = $('session-list');
 const activity = $('activity');
 const pendingWorkspace = createPendingWorkspaceRetry(createSessionForWorkspace);
@@ -256,7 +258,10 @@ function render() {
     : 'Load earlier';
 
   if (!current) {
-    timeline.replaceChildren($('empty-state').content.cloneNode(true));
+    if (!timeline.querySelector('.empty')) {
+      timelineRenderer.reset();
+      timeline.replaceChildren($('empty-state').content.cloneNode(true));
+    }
     renderEmptyState();
     $('session-title').textContent = 'New session';
     $('session-path').textContent = 'Choose a workspace';
@@ -297,6 +302,7 @@ function render() {
   renderExecutionControls(current);
 
   if (current.messages.length === 0) {
+    timelineRenderer.reset();
     timeline.replaceChildren(element(
       'div',
       'session-empty',
@@ -307,7 +313,7 @@ function render() {
         : 'Select a resumable session or create a new workspace session.',
     ));
   } else {
-    timeline.replaceChildren(...current.messages.map(renderMessage));
+    timelineRenderer.render(current.id, current.messages);
   }
 }
 
