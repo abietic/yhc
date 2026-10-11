@@ -41,6 +41,15 @@ func (e *verificationReportFormatError) correctable() bool {
 		e.category == "check_status_enum" || e.category == "check_status_missing"
 }
 
+// Only inconsistent aggregate claims have a recoverable semantic category.
+// Ownership, size, schema, field, and receipt failures remain hard errors.
+type verificationReportSemanticError struct {
+	category    string
+	description string
+}
+
+func (e *verificationReportSemanticError) Error() string { return e.description }
+
 // Semantic failures take precedence over formatting errors. In particular an
 // invalid status cannot erase a known contradiction or supply a FAIL witness.
 func verificationReportSemantics(report independentVerificationReport) error {
@@ -51,19 +60,38 @@ func verificationReportSemantics(report independentVerificationReport) error {
 		return fmt.Errorf("too many verification checks")
 	}
 	if report.Verdict == "PASS" && (!report.CoverageComplete || len(report.Checks) == 0 || len(report.Missing) != 0) {
-		return fmt.Errorf("PASS requires complete executable coverage")
+		return &verificationReportSemanticError{"pass_incomplete_coverage", "PASS requires complete executable coverage"}
 	}
 	failed := false
 	for _, check := range report.Checks {
 		failed = failed || check.Status == "FAIL"
 		if report.Verdict == "PASS" && (check.Status == "FAIL" || check.Status == "UNVERIFIED") {
-			return fmt.Errorf("PASS contradicts a check")
+			return &verificationReportSemanticError{"pass_contradicts_check", "PASS contradicts a check"}
 		}
 	}
 	if report.Verdict == "FAIL" && !failed {
-		return fmt.Errorf("FAIL requires a counterexample")
+		return &verificationReportSemanticError{"fail_without_counterexample", "FAIL requires a counterexample"}
 	}
 	return nil
+}
+
+// This is a runtime PARTIAL diagnostic, never a model correction or a new
+// counterexample. Revalidate every field before the caller binds fresh receipts;
+// a semantic error must not hide a malformed check or grant a format retry.
+func verificationRecoverReportSemantics(report independentVerificationReport, issue *verificationReportSemanticError) (independentVerificationReport, error) {
+	candidate := report
+	candidate.Verdict = "PARTIAL"
+	candidate.CoverageComplete = false
+	candidate.Missing = []string{"The checker report contained inconsistent completion claims. Execute fresh checks for the original behavioral obligations; retained check results are planning data and do not establish completion."}
+	encoded, err := json.Marshal(candidate)
+	if err != nil {
+		return report, err
+	}
+	if _, err := parseIndependentVerificationReport(string(encoded)); err != nil {
+		return report, err
+	}
+	candidate.reportIssue = issue.category
+	return candidate, nil
 }
 
 func verificationCorrectionPreservesReport(before, after independentVerificationReport) error {

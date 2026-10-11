@@ -73,6 +73,20 @@ repeating solver completion. Summaries report completed supplemental audits as
 to usage. Keep all verification options identical on `--resume-verification`.
 Legacy cursors without this option mean zero; a legacy pending PARTIAL repair
 is rejected, while a pending FAIL repair remains resumable.
+If the checker's initial complete report claims PASS with incomplete coverage,
+missing checks, or FAIL/UNVERIFIED check statuses, or claims FAIL without a
+failed check, the runtime retains it as PARTIAL with a categorical
+`report_issue`. Every check field and referenced fresh Bash receipt must still
+be valid, and provider usage must be complete. UNVERIFIED checks may omit both
+receipt and command; supplied references must still validate on this recovery
+path. Aggregate coverage claims and
+missing text are replaced by a runtime request for fresh checks; check statuses
+are retained as planning data. This uses only the configured supplemental audit
+and never authorizes solver repair by itself. Invalid JSON, malformed fields,
+unknown or failed receipts, cancellation, provider errors, and incomplete usage
+remain errors. A format correction that changes claims into a contradiction
+also remains an error. A budget pause preserves the pending supplemental stage;
+continuation uses fresh receipts and does not renew its allowance.
 Add `--verification-coverage-review` to review each provisional PASS once
 without tools. It defaults off and consumes one additional model round from
 the same finite provider-call/token allowance and deadline. Evidence gaps
