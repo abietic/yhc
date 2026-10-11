@@ -947,17 +947,17 @@ privacy:
       match_sha256: f825aa1468cad6e8b12fcad06830639d9730e8cb6ad1221e20bc0769d5c65061
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/runtime-events.md
-      line: 533
+      line: 548
       rule_id: high-entropy-token
       match_sha256: aece79c263020517bf0e500b74fa44f5d8434ca372e0203fa4f8e766a181d5bc
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/runtime-events.md
-      line: 539
+      line: 554
       rule_id: high-entropy-token
       match_sha256: 490b8ea735e36d906d7280854dcdd54c5e5365c1511254165f35d3defe23df2d
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/runtime-events.md
-      line: 544
+      line: 559
       rule_id: high-entropy-token
       match_sha256: 21619631049e363032a186489e2f5fac2baeeeefc2e84bec18743c52ffa4185b
       purpose: documentation-example
