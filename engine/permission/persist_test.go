@@ -2,12 +2,44 @@ package permission
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/abietic/yhc/engine/config"
 )
+
+func TestPermissionPersistenceRejectsMalformedSettingsWithoutOverwriting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, dest := range []SettingsDestination{DestUserSettings, DestProjectSettings, DestLocalSettings} {
+		t.Run(string(dest), func(t *testing.T) {
+			project := t.TempDir()
+			path := settingsPathForDest(project, dest)
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			const original = `{"opaque":"fixture-only",`
+			if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for _, update := range []func() error{
+				func() error { return PersistPermissionRules(project, []string{"Read"}, ActionAllow, dest) },
+				func() error { return RemovePermissionRules(project, []string{"Read"}, ActionAllow, dest) },
+			} {
+				if err := update(); !errors.Is(err, config.ErrSettingsInvalid) {
+					t.Fatalf("malformed settings were not rejected: %v", err)
+				}
+				data, err := os.ReadFile(path)
+				if err != nil || string(data) != original {
+					t.Fatalf("malformed settings were overwritten: %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestPersistRulesToNewFile(t *testing.T) {
 	dir := t.TempDir()

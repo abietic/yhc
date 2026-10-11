@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/abietic/yhc/engine/config"
 )
@@ -20,26 +19,17 @@ const (
 	DestLocalSettings   SettingsDestination = "localSettings"
 )
 
-// settingsPersistenceMu serializes process-local read-modify-write operations
-// across every settings destination. Writes are rare and must not lose an
-// exact rule when concurrent permission decisions settle in one process.
-var settingsPersistenceMu sync.Mutex
-
 // PersistPermissionRules adds permission rules to the specified settings file.
 // It performs a read-merge-write cycle, preserving all other keys in the JSON.
 // Duplicate rules (after normalization) are skipped.
 func PersistPermissionRules(projectDir string, rules []string, action PermissionAction, dest SettingsDestination) error {
 	filePath := settingsPathForDest(projectDir, dest)
-	settingsPersistenceMu.Lock()
-	defer settingsPersistenceMu.Unlock()
 	return addRulesToSettingsFile(filePath, rules, action)
 }
 
 // RemovePermissionRules removes matching permission rules from the specified settings file.
 func RemovePermissionRules(projectDir string, rules []string, action PermissionAction, dest SettingsDestination) error {
 	filePath := settingsPathForDest(projectDir, dest)
-	settingsPersistenceMu.Lock()
-	defer settingsPersistenceMu.Unlock()
 	return removeRulesFromSettingsFile(filePath, rules, action)
 }
 
@@ -212,95 +202,92 @@ func escapeExactRuleWildcards(pattern string) string {
 
 // addRulesToSettingsFile performs the read-merge-write cycle for adding rules.
 func addRulesToSettingsFile(filePath string, rules []string, action PermissionAction) error {
-	settings, err := readSettingsMap(filePath)
-	if err != nil {
-		return err
-	}
-
-	// Get or create the permissions section.
-	permsRaw, ok := settings["permissions"]
-	if !ok {
-		permsRaw = map[string]any{}
-	}
-	perms, ok := permsRaw.(map[string]any)
-	if !ok {
-		perms = map[string]any{}
-	}
-
-	// Get or create the behavior array (allow/deny/ask).
-	key := string(action)
-	existing := toStringSlice(perms[key])
-
-	// Normalize existing rules for dedup.
-	normalizedExisting := make(map[string]bool, len(existing))
-	for _, r := range existing {
-		normalizedExisting[normalizeRule(r)] = true
-	}
-
-	// Append only new rules.
-	added := false
-	for _, r := range rules {
-		if normalizedExisting[normalizeRule(r)] {
-			continue
-		}
-		existing = append(existing, r)
-		added = true
-	}
-	if !added {
-		return nil // all rules already present
-	}
-
-	perms[key] = existing
-	settings["permissions"] = perms
-	return writeSettingsMap(filePath, settings)
+	return config.UpdateSettingsDocument(filePath, func(settings map[string]json.RawMessage) (bool, error) {
+		return changePermissionSettings(settings, rules, action, "add")
+	})
 }
 
 // removeRulesFromSettingsFile performs the read-modify-write cycle for removing rules.
 func removeRulesFromSettingsFile(filePath string, rules []string, action PermissionAction) error {
-	settings, err := readSettingsMap(filePath)
-	if err != nil {
-		return err
-	}
+	return config.UpdateSettingsDocument(filePath, func(settings map[string]json.RawMessage) (bool, error) {
+		return changePermissionSettings(settings, rules, action, "remove")
+	})
+}
 
-	permsRaw, ok := settings["permissions"]
-	if !ok {
-		return nil // nothing to remove
-	}
-	perms, ok := permsRaw.(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	key := string(action)
-	existing := toStringSlice(perms[key])
-	if len(existing) == 0 {
-		return nil
-	}
-
-	// Build set of rules to remove (normalized).
-	removeSet := make(map[string]bool, len(rules))
-	for _, r := range rules {
-		removeSet[normalizeRule(r)] = true
-	}
-
-	// Filter out matching rules.
-	filtered := make([]string, 0, len(existing))
-	for _, r := range existing {
-		if !removeSet[normalizeRule(r)] {
-			filtered = append(filtered, r)
+// strictPermissionSettingsSection validates the structured rule arrays before
+// either persistence caller publishes a replacement shared document.
+func strictPermissionSettingsSection(fields map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	perms := map[string]json.RawMessage{}
+	if raw, ok := fields["permissions"]; ok && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &perms); err != nil || perms == nil {
+			return nil, config.ErrSettingsInvalid
 		}
 	}
-	if len(filtered) == len(existing) {
-		return nil // nothing changed
+	for _, action := range []PermissionAction{ActionAllow, ActionDeny, ActionAsk} {
+		if raw, ok := perms[string(action)]; ok {
+			var values []string
+			if err := json.Unmarshal(raw, &values); err != nil {
+				return nil, config.ErrSettingsInvalid
+			}
+		}
 	}
+	return perms, nil
+}
 
-	if len(filtered) == 0 {
+// changePermissionSettings keeps add/remove semantics under the shared store's
+// document lock, retaining unrelated keys and normalized deduplication.
+func changePermissionSettings(fields map[string]json.RawMessage, rules []string, action PermissionAction, operation string) (bool, error) {
+	perms, err := strictPermissionSettingsSection(fields)
+	if err != nil {
+		return false, err
+	}
+	key := string(action)
+	existing := permissionSettingsRules(perms[key])
+	normalized := map[string]bool{}
+	for _, rule := range rules {
+		normalized[normalizeRule(rule)] = true
+	}
+	changed := false
+	if operation == "remove" {
+		filtered := make([]string, 0, len(existing))
+		for _, rule := range existing {
+			if normalized[normalizeRule(rule)] {
+				changed = true
+			} else {
+				filtered = append(filtered, rule)
+			}
+		}
+		existing = filtered
+	} else {
+		seen := map[string]bool{}
+		for _, rule := range existing {
+			seen[normalizeRule(rule)] = true
+		}
+		for _, rule := range rules {
+			n := normalizeRule(rule)
+			if !seen[n] {
+				existing = append(existing, rule)
+				seen[n] = true
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	if len(existing) == 0 {
 		delete(perms, key)
 	} else {
-		perms[key] = filtered
+		perms[key], _ = json.Marshal(existing)
 	}
-	settings["permissions"] = perms
-	return writeSettingsMap(filePath, settings)
+	fields["permissions"], _ = json.Marshal(perms)
+	return true, nil
+}
+
+func permissionSettingsRules(raw json.RawMessage) []string {
+	var rules []any
+	_ = json.Unmarshal(raw, &rules)
+	return toStringSlice(rules)
 }
 
 // settingsPathForDest maps a destination to a file path.
@@ -315,34 +302,6 @@ func settingsPathForDest(projectDir string, dest SettingsDestination) string {
 	default:
 		return config.ProjectLocalConfigPath(projectDir)
 	}
-}
-
-// readSettingsMap reads a settings JSON file into a generic map.
-// Returns an empty map if the file does not exist.
-func readSettingsMap(filePath string) (map[string]any, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string]any{}, nil
-		}
-		return nil, fmt.Errorf("reading settings: %w", err)
-	}
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		// Lenient: start fresh if JSON is malformed.
-		return map[string]any{}, nil
-	}
-	return result, nil
-}
-
-// writeSettingsMap writes a generic map to a JSON file atomically.
-func writeSettingsMap(filePath string, settings map[string]any) error {
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling settings: %w", err)
-	}
-	data = append(data, '\n')
-	return atomicWriteFile(filePath, data)
 }
 
 // atomicWriteFile writes data to a file atomically via write-to-tmp + rename.
