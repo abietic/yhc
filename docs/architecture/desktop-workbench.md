@@ -235,7 +235,7 @@ and return the active composer to idle. An unowned cancellation or a stop
 request rejected before it produces a terminal remains an error.
 
 When a reconnect cursor falls behind the bounded event log,
-[`recoverReplayGap`](../../internal/webui/assets/app.mjs#L2054) uses
+[`recoverReplayGap`](../../internal/webui/assets/app.mjs) uses
 [`synchronizeReplayGap`](../../internal/webui/assets/replay.mjs#L1) to apply
 the server snapshot before refreshing durable transcript history. The snapshot
 advances the event cursor and restores live interactions, Activity, and turn
@@ -537,8 +537,8 @@ provider/tool dialect.
   [`session.startNextRuntimeItemLocked`](../../server/appserver/runtime_queue.go#L295)
   own Desktop queue projection and serialized idle admission without taking
   engine settlement authority.
-- [`send`](../../internal/webui/assets/app.mjs#L1640) and
-  [`canQueuePrompt`](../../internal/webui/assets/state.mjs#L1320) own the
+- [`send`](../../internal/webui/assets/app.mjs) and
+  [`canQueuePrompt`](../../internal/webui/assets/state.mjs) own the
   retry-stable renderer request and active-Turn-only control projection.
 - [`unpacked_lifecycle_smoke.cjs`](../../desktop/scripts/unpacked_lifecycle_smoke.cjs)
   owns the isolated loopback fixture, canonical preseed, public snapshot
