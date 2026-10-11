@@ -1,4 +1,5 @@
 import {createMCPInventoryView} from './mcp_inventory.mjs';
+import {createPermissionSettingsView} from './permission_settings.mjs';
 
 function node(tag, className, text) {
   const item = document.createElement(tag);
@@ -82,17 +83,20 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   let fieldEditors = [];
   let lastSelectionKey;
   const mcpView = createMCPInventoryView({root: $('settings-mcp'), api, context});
+  const permissionView = createPermissionSettingsView({root: $('settings-permissions'), actionsRoot: $('settings-permission-actions'), api, context, confirmDiscard, onActivity: updateActions});
 
   function updateActions() {
+    permissionView.setBlocked(busy);
+    const panelBusy = busy || permissionView.isBusy();
     const dirty = Object.keys(changes).length > 0;
-    $('settings-save').disabled = busy || !dirty || !snapshot || conflicted;
+    $('settings-save').disabled = panelBusy || !dirty || !snapshot || conflicted;
     $('settings-save').textContent = busy ? 'Working…' : 'Save changes';
-    $('settings-scope').disabled = busy;
-    $('settings-reload').disabled = busy;
-    $('settings-close').disabled = busy;
-    $('settings-credentials-open').disabled = busy;
+    $('settings-scope').disabled = panelBusy;
+    $('settings-reload').disabled = panelBusy;
+    $('settings-close').disabled = panelBusy;
+    $('settings-credentials-open').disabled = panelBusy;
     for (const update of fieldEditors) update();
-    for (const button of $('settings-categories').querySelectorAll('button')) button.disabled = busy || (!snapshot && button.dataset.settingsCategory !== 'mcp');
+    for (const button of $('settings-categories').querySelectorAll('button')) button.disabled = panelBusy || (!snapshot && !['mcp', 'permissions'].includes(button.dataset.settingsCategory));
     if (!busy && !conflicted && snapshot) $('settings-status').textContent = dirty ? 'Unsaved changes' : 'Up to date';
   }
 
@@ -120,19 +124,23 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     const credentialsVisible = settingsCredentialsMatches(category, query);
     $('settings-credentials').hidden = !credentialsVisible;
     const mcpVisible = query ? 'mcp servers tools extensions runtime connection status'.includes(query) : category === 'mcp';
-    $('settings-fields').hidden = category === 'mcp' && !query;
-    $('settings-scope-label').hidden = category === 'mcp' && !query;
-    $('settings-save').hidden = category === 'mcp' && !query;
-    $('settings-reload').hidden = category === 'mcp' && !query;
+    const permissionsVisible = query ? 'permission rules allow deny ask safety local project'.includes(query) : category === 'permissions';
+    const specialized = (['mcp', 'permissions'].includes(category) && !query) || (permissionsVisible && visible === 0);
+    $('settings-fields').hidden = specialized;
+    $('settings-scope-label').hidden = specialized;
+    $('settings-save').hidden = specialized;
+    $('settings-reload').hidden = specialized;
+    $('settings-status').hidden = permissionsVisible && specialized;
     mcpView.setVisible(dialog.open && mcpVisible);
+    permissionView.setVisible(dialog.open && permissionsVisible);
     const noResults = $('settings-fields').querySelector('.settings-no-results');
-    if (noResults) noResults.hidden = visible > 0 || credentialsVisible || mcpVisible;
+    if (noResults) noResults.hidden = visible > 0 || credentialsVisible || mcpVisible || permissionsVisible;
   }
 
   function renderNavigation(groups) {
     const navigation = $('settings-categories');
     navigation.replaceChildren();
-    for (const group of [{id: 'all', label: 'All settings'}, ...groups, {id: 'mcp', label: 'Extensions · MCP'}]) {
+    for (const group of [{id: 'all', label: 'All settings'}, ...groups, {id: 'permissions', label: 'Permission rules'}, {id: 'mcp', label: 'Extensions · MCP'}]) {
       const button = node('button', 'settings-category', group.label);
       button.type = 'button'; button.dataset.settingsCategory = group.id;
       button.setAttribute('aria-controls', 'settings-body');
@@ -151,7 +159,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     fieldEditors = [];
     renderedFields = snapshot.fields;
     const groups = settingsGroups(renderedFields);
-    if (category !== 'mcp' && !groups.some(group => group.id === category)) category = 'all';
+    if (!['mcp', 'permissions'].includes(category) && !groups.some(group => group.id === category)) category = 'all';
     renderNavigation(groups);
     for (const [index, group] of groups.entries()) {
       const panel = node('section', 'settings-group-panel');
@@ -279,13 +287,14 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     }
   }
 
-  async function discardAllowed() {
-    return Object.keys(changes).length === 0 || await confirmDiscard();
+  async function discardAllowed(includePermissions = false) {
+    if (permissionView.isBusy()) return false;
+    return (Object.keys(changes).length === 0 && (!includePermissions || !permissionView.dirty())) || await confirmDiscard();
   }
 
   async function close() {
-    if (busy || !await discardAllowed()) return;
-    generation++; changes = {}; lastSelectionKey = undefined; dialog.close(); mcpView.setVisible(false); trigger?.focus();
+    if (busy || !await discardAllowed(true)) return;
+    generation++; changes = {}; lastSelectionKey = undefined; dialog.close(); mcpView.setVisible(false); permissionView.setVisible(false); permissionView.reset(); trigger?.focus();
   }
 
   // Native form validation must reveal a hidden invalid field before focusing it.
@@ -300,7 +309,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   }, true);
   $('settings-form').onsubmit = async (event) => {
     event.preventDefault();
-    if (busy || !snapshot || conflicted || !Object.keys(changes).length) return;
+    if (busy || permissionView.isBusy() || !snapshot || conflicted || !Object.keys(changes).length) return;
     busy = true; updateActions();
     let selectionFocus;
     try {
@@ -346,7 +355,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     scope = $('settings-scope').value; await load();
   };
   $('settings-credentials-open').onclick = async () => {
-    if (!busy && await discardAllowed()) { changes = {}; dialog.close(); mcpView.setVisible(false); manageCredentials(); }
+    if (!busy && await discardAllowed(true)) { changes = {}; dialog.close(); mcpView.setVisible(false); permissionView.setVisible(false); permissionView.reset(); manageCredentials(); }
   };
 
   return {
@@ -361,7 +370,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
       filter();
       $('settings-scope').querySelector('[value="project"]').disabled = !sessionID;
       $('settings-context').textContent = current.workspace
-        ? 'Shared with TUI · Workspace: ' + current.workspace + '. Agent defaults apply to new sessions; current-session controls stay in the composer.'
+        ? 'Shared with TUI · Workspace: ' + current.workspace + '. Agent defaults apply to new sessions; permission rules can reload the selected idle session.'
         : 'Shared with TUI · User defaults apply to new sessions. Open a live session to edit workspace overrides.';
       $('settings-credentials-open').hidden = !current.manageCredentials;
       $('settings-credentials-copy').textContent = current.legacyProfile
@@ -370,6 +379,6 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
       dialog.showModal(); $('settings-search').focus(); await load();
     },
     isOpen: () => dialog.open,
-    updateContext: () => mcpView.updateContext(),
+    updateContext: () => { mcpView.updateContext(); permissionView.updateContext(); },
   };
 }

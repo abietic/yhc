@@ -53,6 +53,17 @@ Reset 是草稿，不是写操作；仅本范围存储的覆盖可进入删除�
 输入和 patch。没有 override 的编辑只能 Discard change。明确 Save / Reload 后，
 仍以共享服务返回的 snapshot 为准。
 
+## 权限规则编辑边界
+
+权限规则编辑复用 core 的 `writeContext` 文件事务：一批 add/remove 以 revision
+原子保存，未知字段与旧规则保留。`project` / `local` 范围只能从当前 owned live
+session 的 project root 解析；请求不接受任意路径。变更是封闭的 typed rule 对象，
+非法 action、operation、空值或超限值会拒绝。
+
+明确 **Save** 才会提交，不会把当前 pending interaction 自动放宽。执行中或等待
+Plan approval 时保存被拒绝；写入后才尝试把新规则装入该 engine，失败会作为 reload
+诊断返回，而不是把磁盘规则伪装成已生效的授权。
+
 ## 主机与异步边界
 
 Desktop 的 `apiResult` 用普通对象传递公开 HTTP 错误，renderer 再构造 Error，
@@ -63,6 +74,10 @@ settings GET / PATCH 的主机与 Web 请求有固定 15 秒 deadline，涵盖�
 不改变其他 API 或 SSE。读取超时可关闭并重新打开；写入超时保留草稿并阻止再次 Save，
 必须显式 Reload。超时不证明文件未写入：服务器可能已提交但确认响应尚未返回，
 迟到响应不能清除草稿，Reload 才读取持久化事实。
+
+权限规则 GET/PATCH 使用同样覆盖响应正文的 15 秒截止时间。冲突或不能确认的
+写入保留原草稿，但冻结旧 revision 的编辑与保存；显式 Reload 经丢弃确认后才
+读取新快照。取消确认不会发起读取，已知写入前的 busy/validation 拒绝仍可纠正。
 
 消息 timeline 保持同会话节点身份及原生 details 状态。交互表单按 pending interaction
 和草稿签名更新，队列计数独立刷新，不因无关活动摧毁正在输入的问题答案。
@@ -96,7 +111,7 @@ HTTP SSE 和隔离 context。原生共享设置 smoke 经实际 form → preload
 
 当前 diff / HEAD 的 focused、clean committed merge 与 evidence-ready 才是本轮
 本地门禁。整合候选的原生结果不能当作每个拆分 HEAD 的逐项原生证明。
-权限编辑、Goal 和工作台 Home 由各自后续切片交付，不由本设置界面宣称已完成。
+Goal 和工作台 Home 由各自后续切片交付，不由本设置界面宣称已完成。
 
 主要 owner：
 

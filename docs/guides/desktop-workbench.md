@@ -245,6 +245,24 @@ and existing host credentials take precedence, and a saved key is reused only
 for the same provider and endpoint. Opening a workspace lets the runtime
 resolve that configuration; missing vault metadata alone does not block it.
 
+### Edit permission rules deliberately
+
+Use the permission-rules section only with the scope shown by Settings. A
+workspace scope requires the selected live session; no path can be entered or
+chosen here. Build an add/remove batch with the typed controls, then select
+**Save** to submit its revision-bound changes.
+
+**Cancel** and **Discard** do not submit a write; a revision or validation
+rejection leaves the batch unapplied. A timeout or network failure is
+indeterminate: Desktop and Web abort the request after 15 seconds, including
+a stalled response body. The editor keeps the exact draft but disables editing
+and saving until an explicit **Reload** reads a fresh revision; cancelling its
+discard confirmation preserves the draft, and a late response cannot clear it. A
+`runtime_reload_failed` diagnostic means the rule file may already be committed
+but the current runtime did not reload it; it is not evidence that the save was
+rolled back. YHC will not use this editor to answer a pending permission or
+Plan-approval interaction.
+
 See [configuration](configuration-and-providers.md#edit-persistent-defaults)
 for the nine-field whitelist and [experience boundaries](../architecture/workbench-experience.md)
 for ownership and verification limits.

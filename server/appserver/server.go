@@ -419,6 +419,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("DELETE /v1/sessions/{session_id}", s.handleDeleteSession)
 	api.HandleFunc("GET /v1/settings", s.handleGetSettings)
 	api.HandleFunc("PATCH /v1/settings", s.handleUpdateSettings)
+	api.HandleFunc("GET /v1/permission-settings", s.handleGetPermissionSettings)
+	api.HandleFunc("PATCH /v1/permission-settings", s.handleUpdatePermissionSettings)
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
 	api.HandleFunc("GET /v1/sessions/{session_id}/tasks", s.handleTaskExplorer)
 	api.HandleFunc("GET /v1/sessions/{session_id}/mcp-inventory", s.handleMCPInventory)
@@ -720,6 +722,7 @@ var webAssetPaths = map[string]string{
 	"/layout.mjs":                 "assets/layout.mjs",
 	"/settings_view.mjs":          "assets/settings_view.mjs",
 	"/mcp_inventory.mjs":          "assets/mcp_inventory.mjs",
+	"/permission_settings.mjs":    "assets/permission_settings.mjs",
 	"/timeline_view.mjs":          "assets/timeline_view.mjs",
 	"/task_explorer.mjs":          "assets/task_explorer.mjs",
 	"/agent_execution_detail.mjs": "assets/agent_execution_detail.mjs",
