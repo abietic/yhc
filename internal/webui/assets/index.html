@@ -141,11 +141,15 @@
           <div id="interaction-actions" class="interaction-actions"></div>
         </section>
         <form id="composer" class="composer">
+          <div id="command-completion" class="command-completion" hidden></div>
+          <span id="command-completion-status" class="completion-status" role="status" aria-live="polite"></span>
           <textarea
             id="prompt"
             aria-label="Message YHC"
+            aria-controls="command-completion-list"
+            aria-describedby="command-completion-status"
             rows="3"
-            placeholder="Ask YHC to help with your code…"
+            placeholder="Ask YHC to help with your code… Type / for commands"
           ></textarea>
           <div
             id="queued-prompts"

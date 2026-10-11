@@ -71,6 +71,12 @@ settings GET / PATCH 的主机与 Web 请求有固定 15 秒 deadline，涵盖�
 
 ## 证据与后续范围
 
+命令候选复用 Go registry 的 app-server capability admission、参数元数据与引用规则。
+候选只读，不 attach 历史、不调用 provider、不发送 turn。前端按会话、草稿、选区和
+运行状态拒绝迟到结果；IME 暂停列表。显式接受使用原生 textarea 编辑，Undo / Redo
+同步草稿而不发送。兼容降级插入不承诺 undo，见
+[命令入口](desktop-workbench.md#read-only-command-candidates)。
+
 `make desktop-check` 覆盖 Node 回归与语法；AppServer 模块图测试核对 import 路由和
 MIME，执行设置测试核对同源 reasoning 选项。可选
 [浏览器夹具](../../desktop/scripts/workbench_ui_acceptance.cjs) 只使用合成数据、
@@ -80,7 +86,7 @@ HTTP SSE 和隔离 context。原生共享设置 smoke 经实际 form → preload
 
 当前 diff / HEAD 的 focused、clean committed merge 与 evidence-ready 才是本轮
 本地门禁。整合候选的原生结果不能当作每个拆分 HEAD 的逐项原生证明。
-Command completion、显式 prompt suggestion、Task Explorer、MCP、权限编辑、Goal
+显式 prompt suggestion、Task Explorer、MCP、权限编辑、Goal
 和工作台 Home 由各自后续切片交付，不由本设置界面宣称已完成。
 
 主要 owner：
