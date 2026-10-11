@@ -194,6 +194,7 @@ desktop-check: desktop-test
 	node --check desktop/preload.cjs
 	node --check desktop/scripts/unpacked_lifecycle_smoke.cjs
 	node --check desktop/scripts/verify_packaged_notices.cjs
+	node --check desktop/scripts/workbench_ui_acceptance.cjs
 	node --check internal/webui/assets/activity.mjs
 	node --check internal/webui/assets/app.mjs
 	node --check internal/webui/assets/catalog.mjs
@@ -202,6 +203,8 @@ desktop-check: desktop-test
 	node --check internal/webui/assets/vendor/marked.esm.js
 	node --check internal/webui/assets/provider_setup.mjs
 	node --check internal/webui/assets/session_creation.mjs
+	node --check internal/webui/assets/settings_view.mjs
+	node --check internal/webui/assets/timeline_view.mjs
 	node --check internal/webui/assets/state.mjs
 	node --check internal/webui/assets/transport.mjs
 	node --check internal/webui/assets/view_models.mjs
@@ -664,6 +667,10 @@ desktop-unpacked-native-smokes-darwin-amd64: desktop-package-smoke-darwin-amd64
 
 desktop-unpacked-lifecycle-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64
 	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC
+
+.PHONY: desktop-unpacked-shared-settings-smoke-darwin-arm64
+desktop-unpacked-shared-settings-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64
+	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --shared-settings
 
 desktop-unpacked-window-reopen-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64
 	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --reopen-window

@@ -8,6 +8,14 @@ const EXECUTION_FIELDS = new Set([
   'reasoning_effort',
   'permission_mode',
 ]);
+const SETTINGS_REQUEST_TIMEOUT_MS = 15_000;
+const SETTINGS_TIMEOUT_MESSAGE = 'Settings request timed out. Reload before saving.';
+
+function settingsTimeoutError() {
+  const error = new Error(SETTINGS_TIMEOUT_MESSAGE);
+  error.code = 'settings_timeout';
+  return error;
+}
 
 function requireSessionID(value) {
   if (typeof value !== 'string' || !SESSION_ID_PATTERN.test(value)) {
@@ -155,6 +163,15 @@ function parseSSEFrames(input, emit) {
 function operationPath(operation, payload = {}) {
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
+    case 'getSettings':
+    case 'updateSettings': {
+      const scope = payload.scope || 'user';
+      if (!['user', 'project'].includes(scope)) throw new TypeError('invalid settings scope');
+      const query = new URLSearchParams({ scope });
+      if (payload.sessionID) query.set('session_id', requireSessionID(payload.sessionID));
+      return [`/v1/settings?${query}`, operation === 'getSettings' ? 'GET' : 'PATCH',
+        operation === 'getSettings' ? undefined : { revision: payload.revision, changes: payload.changes }];
+    }
     case 'health':
       return ['/v1/health', 'GET'];
     case 'listSessions':
@@ -294,16 +311,28 @@ function browserTransport() {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
       headers['X-YHC-CSRF'] = csrfToken;
     }
-    const response = await fetch(pathname, {
-      method,
-      credentials: 'same-origin',
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!response.ok) {
-      throw await responseError(response, 'browser request failed');
+    const settingsRequest = (operation === 'getSettings' || operation === 'updateSettings') &&
+      new URL(pathname, window.location.origin).pathname === '/v1/settings';
+    const controller = settingsRequest ? new AbortController() : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), SETTINGS_REQUEST_TIMEOUT_MS) : null;
+    try {
+      const response = await fetch(pathname, {
+        method,
+        credentials: 'same-origin',
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+      if (!response.ok) {
+        throw await responseError(response, 'browser request failed');
+      }
+      return response.status === 204 ? null : await response.json();
+    } catch (error) {
+      if (controller?.signal.aborted) throw settingsTimeoutError();
+      throw error;
+    } finally {
+      if (timeout !== null) clearTimeout(timeout);
     }
-    return response.status === 204 ? null : response.json();
   }
 
   return {
@@ -397,13 +426,38 @@ function browserTransport() {
   };
 }
 
+async function desktopAPI(bridge, operation, payload) {
+  if (typeof bridge.apiResult !== 'function') return bridge.api(operation, payload);
+  const result = await bridge.apiResult(operation, payload);
+  if (result?.ok === true && Object.hasOwn(result, 'value')) return result.value;
+  const failure = result?.error;
+  if (
+    result?.ok !== false || !failure ||
+    typeof failure.message !== 'string' || !failure.message ||
+    (failure.code !== undefined && (
+      typeof failure.code !== 'string' || !/^[a-z][a-z0-9_]{0,127}$/.test(failure.code)
+    )) ||
+    (failure.status !== undefined && (
+      !Number.isInteger(failure.status) || failure.status < 400 || failure.status > 599
+    ))
+  ) {
+    throw new Error('invalid desktop API result');
+  }
+  // Construct Error in the renderer: IPC and contextBridge drop custom Error
+  // properties, whereas the plain result envelope crosses both boundaries.
+  const error = new Error(failure.message);
+  error.code = failure.code || '';
+  if (failure.status !== undefined) error.status = failure.status;
+  throw error;
+}
+
 function desktopTransport(bridge) {
   return {
     getInfo: async () => ({ ...(await bridge.getInfo()), surface: 'desktop' }),
     getProviderStatus: () => bridge.getProviderStatus(),
     configureProvider: (input) => bridge.configureProvider(input),
     selectWorkspace: () => bridge.selectWorkspace(),
-    api: (operation, payload) => bridge.api(operation, payload),
+    api: (operation, payload) => desktopAPI(bridge, operation, payload),
     startEvents: (sessionID, after) => bridge.startEvents(sessionID, after),
     stopEvents: (sessionID) => bridge.stopEvents(sessionID),
     onEventStream: (listener) => bridge.onEventStream(listener),
