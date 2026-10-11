@@ -710,6 +710,7 @@ var webAssetPaths = map[string]string{
 	"/app.mjs":              "assets/app.mjs",
 	"/catalog.mjs":          "assets/catalog.mjs",
 	"/layout.mjs":           "assets/layout.mjs",
+	"/timeline_view.mjs":    "assets/timeline_view.mjs",
 	"/markdown.mjs":         "assets/markdown.mjs",
 	"/provider_setup.mjs":   "assets/provider_setup.mjs",
 	"/state.mjs":            "assets/state.mjs",
