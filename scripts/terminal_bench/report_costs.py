@@ -12,10 +12,11 @@ import argparse
 import json
 import re
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 
-from scripts.terminal_bench.usage import LEDGER_FIELDS, sum_usage, validated_usage
+from scripts.terminal_bench.usage import COST_FIELDS, LEDGER_FIELDS, sum_usage, validated_usage
+from scripts.terminal_bench.native_cost import native_totals
 
 TOKEN_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")
@@ -71,10 +72,16 @@ def convert_estimate(amount: str | None, currency: str, target: str,
 
 def add_conversions(report: dict, cards: list[dict], target: str, snapshots: list[dict]) -> None:
     for row in report["trials"]:
+        row["converted_invocation_estimates"] = {
+            currency: convert_estimate(value["known_estimated_amount"], currency, target, snapshots)
+            for currency, value in row["invocation_native_estimates"].items()}
         row["converted_estimates"] = {
             card["name"]: convert_estimate(row["cost_scenarios"][card["name"]], card["currency"], target, snapshots)
             for card in cards}
     for key in ("all_supplied_trials", "successful_trials"):
+        report[key]["converted_invocation_estimates"] = {
+            currency: convert_estimate(value["known_estimated_amount"], currency, target, snapshots)
+            for currency, value in report[key]["invocation_native_estimates"].items()}
         converted = {}
         for card in cards:
             value = report[key]["currency_estimates"][card["name"]]
@@ -108,8 +115,8 @@ def hydrate_continuation(stat: dict) -> dict:
             # Older adapter aggregates omitted routes even when segment
             # receipts retained them. Compare accounting totals independently.
             if reported is not None and (
-                    {key: value for key, value in reported.items() if key not in ("routes", *LEDGER_FIELDS)}
-                    != {key: value for key, value in total.items() if key not in ("routes", *LEDGER_FIELDS)}):
+                    {key: value for key, value in reported.items() if key not in ("routes", *LEDGER_FIELDS, *COST_FIELDS)}
+                    != {key: value for key, value in total.items() if key not in ("routes", *LEDGER_FIELDS, *COST_FIELDS)}):
                 raise ValueError("Continuation aggregate disagrees with segment usage")
             if reported is not None and "routes" in reported and (
                     {route["model"] for route in reported["routes"]}
@@ -249,7 +256,9 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         reward = stat.get("reward")
         if isinstance(reward, dict):
             reward = reward.get("reward")
+        native = native_totals(validated_usage(stat.get("usage")) or {})
         rows.append({"trial_path": path, "task": manifest.get("task"), "model_request": model,
+                     "invocation_native_estimates": native,
                      "effort": stat.get("effort"), "started_at": manifest.get("started_at"),
                      "reward": reward, "successful": type(reward) in (int, float) and reward > 0,
                      "agent_seconds": stat.get("agent_seconds"), "usage_coverage": coverage, "tokens": tokens,
@@ -267,9 +276,23 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
             "display_currency": display_currency, "fx_snapshots": snapshots,
             "rate_cards": cards, "trials": rows, "all_supplied_trials": aggregate(rows, cards),
             "successful_trials": aggregate(successful, cards)}
+    for key, cohort in (("all_supplied_trials", rows), ("successful_trials", successful)):
+        report[key]["invocation_native_estimates"] = aggregate_native_estimates(cohort)
     if display_currency is not None:
         add_conversions(report, cards, display_currency, snapshots)
     return report
+
+
+def aggregate_native_estimates(rows: list[dict]) -> dict:
+    values = {}
+    with localcontext() as ctx:
+        ctx.prec = 90
+        for row in rows:
+            for currency, cost in row["invocation_native_estimates"].items():
+                values[currency] = values.get(currency, Decimal(0)) + Decimal(cost["known_estimated_amount"])
+    complete = all(row["invocation_native_estimates"] and all(v["complete"] for v in row["invocation_native_estimates"].values()) for row in rows)
+    return {currency: {"known_estimated_amount": str(amount), "complete": complete, "actual_billed_amount": None}
+            for currency, amount in values.items()}
 
 
 def main() -> None:

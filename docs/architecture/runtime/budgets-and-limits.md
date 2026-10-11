@@ -106,10 +106,9 @@ Each resumed process emits a fresh incremental ledger. Harbor retains these as
 `call_ledger_complete` separately from token completeness. Missing/invalid or
 truncated histories do not erase valid aggregate tokens. Older records have no
 invented per-call history. A process kill can still prevent terminal collection;
-this bounded invocation history is not a crash-safe journal. No native-currency
-price lock, per-call invoice, monetary admission cap, or stage reservation is
-implemented by this observer. The existing offline cost report remains an
-explicit rate-card estimate.
+this bounded invocation history is not a crash-safe journal. Native pricing and its optional stopping threshold are described below. This
+history still provides no invoice, monetary dispatch reservation, or stage
+reservation.
 
 Source owners: [`RunUsage`](../../../engine/execution/run_usage.go) owns
 admission/settlement; [`RunUsageLedger`](../../../engine/execution/run_usage_ledger.go)
@@ -120,6 +119,75 @@ call; the [Agentic bridge](../../../engine/provider/provider.go) publishes typed
 response identities; [Harbor usage validation](../../../scripts/terminal_bench/usage.py)
 owns incremental history aggregation. [Headless usage tests](../../../cmd/yhc/cmd/headless_usage_test.go)
 exercise the supported CLI and fresh resume boundaries with local HTTP fixtures.
+
+## Native currency estimates and stopping threshold
+
+`exec --price-card public-prices.json` constructs
+[`NewPricedRunUsage`](../../../engine/execution/run_cost.go) with a detached,
+invocation-fixed version 1 card. The card declares native currency, public
+HTTP(S) source, RFC3339 `as_of`, a `fixed`/`peak`/`off_peak`/`upper_bound` window,
+and up to 128 unique canonical provider/model-selector routes. These are
+explicit pricing assumptions for requested routes, not proof of the responding
+model or account billing. A route must match the descriptor exactly; for example,
+the legacy CLI route uses `legacy:deepseek-v4-flash`, while configured profiles
+use their own selector. Missing routes are unpriced, never guessed from aliases.
+
+Cached input, uncached input and output rates are nonnegative decimal strings
+per million tokens, with at most six fractional digits. Integer arithmetic
+retains exact amounts to twelve fractional digits in the native currency.
+Reasoning output is already included in output. The card and route index are
+bound at admission; repeated settlement cannot charge twice, and a proven
+pre-dispatch release costs zero. Price-file changes do not affect an invocation.
+The window is user-declared: no time-of-day price switch, account lookup, FX
+refresh, or automatic price download occurs. Supply a card covering the whole
+invocation when crossing a pricing window.
+
+`usage.cost` exposes the detached card, segment UUID, `known_estimated_amount`,
+priced/unpriced call counts, coverage and `limit_mode`. The amount is a lower
+bound when cost coverage is incomplete; `actual_billed_amount` remains null.
+Retained call records additionally expose `cost` with state, price index and a
+nullable amount. Aggregate costs still settle after the 1,024-record history
+bound. Token completeness and pricing completeness are separate: valid tokens
+with a missing price remain usable token evidence.
+
+`--max-estimated-cost 1.50` enables a **post-response stopping threshold** in the
+card's native currency; unset or zero disables it. Admission checks known cost
+under the same root mutex as call/token limits. Already admitted concurrent
+calls can overshoot, and even one response may exceed the threshold. This is
+not a dispatch reservation or a strict provider-invoice ceiling. Missing pricing
+blocks dispatch when this threshold is enabled; ambiguous usage fails closed
+with `run_usage_unknown` and prevents further calls. Opaque extensions are
+suppressed by the existing enabled-limit policy. Observation without the
+threshold remains permissive. Shared children, retries and fallback use the
+same collector; external MCP/hook billing and hidden SDK retries remain outside
+its observation boundary.
+
+Harbor accepts `price_card_path`, `max_estimated_cost` and explicit continuation
+grants containing a positive decimal `max_estimated_cost`. It uploads only the
+validated public pricing schema and uses the same fixed card across the trial.
+A monetary pause continues only with complete token and cost receipts, matching
+Session identity, the existing global deadline and one of at most 16 declared
+grants. Each process receives a fresh incremental allowance; there is no
+unbounded automatic top-up. The original workspace and verification cursor
+remain under their existing owners.
+
+[`sum_usage`](../../../scripts/terminal_bench/usage.py) retains bounded
+`cost_segments`, rejects duplicate segment UUIDs and keeps mixed currencies
+separate. Missing or malformed cost evidence does not erase valid tokens or
+create zero-cost history. The offline report exposes native invocation estimates
+for all supplied and successful trials separately, alongside the existing
+retrospective rate scenarios. Display conversion uses an explicitly supplied
+FX snapshot; it never changes the native amount or admission threshold. Older
+trials have no invented invocation-fixed prices.
+
+Source owners: [`RunPriceCard` and `RunCostSnapshot`](../../../engine/execution/run_cost.go)
+own the fixed estimate; [`run cost tests`](../../../engine/execution/run_cost_test.go)
+cover precision, release, ambiguity, concurrency and detached snapshots;
+[CLI usage tests](../../../cmd/yhc/cmd/headless_usage_test.go) cover real local
+HTTP pause/resume with completed tool history;
+[native cost validation](../../../scripts/terminal_bench/native_cost.py) and
+[Harbor cost tests](../../../scripts/terminal_bench/test_native_cost.py) cover
+public schema, incremental grants, duplicate rejection and report coverage.
 
 ## API task budget
 

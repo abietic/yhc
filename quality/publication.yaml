@@ -5291,6 +5291,51 @@ privacy:
       rule_id: credential-assignment
       match_sha256: 29add18e61d41760f69cb15c55069886bd480e96b9d3a64598a0283e39dee321
       purpose: synthetic-security-fixture
+    - path: cmd/yhc/cmd/headless_usage_test.go
+      line: 313
+      rule_id: private-url
+      match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
+      purpose: synthetic-security-fixture
+    - path: engine/execution/run_cost_test.go
+      line: 14
+      rule_id: private-url
+      match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
+      purpose: synthetic-security-fixture
+    - path: engine/execution/run_cost_test.go
+      line: 131
+      rule_id: private-email
+      match_sha256: 417fcd452c004224688c6dd18a675da350d48eaf9b1967f0ab6740042131f2b8
+      purpose: synthetic-security-fixture
+    - path: engine/execution/run_cost_test.go
+      line: 131
+      rule_id: private-url
+      match_sha256: db0131b06d95c848304bcffbf491736fb5bcc9316d9ce4a9481e8f3835a9f648
+      purpose: synthetic-security-fixture
+    - path: engine/execution/run_cost_test.go
+      line: 132
+      rule_id: private-url
+      match_sha256: 0aaa69ac66922af05824d7faefb0b2923bc18bab9938358d05fcdddf0624a291
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_native_cost.py
+      line: 21
+      rule_id: private-url
+      match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_native_cost.py
+      line: 97
+      rule_id: private-email
+      match_sha256: 9200dbf872c5546a9359de16a0786b5df08137cd942a7797d0fe9148b05011ab
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_native_cost.py
+      line: 97
+      rule_id: private-url
+      match_sha256: 0aaa69ac66922af05824d7faefb0b2923bc18bab9938358d05fcdddf0624a291
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_native_cost.py
+      line: 97
+      rule_id: private-url
+      match_sha256: 5615950465cdf8def5c02d3c074e9699790a02e5d0814a68d98d592446d87571
+      purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml
 rules:

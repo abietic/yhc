@@ -14,6 +14,7 @@ import ssl
 import tempfile
 import time
 import uuid
+from decimal import Decimal
 from pathlib import Path, PurePosixPath
 
 from harbor.agents.installed.base import BaseInstalledAgent, NonZeroAgentExitCodeError
@@ -22,6 +23,7 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 from scripts.terminal_bench.usage import sum_usage, validated_usage
+from scripts.terminal_bench.native_cost import decimal_amount, validate_price_card
 
 
 def read_result(path: Path) -> dict:
@@ -68,13 +70,17 @@ def parse_continuation_budgets(value: object) -> list[dict]:
     if not isinstance(value, list) or len(value) > 16:
         raise ValueError("continuation_budgets must be a list of at most 16 grants")
     grants = []
-    keys = {"max_provider_calls", "max_total_tokens"}
+    keys = {"max_provider_calls", "max_total_tokens", "max_estimated_cost"}
     for grant in value:
         if not isinstance(grant, dict) or set(grant) - keys:
-            raise ValueError("Each continuation grant only accepts max_provider_calls and max_total_tokens")
-        grant = {key: grant.get(key, 0) for key in sorted(keys)}
-        if any(type(limit) is not int or not 0 <= limit <= 2**63 - 1 for limit in grant.values()) or not any(grant.values()):
+            raise ValueError("Each continuation grant only accepts provider, token and estimated-cost limits")
+        cost = grant.get("max_estimated_cost", "0")
+        decimal_amount(cost)
+        grant = {key: grant.get(key, 0) for key in sorted(keys - {"max_estimated_cost"})}
+        if any(type(limit) is not int or not 0 <= limit <= 2**63 - 1 for limit in grant.values()) or not (any(grant.values()) or Decimal(cost) > 0):
             raise ValueError("Each continuation grant must have a positive finite int64 limit")
+        if Decimal(cost) > 0:
+            grant["max_estimated_cost"] = cost
         grants.append(grant)
     return grants
 
@@ -100,6 +106,7 @@ class YHCAgent(BaseInstalledAgent):
                  max_turns: int = 0, ripgrep_path: str | None = None,
                  ca_bundle_path: str | None = None, max_provider_calls: int = 0,
                  max_total_tokens: int = 0, execution_timeout_sec: int = 0,
+                 price_card_path: str | None = None, max_estimated_cost: str = "0",
                  continuation_budgets: list | str | None = None,
                  verification_turns: int = 0, verification_repairs: int = 0,
                  verification_coverage_review: bool = False,
@@ -118,8 +125,18 @@ class YHCAgent(BaseInstalledAgent):
         self.execution_timeout_sec = execution_timeout_sec
         self.max_provider_calls = max_provider_calls
         self.max_total_tokens = max_total_tokens
+        decimal_amount(max_estimated_cost)
+        self.max_estimated_cost = max_estimated_cost
+        self.price_card = None
+        if price_card_path:
+            data = Path(price_card_path).expanduser().read_bytes()
+            if len(data) > 65536:
+                raise ValueError("Public price card must be at most 64 KiB")
+            self.price_card = validate_price_card(json.loads(data))
         self.continuation_budgets = parse_continuation_budgets(continuation_budgets)
-        if self.continuation_budgets and not (max_provider_calls or max_total_tokens):
+        if (Decimal(max_estimated_cost) > 0 or any("max_estimated_cost" in grant for grant in self.continuation_budgets)) and self.price_card is None:
+            raise ValueError("Estimated-cost limits require an explicit public native price card")
+        if self.continuation_budgets and not (max_provider_calls or max_total_tokens or Decimal(max_estimated_cost) > 0):
             raise ValueError("continuation_budgets requires a finite initial usage limit")
         for name, value, upper in (("verification_turns", verification_turns, 32),
                                    ("verification_repairs", verification_repairs, 3),
@@ -205,10 +222,13 @@ class YHCAgent(BaseInstalledAgent):
         if self.execution_timeout_sec:
             argv += ["--timeout", self._segment_timeout or f"{self.execution_timeout_sec}s"]
         limits = self._segment_limits or {"max_provider_calls": self.max_provider_calls,
-                                          "max_total_tokens": self.max_total_tokens}
+                                          "max_total_tokens": self.max_total_tokens,
+                                          "max_estimated_cost": self.max_estimated_cost}
         for name, value in limits.items():
-            if value:
+            if value and (name != "max_estimated_cost" or Decimal(value) > 0):
                 argv += ["--" + name.replace("_", "-"), str(value)]
+        if self.price_card is not None:
+            argv += ["--price-card", self.remote_dir + "/price-card.json"]
         if self.verification_turns:
             argv += ["--verification-turns", str(self.verification_turns),
                      "--verification-repairs", str(self.verification_repairs)]
@@ -234,6 +254,12 @@ class YHCAgent(BaseInstalledAgent):
             await self.check_ripgrep(environment, "rg")
         await self.exec_as_root(environment, command=f"mkdir -m 755 {shlex.quote(self.remote_dir)}")
         await environment.upload_file(self.binary_path, self.remote_binary)
+        if self.price_card is not None:
+            with tempfile.TemporaryDirectory(prefix="yhc-public-price-") as directory:
+                card = Path(directory) / "price-card.json"
+                card.write_text(json.dumps(self.price_card), encoding="utf-8")
+                await environment.upload_file(card, self.remote_dir + "/price-card.json")
+            await self.exec_as_root(environment, command=f"chmod 644 {shlex.quote(self.remote_dir + '/price-card.json')}")
         await self.exec_as_root(environment, command=f"chmod 755 {shlex.quote(self.remote_binary)}")
         if self.ripgrep_path:
             remote_rg = self.remote_dir + "/rg"
@@ -330,6 +356,8 @@ class YHCAgent(BaseInstalledAgent):
                 and result.get("terminal_reason") == "run_budget_exceeded"
                 and isinstance(error, dict) and error.get("code") == "run_budget_exceeded"
                 and usage is not None and usage["complete"]
+                and (Decimal(self.max_estimated_cost if self._segment_limits is None else self._segment_limits.get("max_estimated_cost", "0")) == 0
+                     or usage.get("cost_complete") is True)
                 and isinstance(session_id, str) and bool(session_id.strip())
                 and segment < len(self.continuation_budgets)
             )

@@ -151,8 +151,18 @@ guarantee the model will finish early. Cancellation uses the existing exit
 `130` path and settles available usage; shutdown/logging can take additional
 time, so leave a margin before an external container kill deadline.
 
+For native currency estimates, pass `--price-card public-prices.json`.
+Add `--max-estimated-cost 1.50` to stop new calls once the reported estimate
+reaches that amount in the card's currency; this option defaults to disabled.
+In-flight responses can exceed this stopping threshold. The public price-card
+schema, exact route-selector matching, incomplete-cost behavior and explicit
+Harbor continuation grants are owned by
+[budgets and limits](../architecture/runtime/budgets-and-limits.md#native-currency-estimates-and-stopping-threshold).
+A price card records an estimate; it does not read the provider's account bill.
+
 A rejected admission returns exit `1` with `error.code=run_budget_exceeded`;
-incomplete usage under a token limit returns `run_usage_unknown`. Cancellation
+incomplete usage under a token or monetary threshold, or missing required pricing,
+returns `run_usage_unknown`. Cancellation
 retains exit `130`. Reaching a threshold in a successful final answer does not
 itself turn success into failure; the next admission is the enforcement point.
 
