@@ -647,6 +647,9 @@ func TestP245aPlainEventuallyConsumesEligibleGoalWake(t *testing.T) {
 	if !ok || goal.Status != "complete" {
 		t.Fatalf("completed Plain Goal = %#v, available=%v", goal, ok)
 	}
+	if err := eng.RuntimeStateError(); err != nil {
+		t.Fatalf("Plain Goal completion left a rejected runtime event: %v", err)
+	}
 	if items := eng.RuntimeItems(); len(items) != 0 {
 		t.Fatalf("completed Plain Goal retained runtime items: %#v", items)
 	}
