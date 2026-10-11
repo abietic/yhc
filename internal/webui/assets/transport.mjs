@@ -164,6 +164,16 @@ function parseSSEFrames(input, emit) {
 }
 
 function operationPath(operation, payload = {}) {
+	if (operation === 'getPermissionSettings' || operation === 'updatePermissionSettings') {
+		const update = operation === 'updatePermissionSettings';
+		if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !['scope', 'sessionID', ...(update ? ['revision', 'changes'] : [])].includes(key))) throw new TypeError('invalid permission settings payload');
+		const scope = payload.scope ?? 'user';
+		if (!['user', 'project', 'local'].includes(scope) || (scope !== 'user' && !payload.sessionID)) throw new TypeError('invalid permission settings scope');
+		const query = new URLSearchParams({scope});
+		if (payload.sessionID !== undefined) query.set('session_id', requireSessionID(payload.sessionID));
+		if (update && (typeof payload.revision !== 'string' || !/^[a-f0-9]{64}$/i.test(payload.revision) || !Array.isArray(payload.changes) || !payload.changes.length || payload.changes.length > 32 || payload.changes.some(change => !change || typeof change !== 'object' || Array.isArray(change) || Object.keys(change).some(key => !['operation', 'action', 'rule'].includes(key)) || !['add', 'remove'].includes(change.operation) || !['allow', 'deny', 'ask'].includes(change.action) || typeof change.rule !== 'string' || !change.rule.isWellFormed() || !change.rule.trim() || change.rule.includes('\0') || [...change.rule].length > 4096))) throw new TypeError('invalid permission rule changes');
+		return [`/v1/permission-settings?${query}`, update ? 'PATCH' : 'GET', update ? {revision: payload.revision, changes: payload.changes.map(({operation, action, rule}) => ({operation, action, rule}))} : undefined];
+	}
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
     case 'getMCPInventory':
@@ -346,8 +356,9 @@ function browserTransport() {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
       headers['X-YHC-CSRF'] = csrfToken;
     }
-    const settingsRequest = (operation === 'getSettings' || operation === 'updateSettings') &&
-      new URL(pathname, window.location.origin).pathname === '/v1/settings';
+    const requestPath = new URL(pathname, window.location.origin).pathname;
+    const settingsRequest = ((operation === 'getSettings' || operation === 'updateSettings') && requestPath === '/v1/settings') ||
+      ((operation === 'getPermissionSettings' || operation === 'updatePermissionSettings') && requestPath === '/v1/permission-settings');
     const controller = settingsRequest ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), SETTINGS_REQUEST_TIMEOUT_MS) : null;
     try {

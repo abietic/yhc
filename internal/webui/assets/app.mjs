@@ -155,6 +155,7 @@ const settingsView = createSettingsView({
   context: () => ({
     sessionID: activeSession(state)?.live ? state.activeID : undefined,
     backendReady: backendAvailable(state),
+    activeTurn: Boolean(activeSession(state)?.active_turn_id),
     workspace: activeSession(state)?.workspace_label,
     manageCredentials: providerSetup.setupAvailable,
     legacyProfile: providerSetup.configured,

@@ -17,6 +17,7 @@ const errors = [];
 const streams = new Map();
 const heldReads = [];
 const heldWrites = [];
+const heldPermissionWrites = [];
 const heldSuggestions = [];
 const heldTurns = [];
 const heldCloses = [];
@@ -42,6 +43,7 @@ let holdNextSuggestion = false;
 let suggestionRequests = 0;
 let holdNextSettingsRead = false;
 let holdNextSettingsWrite = false;
+let holdNextPermissionWrite = false;
 let failNextSettingsRead = false;
 let failNextSettingsWrite = false;
 let conflictNext = false;
@@ -51,6 +53,10 @@ const projectStored = {};
 const settingsWrites = [];
 let mcpReads = 0;
 let mcpMode = 'normal';
+let permissionReads = 0;
+const permissionWrites = [];
+let conflictNextPermission = false;
+const permissionRules = new Map();
 let creations = 0;
 let sessionSettingWrites = 0;
 let turnRequests = 0;
@@ -89,6 +95,28 @@ function settings(scope = 'user') {
   ) };
 }
 function operation(op, input = {}, conversation = false) {
+  if (op === 'getPermissionSettings' || op === 'updatePermissionSettings') {
+    const scope=input.scope || 'user', owner=input.sessionID || input.session_id || '';
+    const key=scope==='user' ? scope : `${owner}:${scope}`;
+    if(!permissionRules.has(key)) permissionRules.set(key,[
+      {action:'deny',value:'<img src=x>',format:'structured',editable:true,truncated:false,tool_name:'<img src=x>',input_pattern:''},
+      {action:'ask',value:'Bash(echo *):ask',format:'legacy',editable:false,truncated:false,tool_name:'Bash',input_pattern:'echo *'},
+    ]);
+    if(op==='getPermissionSettings') permissionReads++;
+    else {
+      permissionWrites.push(structuredClone(input));
+      if(conflictNextPermission || input.revision!==String(revision).padStart(64,'0')) {
+        conflictNextPermission=false;
+        return {fixtureError:true,status:409,code:'settings_conflict',message:'/private/synthetic-permission-error'};
+      }
+      for(const change of input.changes) {
+        if(change.operation==='remove') permissionRules.set(key,permissionRules.get(key).filter(row=>!(row.format==='structured' && row.action===change.action && row.value===change.rule)));
+        else permissionRules.get(key).push({action:change.action,value:change.rule,format:'structured',editable:true,truncated:false,tool_name:change.rule,input_pattern:''});
+      }
+      revision++;
+    }
+    return {session_id:owner,scope,revision:String(revision).padStart(64,'0'),rules:permissionRules.get(key),hidden_rules:0,runtime_applied:op==='updatePermissionSettings' && Boolean(owner),diagnostic:''};
+  }
   if (op === 'getMCPInventory') {
     mcpReads++;
     if (mcpMode === 'error') return {fixtureError: true, status: 503, code: 'fixture_unavailable', message: '/private/synthetic-mcp-error'};
@@ -248,7 +276,7 @@ function releaseHeld(queue) {
   for (const { res, body } of queue.splice(0)) reply(res, body);
 }
 function releaseReads() {
-  for (const queue of [heldReads, heldWrites, heldSuggestions, heldTurns, heldCloses, heldTasks, heldDetails, heldAgentPages]) releaseHeld(queue);
+  for (const queue of [heldReads, heldWrites, heldPermissionWrites, heldSuggestions, heldTurns, heldCloses, heldTasks, heldDetails, heldAgentPages]) releaseHeld(queue);
 }
 async function main() {
   const args = process.argv.slice(2);
@@ -290,6 +318,13 @@ async function main() {
         reply(res, body); return;
       }
       if (url.pathname === '/v1/auth/browser-session') { reply(res, { protocol_version: 2, csrf_token: 'isolated-fixture-csrf' }); return; }
+      if (url.pathname === '/v1/permission-settings') {
+        const body=operation(req.method==='PATCH' ? 'updatePermissionSettings' : 'getPermissionSettings',{...Object.fromEntries(url.searchParams),...await readBody(req)},conversation);
+        if(req.method==='PATCH' && holdNextPermissionWrite) {
+          holdNextPermissionWrite=false; res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'}); res.flushHeaders(); heldPermissionWrites.push({res,body}); return;
+        }
+        reply(res,body); return;
+      }
       if (url.pathname === '/v1/settings') {
         const body = operation(req.method === 'PATCH' ? 'updateSettings' : 'getSettings', { ...Object.fromEntries(url.searchParams), ...await readBody(req) }, conversation);
         if (req.method === 'PATCH' && holdNextSettingsWrite) {
@@ -684,6 +719,126 @@ async function main() {
       });
       await mcpPage.context().close();
     }
+    for (const surface of ['desktop', 'web']) {
+      const permissionPage=await createPage(surface,true);
+      await check(`${surface} Permission editor shares typed scopes and preserves unsaved defaults`,async()=>{
+        await permissionPage.locator('.session-row').first().click();
+        await permissionPage.locator('#prompt').waitFor({state:'visible'});
+        const reads=permissionReads, writes=permissionWrites.length, defaults=settingsWrites.length;
+        await permissionPage.locator('#settings-open').click(); await permissionPage.locator('#setting-model').waitFor();
+        assert.equal(permissionReads,reads);
+        await permissionPage.getByRole('button',{name:'Appearance & input',exact:true}).click();
+        const theme=await permissionPage.locator('#setting-theme').inputValue(), changed=theme==='daybreak' ? 'polar-night' : 'daybreak';
+        await permissionPage.locator('#setting-theme').selectOption(changed);
+        await permissionPage.getByRole('button',{name:'Permission rules',exact:true}).click();
+        await permissionPage.locator('#settings-permissions .permission-rule-row').first().waitFor();
+        assert.equal(await permissionPage.locator('#settings-permissions img').count(),0);
+        assert.match(await permissionPage.locator('#settings-permissions').textContent(),/<img src=x>/);
+        assert.equal(await permissionPage.locator('#settings-permissions .permission-rule-list .permission-rule-row').nth(1).getByRole('button',{name:'Remove',exact:true}).isDisabled(),true);
+        await permissionPage.locator('#permission-rule-scope').selectOption('local');
+        await permissionPage.waitForFunction(()=>document.querySelector('#settings-permissions .mcp-status').textContent.includes('Selected-file'));
+        await permissionPage.locator('#permission-rule-action').selectOption('deny');
+        await permissionPage.locator('#permission-rule-input').fill('Edit');
+        await permissionPage.getByRole('button',{name:'Add to draft',exact:true}).click();
+        assert.equal(permissionWrites.length,writes);
+        await permissionPage.getByRole('button',{name:'Appearance & input',exact:true}).click();
+        assert.equal(await permissionPage.locator('#setting-theme').inputValue(),changed);
+        await permissionPage.getByRole('button',{name:'Permission rules',exact:true}).click();
+        assert.match(await permissionPage.locator('.permission-rule-draft').textContent(),/add deny Edit/);
+        assert.equal(await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).isVisible(),true);
+        await screenshot(permissionPage,`${surface}-permissions-wide`);
+        await permissionPage.setViewportSize({width:390,height:844});
+        assert.equal(await permissionPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+        const saveBounds=await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).boundingBox();
+        assert.ok(saveBounds && saveBounds.y>=0 && saveBounds.y+saveBounds.height<=844,'narrow save stays in fixed footer');
+        await screenshot(permissionPage,`${surface}-permissions-narrow`);
+        await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).click();
+        await permissionPage.waitForFunction(()=>document.querySelector('#settings-permissions .mcp-status').textContent.includes('Saved and reloaded'));
+        assert.equal(permissionWrites.length,writes+1); assert.equal(permissionWrites.at(-1).scope,'local'); assert.equal(settingsWrites.length,defaults);
+        assert.equal(await permissionPage.locator('.permission-rule-draft').textContent(),'');
+        await permissionPage.getByRole('button',{name:'Appearance & input',exact:true}).click(); await permissionPage.locator('#setting-theme').selectOption(theme);
+        await permissionPage.locator('#settings-close').click();
+      });
+      await check(`${surface} Permission conflicts retain drafts and discard is explicit`,async()=>{
+        await permissionPage.setViewportSize({width:1440,height:1000});
+        await permissionPage.locator('#settings-open').click(); await permissionPage.locator('#setting-model').waitFor();
+        await permissionPage.getByRole('button',{name:'Permission rules',exact:true}).click();
+        await permissionPage.locator('#permission-rule-input').waitFor();
+        await permissionPage.waitForFunction(()=>!document.querySelector('#permission-rule-input').disabled);
+        await permissionPage.locator('#permission-rule-input').fill('Read'); await permissionPage.getByRole('button',{name:'Add to draft',exact:true}).click();
+        conflictNextPermission=true; await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).click();
+        await permissionPage.waitForFunction(()=>document.querySelector('#settings-permissions .mcp-status').textContent.includes('draft is preserved'));
+        assert.equal((await permissionPage.locator('#settings-permissions').textContent()).includes('/private'),false);
+        assert.match(await permissionPage.locator('.permission-rule-draft').textContent(),/Read/);
+        assert.equal(await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).isDisabled(),true);
+        await permissionPage.locator('#settings-close').click(); await permissionPage.locator('#confirm-cancel').click();
+        assert.equal(await permissionPage.locator('#settings-dialog').evaluate(node=>node.open),true);
+        await permissionPage.locator('#settings-permissions').getByRole('button',{name:'Reload',exact:true}).click(); await permissionPage.locator('#confirm-accept').click();
+        await permissionPage.waitForFunction(()=>document.querySelector('#settings-permissions .mcp-status').textContent.includes('Selected-file'));
+        assert.equal(await permissionPage.locator('.permission-rule-draft').textContent(),'');
+        await permissionPage.locator('#settings-close').click();
+      });
+      await check(`${surface} Mixed search serializes defaults and permission saves without draft loss`,async()=>{
+        await permissionPage.locator('#settings-open').click(); await permissionPage.locator('#setting-model').waitFor();
+        await permissionPage.locator('#settings-search').fill('permission');
+        await permissionPage.locator('#permission-rule-input').waitFor();
+        await permissionPage.waitForFunction(()=>!document.querySelector('#permission-rule-input').disabled);
+        const mode=await permissionPage.locator('#setting-permission_mode').inputValue();
+        await permissionPage.locator('#setting-permission_mode').selectOption(mode==='default' ? 'plan' : 'default');
+        await permissionPage.locator('#permission-rule-input').fill('Write'); await permissionPage.getByRole('button',{name:'Add to draft',exact:true}).click();
+        const writes=permissionWrites.length; holdNextSettingsWrite=true;
+        try {
+          await permissionPage.locator('#settings-save').click();
+          await permissionPage.waitForFunction(()=>document.querySelector('#settings-save').textContent==='Working…');
+          for(const locator of ['#permission-rule-scope','#permission-rule-action','#permission-rule-input']) assert.equal(await permissionPage.locator(locator).isDisabled(),true);
+          for(const name of ['Save rule changes','Discard draft','Add to draft','Undo']) assert.equal(await permissionPage.getByRole('button',{name,exact:true}).isDisabled(),true);
+          assert.equal(await permissionPage.locator('#settings-permissions').getByRole('button',{name:'Reload',exact:true}).isDisabled(),true);
+          await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).evaluate(button=>button.click());
+          assert.equal(permissionWrites.length,writes); assert.match(await permissionPage.locator('.permission-rule-draft').textContent(),/Write/);
+        } finally {holdNextSettingsWrite=false; releaseReads();}
+        await permissionPage.waitForFunction(()=>!document.querySelector('#permission-rule-input').disabled);
+        assert.equal(await permissionPage.getByRole('button',{name:'Save rule changes',exact:true}).isEnabled(),true);
+        await permissionPage.getByRole('button',{name:'Discard draft',exact:true}).click(); await permissionPage.locator('#confirm-accept').click();
+        await permissionPage.locator('#settings-close').click();
+      });
+      await permissionPage.context().close();
+    }
+    const permissionTimeoutPage=await createPage('web',true);
+    await check('Web permission write timeout preserves the committed draft until explicit reload',async()=>{
+      await permissionTimeoutPage.clock.install();
+      holdNextPermissionWrite=true;
+      try {
+        await permissionTimeoutPage.locator('#settings-open').click(); await permissionTimeoutPage.locator('#setting-model').waitFor();
+        await permissionTimeoutPage.getByRole('button',{name:'Permission rules',exact:true}).click();
+        await permissionTimeoutPage.locator('#permission-rule-input').waitFor();
+        await permissionTimeoutPage.waitForFunction(()=>!document.querySelector('#permission-rule-input').disabled);
+        const reads=permissionReads,writes=permissionWrites.length,rule='TimeoutFixture';
+        await permissionTimeoutPage.locator('#permission-rule-input').fill(rule);
+        await permissionTimeoutPage.getByRole('button',{name:'Add to draft',exact:true}).click();
+        await permissionTimeoutPage.getByRole('button',{name:'Save rule changes',exact:true}).click();
+        await waitForHeldRead(heldPermissionWrites);
+        assert.equal(permissionWrites.length,writes+1); assert.ok(permissionRules.get('user').some(row=>row.value===rule));
+        await permissionTimeoutPage.clock.fastForward(15_000);
+        await permissionTimeoutPage.waitForFunction(()=>document.querySelector('#settings-permissions .mcp-status').textContent.includes('may have completed'));
+        assert.match(await permissionTimeoutPage.locator('.permission-rule-draft').textContent(),/TimeoutFixture/);
+        assert.equal(await permissionTimeoutPage.getByRole('button',{name:'Save rule changes',exact:true}).isDisabled(),true);
+        assert.equal(await permissionTimeoutPage.locator('#permission-rule-input').isDisabled(),true);
+        assert.equal(await permissionTimeoutPage.getByRole('button',{name:'Add to draft',exact:true}).isDisabled(),true);
+        await permissionTimeoutPage.getByRole('button',{name:'Save rule changes',exact:true}).evaluate(button=>button.click());
+        assert.equal(permissionWrites.length,writes+1,'timeout must not retry PATCH');
+        releaseHeld(heldPermissionWrites); await new Promise(resolve=>setTimeout(resolve,25));
+        assert.match(await permissionTimeoutPage.locator('.permission-rule-draft').textContent(),/TimeoutFixture/);
+        await permissionTimeoutPage.locator('#settings-permissions').getByRole('button',{name:'Reload',exact:true}).click();
+        await permissionTimeoutPage.locator('#confirm-cancel').click();
+        assert.equal(permissionReads,reads); assert.match(await permissionTimeoutPage.locator('.permission-rule-draft').textContent(),/TimeoutFixture/);
+        await permissionTimeoutPage.locator('#settings-permissions').getByRole('button',{name:'Reload',exact:true}).click();
+        await permissionTimeoutPage.locator('#confirm-accept').click();
+        await permissionTimeoutPage.waitForFunction(()=>document.querySelector('#settings-permissions .mcp-status').textContent.includes('Selected-file'));
+        assert.equal(permissionReads,reads+1); assert.equal(await permissionTimeoutPage.locator('.permission-rule-draft').textContent(),'');
+        assert.match(await permissionTimeoutPage.locator('#settings-permissions .permission-rule-list').textContent(),/TimeoutFixture/);
+      } finally {holdNextPermissionWrite=false; releaseHeld(heldPermissionWrites);}
+    });
+    await permissionTimeoutPage.close();
     for (const surface of ['desktop', 'web']) {
       const choices = await createPage(surface);
       await check(`${surface} Empty profile catalog stays select-only through edit, save and reload`, async () => {

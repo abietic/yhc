@@ -12,6 +12,13 @@ const mainPath = new URL('../main.cjs', import.meta.url);
 const preloadPath = new URL('../preload.cjs', import.meta.url);
 const mainRequire = createRequire(mainPath);
 const message = 'settings changed elsewhere; reload before saving';
+const permissionRequests = [
+  ['getPermissionSettings', { scope: 'user' }, 'GET'],
+  ['updatePermissionSettings', {
+    scope: 'user', revision: 'a'.repeat(64),
+    changes: [{ operation: 'add', action: 'deny', rule: 'Write' }],
+  }, 'PATCH'],
+];
 
 // Electron copies plain return data, but only the message of a thrown Error
 // survives either IPC or contextBridge. Model both boundaries independently.
@@ -354,6 +361,64 @@ test('browser settings requests abort after the fixed deadline and retain it thr
     assert.deepEqual(await pending, { scope: 'user' });
     assert.equal(responseClock.timers[0].cleared, true);
   });
+});
+
+test('permission settings GET and PATCH abort both fetch and response JSON on Desktop and Web', async () => {
+  for (const surface of ['desktop', 'web']) {
+    for (const [operation, payload, method] of permissionRequests) {
+      for (const phase of ['fetch', 'body']) {
+        const clock = controlledTimers();
+        let signal;
+        let markStarted;
+        const started = new Promise((resolve) => { markStarted = resolve; });
+        const blocked = (init) => new Promise((_resolve, reject) => {
+          signal = init.signal;
+          markStarted();
+          signal?.addEventListener('abort', () => reject(Object.assign(
+            new Error('private permission timeout detail'), { name: 'AbortError' },
+          )));
+        });
+        const fetch = (url, init) => {
+          assert.equal(new URL(url, 'http://fixture.invalid').pathname, '/v1/permission-settings');
+          assert.equal(init.method, method);
+          if (phase === 'fetch') return blocked(init);
+          return Promise.resolve({ ok: true, status: 200, json: () => blocked(init) });
+        };
+        const exercise = async (request) => {
+          const pending = request();
+          await started;
+          assert.ok(signal instanceof AbortSignal);
+          assert.equal(signal.aborted, false);
+          assert.equal(clock.timers.length, 1);
+          assert.equal(clock.timers[0].delay, 15_000);
+          clock.fire();
+          if (surface === 'desktop') {
+            assert.deepEqual(await pending, {
+              ok: false,
+              error: { message: 'Settings request timed out. Reload before saving.', code: 'settings_timeout' },
+            });
+          } else {
+            await assert.rejects(pending, (error) => {
+              assert.equal(error.message, 'Settings request timed out. Reload before saving.');
+              assert.equal(error.code, 'settings_timeout');
+              assert.equal(error.status, undefined);
+              return true;
+            });
+          }
+          assert.equal(signal.aborted, true);
+          assert.equal(clock.timers[0].cleared, true);
+        };
+        if (surface === 'desktop') {
+          const { bridge } = hostFixture(fetch, clock);
+          await exercise(() => bridge.apiResult(operation, payload));
+        } else {
+          await withBrowserTransport(fetch, clock, async (transport) => {
+            await exercise(() => transport.api(operation, payload));
+          });
+        }
+      }
+    }
+  }
 });
 
 test('renderer rejects malformed result envelopes without using the legacy route', async () => {
