@@ -93,6 +93,22 @@ only after the server returns one exact canonical resumable row. Cancelled or
 failed import never constructs a live engine; a catalog-verification failure
 keeps the explicit import retry available.
 
+### Task Explorer and execution detail are read-only
+
+The Task Explorer reads only the current, owned live session. It projects work
+items and execution rows, then requires the exact `agent_id`, generation,
+`execution_session_id`, and `thread_id` quartet before showing one execution's
+detail. A missing, replay-only, pre-dispatch, or mismatched identity is not
+retargeted to a different Agent.
+
+Terminal output is the only explicitly requested full-output payload and is
+bounded to 64 KiB; other returned metadata text is separately bounded. A child
+conversation can be opened only from a complete execution session/thread
+identity; it is a read-only durable transcript page, with a post-I/O revision
+fence, at most 32 messages per page, and a total 256-item display window.
+Neither view controls an Agent, switches the parent session, nor changes the
+parent draft, selection, or Undo history.
+
 ## Trust and privacy boundary
 
 The host's native picker registers a workspace path once. The server stores a
@@ -531,6 +547,14 @@ provider/tool dialect.
   owns bounded live-session HTTP admission;
   [`mountCommandCompletion`](../../internal/webui/assets/command_completion.mjs)
   owns transient keyboard, IME and request-fenced presentation.
+
+- [`Server.handleTaskExplorer`](../../server/appserver/task_explorer.go) owns
+  the current-owned-session snapshot; [`Server.handleAgentExecutionDetail`](../../server/appserver/agent_execution_detail.go)
+  verifies the exact execution lineage and applies the terminal-output bound.
+- [`Server.handleAgentTranscriptPage`](../../server/appserver/agent_transcript_page.go)
+  owns the bounded child-conversation projection; the renderer's
+  [`createAgentConversationView`](../../internal/webui/assets/agent_conversation.mjs)
+  preserves parent reading state while that projection is open.
 
 - [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
   renderer's draft-clearing fence, not Turn execution or retry idempotency.
