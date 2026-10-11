@@ -24,12 +24,12 @@ entrypoint classifies local ownership, `Registry.Dispatch` is the only strict
 parse, validation, live phase/capability revalidation, cancellation, and
 execution boundary; the test-only `CommandDispatcher` has been removed.
 
-The registry contains exactly 40 executable compiled core commands. A separate
-catalog contains 27 canonical removed-command tombstones and reserves 33
+The registry contains exactly 41 executable compiled core commands. A separate
+catalog contains 26 canonical removed-command tombstones and reserves 32
 canonical-or-alias keys without making any of them executable or discoverable.
 The default embedded workflow pack contributes 2 additional TUI/plain prompt
-commands, so the ordinary active snapshot contains 42 commands and its
-maximum static discovery is 42 for TUI, 32 for plain, 18 for headless, 14
+commands, so the ordinary active snapshot contains 43 commands and its
+maximum static discovery is 43 for TUI, 32 for plain, 18 for headless, 14
 for ACP, and none for CLI administration or the dedicated headless Goal
 entrypoint. Contextual discovery may narrow those sets. During an active TUI
 turn only `/agent`, `/team`, `/keybindings`, and
@@ -170,7 +170,7 @@ results after exactly one validated mutation.
 | `/mode`, `/bypass`, `/yolo` | Reserved tombstones; the TUI cannot pre-apply them. | `/permissions mode ...` and the exact `/permissions bypass confirm` form are the canonical typed safety surface. |
 | `/agent`, `/team`, `/queue`, `/search` | Supported only in the TUI-filtered snapshot. Other entrypoints reject them at the registry scope boundary before a local action can execute. | `/agents` and read-only `/tasks` remain the portable runtime vocabulary; search/thread pickers remain TUI projections. |
 | `/login`, `/logout`, `/env`, `/output-style`, `/session` (`/remote`) | Former hidden records are now tombstones only. | Guidance keeps authentication/credential ownership outside the project, points diagnostics to `/doctor` or `/config`, output style to project config, and legacy session access to `/sessions`. |
-| `/stats` (`/cost`), `/settings`, `/allowed-tools`, `/bashes` | Expired aliases no longer execute `/usage`, `/config`, `/permissions`, or `/tasks`. | Direct dispatch returns replacement guidance; stable `/reset`, `/exit`, `/ctx`, and `/teams` aliases remain warning-free. |
+| `/stats` (`/cost`), `/allowed-tools`, `/bashes` | Expired aliases no longer execute `/usage`, `/permissions`, or `/tasks`. | Direct dispatch returns replacement guidance; stable `/reset`, `/exit`, `/ctx`, and `/teams` aliases remain warning-free. `/settings` now owns persistent defaults rather than aliasing `/config`. |
 | `/summary`, `/onboarding`, `/pr-comments`, `/issue`, `/commit-push-pr` (`/cpr`) | Removed from the P21.2 default workflow pack and absent from active discovery. | Guidance keeps summaries as ordinary requests, reserves `/compact` for compaction, points onboarding to `/init`, and keeps issue/PR/push operations behind explicit requests or qualified configured-plugin workflows. |
 | `/history`, `/rename`, `/export` | Removed from registration and direct dispatch at P16.7b. | Canonical interactive use is `/sessions`; provider-free process use is `yhc sessions ...`. |
 
@@ -249,8 +249,7 @@ state.
   is rendered without an authoritative provider/model billing catalog;
 - `/config` resolves the active provider route through the injected runtime,
   reports per-field winning sources and precedence, renders credential presence
-  as a boolean, and reduces an endpoint to scheme plus host. `/settings` is an
-  expired tombstone name that guides to `/config`; and
+  as a boolean, and reduces an endpoint to scheme plus host; and
 - `/doctor` emits a stable ordered check-ID set for engine, provider route and
   credential, transcript, bounded JSON settings files, tools, permission mode,
   and connectivity. Connectivity is explicitly skipped because the read-only
@@ -297,6 +296,18 @@ complete execution metadata commit through a synced no-clobber install before
 activation. TUI picker fork mode calls the same service. ACP keeps slash fork
 unavailable and projects the equivalent lifecycle only through its explicit
 protocol operation, registering the child handle after durable restore.
+
+## Persistent Defaults
+
+`/settings [user|project [<key> <JSON value>]]` is an idle-only TUI
+command backed by `engine/config`. It reads or atomically patches the same
+non-secret defaults as `yhc config {settings,set,reset}` and the AppServer
+settings API. `null` removes a scoped override. The caller context reaches
+the locked persistence boundary; cancelled or stale writes do not publish.
+It does not alter the current execution model, credentials, or permission
+bypass, and is not admitted by Plain, headless, ACP, administration slash,
+or standalone MCP discovery. See the
+[configuration guide](../../guides/configuration-and-providers.md#edit-persistent-defaults).
 
 ## Execution And Safety Controls
 
@@ -364,10 +375,10 @@ than retained as a successful-looking setup command.
   and failed bundled or configured candidate validation leaves the old snapshot live;
 - every supported engine-owned command reaches one executor, validates its
   intent, and mutates canonical engine/session state at most once;
-- the compiled core contract is exactly 40 supported active commands plus 27
-  canonical tombstones reserving 33 removed names and aliases; the default
-  2-command bundled pack produces 42 active commands; maximum
-  TUI/plain/headless/ACP/administration discovery is 42/32/18/14/0,
+- the compiled core contract is exactly 41 supported active commands plus 26
+  canonical tombstones reserving 32 removed names and aliases; the default
+  2-command bundled pack produces 43 active commands; maximum
+  TUI/plain/headless/ACP/administration discovery is 43/32/18/14/0,
   with `/effort` and `/copy` removed contextually for incompatible runtime or
   terminal capabilities;
 - `/new` creates a different durable identity; `/clear` appends a reset boundary

@@ -10,12 +10,12 @@ import (
 func TestP21CatalogSnapshotAndTombstones(t *testing.T) {
 	r := NewRegistry()
 	RegisterDefaults(r)
-	if got := len(r.List()); got != 40 {
-		t.Fatalf("active commands = %d, want 40", got)
+	if got := len(r.List()); got != 41 {
+		t.Fatalf("active commands = %d, want 41", got)
 	}
 	removed := r.ListRemoved()
-	if got := len(removed); got != 27 {
-		t.Fatalf("removed commands = %d, want 27", got)
+	if got := len(removed); got != 26 {
+		t.Fatalf("removed commands = %d, want 26", got)
 	}
 	var snapshot []string
 	keys := 0
@@ -67,7 +67,6 @@ func TestP21CatalogSnapshotAndTombstones(t *testing.T) {
 		"output-style",
 		"session=remote",
 		"stats=cost",
-		"settings",
 		"allowed-tools",
 		"bashes",
 		"summary",
@@ -79,8 +78,8 @@ func TestP21CatalogSnapshotAndTombstones(t *testing.T) {
 	if !reflect.DeepEqual(snapshot, wantSnapshot) {
 		t.Fatalf("removed snapshot = %#v, want %#v", snapshot, wantSnapshot)
 	}
-	if keys != 33 {
-		t.Fatalf("removed lookup keys = %d, want 33", keys)
+	if keys != 32 {
+		t.Fatalf("removed lookup keys = %d, want 32", keys)
 	}
 	for _, cmd := range r.List() {
 		if cmd.Availability != AvailabilitySupported {

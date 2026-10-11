@@ -417,6 +417,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /v1/sessions", s.handleCreateSession)
 	api.HandleFunc("GET /v1/sessions/{session_id}", s.handleGetSession)
 	api.HandleFunc("DELETE /v1/sessions/{session_id}", s.handleDeleteSession)
+	api.HandleFunc("GET /v1/settings", s.handleGetSettings)
+	api.HandleFunc("PATCH /v1/settings", s.handleUpdateSettings)
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
 	api.HandleFunc("GET /v1/sessions/{session_id}/transcript", s.handleTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/review-diff", s.handleReviewDiff)
