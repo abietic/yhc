@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-04
+**Last verified:** 2026-10-11
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -80,8 +80,18 @@ downgrade PASS to PARTIAL; the review cannot create new counterexamples. If its
 admission runs out of budget, continuation executes fresh checks and review.
 The saved setting must match on `--resume-verification`; old cursors mean off.
 Usage attributes this call to `independent_verification_coverage`, and bounded
-summaries include `coverage_reviews` and `coverage_verdict`. This remains a
-model judgment and does not guarantee benchmark reward.
+summaries include `coverage_reviews` and `coverage_verdict`. If a completed
+review returns no visible report, invalid JSON, or a contradictory verdict,
+the runtime retains the fresh checker report as PARTIAL, discards the invalid
+review's claims, and reports `coverage_verdict=UNAVAILABLE` with a categorical
+`coverage_issue`. This permits the already configured supplemental audit;
+it adds no retry allowance and never authorizes solver repair. With zero
+supplemental allowance, or after its single completed audit, another unavailable
+review stops. Cancellation, provider errors, and incomplete usage remain errors;
+they do not trigger this recovery. A budget pause before the supplemental audit
+retains that pending stage; continuation executes fresh checks and review
+without renewing the allowance. Coverage review remains a model judgment and
+does not guarantee benchmark reward.
 A checker uses a fresh context containing original user requirements and checks
 the current workspace with the same admitted model and budget. A missing or
 failed check cannot be reported as completed. JSON/JSONL final results include bounded `verification` verdict/check-count

@@ -101,7 +101,11 @@ func TestVerificationCoverageReviewAdmissionAndEvidence(t *testing.T) {
 			if (terminal.Err != nil) != tc.failed || usage.Snapshot().ProviderCalls != tc.calls || executions != 1 {
 				t.Fatalf("terminal=%+v calls=%d executions=%d", terminal, usage.Snapshot().ProviderCalls, executions)
 			}
-			if tc.failed && (saved.Phase != "check" || saved.Repairs != 0) {
+			failedPhase := "check"
+			if tc.name == "malformed" {
+				failedPhase = "exhausted" // Valid PARTIAL diagnostic; no supplemental allowance.
+			}
+			if tc.failed && (saved.Phase != failedPhase || saved.Repairs != 0) {
 				t.Fatalf("failed review authorized completion or repair: %+v", saved)
 			}
 			if tc.enabled && reviews == 0 {
