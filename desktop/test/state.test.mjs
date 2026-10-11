@@ -9,6 +9,7 @@ import {
   buildQuestionResolution,
   buildRepeatedToolResolution,
   canImportDurableSession,
+  canClearSubmittedDraft,
   canEditDraft,
   canQueuePrompt,
   canSubmitTurn,
@@ -34,6 +35,18 @@ function event(id, type, data = {}, sessionID = 's1', turnID = 'turn-1') {
     engine_sequence: id,
   };
 }
+
+test('ordinary admission clears only its still-owned unchanged draft', () => {
+  const submitted = { prompt: 'send this', clientTurnID: 'turn-one' };
+  assert.equal(canClearSubmittedDraft(submitted, submitted, '  send this  '), true);
+  assert.equal(canClearSubmittedDraft(submitted, submitted, 'a new draft'), false);
+  assert.equal(canClearSubmittedDraft(undefined, submitted, 'send this'), false, 'edit-and-restore loses ownership');
+  assert.equal(canClearSubmittedDraft({ ...submitted }, submitted, 'send this'), false, 'a later attempt is not the original token');
+  assert.equal(canClearSubmittedDraft(undefined, undefined, 'send this'), false);
+  assert.equal(canClearSubmittedDraft(submitted, submitted, undefined), false, 'removed sessions have no draft');
+  const empty = { prompt: '' };
+  assert.equal(canClearSubmittedDraft(empty, empty, ''), false);
+});
 
 test('event cursors are independent for each session', () => {
   let state = reducer(

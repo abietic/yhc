@@ -261,6 +261,9 @@ function operationPath(operation, payload = {}) {
       return [`/v1/sessions/${id()}/execution-settings`, 'GET'];
     case 'completeCommand':
       return [`/v1/sessions/${id()}/command-completions`, 'POST', commandCompletionInput(payload)];
+    case 'promptSuggestion':
+      if (Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('suggestion accepts only a session id');
+      return [`/v1/sessions/${id()}/prompt-suggestion`, 'POST', {}];
     case 'updateExecutionSetting':
       return [
         `/v1/sessions/${id()}/execution-settings`,

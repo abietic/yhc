@@ -163,6 +163,11 @@ func (s *session) updateExecutionSettings(
 	if err != nil {
 		return ExecutionSettingsResponse{}, err
 	}
+	s.turnAdmissionMu.Lock()
+	defer s.turnAdmissionMu.Unlock()
+	s.mu.Lock()
+	s.cancelPromptSuggestionLocked()
+	s.mu.Unlock()
 	if s.summary().ActiveTurnID != "" {
 		return ExecutionSettingsResponse{}, errExecutionSettingsActiveTurn
 	}

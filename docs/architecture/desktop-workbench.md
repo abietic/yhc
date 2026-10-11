@@ -136,6 +136,20 @@ fields.
 
 ## Renderer projections
 
+Workspace creation errors are owned by the creation attempt, not the selected
+conversation. `showSessionCreationError` publishes a global banner before a
+session exists. Successful creation clears only that banner's publication
+identity before hydration; cancellation, failed credentials and backend loss
+leave it available. A newer unrelated banner survives. After creation, history
+and activation errors carry the created session's identity.
+
+Workspace handles belong to one backend lifetime. Successful provider setup
+replaces that backend, so `retryAfterProviderSetup` retires the pending handle
+and re-enters single-flight native selection. Cancellation creates no session;
+fresh selection obtains a new capability. Provider submission and session
+creation exclude each other in both controls and handlers. This never retains
+a renderer path, extends an old handle or sends a turn.
+
 The shared Desktop/Web renderer defaults to navigation plus conversation;
 Activity and Changes are optional. Narrow navigation/inspector drawers are
 mutually exclusive modal regions with inert backgrounds, Escape and focus
@@ -217,6 +231,15 @@ server activity entries to stable lifecycle language such as turn started,
 command running, or question waiting. It rejects invalid category/state pairs;
 the Activity panel therefore remains an operator summary, while raw stream
 debugging stays outside the normal UI.
+
+### Submitted draft ownership
+
+Ordinary Send has separate draft ownership: a late accepted response clears
+only its original session's untouched submitted draft. Every subsequent edit
+revokes that authority, including editing back to the same text. Closing a
+durable session preserves its latest draft at completion, not a captured older
+copy; replies from that closed send cannot clear it. These UI protections do
+not add ordinary-Send idempotency or change runtime queue admission.
 
 ### Busy-turn prompt queue
 
@@ -508,6 +531,13 @@ provider/tool dialect.
   owns bounded live-session HTTP admission;
   [`mountCommandCompletion`](../../internal/webui/assets/command_completion.mjs)
   owns transient keyboard, IME and request-fenced presentation.
+
+- [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
+  renderer's draft-clearing fence, not Turn execution or retry idempotency.
+- [`retryAfterProviderSetup` and `showSessionCreationError`](../../internal/webui/assets/app.mjs)
+  own fresh workspace selection and creation-banner identity;
+  [`TestWorkspaceHandleBelongsToOneServerLifetime`](../../server/appserver/workspace_handle_test.go)
+  checks old capabilities remain inadmissible after backend replacement.
 
 Related owners: [entrypoints and transports](platform/entrypoints-and-transports.md),
 [sessions](state/sessions.md), [model providers](platform/model-providers.md),

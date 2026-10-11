@@ -1973,6 +1973,10 @@ summary:focus-visible {
 .welcome-guide p { font-size: 12px; margin: 6px 0 0; color: var(--text-muted); }
 .composer { margin-bottom: 24px; border-radius: 18px; padding: 15px 16px 10px; flex-shrink: 0; }
 .composer-hint { color: var(--text-muted); font-size: 10px; margin: 10px 4px 0; }
+.prompt-suggestion { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
+.prompt-suggestion[hidden] { display: none; }
+.prompt-suggestion .composer-hint { margin: 0; }
+.suggestion-candidate { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); padding: 7px 10px; text-align: left; overflow-wrap: anywhere; }
 .workbench-notice { display: flex; align-items: center; gap: 16px; margin: 14px 24px 0; padding: 10px 14px; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-soft); color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }
 .workbench-notice span { flex: 1; }
 .inspector-toggle { display: inline-flex; }
