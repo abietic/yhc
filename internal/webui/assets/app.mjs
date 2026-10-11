@@ -154,6 +154,7 @@ const settingsView = createSettingsView({
   api,
   context: () => ({
     sessionID: activeSession(state)?.live ? state.activeID : undefined,
+    backendReady: backendAvailable(state),
     workspace: activeSession(state)?.workspace_label,
     manageCredentials: providerSetup.setupAvailable,
     legacyProfile: providerSetup.configured,
@@ -378,6 +379,7 @@ function handleViewportResize() {
 function render() {
   const current = activeSession(state);
   const backendReady = backendAvailable(state);
+  settingsView.updateContext();
   $('open-web').disabled = !backendReady;
   renderSheets();
   renderProviderSetup();

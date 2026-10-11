@@ -421,6 +421,7 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("PATCH /v1/settings", s.handleUpdateSettings)
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
 	api.HandleFunc("GET /v1/sessions/{session_id}/tasks", s.handleTaskExplorer)
+	api.HandleFunc("GET /v1/sessions/{session_id}/mcp-inventory", s.handleMCPInventory)
 	api.HandleFunc("GET /v1/sessions/{session_id}/agent-execution-detail", s.handleAgentExecutionDetail)
 	api.HandleFunc("GET /v1/sessions/{session_id}/agent-transcript", s.handleAgentTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/transcript", s.handleTranscriptPage)
@@ -718,6 +719,7 @@ var webAssetPaths = map[string]string{
 	"/prompt_suggestion.mjs":      "assets/prompt_suggestion.mjs",
 	"/layout.mjs":                 "assets/layout.mjs",
 	"/settings_view.mjs":          "assets/settings_view.mjs",
+	"/mcp_inventory.mjs":          "assets/mcp_inventory.mjs",
 	"/timeline_view.mjs":          "assets/timeline_view.mjs",
 	"/task_explorer.mjs":          "assets/task_explorer.mjs",
 	"/agent_execution_detail.mjs": "assets/agent_execution_detail.mjs",

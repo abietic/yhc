@@ -109,6 +109,13 @@ fence, at most 32 messages per page, and a total 256-item display window.
 Neither view controls an Agent, switches the parent session, nor changes the
 parent draft, selection, or Undo history.
 
+### MCP inventory is observation, not administration
+
+The MCP panel reads the current owned session's inventory snapshot: server
+state, exposed tools, diagnostics, and revision. Its route uses the existing
+session manager and does not load configuration. It cannot authorize a new
+connection, toggle a server, or refresh/restart MCP runtime state.
+
 ## Trust and privacy boundary
 
 The host's native picker registers a workspace path once. The server stores a
@@ -555,6 +562,10 @@ provider/tool dialect.
   owns the bounded child-conversation projection; the renderer's
   [`createAgentConversationView`](../../internal/webui/assets/agent_conversation.mjs)
   preserves parent reading state while that projection is open.
+
+- [`Server.handleMCPInventory`](../../server/appserver/mcp_inventory.go) projects
+  the owned session's existing MCP snapshot only; [`createMCPInventoryView`](../../internal/webui/assets/mcp_inventory.mjs)
+  renders that observation without a connection-management control.
 
 - [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
   renderer's draft-clearing fence, not Turn execution or retry idempotency.
