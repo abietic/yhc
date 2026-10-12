@@ -101,6 +101,16 @@ bounded actual tool outputs accompany the verdict attachment. This validates
 execution provenance, not the truth of every model interpretation or complete
 coverage of arbitrary prose requirements.
 
+An initial, fully decoded report that omits a PASS/FAIL check's receipt identity
+can only become a runtime PARTIAL diagnostic. That check becomes UNVERIFIED,
+and its unbound command is discarded; the runtime never guesses an ID from
+command text. All other fields and every supplied identity/command, including
+UNVERIFIED references, still require validation. Valid bound checks retain their
+statuses, but the report cannot authorize completion or solver repair. Only the
+existing opt-in supplemental allowance can request fresh checks. A malformed
+report, invalid supplied reference, or report-only correction cannot use this
+recovery. Pending diagnostics carry no executable receipt authority on resume.
+
 The checker policy derives each behavioral check from its real entrypoint,
 prerequisite state, and observable outcome. Internal callback tests establish only
 component properties; caller completion and side effects require the real caller

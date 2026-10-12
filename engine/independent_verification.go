@@ -221,7 +221,7 @@ func parseIndependentVerificationReport(text string) (independentVerificationRep
 			return report, &verificationReportFormatError{category, "invalid check status"}
 		}
 		if check.Status != "UNVERIFIED" && strings.TrimSpace(check.ToolCallID) == "" {
-			return report, fmt.Errorf("executable check missing tool identity")
+			return report, &verificationReportIdentityError{}
 		}
 	}
 	return report, nil
@@ -497,16 +497,24 @@ func (g *independentVerificationGate) check(ctx context.Context) (independentVer
 	}
 	if err != nil {
 		var semanticErr *verificationReportSemanticError
+		var identityErr *verificationReportIdentityError
 		// A format correction may not alter existing claims, including by
-		// introducing a contradiction. Only the initial complete report can
-		// become a PARTIAL diagnostic, under the existing supplemental limit.
-		if report.reportCorrections != 0 || !errors.As(err, &semanticErr) {
+		// introducing a contradiction or dropping an identity. Only the initial
+		// complete report can become a PARTIAL diagnostic, under the existing
+		// supplemental limit.
+		category := "missing_tool_identity"
+		if errors.As(err, &semanticErr) {
+			category = semanticErr.category
+		} else if !errors.As(err, &identityErr) {
+			return report, err
+		}
+		if report.reportCorrections != 0 {
 			return report, err
 		}
 		if p.RunUsage != nil && !p.RunUsage.Snapshot().Complete {
 			return report, execution.ErrRunUsageUnknown
 		}
-		report, err = verificationRecoverReportSemantics(report, semanticErr)
+		report, err = verificationRecoverReportDiagnostics(report, category)
 		if err != nil {
 			return report, err
 		}
