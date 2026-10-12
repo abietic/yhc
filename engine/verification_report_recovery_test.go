@@ -25,6 +25,9 @@ func TestVerificationContradictoryReportRecovery(t *testing.T) {
 		{"pass-with-unverified", strings.Replace(verificationPass, `"status":"PASS"`, `"status":"UNVERIFIED"`, 1), "pass_contradicts_check", 0, 1},
 		{"pass-with-unverified-no-receipt", `{"verdict":"PASS","coverage_complete":true,"checks":[{"requirement":"original contract","expected":"ok","observed":"not executed","status":"UNVERIFIED"}]}`, "pass_contradicts_check", 0, 1},
 		{"fail-without-counterexample", strings.Replace(verificationPass, `"verdict":"PASS"`, `"verdict":"FAIL"`, 1), "fail_without_counterexample", 0, 0},
+		{"missing-pass-id", strings.Replace(verificationPass, `"tool_call_id":"verify-command"`, `"tool_call_id":""`, 1), "missing_tool_identity", 0, 1},
+		{"missing-fail-id", strings.Replace(verificationFail, `"tool_call_id":"verify-command"`, `"tool_call_id":" "`, 1), "missing_tool_identity", 0, 1},
+		{"contradiction-with-missing-id", strings.Replace(strings.Replace(verificationPass, `"coverage_complete":true`, `"coverage_complete":false`, 1), `"tool_call_id":"verify-command"`, `"tool_call_id":""`, 1), "missing_tool_identity", 0, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, allowance := range []int{0, 1} {
@@ -84,38 +87,47 @@ func TestVerificationContradictoryReportRecovery(t *testing.T) {
 }
 
 func TestVerificationContradictoryReportBudgetResume(t *testing.T) {
-	config := IndependentVerificationConfig{MaxTurns: 2, MaxRepairs: 3, MaxCoverageChecks: 1, CoverageReview: true}
-	registry := tools.NewRegistry()
-	tools.RegisterDefaults(registry)
-	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3})
-	var saved verificationCursor
-	executions := 0
-	params := QueryParams{
-		SessionID: "fixture", verificationWorkspace: "/fixture", IndependentVerification: config,
-		Messages: []*schema.Message{schema.UserMessage("original contract")}, ToolRegistry: registry,
-		RunUsage: usage, Deps: &QueryDeps{ProviderUsage: usage},
-		ChatModel:                &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), coverageRecoveryTool("verify-command"), verificationResponse(strings.Replace(verificationPass, `"coverage_complete":true`, `"coverage_complete":false`, 1))}},
-		ToolExecutor:             func(context.Context, string, string) (string, error) { executions++; return "fresh output", nil },
-		commitVerificationCursor: func(c verificationCursor) error { saved = c; return nil },
-	}
-	_, terminal := collectEvents(t.Context(), params)
-	if !errors.Is(terminal.Err, execution.ErrRunBudgetExceeded) || saved.Phase != "coverage" || saved.CoverageChecks != 0 || saved.Repairs != 0 || saved.Diagnostics == nil || saved.Diagnostics.Verdict != "PARTIAL" || saved.Diagnostics.CoverageComplete || saved.Diagnostics.Checks[0].Command != "independent check" || saved.Diagnostics.Evidence != nil {
-		t.Fatalf("budget pause lost validated diagnostics: terminal=%+v cursor=%+v", terminal, saved)
-	}
-	encoded, _ := json.Marshal(saved)
-	var restored verificationCursor
-	if err := json.Unmarshal(encoded, &restored); err != nil {
-		t.Fatal(err)
-	}
-	usage, _ = execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3})
-	params.RunUsage = usage
-	params.Deps = &QueryDeps{ProviderUsage: usage}
-	params.independentVerificationContinuation = true
-	params.loadVerificationCursor = func() (*verificationCursor, error) { return &restored, nil }
-	params.ChatModel = &canonicalScriptModel{responses: []canonicalModelResponse{coverageRecoveryTool("fresh-check"), verificationResponse(strings.ReplaceAll(verificationPass, "verify-command", "fresh-check")), verificationResponse(`{"verdict":"SUPPORTED","missing":[]}`)}}
-	_, terminal = collectEvents(t.Context(), params)
-	if terminal.Err != nil || executions != 2 || saved.Phase != "completed" || saved.CoverageChecks != 1 || saved.Repairs != 0 || usage.Snapshot().ProviderCalls != 3 {
-		t.Fatalf("resume reused old evidence or reset allowance: terminal=%+v executions=%d cursor=%+v", terminal, executions, saved)
+	for _, tc := range []struct {
+		name, report, command string
+	}{
+		{"contradiction", strings.Replace(verificationPass, `"coverage_complete":true`, `"coverage_complete":false`, 1), "independent check"},
+		{"missing-identity", strings.Replace(verificationPass, `"tool_call_id":"verify-command"`, `"tool_call_id":""`, 1), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := IndependentVerificationConfig{MaxTurns: 2, MaxRepairs: 3, MaxCoverageChecks: 1, CoverageReview: true}
+			registry := tools.NewRegistry()
+			tools.RegisterDefaults(registry)
+			usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3})
+			var saved verificationCursor
+			executions := 0
+			params := QueryParams{
+				SessionID: "fixture", verificationWorkspace: "/fixture", IndependentVerification: config,
+				Messages: []*schema.Message{schema.UserMessage("original contract")}, ToolRegistry: registry,
+				RunUsage: usage, Deps: &QueryDeps{ProviderUsage: usage},
+				ChatModel:                &canonicalScriptModel{responses: []canonicalModelResponse{verificationResponse("done"), coverageRecoveryTool("verify-command"), verificationResponse(tc.report)}},
+				ToolExecutor:             func(context.Context, string, string) (string, error) { executions++; return "fresh output", nil },
+				commitVerificationCursor: func(c verificationCursor) error { saved = c; return nil },
+			}
+			_, terminal := collectEvents(t.Context(), params)
+			if !errors.Is(terminal.Err, execution.ErrRunBudgetExceeded) || saved.Phase != "coverage" || saved.CoverageChecks != 0 || saved.Repairs != 0 || saved.Diagnostics == nil || saved.Diagnostics.Verdict != "PARTIAL" || saved.Diagnostics.CoverageComplete || saved.Diagnostics.Checks[0].Command != tc.command || saved.Diagnostics.Evidence != nil {
+				t.Fatalf("budget pause lost validated diagnostics: terminal=%+v cursor=%+v", terminal, saved)
+			}
+			encoded, _ := json.Marshal(saved)
+			var restored verificationCursor
+			if err := json.Unmarshal(encoded, &restored); err != nil {
+				t.Fatal(err)
+			}
+			usage, _ = execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3})
+			params.RunUsage = usage
+			params.Deps = &QueryDeps{ProviderUsage: usage}
+			params.independentVerificationContinuation = true
+			params.loadVerificationCursor = func() (*verificationCursor, error) { return &restored, nil }
+			params.ChatModel = &canonicalScriptModel{responses: []canonicalModelResponse{coverageRecoveryTool("fresh-check"), verificationResponse(strings.ReplaceAll(verificationPass, "verify-command", "fresh-check")), verificationResponse(`{"verdict":"SUPPORTED","missing":[]}`)}}
+			_, terminal = collectEvents(t.Context(), params)
+			if terminal.Err != nil || executions != 2 || saved.Phase != "completed" || saved.CoverageChecks != 1 || saved.Repairs != 0 || usage.Snapshot().ProviderCalls != 3 {
+				t.Fatalf("resume reused old evidence or reset allowance: terminal=%+v executions=%d cursor=%+v", terminal, executions, saved)
+			}
+		})
 	}
 }
 
@@ -130,7 +142,6 @@ func TestVerificationContradictoryReportRejectsInvalidEvidence(t *testing.T) {
 		{name: "multiple-objects", text: bad + bad},
 		{name: "invalid-status", text: strings.Replace(bad, `"status":"PASS"`, `"status":"BAD"`, 1)},
 		{name: "missing-fields", text: strings.Replace(bad, `"expected":"ok"`, `"expected":""`, 1)},
-		{name: "missing-id", text: strings.Replace(bad, `"tool_call_id":"verify-command"`, `"tool_call_id":""`, 1)},
 		{name: "stale-id", text: strings.Replace(bad, "verify-command", "solver-receipt", 1)},
 		{name: "stale-unverified-id", text: strings.Replace(strings.Replace(bad, "verify-command", "solver-receipt", 1), `"status":"PASS"`, `"status":"UNVERIFIED"`, 1)},
 		{name: "wrong-unverified-command", text: strings.Replace(strings.Replace(bad, "independent check", "other command", 1), `"status":"PASS"`, `"status":"UNVERIFIED"`, 1)},

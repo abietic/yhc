@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -41,8 +42,16 @@ func (e *verificationReportFormatError) correctable() bool {
 		e.category == "check_status_enum" || e.category == "check_status_missing"
 }
 
+// Supplied receipt failures remain hard errors. An omitted identity can only
+// become an unverified diagnostic, never a guessed executable receipt.
+type verificationReportIdentityError struct{}
+
+func (*verificationReportIdentityError) Error() string {
+	return "executable check missing tool identity"
+}
+
 // Only inconsistent aggregate claims have a recoverable semantic category.
-// Ownership, size, schema, field, and receipt failures remain hard errors.
+// Ownership, size, schema, and field failures remain hard errors.
 type verificationReportSemanticError struct {
 	category    string
 	description string
@@ -78,11 +87,26 @@ func verificationReportSemantics(report independentVerificationReport) error {
 // This is a runtime PARTIAL diagnostic, never a model correction or a new
 // counterexample. Revalidate every field before the caller binds fresh receipts;
 // a semantic error must not hide a malformed check or grant a format retry.
-func verificationRecoverReportSemantics(report independentVerificationReport, issue *verificationReportSemanticError) (independentVerificationReport, error) {
+func verificationRecoverReportDiagnostics(report independentVerificationReport, category string) (independentVerificationReport, error) {
 	candidate := report
+	candidate.Checks = slices.Clone(report.Checks)
+	for i := range candidate.Checks {
+		check := &candidate.Checks[i]
+		if (check.Status == "PASS" || check.Status == "FAIL") && strings.TrimSpace(check.ToolCallID) == "" {
+			check.Status = "UNVERIFIED"
+			check.ToolCallID = ""
+			// A claimed command cannot bind a missing identity. Discard it rather
+			// than match by text or let it enter a runtime evidence attachment.
+			check.Command = ""
+			category = "missing_tool_identity"
+		}
+	}
 	candidate.Verdict = "PARTIAL"
 	candidate.CoverageComplete = false
 	candidate.Missing = []string{"The checker report contained inconsistent completion claims. Execute fresh checks for the original behavioral obligations; retained check results are planning data and do not establish completion."}
+	if category == "missing_tool_identity" {
+		candidate.Missing = []string{"The checker report omitted executable check identities. Execute fresh checks for the unverified original obligations; do not reuse historical receipts or infer identities from commands."}
+	}
 	encoded, err := json.Marshal(candidate)
 	if err != nil {
 		return report, err
@@ -90,7 +114,7 @@ func verificationRecoverReportSemantics(report independentVerificationReport, is
 	if _, err := parseIndependentVerificationReport(string(encoded)); err != nil {
 		return report, err
 	}
-	candidate.reportIssue = issue.category
+	candidate.reportIssue = category
 	return candidate, nil
 }
 
