@@ -112,12 +112,9 @@ class YHCAgent(BaseInstalledAgent):
                  max_output_tokens_per_call: int = 0,
                  max_total_estimated_cost: str = "0",
                  continuation_budgets: list | str | None = None,
-                 verification_turns: int = 0, verification_repairs: int = 0,
-                 verification_coverage_review: bool = False,
-                 verification_coverage_checks: int = 0,
-                 verification_effort: str = "", verification_max_output_tokens: int = 0,
-                 verification_coverage_effort: str = "",
-                 verification_coverage_max_output_tokens: int = 0, **kwargs):
+                 **kwargs):
+        if any(key.startswith("verification_") or key == "resume_verification" for key in kwargs):
+            raise ValueError("Independent completion verification was removed; use the ordinary YHC agent")
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         if not model_name or not model_name.strip():
             raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
@@ -171,44 +168,6 @@ class YHCAgent(BaseInstalledAgent):
             for grant in self.continuation_budgets:
                 if Decimal(grant.get("max_estimated_cost", "0")) <= 0 and Decimal(max_total_estimated_cost) <= 0:
                     raise ValueError("Pre-dispatch continuation requires an explicit cost grant or total envelope")
-        for name, value, upper in (("verification_turns", verification_turns, 32),
-                                   ("verification_repairs", verification_repairs, 3),
-                                   ("verification_coverage_checks", verification_coverage_checks, 1)):
-            if type(value) is not int or not 0 <= value <= upper:
-                raise ValueError(f"{name} must be an integer in 0..{upper}")
-        if not verification_turns and verification_repairs:
-            raise ValueError("verification_repairs requires verification_turns")
-        if not verification_turns and verification_coverage_checks:
-            raise ValueError("verification_coverage_checks requires verification_turns")
-        if type(verification_coverage_review) is not bool or (
-                verification_coverage_review and not verification_turns):
-            raise ValueError("verification_coverage_review must be a bool and requires verification_turns")
-        if verification_turns and (not max_provider_calls or any(
-                not grant["max_provider_calls"] for grant in self.continuation_budgets)):
-            raise ValueError("verification requires a finite provider-call limit in every segment")
-        self.verification_turns = verification_turns
-        self.verification_repairs = verification_repairs
-        self.verification_coverage_review = verification_coverage_review
-        self.verification_coverage_checks = verification_coverage_checks
-        self.verification_call_policy = {}
-        for stage, enabled, effort, cap in (
-                ("verification", verification_turns, verification_effort, verification_max_output_tokens),
-                ("verification_coverage", verification_turns and verification_coverage_review,
-                 verification_coverage_effort, verification_coverage_max_output_tokens)):
-            if (not isinstance(effort, str) or (effort and (
-                    effort.strip().lower() == "default" or
-                    re.fullmatch(r"[a-z][a-z0-9._-]{0,63}", effort.strip().lower()) is None or
-                    any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in effort)))
-                    or type(cap) is not int or not 0 <= cap < 2**63):
-                raise ValueError("Invalid verification effort or output limit")
-            if (effort or cap) and not enabled:
-                raise ValueError("Verification call policy requires its stage to be enabled")
-            if max_output_tokens_per_call and cap > max_output_tokens_per_call:
-                raise ValueError("Verification output limit cannot exceed the global per-call cap")
-            if effort:
-                self.verification_call_policy[stage + "_effort"] = effort.strip().lower()
-            if cap:
-                self.verification_call_policy[stage + "_max_output_tokens"] = cap
         self._segment_session = None
         self._segment_timeout = None
         self._segment_limits = None
@@ -269,8 +228,6 @@ class YHCAgent(BaseInstalledAgent):
                 "-y", "--sandbox", "danger-full-access"]
         if self._segment_session:
             argv += ["--resume", self._segment_session]
-            if self.verification_turns:
-                argv += ["--resume-verification"]
         if self.execution_timeout_sec:
             argv += ["--timeout", self._segment_timeout or f"{self.execution_timeout_sec}s"]
         limits = self._segment_limits or {"max_provider_calls": self.max_provider_calls,
@@ -293,15 +250,6 @@ class YHCAgent(BaseInstalledAgent):
         if self.reserve_cost_before_dispatch:
             argv += ["--reserve-cost-before-dispatch", "--max-output-tokens-per-call",
                      str(self.max_output_tokens_per_call)]
-        if self.verification_turns:
-            argv += ["--verification-turns", str(self.verification_turns),
-                     "--verification-repairs", str(self.verification_repairs)]
-        if self.verification_coverage_review:
-            argv += ["--verification-coverage-review"]
-        if self.verification_coverage_checks:
-            argv += ["--verification-coverage-checks", str(self.verification_coverage_checks)]
-        for name, value in self.verification_call_policy.items():
-            argv += ["--" + name.replace("_", "-"), str(value)]
         if self.provider:
             argv += ["--provider", self.provider]
         path_setup = f'export PATH={shlex.quote(self.remote_dir)}:"$PATH"; ' if self.ripgrep_path else ""

@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-11
+**Last verified:** 2026-10-14
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -203,8 +203,8 @@ validated public pricing schema and uses the same fixed card across the trial.
 A monetary pause continues only with complete token and cost receipts, matching
 Session identity, the existing global deadline and one of at most 16 declared
 grants. Each process receives a fresh incremental allowance; there is no
-unbounded automatic top-up. The original workspace and verification cursor
-remain under their existing owners.
+unbounded automatic top-up. The original workspace and Session history remain
+under their existing owners; continuation uses the ordinary solver path.
 
 Harbor additionally accepts `reserve_cost_before_dispatch`,
 `max_output_tokens_per_call` and an optional `max_total_estimated_cost` envelope
@@ -213,7 +213,7 @@ apply throughout. Each next segment receives the lesser of its explicit grant
 and the remaining envelope; a call-only grant cannot disable strict money
 admission. Only a complete, reconciled receipt within the actual segment cap
 can release money for continuation. Unknown or retained exposure stops the
-trial. A budget pause preserves the workspace, Session and verification cursor
+trial. A budget pause preserves the workspace and Session history
 inside the task environment. Operators must also retain or export the Harbor
 environment when ending a trial if they intend to resume it later; in-process
 continuation alone does not change Harbor's container cleanup policy.

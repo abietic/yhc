@@ -132,72 +132,27 @@ class AgentTests(AgentFixture, unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.agent(**{name: invalid})
 
-    def test_independent_verification_is_opt_in_and_shares_finite_segment_caps(self):
-        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
-            self.assertNotIn("--verification-turns", self.agent().execution_command())
-            self.assertNotIn("--verification-coverage-review", self.agent().execution_command())
-            self.assertNotIn("--verification-coverage-checks", self.agent().execution_command())
-            command = self.agent(max_provider_calls=8, verification_turns=2,
-                                 verification_repairs=1).execution_command()
-            self.assertIn("--verification-turns 2", command)
-            self.assertIn("--verification-repairs 1", command)
-            agent = self.agent(max_provider_calls=8, verification_turns=2,
-                               verification_coverage_review=True, verification_coverage_checks=1)
-            self.assertIn("--verification-coverage-review", agent.execution_command())
-            self.assertIn("--verification-coverage-checks 1", agent.execution_command())
-            agent._segment_session = "saved-session"
-            self.assertIn("--verification-coverage-review", agent.execution_command())
-            self.assertIn("--verification-coverage-checks 1", agent.execution_command())
-            for kwargs in ({"verification_turns": True}, {"verification_turns": 33},
-                           {"verification_repairs": 4}, {"verification_repairs": 1},
-                           {"verification_coverage_review": True},
-                           {"verification_coverage_review": "true"},
-                           {"verification_coverage_checks": 1},
-                           {"verification_coverage_checks": True},
-                           {"verification_coverage_checks": -1},
-                           {"verification_coverage_checks": 2},
-                           {"verification_turns": 2},
-                           {"verification_turns": 2, "max_provider_calls": 8,
-                            "continuation_budgets": [{"max_total_tokens": 100}]}):
-                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
-                    self.agent(**kwargs)
 
-    def test_verification_stage_policy_survives_segments(self):
-        with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
-            self.assertNotIn("--verification-effort", self.agent().execution_command())
-            agent = self.agent(max_provider_calls=8, verification_turns=2,
-                               verification_coverage_review=True,
-                               verification_effort=" HIGH ", verification_max_output_tokens=8192,
-                               verification_coverage_effort="low", verification_coverage_max_output_tokens=2048)
-            for resumed in (False, True):
-                if resumed:
-                    agent._segment_session = "saved-session"
-                command = agent.execution_command()
-                for flag in ("--verification-effort high", "--verification-max-output-tokens 8192",
-                             "--verification-coverage-effort low", "--verification-coverage-max-output-tokens 2048"):
-                    self.assertIn(flag, command)
-            for kwargs in ({"verification_effort": "low"}, {"verification_max_output_tokens": 1},
-                           {"verification_turns": 2, "verification_coverage_effort": "low"},
-                           {"verification_turns": 2, "verification_effort": "default"},
-                           {"verification_turns": 2, "verification_effort": "low\n"},
-                           {"verification_turns": 2, "verification_effort": True},
-                           {"verification_turns": 2, "verification_max_output_tokens": -1},
-                           {"verification_turns": 2, "verification_max_output_tokens": True}):
-                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
-                    self.agent(max_provider_calls=8, **kwargs)
 
-    def test_verification_continuation_is_explicit(self):
+
+    def test_removed_checker_options_fail_before_provisioning(self):
+        for name in ("verification_turns", "verification_repairs",
+                     "verification_coverage_checks", "verification_coverage_review",
+                     "verification_effort", "verification_max_output_tokens",
+                     "verification_coverage_effort", "verification_coverage_max_output_tokens",
+                     "resume_verification"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "removed"):
+                self.agent(**{name: 0})
+
+    def test_continuation_uses_ordinary_session_resume(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
-            agent = self.agent(max_provider_calls=8, verification_turns=2,
-                               verification_repairs=1)
-            self.assertNotIn("--resume-verification", agent.execution_command())
+            agent = self.agent(max_provider_calls=8)
+            self.assertNotIn("--resume", agent.execution_command())
             agent._segment_session = "saved-session"
             command = agent.execution_command()
             self.assertIn("--resume saved-session", command)
-            self.assertIn("--resume-verification", command)
-            ordinary = self.agent()
-            ordinary._segment_session = "saved-session"
-            self.assertNotIn("--resume-verification", ordinary.execution_command())
+            self.assertNotIn("--verification", command)
+            self.assertNotIn("--resume-verification", command)
 
     def test_execution_timeout_is_opt_in_and_bounded(self):
         with patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"}):
