@@ -244,7 +244,7 @@ func runReplay(parent context.Context, binary, sourceRoot string, manifest scena
 		return result, err
 	}
 	if err := scanCredentialSentinel(manifest.Provider.FakeAPIKey, manifest.Execution.ArtifactMaxBytes,
-		paths.home, paths.config, paths.data, paths.cache, paths.artifact, paths.provider, filepath.Join(paths.repo, ".eino-agent")); err != nil {
+		paths.home, paths.config, paths.data, paths.cache, paths.artifact, paths.provider, filepath.Join(paths.repo, ".yhc")); err != nil {
 		return result, err
 	}
 	result.fixtureDigest = fixtureDigest
@@ -428,10 +428,10 @@ func inspectResidual(repo string, manifest scenarioManifest) ([]string, string, 
 		status = append(status, filepath.ToSlash(line[3:]))
 	}
 	sort.Strings(status)
-	if strings.Join(status, "\x00") != strings.Join([]string{".eino-agent/", manifest.Expected.Addition}, "\x00") {
+	if strings.Join(status, "\x00") != strings.Join([]string{".yhc/", manifest.Expected.Addition}, "\x00") {
 		return nil, "", fail("residual_unexpected", nil)
 	}
-	metadataRoot := filepath.Join(repo, ".eino-agent")
+	metadataRoot := filepath.Join(repo, ".yhc")
 	if err := inspectRegularTree(metadataRoot, manifest.Execution.ArtifactMaxBytes); err != nil {
 		return nil, "", fail("runtime_metadata_invalid", err)
 	}
@@ -524,7 +524,7 @@ func treeDigest(root string) (string, error) {
 		if err != nil {
 			return err
 		}
-		if relative == ".git" || relative == ".eino-agent" {
+		if relative == ".git" || relative == ".yhc" {
 			return filepath.SkipDir
 		}
 		if relative == "." || entry.IsDir() {
