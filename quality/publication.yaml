@@ -5148,7 +5148,7 @@ privacy:
       match_sha256: 9ab9fca573d169edd8e5252c3289f3195035a2ffdff337d3a076e7ab518284e0
       purpose: build-metadata
     - path: scripts/terminal_bench/test_agent.py
-      line: 554
+      line: 509
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
       purpose: synthetic-security-fixture
