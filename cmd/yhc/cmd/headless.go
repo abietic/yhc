@@ -35,21 +35,18 @@ const (
 )
 
 type headlessOptions struct {
-	Timeout                 time.Duration
-	Runtime                 runtimeFlags
-	UsageLimits             execution.RunUsageLimits
-	PriceCardFile           string
-	IndependentVerification engine.IndependentVerificationConfig
-	ResumeVerification      bool
-	Resume                  string
-	OutputFormat            string
-	Stdin                   io.Reader
-	Stdout                  io.Writer
-	Stderr                  io.Writer
+	Timeout       time.Duration
+	Runtime       runtimeFlags
+	UsageLimits   execution.RunUsageLimits
+	PriceCardFile string
+	Resume        string
+	OutputFormat  string
+	Stdin         io.Reader
+	Stdout        io.Writer
+	Stderr        io.Writer
 }
 
 type headlessResult struct {
-	Verification   []engine.IndependentVerificationSummary
 	Usage          *execution.RunUsageSnapshot
 	Status         string
 	Output         string
@@ -62,15 +59,14 @@ type headlessResult struct {
 }
 
 type headlessEnvelope struct {
-	Verification   []engine.IndependentVerificationSummary `json:"verification,omitempty"`
-	Usage          *execution.RunUsageSnapshot             `json:"usage,omitempty"`
-	SchemaVersion  int                                     `json:"schema_version"`
-	Status         string                                  `json:"status"`
-	Output         string                                  `json:"output,omitempty"`
-	SessionID      string                                  `json:"session_id,omitempty"`
-	TerminalReason string                                  `json:"terminal_reason,omitempty"`
-	ExitCode       int                                     `json:"exit_code"`
-	Error          *headlessEnvelopeError                  `json:"error,omitempty"`
+	Usage          *execution.RunUsageSnapshot `json:"usage,omitempty"`
+	SchemaVersion  int                         `json:"schema_version"`
+	Status         string                      `json:"status"`
+	Output         string                      `json:"output,omitempty"`
+	SessionID      string                      `json:"session_id,omitempty"`
+	TerminalReason string                      `json:"terminal_reason,omitempty"`
+	ExitCode       int                         `json:"exit_code"`
+	Error          *headlessEnvelopeError      `json:"error,omitempty"`
 }
 
 type headlessEnvelopeError struct {
@@ -98,14 +94,6 @@ func newExecCommand() *cobra.Command {
 		},
 	}
 	bindRuntimeFlags(command.Flags(), &options.Runtime)
-	command.Flags().IntVar(&options.IndependentVerification.MaxTurns, "verification-turns", 0, "Independent verification rounds per completion check (1..32; 0 disables; requires --max-provider-calls)")
-	command.Flags().IntVar(&options.IndependentVerification.MaxRepairs, "verification-repairs", 0, "Maximum solver repair cycles after a FAIL counterexample (0..3; shares invocation budget)")
-	command.Flags().IntVar(&options.IndependentVerification.MaxCoverageChecks, "verification-coverage-checks", 0, "Supplemental checks after PARTIAL without solver repair (0..1; shares invocation budget)")
-	command.Flags().BoolVar(&options.IndependentVerification.CoverageReview, "verification-coverage-review", false, "Review provisional PASS coverage once without tools (requires verification; shares invocation budget)")
-	command.Flags().StringVar(&options.IndependentVerification.CheckerEffort, "verification-effort", "", "Checker effort on the admitted root route (empty inherits root)")
-	command.Flags().IntVar(&options.IndependentVerification.CheckerMaxOutputTokens, "verification-max-output-tokens", 0, "Checker output bound including reasoning (0 inherits root; cannot exceed global cap)")
-	command.Flags().StringVar(&options.IndependentVerification.CoverageEffort, "verification-coverage-effort", "", "Tool-free coverage review effort (empty inherits root)")
-	command.Flags().IntVar(&options.IndependentVerification.CoverageMaxOutputTokens, "verification-coverage-max-output-tokens", 0, "Coverage review output bound including reasoning (0 inherits root)")
 	command.Flags().DurationVar(&options.Timeout, "timeout", 0, "Cancel this query and its children after this duration (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
@@ -113,7 +101,6 @@ func newExecCommand() *cobra.Command {
 	command.Flags().StringVar(&options.UsageLimits.MaxEstimatedCost, "max-estimated-cost", "", "Stop new calls after estimated native cost reaches this decimal amount; in-flight calls may overshoot (0 or unset disables; requires --price-card)")
 	command.Flags().BoolVar(&options.UsageLimits.ReserveCostBeforeDispatch, "reserve-cost-before-dispatch", false, "Reserve a proven worst-case native estimate before dispatch (requires positive cost limit and upper_bound price card)")
 	command.Flags().IntVar(&options.UsageLimits.MaxOutputTokensPerCall, "max-output-tokens-per-call", 0, "Enforced maximum response tokens per reserved call, including reasoning (requires reservation mode)")
-	command.Flags().BoolVar(&options.ResumeVerification, "resume-verification", false, "Continue a saved verification stage and repair allowance (requires --resume and matching verification options)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
 	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
 	return command
@@ -139,12 +126,6 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	}
 	if options.Timeout < 0 {
 		return renderHeadlessFailure(format, options, usageErrorf("timeout must be non-negative (0 disables)"), "usage_error", ExitUsage)
-	}
-	if options.ResumeVerification && (strings.TrimSpace(options.Resume) == "" || options.IndependentVerification.MaxTurns == 0) {
-		return renderHeadlessFailure(format, options, usageErrorf("--resume-verification requires --resume and enabled verification"), "usage_error", ExitUsage)
-	}
-	if err := options.IndependentVerification.Validate(options.UsageLimits); err != nil {
-		return renderHeadlessFailure(format, options, err, "usage_error", ExitUsage)
 	}
 	options = normalizeHeadlessWriters(options)
 	usage, err := execution.NewRunUsage(options.UsageLimits)
@@ -189,7 +170,6 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	configureHeadlessPermissions(&engineCfg, options.Stderr)
 	engineCfg.CommandEntrypoint = commands.EntrypointHeadless
 	engineCfg.RunUsage = usage
-	engineCfg.IndependentVerification = options.IndependentVerification
 	if options.Timeout > 0 {
 		engineCfg.RunDeadline = time.Now().Add(options.Timeout)
 		if earlier, ok := ctx.Deadline(); ok && earlier.Before(engineCfg.RunDeadline) {
@@ -215,12 +195,7 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		queryCtx, cancelQuery = context.WithCancel(ctx)
 		defer cancelQuery()
 	}
-	var events <-chan engine.QueryEvent
-	if options.ResumeVerification {
-		events, _ = eng.SubmitMessageWithMetadata(queryCtx, prompt, map[string]any{"is_meta": true, "verification_continuation": true})
-	} else {
-		events, _ = eng.SubmitMessage(queryCtx, prompt)
-	}
+	events, _ := eng.SubmitMessage(queryCtx, prompt)
 	var result headlessResult
 	if format == outputFormatJSONL {
 		writer := enginetransport.NewLifecycleWriter(options.Stdout)
@@ -364,12 +339,6 @@ func collectHeadlessEventsWithObserver(
 			} else if event.Message != nil {
 				output.WriteString(event.Message.Content)
 			}
-		case engine.EventAttachment:
-			if event.AttachmentMessage != nil {
-				if summary, ok := event.AttachmentMessage.Extra["verification_summary"].(engine.IndependentVerificationSummary); ok && len(result.Verification) < 5 {
-					result.Verification = append(result.Verification, summary)
-				}
-			}
 		case engine.EventToolResult:
 			name, size := headlessToolResultMetadata(event)
 			fmt.Fprintf(stderr, "[%s] completed (%d bytes)\n", name, size)
@@ -465,9 +434,6 @@ func classifyHeadlessResult(ctx context.Context, result *headlessResult) {
 		result.ExitCode = ExitFailure
 		return
 	}
-	if errors.Is(result.Err, engine.ErrIndependentVerification) {
-		result.ErrorCode = "independent_verification_failed"
-	}
 	if result.Err != nil {
 		result.Status = "failed"
 		if result.ErrorCode == "" {
@@ -487,7 +453,6 @@ func sanitizeHeadlessError(err error, exactSecrets ...string) error {
 func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result headlessResult) error {
 	if format == outputFormatJSON {
 		envelope := headlessEnvelope{
-			Verification:   result.Verification,
 			SchemaVersion:  headlessEnvelopeSchemaVersion,
 			Usage:          result.Usage,
 			Status:         result.Status,
@@ -509,7 +474,6 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 			identity.SessionID = result.SessionID
 		}
 		lifecycleResult := enginetransport.LifecycleResult{
-			Verification:      result.Verification,
 			LifecycleIdentity: identity,
 			Usage:             result.Usage,
 			Status:            result.Status,

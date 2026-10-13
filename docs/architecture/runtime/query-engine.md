@@ -1,7 +1,7 @@
 # Query Engine
 
 **Status:** current
-**Last verified:** 2026-10-12
+**Last verified:** 2026-10-14
 
 > **Ownership:** `engine.QueryEngine` for session lifetime and durable kernel
 > validation, Plan/Goal lifecycle serialization, and Session checkpoints; the
@@ -44,178 +44,26 @@ This guides model behavior; it does not mechanically prove task completion,
 automatically start another model, or override custom root prompts. Existing
 tool permissions and invocation budgets still govern any selected checks.
 
-## Optional independent completion verification
+## Completion and evaluation boundary
 
-`IndependentVerificationConfig` is disabled when `MaxTurns`
-is zero. When enabled, the canonical after-model boundary runs it only after
-normal completion, Stop hooks, and token-continuation decisions. Checker tool
-hooks forward to the parent owner; parent completion hooks are not re-run
-inside the checker. It requires a
-finite shared provider-call allowance. The checker uses the production Query
-kernel, the root model binding and permission/tool dispatch, and a fresh system
-prompt and history containing original non-meta user text captured before
-compaction. Solver reasoning, success claims, and test outputs are not copied.
-It adds no separate model role or fallback selector.
+The normal ProjectGraph completion boundary applies Stop hooks and configured
+token continuation before returning `TerminalCompleted`. It does not launch an
+automatic checker, change reasoning effort, require a second model report, or
+maintain a separate verification cursor. Task verification remains part of the
+solver's normal tool workflow. `SubmitMessageWithMetadata` preserves the admitted
+user task; historical checker metadata has no execution authority.
 
-Optional checker and coverage call policies reuse the root route, capability
-admission, and canonical request/failover owner. They add no model role or
-profile selection. Explicit effort is admitted without constructing a client;
-route identity and metadata must still match the root binding. Each stage derives
-its intent independently from the root. The canonical model boundary applies a
-persistent invocation output ceiling before dispatch, even when the per-round
-recovery override has reset or asks for more output. The concrete prepared
-adapter freezes that effective limit into both the wire request and cost bound.
-The cursor stores additive empty/zero-compatible policy fields; a changed
-policy rejects continuation before any dispatch. Root bindings, shared budgets,
-repair and supplemental allowances remain unchanged. Configuration and CLI
-examples are owned by the [interaction guide](../../guides/interaction-modes-and-commands.md).
+The headless and Harbor entrypoints use this same solver path. Harbor may set
+explicit invocation budgets and resume an existing Session with a finite grant;
+it does not add a completion gate or feed grader results back into the solver.
+The task verifier determines benchmark reward independently of YHC's runtime
+terminal reason. A completed query is not a guarantee that tests or a benchmark
+will pass. Existing permissions, cancellation, Goal, and Session recovery
+remain authoritative.
 
-Each checker round receives its bounded round number. The last existing round
-requests the JSON report with tool choice disabled and denies tool dispatch,
-including when a provider ignores that choice. Missing coverage remains PARTIAL;
-no extra reporting call is granted. Model retries retain their logical round.
-
-If a fully decoded report has an invalid enum or missing check field and a round
-remains, the same checker may use exactly one report-only correction. It retains
-only original requirements, bounded current receipts, and the rejected report;
-tools stay disabled. The correction shares root usage/deadline and consumes the
-existing turn allowance. It cannot change a valid verdict/status, coverage,
-missing requirements, check count/order, or any existing nonempty evidence field.
-JSON syntax/type/schema errors and semantic contradictions are not corrected.
-Only categorical format diagnostics and the local correction count leave the
-checker; these counts are not a durable cross-resume usage ledger.
-
-The checker can inspect with Read/Glob/Grep and exercise behavior with Bash;
-other tool dispatch is denied. Bash retains the existing execution policy and
-permissions. Instructions prohibit project changes, but this tool projection
-is **not** an OS-level read-only filesystem sandbox. Checks must reference an
-actual completed foreground Bash call ID from this checker invocation. A bounded,
-deterministic receipt catalog accompanies checker rounds; previews only help
-select an ID. Reports may omit the command, which the runtime resolves from its
-own execution record. An explicitly supplied command must still match exactly.
-Tool IDs must be unique across checker rounds; a reused ID invalidates its
-receipt and is rejected before another dispatch. Unknown IDs, background
-launches, and failed tool invocations cannot authorize
-a check. Resolved report attachments remain bounded to 128 KiB;
-bounded actual tool outputs accompany the verdict attachment. This validates
-execution provenance, not the truth of every model interpretation or complete
-coverage of arbitrary prose requirements.
-
-An initial, fully decoded report that omits a PASS/FAIL check's receipt identity
-can only become a runtime PARTIAL diagnostic. That check becomes UNVERIFIED,
-and its unbound command is discarded; the runtime never guesses an ID from
-command text. All other fields and every supplied identity/command, including
-UNVERIFIED references, still require validation. Valid bound checks retain their
-statuses, but the report cannot authorize completion or solver repair. Only the
-existing opt-in supplemental allowance can request fresh checks. A malformed
-report, invalid supplied reference, or report-only correction cannot use this
-recovery. Pending diagnostics carry no executable receipt authority on resume.
-
-The checker policy derives each behavioral check from its real entrypoint,
-prerequisite state, and observable outcome. Internal callback tests establish only
-component properties; caller completion and side effects require the real caller
-path. Concurrent checks must first observe the required intermediate state,
-then check behavior while it holds and after release. Unreached prerequisites
-remain PARTIAL; a demonstrated violation of required progress is FAIL. The
-report's existing observed text records that evidence. This is model-directed
-checking guidance, not runtime proof that a command exercised every claimed
-property; the report schema and execution-provenance checks are unchanged.
-
-`CoverageReview` optionally reviews a provisional PASS in one additional,
-tool-free production Query round. It receives only original requirements and
-the bounded report with exact current commands and runtime-bound outputs, as
-untrusted assistant data. It inherits the admitted model, root RunUsage,
-deadline, and dispatch guards; usage is attributed to
-`independent_verification_coverage`. SUPPORTED retains PASS; INSUFFICIENT can
-only downgrade it to PARTIAL and add missing obligations. It cannot invent a
-FAIL or executable evidence. Malformed reviews, cancellation, and budget stops
-fail closed with the cursor still pending in check; resume executes fresh checks
-and a fresh review. The opt-in setting is part of cursor configuration identity.
-Legacy cursors without the setting mean disabled, and continuation cannot
-silently change it. Outward summaries expose coverage review count and verdict.
-This separates test construction from evidence review, but remains model-directed
-judgment rather than proof of arbitrary program semantics or benchmark reward.
-
-A structured PASS requires executable checks, all checks passing, complete
-claimed coverage, and no missing requirements. Routing distinguishes evidence
-gaps from demonstrated defects:
-
-| Verdict | Next stage |
-|---|---|
-| PASS | Complete the invocation after any configured coverage review. |
-| FAIL | Request at most `MaxRepairs` additional solver cycles (0..3), each followed by fresh checks. |
-| PARTIAL | Never dispatch solver repair. If `MaxCoverageChecks=1`, run one supplemental checker against current artifacts; otherwise stop. |
-
-`MaxCoverageChecks` defaults to zero and accepts only 0..1. Its allowance belongs
-to the whole saved task, separately from repairs; a later repair cannot reset it.
-The supplemental checker uses the existing narrow tool projection, fresh history
-and receipts, and bounded untrusted prior planning hints. It can establish PASS
-or a fresh FAIL counterexample. Another PARTIAL exhausts the allowance, including
-when the check has made no progress. This is a finite additional audit, not a
-guarantee that the model will derive a better test. Invalid
-reports, missing command evidence, exhausted repair allowance, budget admission
-failure, and checker errors fail closed. Parent cancellation propagates through
-the checker. Solver candidate text may already have streamed; the enclosing
-terminal result remains the completion authority.
-
-All checker/repair calls share root RunUsage and deadline; there is no top-up,
-call reservation for verification, separate currency cap, or paid trial implied
-by enabling the feature. QueryEngine fsyncs a bounded runtime cursor before
-solver/check/coverage/repair transitions. It holds original requirements and their
-digest, session/workspace identity, configuration, consumed repairs, completed
-supplemental checks, and valid diagnostics. Counts and phase are installed in
-memory only after persistence succeeds. A supplemental check is counted only
-after its valid report, including any configured coverage review, completes.
-Budget rejection, cancellation, malformed output, and interruption leave the
-same supplemental audit pending; every dispatched call is still charged to
-RunUsage. The `coverage_checks` outward summary is this completed-check count,
-not a provider-call or cost ledger. `attempt` numbers completed reports across
-both repair and supplemental checking.
-The headless `--resume-verification --resume <id>` option explicitly continues this
-cursor with matching verification options. Caller-supplied continuation text is replaced
-with a runtime-owned meta prompt before hooks, persistence, or model dispatch;
-new requirements require an ordinary user request. Ordinary user requests start a new gate. The Harbor
-adapter selects this option only for configured verification budget continuations;
-its finite allowances and original total deadline still bound the entire trial.
-
-A pending check or supplemental coverage stage resumes directly in a fresh checker invocation. Checker history
-and executable receipts are deliberately not restored; current artifacts must be
-checked again. Valid prior FAIL/PARTIAL diagnostics supply optional planning data:
-missing requirements and nonpassing concerns, with their expected/observed text.
-The projected JSON is bounded to 16 KiB; an oversized projection is omitted.
-Planning data retains assistant provenance on provider requests and precedes the
-original user requirements. The checker system policy treats it as untrusted
-data; local meta flags do not enforce that boundary. This does not provide an
-OS sandbox or guarantee resistance to every model-level prompt injection.
-Historical commands, tool IDs, and passing checks are never projected. The
-checker treats the data as untrusted ordering hints, validates them against the
-original contract, and still requires fresh evidence and complete coverage for
-PASS. Ordinary rechecks after repair use the same projection. PARTIAL can mean
-only missing coverage, without a demonstrated defect. This adds no model call,
-tool allowance, or durable state format.
-Each fresh checker has the configured turn cap, so an interrupted
-check may repeat inspection, still within the finite shared allowance. A pending
-repair retains its consumed repair count and reinjects saved counterexamples even
-if a crash preceded attachment publication. Stored PASS/exhausted cursors, corrupt
-transcripts, unknown versions, and identity/configuration mismatches are rejected.
-Legacy cursors without supplemental settings mean zero allowance. Continuation
-cannot silently enable it. A legacy pending repair with PARTIAL diagnostics is
-rejected rather than converted to another stage or allowed to edit without a
-counterexample; pending FAIL repairs retain their existing behavior.
-Persistence failure stops before the next dispatch. No historical PASS authorizes
-completion. An interrupted Graph permission decision still cannot be resumed
-with this gate enabled.
-This slice supports text requirements and invocation completion, not a
-provider-independent proof, hidden benchmark grader, or automatic TUI rollout.
-Multimodal requests and synthetic structured-output completion are rejected
-when this gate is enabled.
-
-Code: [`applyVerificationCallPolicy`](../../../engine/verification_policy.go),
-[`independent_verification.go`](../../../engine/independent_verification.go),
-[`round_lifecycle.go`](../../../engine/round_lifecycle.go),
-[`verification_continuation.go`](../../../engine/verification_continuation.go), and
-[`verification_report_format.go`](../../../engine/verification_report_format.go),
-[`headless verification tests`](../../../cmd/yhc/cmd/headless_verification_test.go).
+The former independent-check configuration and CLI flags are removed. Old
+Session history and metadata are retained but do not restore that execution
+policy. Resume uses an explicit ordinary user request.
 
 ## Durable Goal State And Projection
 

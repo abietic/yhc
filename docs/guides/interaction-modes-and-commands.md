@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-12
+**Last verified:** 2026-10-14
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -49,110 +49,19 @@ approval channel. Consumers should branch on `schema_version`, `type`, and
 `event.kind`, ignore unknown additive fields, and treat the single `result`
 record as process closure.
 
-### Opt into independent completion checks
+### Completion and evaluation
 
-The completion checker is **off by default**. To enable it with a finite shared
-allowance and at most one solver repair cycle:
+`exec` uses the same solver traversal as the TUI and ACP. The solver can inspect,
+edit, and test through its normal tools; completion does not start an automatic
+second checker or change reasoning effort. Benchmark reward comes from the
+external task verifier.
 
-```bash
-yhc exec "implement the requested behavior" --output-format jsonl \
-  --max-provider-calls 40 --max-total-tokens 1000000 \
-  --verification-turns 6 --verification-repairs 1
-```
-
-`--verification-turns` accepts 1..32; `--verification-repairs` accepts 0..3.
-Only FAIL with an executable counterexample permits solver repair. PARTIAL
-means insufficient evidence and stops without solver repair. Optionally add
-`--verification-coverage-checks 1` to give the checker one supplemental audit
-of missing coverage using the same shared allowance. It defaults to zero and
-accepts only 0..1. A fresh FAIL can then enter repair; another PARTIAL stops.
-This allowance is retained across budget continuations and repairs, not renewed
-per segment. A pending supplemental audit resumes with fresh checks, without
-repeating solver completion. Summaries report completed supplemental audits as
-`coverage_checks`; incomplete audits still contribute their dispatched calls
-to usage. Keep all verification options identical on `--resume-verification`.
-Legacy cursors without this option mean zero; a legacy pending PARTIAL repair
-is rejected, while a pending FAIL repair remains resumable.
-If the checker's initial complete report claims PASS with incomplete coverage,
-missing checks, or FAIL/UNVERIFIED check statuses, or claims FAIL without a
-failed check, the runtime retains it as PARTIAL with a categorical
-`report_issue`. Every check field and referenced fresh Bash receipt must still
-be valid, and provider usage must be complete. UNVERIFIED checks may omit both
-receipt and command; supplied references must still validate on this recovery
-path. Aggregate coverage claims and
-missing text are replaced by a runtime request for fresh checks; check statuses
-are retained as planning data. This uses only the configured supplemental audit
-and never authorizes solver repair by itself. Invalid JSON, malformed fields,
-unknown or failed receipts, cancellation, provider errors, and incomplete usage
-remain errors. A format correction that changes claims into a contradiction
-also remains an error. A budget pause preserves the pending supplemental stage;
-continuation uses fresh receipts and does not renew its allowance.
-Add `--verification-coverage-review` to review each provisional PASS once
-without tools. It defaults off and consumes one additional model round from
-the same finite provider-call/token allowance and deadline. Evidence gaps
-downgrade PASS to PARTIAL; the review cannot create new counterexamples. If its
-admission runs out of budget, continuation executes fresh checks and review.
-The saved setting must match on `--resume-verification`; old cursors mean off.
-Usage attributes this call to `independent_verification_coverage`, and bounded
-summaries include `coverage_reviews` and `coverage_verdict`. If a completed
-review returns no visible report, invalid JSON, or a contradictory verdict,
-the runtime retains the fresh checker report as PARTIAL, discards the invalid
-review's claims, and reports `coverage_verdict=UNAVAILABLE` with a categorical
-`coverage_issue`. This permits the already configured supplemental audit;
-it adds no retry allowance and never authorizes solver repair. With zero
-supplemental allowance, or after its single completed audit, another unavailable
-review stops. Cancellation, provider errors, and incomplete usage remain errors;
-they do not trigger this recovery. A budget pause before the supplemental audit
-retains that pending stage; continuation executes fresh checks and review
-without renewing the allowance. Coverage review remains a model judgment and
-does not guarantee benchmark reward.
-Checker and coverage-review call settings are optional and independent. For example,
-keep the solver's configured effort and use high for executable checks and low
-for the tool-free review:
-
-```bash
-yhc exec "complete the task" --max-provider-calls 40 \
-  --verification-turns 8 --verification-coverage-review \
-  --verification-effort high --verification-max-output-tokens 16384 \
-  --verification-coverage-effort low --verification-coverage-max-output-tokens 8192
-```
-
-Empty effort and zero output limit inherit the root call configuration. An
-unset review setting inherits the root, not a checker override. Effort must be
-supported by the admitted root model and adapter; unsupported overrides fail
-before solver dispatch. Explicit output limits include reasoning tokens and
-remain ceilings through tool loops, retries, and max-output recovery. They may
-not exceed a configured global per-call cap or a known admitted model limit.
-Strict cost reservation uses the frozen request's effective output limit; these
-options neither enable a budget nor grant additional calls. Keep these four
-settings identical on `--resume-verification`; legacy cursors mean empty/zero.
-Changing one rejects continuation before dispatch. Usage records the applied
-effort under each stage's existing source. These controls do not guarantee a
-visible report or improve benchmark reward by themselves.
-
-A checker uses a fresh context containing original user requirements and checks
-the current workspace with the same admitted model and budget. A missing or
-failed check cannot be reported as completed. JSON/JSONL final results include bounded `verification` verdict/check-count
-summaries; usage routes distinguish checker calls. Detailed commands and
-outputs stay in the private session attachment, not the outward JSONL event
-union. Invalid reports and exhausted repairs yield
-`independent_verification_failed`; a shared budget stop retains
-`run_budget_exceeded`. The model still chooses and interprets checks, so this
-is not proof of benchmark reward or exhaustive correctness.
-
-Harbor accepts `verification_turns`, `verification_repairs`,
-`verification_coverage_checks` (0..1), and boolean `verification_coverage_review`
-agent arguments; they default to zero/false. The adapter also forwards
-`verification_effort`, `verification_max_output_tokens`,
-`verification_coverage_effort`, and `verification_coverage_max_output_tokens`
-unchanged across segments; they default to empty/zero.
-Every initial/continuation segment must include a
-finite provider-call limit when checking is enabled. No additional grant is
-created. Normal session resume preserves solver workspace and history, but
-starts a new checker context; checker history is not resumable. The feature
-does not reserve budget for checks, and TUI/ACP settings do not enable it.
-See the [runtime contract](../architecture/runtime/query-engine.md#optional-independent-completion-verification)
-for tool, cancellation, and interrupted-Graph limitations.
+The former `--verification-*` and `--resume-verification` flags and Harbor
+`verification_*` options are removed and rejected. Update old evaluation
+commands before running them. Existing Session files remain available; use
+`--resume <session-id>` with an explicit request to continue the original task.
+Optional budgets and ordinary progress-preserving resume are unchanged. See
+the [completion boundary](../architecture/runtime/query-engine.md#completion-and-evaluation-boundary).
 
 ### Invocation usage and optional limits
 

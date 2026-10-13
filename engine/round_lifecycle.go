@@ -779,22 +779,6 @@ func runCanonicalAfterModelRound(input canonicalAfterModelInput) canonicalAfterM
 		return result
 	}
 
-	if gate := input.params.independentVerification; gate != nil {
-		attachment, err := gate.verify(input.ctx, input.yield)
-		if err != nil {
-			terminal := verificationErrorTerminal(err)
-			result.action = canonicalLoopTerminal
-			result.terminal = &terminal
-			return result
-		}
-		if !gate.passed {
-			state.Messages = append(append(append([]*schema.Message{}, messagesForQuery...), assistantMessages...), attachment)
-			state.Transition = ContinueIndependentVerification
-			result.action = canonicalLoopContinue
-			return result
-		}
-	}
-
 	terminal := Terminal{Reason: TerminalCompleted}
 	result.action = canonicalLoopTerminal
 	result.terminal = &terminal
