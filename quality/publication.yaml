@@ -5132,21 +5132,6 @@ privacy:
       match_sha256: 14e5a36ad5fa01c2da3fca63af3f65f20aa33dd89bc1b051b79ba7f777fc9cd1
       purpose: synthetic-security-fixture
     # Public price-card fixture and non-secret Python configuration identifiers.
-    - path: engine/verification_call_policy_test.go
-      line: 79
-      rule_id: private-url
-      match_sha256: 23a538fde85c5907181ebb2190f92594a7ece12c059d9ada0ad62368f4e39ff7
-      purpose: synthetic-security-fixture
-    - path: scripts/terminal_bench/test_agent.py
-      line: 170
-      rule_id: high-entropy-token
-      match_sha256: 83a89064fcf0f59beb5eb6acb34b6edd99022d9c220e5aaf4a72ec305d34246e
-      purpose: build-metadata
-    - path: scripts/terminal_bench/test_agent.py
-      line: 171
-      rule_id: high-entropy-token
-      match_sha256: 9ab9fca573d169edd8e5252c3289f3195035a2ffdff337d3a076e7ab518284e0
-      purpose: build-metadata
     - path: scripts/terminal_bench/test_agent.py
       line: 509
       rule_id: private-key
