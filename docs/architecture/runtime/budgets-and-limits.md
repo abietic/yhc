@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-14
+**Last verified:** 2026-10-16
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -161,6 +161,12 @@ suppressed by the existing enabled-limit policy. Observation without the
 threshold remains permissive. Shared children, retries and fallback use the
 same collector; external MCP/hook billing and hidden SDK retries remain outside
 its observation boundary.
+
+Headless JSON and JSONL retain an existing execution error in the structured
+terminal diagnostic when a budget stop also applies. The terminal reason and
+error code still identify the budget stop, and cancellation keeps its existing
+precedence. A stream failure with unknown usage therefore retains its safe
+transport cause while blocking further dispatch and retaining uncertain cost.
 
 `--reserve-cost-before-dispatch` additionally enables a conservative admission
 ceiling on the declared estimate. It defaults to false and requires a positive

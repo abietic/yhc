@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-10-05
+**Last verified:** 2026-10-16
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -318,6 +318,14 @@ connect, TLS handshake, request upload, request sent, and response headers.
 not proof of the network fault's location. Per-request atomic trace state
 composes with the caller's trace and cannot regress because of a late parallel
 connection event.
+SSE reader failures after the HTTP response was accepted carry
+`phase=response_body`, preserving the original error identity and bounded
+reason. This identifies a body-read failure, without attributing it to a
+particular server, proxy, or network component.
+The shared model round emits a stream failure as a diagnostic attachment,
+separate from any assistant text already delivered. It cannot replace that
+text under the same message identity; the original failure remains the terminal
+cause and failed streamed tool calls remain uncommitted.
 When the global default is a standard `*http.Transport`, default Responses and
 Files clients share a provider-owned clone with a bounded 30-second TLS
 handshake instead of the standard 10 seconds, preserving connection reuse

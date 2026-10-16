@@ -228,9 +228,14 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		result.TerminalReason = snapshot.StopReason
 		result.ErrorCode = snapshot.StopReason
 		result.ExitCode = ExitFailure
-		result.Err = execution.ErrRunBudgetExceeded
+		budgetErr := execution.ErrRunBudgetExceeded
 		if snapshot.StopReason == "run_usage_unknown" {
-			result.Err = execution.ErrRunUsageUnknown
+			budgetErr = execution.ErrRunUsageUnknown
+		}
+		if result.Err == nil {
+			result.Err = budgetErr
+		} else if !errors.Is(result.Err, budgetErr) {
+			result.Err = errors.Join(budgetErr, result.Err)
 		}
 	}
 	result.Err = sanitizeHeadlessError(result.Err, options.Runtime.apiKey)

@@ -19,6 +19,7 @@ const (
 	transportPhaseUpload
 	transportPhaseRequestSent
 	transportPhaseHeaders
+	transportPhaseBody
 )
 
 func (phase transportPhase) code() string {
@@ -35,6 +36,8 @@ func (phase transportPhase) code() string {
 		return "request_sent"
 	case transportPhaseHeaders:
 		return "response_headers"
+	case transportPhaseBody:
+		return "response_body"
 	default:
 		return "unknown"
 	}

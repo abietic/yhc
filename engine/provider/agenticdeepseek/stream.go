@@ -284,7 +284,7 @@ func readSSE(reader io.Reader, maxEventBytes int, handle func(sseRecord) error) 
 		if strings.Contains(err.Error(), "token too long") {
 			return &ProtocolError{ReasonCode: "stream_event_too_large"}
 		}
-		return &transportError{err: err}
+		return &transportError{err: err, phase: transportPhaseBody}
 	}
 	return dispatch()
 }
