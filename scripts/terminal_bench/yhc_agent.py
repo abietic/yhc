@@ -260,9 +260,10 @@ class YHCAgent(BaseInstalledAgent):
                 f" > {shlex.quote(str(self.environment_logs_dir / 'yhc.jsonl'))}"
                 f" 2> {shlex.quote(str(self.environment_logs_dir / 'yhc.stderr.log'))}")
 
-    def _strict_segment_cost(self, usage: dict | None, limit: Decimal) -> dict | None:
+    def _strict_segment_cost(self, usage: dict | None, limit: Decimal, *, allow_retained: bool = False) -> dict | None:
         """Accept only one exact upper-bound receipt for the dispatched segment."""
-        if usage is None or usage.get("cost_complete") is not True or "cost" not in usage or "cost_segments" in usage:
+        if (usage is None or "cost" not in usage or "cost_segments" in usage
+                or not allow_retained and usage.get("cost_complete") is not True):
             return None
         cost = usage["cost"]
         reservation = cost.get("reservation")
@@ -270,12 +271,12 @@ class YHCAgent(BaseInstalledAgent):
                 or not isinstance(reservation, dict)):
             return None
         if (reservation.get("outstanding_amount") != "0.000000000000"
-                or reservation.get("retained_amount") != "0.000000000000"
+                or not allow_retained and reservation.get("retained_amount") != "0.000000000000"
                 or reservation.get("bound_violations") != 0):
             return None
         with localcontext() as ctx:
             ctx.prec = 90
-            if (Decimal(cost["known_estimated_amount"]) > limit
+            if (Decimal(cost["known_estimated_amount"]) + Decimal(reservation["retained_amount"]) > limit
                     or Decimal(reservation.get("peak_exposure_amount", "-1")) > limit):
                 return None
         return cost
@@ -414,7 +415,21 @@ class YHCAgent(BaseInstalledAgent):
             if not can_continue:
                 self.populate_context_post_run(context)
                 if self.reserve_cost_before_dispatch and not strict_usage:
-                    raise ValueError("YHC strict reservation receipt is incomplete or exceeds its dispatched limit")
+                    # Harbor grades ordinary agent failures, but aborts on a
+                    # harness ValueError. A bounded unknown receipt still fails
+                    # execution and cannot consume a continuation grant.
+                    bounded_unknown_failure = (
+                        execution.return_code == result["exit_code"] == 1
+                        and result["status"] == "failed"
+                        and result.get("terminal_reason") == "run_usage_unknown"
+                        and isinstance(error, dict) and error.get("code") == "run_usage_unknown"
+                        and usage is not None and usage["unknown_calls"] > 0
+                        and usage["in_flight"] == usage["untracked_calls"] == 0
+                        and self._strict_segment_cost(usage, limit, allow_retained=True) is not None
+                        and Decimal(usage["cost"]["reservation"]["retained_amount"]) > 0
+                    )
+                    if not bounded_unknown_failure:
+                        raise ValueError("YHC strict reservation receipt is incomplete or exceeds its dispatched limit")
                 if over_total:
                     raise ValueError("YHC strict reservation receipt exceeds the total estimated-cost envelope")
                 if execution.return_code != 0:

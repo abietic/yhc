@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-16
+**Last verified:** 2026-10-17
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -218,8 +218,18 @@ across those finite continuation grants. The same card and native currency
 apply throughout. Each next segment receives the lesser of its explicit grant
 and the remaining envelope; a call-only grant cannot disable strict money
 admission. Only a complete, reconciled receipt within the actual segment cap
-can release money for continuation. Unknown or retained exposure stops the
-trial. A budget pause preserves the workspace and Session history
+can release money for continuation. Unknown or retained exposure stops further
+solver dispatch. A well-formed `run_usage_unknown` failure with a matching
+process exit, fixed price card, zero in-flight/untracked calls, zero outstanding
+reservations and no bound violation remains an ordinary agent failure when its
+known cost plus retained reservation and peak exposure fit the dispatched cap.
+Harbor can still run its independent official verifier; usage and cost remain
+incomplete, the retained amount stays in metadata, and no continuation grant is
+consumed. Malformed, contradictory or over-limit receipts remain harness errors
+and abort the trial. The adapter's
+[`failure-routing tests`](../../../scripts/terminal_bench/test_failure_grading.py)
+exercise Harbor's actual single-step exception policy with local fixtures.
+A budget pause preserves the workspace and Session history
 inside the task environment. Operators must also retain or export the Harbor
 environment when ending a trial if they intend to resume it later; in-process
 continuation alone does not change Harbor's container cleanup policy.
