@@ -105,6 +105,17 @@ dynamic/network-capable. Registration metadata never becomes user authority.
 Missing or external capability facts require a person in Auto unless exact
 user authority covers the action.
 
+Foreground `BashTool` formats captured results through
+[`formatShellResult`](../../../tools/bash.go). Command echoes have a separate
+2,000-byte preview budget; stdout and stderr each have a 10,000-byte preview
+budget, including truncation notices. Oversized previews retain the head and
+tail without splitting valid UTF-8, so final test summaries remain visible.
+The combined result stays within 30,000 bytes and preserves the existing
+nonzero-exit, timeout, and cancellation markers. Short results are unchanged.
+These are presentation limits: a preview cannot recover bytes already dropped
+by the shell's containment output cap, and it does not change execution,
+permissions, background-shell monitoring, or tool-error classification.
+
 `DefaultPermissionAllowed` is not a read-only claim or a general Auto escape:
 QueryEngine accepts it only for a declared built-in process-local action.
 TodoWrite uses it because it changes only process-local Session/Agent task
