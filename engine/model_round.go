@@ -666,11 +666,16 @@ func runCanonicalModelRound(
 				},
 			)
 			input.yield(QueryEvent{
-				Type: EventAssistant,
-				AssistantMessage: &schema.Message{
-					Role:    schema.Assistant,
+				Type: EventAttachment,
+				AttachmentMessage: &schema.Message{
+					Role:    schema.User,
 					Content: "Stream error: " + streamErr.Error(),
-					Extra:   map[string]any{"api_error": true},
+					Extra: map[string]any{
+						"is_meta":         true,
+						"attachment_kind": "provider_stream_error",
+						"level":           "error",
+						"api_error":       true,
+					},
 				},
 			})
 			terminal := Terminal{Reason: TerminalModelError, Err: streamErr}
