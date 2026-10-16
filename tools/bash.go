@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/containment"
 	"github.com/cloudwego/eino/schema"
@@ -329,8 +330,9 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 }
 
 const (
-	bashMaxOutputPerStream  = 10000  // max chars per stdout/stderr stream; mirrors TS BashTool
-	bashMaxOutputDefault    = 30000  // combined fallback (used for overall truncation)
+	bashMaxCommandPreview   = 2000   // echoed command cannot crowd out execution evidence
+	bashMaxOutputPerStream  = 10000  // byte budget per stdout/stderr preview, including notice
+	bashMaxOutputDefault    = 30000  // combined byte budget, including notices
 	bashMaxOutputUpperLimit = 150000 // absolute ceiling
 )
 
@@ -338,19 +340,12 @@ const (
 func formatShellResult(command string, result *ShellResult) string {
 	var sb strings.Builder
 	sb.WriteString("$ ")
-	sb.WriteString(command)
+	sb.WriteString(truncateShellText(command, bashMaxCommandPreview, "command"))
 	sb.WriteByte('\n')
 
-	// Truncate stdout and stderr separately (10K each, mirrors TS BashTool).
-	stdout := result.Stdout
-	if len(stdout) > bashMaxOutputPerStream {
-		stdout = stdout[:bashMaxOutputPerStream] + "\n[stdout truncated]"
-	}
-
-	stderr := result.Stderr
-	if len(stderr) > bashMaxOutputPerStream {
-		stderr = stderr[:bashMaxOutputPerStream] + "\n[stderr truncated]"
-	}
+	// Keep both initial diagnostics and final assertions/test summaries.
+	stdout := truncateShellText(result.Stdout, bashMaxOutputPerStream, "stdout")
+	stderr := truncateShellText(result.Stderr, bashMaxOutputPerStream, "stderr")
 
 	if stdout != "" {
 		sb.WriteString(stdout)
@@ -380,14 +375,27 @@ func formatShellResult(command string, result *ShellResult) string {
 		sb.WriteString("\n[Warning: sed -i detected. Consider using the Edit tool for file modifications instead.]\n")
 	}
 
-	output := sb.String()
+	// Keep terminal markers even if a future section reaches the safety limit.
+	return truncateShellText(sb.String(), bashMaxOutputDefault, "output")
+}
 
-	// Final combined truncation (safety net).
-	if len(output) > bashMaxOutputDefault {
-		output = output[:bashMaxOutputDefault] + "\n\n[output truncated]"
+// truncateShellText bounds a preview without splitting valid UTF-8 input.
+// All callers use fixed budgets large enough for the truncation notice.
+func truncateShellText(value string, maxBytes int, label string) string {
+	if len(value) <= maxBytes {
+		return value
 	}
-
-	return output
+	notice := "\n[" + label + " truncated; showing head and tail]\n"
+	budget := maxBytes - len(notice)
+	headEnd := budget / 2
+	tailStart := len(value) - (budget - headEnd)
+	for headEnd > 0 && !utf8.RuneStart(value[headEnd]) {
+		headEnd--
+	}
+	for tailStart < len(value) && !utf8.RuneStart(value[tailStart]) {
+		tailStart++
+	}
+	return value[:headEnd] + notice + value[tailStart:]
 }
 
 // isSedInPlace detects `sed -i` commands that modify files in-place.
