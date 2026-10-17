@@ -105,6 +105,34 @@ dynamic/network-capable. Registration metadata never becomes user authority.
 Missing or external capability facts require a person in Auto unless exact
 user authority covers the action.
 
+`WebSearchTool` snapshots the optional `YHC_DEEPSEEK_SEARCH_API_KEY` environment
+credential when the registry is built. With that explicit credential, ordinary
+WebSearch calls first use DeepSeek's standalone Search JSON API; no provider
+switch or native Responses `web_search` support is required. Without it, the
+tool uses DuckDuckGo. The dedicated variable can reference the same key used by
+the model (`export YHC_DEEPSEEK_SEARCH_API_KEY="$PROV_API_KEY"`), but the tool does
+not infer credentials from unrelated provider accounts or proxy endpoints.
+
+Both backends keep the existing query/domain schema, result limit, and final
+allow/block filtering. DeepSeek summaries are preferred over short snippets;
+page bodies are not requested. Queries beyond its 128-character limit, empty
+results, known HTTP failures, and unbudgeted transport failures use DuckDuckGo.
+The bearer key goes only to the fixed official HTTPS endpoint; paid redirects
+and automatic retries are disabled. Cancellation reaches both requests and
+prevents starting a fallback after cancellation. The primary gets at most ten
+seconds within a shared 30-second deadline for the whole search, including
+fallback. No server error body is exposed.
+
+The default registry serves ordinary CLI/TUI, headless, ACP, child Agent, and
+standalone MCP dispatch; no benchmark-only search implementation is installed.
+QueryEngine supplies its existing usage scope during canonical tool execution.
+A budgeted invocation without a matching request-price route uses the free
+backend before paid admission. An ambiguous paid response under a cost/token
+budget retains its liability and stops execution instead of issuing a fallback.
+Request units and native-currency reservation semantics are owned by
+[`budgets-and-limits.md`](../runtime/budgets-and-limits.md). WebFetch continues
+to use its existing direct-page implementation; this change integrates Search.
+
 Foreground `BashTool` formats captured results through
 [`formatShellResult`](../../../tools/bash.go). Command echoes have a separate
 2,000-byte preview budget; stdout and stderr each have a 10,000-byte preview

@@ -30,15 +30,20 @@ def _model_label(value: object) -> bool:
 
 def _reservation(value: object) -> dict | None:
     keys = {"provider", "model", "input_tokens", "output_tokens", "reserved_amount", "retained_amount"}
-    if not isinstance(value, dict) or set(value) != keys:
+    if not isinstance(value, dict) or set(value) not in (keys, keys | {"requests"}):
         return None
     if (not isinstance(value["provider"], str) or value["provider"] not in PROVIDERS
             or not _model_label(value["model"]) or value["model"] == "unknown"
-            or any(type(value[key]) is not int or not 0 < value[key] <= 2**64 - 1
+            or any(type(value[key]) is not int or not 0 <= value[key] <= 2**64 - 1
                    for key in ("input_tokens", "output_tokens"))
             or not _receipt_amount(value["reserved_amount"])
             or not _receipt_amount(value["retained_amount"])
             or Decimal(value["retained_amount"]) > Decimal(value["reserved_amount"])):
+        return None
+    if "requests" in value:
+        if type(value["requests"]) is not int or value["requests"] != 1 or value["input_tokens"] or value["output_tokens"]:
+            return None
+    elif not value["input_tokens"] or not value["output_tokens"]:
         return None
     return dict(value)
 
@@ -76,7 +81,7 @@ def validate_price_card(card: object) -> dict:
     seen = set()
     route_keys = {"provider", "model", "cached_input_per_million", "uncached_input_per_million", "output_per_million"}
     for route in routes:
-        if not isinstance(route, dict) or set(route) not in (route_keys, route_keys | {"api_model"}):
+        if not isinstance(route, dict) or not route_keys <= set(route) or set(route) - route_keys - {"api_model", "per_request"}:
             raise ValueError("Invalid public price route")
         model = route["model"]
         if (not isinstance(route["provider"], str) or route["provider"] not in PROVIDERS or not isinstance(model, str) or model == "unknown"
@@ -90,6 +95,10 @@ def validate_price_card(card: object) -> dict:
             raise ValueError("Price route api_model requires a canonical model label")
         for rate in route_keys - {"provider", "model"}:
             decimal_amount(route[rate], 6)
+        if "per_request" in route:
+            decimal_amount(route["per_request"])
+            if any(Decimal(route[rate]) for rate in route_keys - {"provider", "model"}):
+                raise ValueError("Request routes require zero token rates")
     return {**card, "routes": [dict(route) for route in routes]}
 
 
@@ -167,6 +176,12 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
                     ("cached_prompt_tokens", "cached_input_per_million"),
                     ("uncached_prompt_tokens", "uncached_input_per_million"),
                     ("completion_tokens", "output_per_million"))) / Decimal(1000000)
+                if "per_request" in route:
+                    if "requests" not in record or any(tokens.values()):
+                        return False
+                    expected += Decimal(record["requests"]) * Decimal(route["per_request"])
+                elif "requests" in record:
+                    return False
                 if expected != Decimal(value["estimated_amount"]):
                     return False
                 if "reservation" in cost:
@@ -189,6 +204,12 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
                 bound = (Decimal(reservation["input_tokens"]) * max(
                     Decimal(route["cached_input_per_million"]), Decimal(route["uncached_input_per_million"]))
                          + Decimal(reservation["output_tokens"]) * Decimal(route["output_per_million"])) / Decimal(1000000)
+                if "per_request" in route:
+                    if reservation.get("requests") != 1:
+                        return False
+                    bound += Decimal(route["per_request"])
+                elif "requests" in reservation:
+                    return False
                 if Decimal(reservation["reserved_amount"]) != bound:
                     return False
                 if value["state"] == "in_flight":
@@ -237,6 +258,11 @@ def validated_call_cost(value: object, state: str) -> dict | None:
 
 
 def cost_projection(value: dict, result: dict) -> None:
+    if any(key in value and key not in result for key in ("call_ledger", "call_ledgers")):
+        # A rejected supplied ledger must not turn into a trusted legacy
+        # aggregate with no call history, especially for per-request fees.
+        result["cost_complete"] = False
+        return
     if "cost" in value and "cost_segments" in value:
         result["cost_complete"] = False
         return
@@ -261,7 +287,20 @@ def cost_projection(value: dict, result: dict) -> None:
                 cost = validated_cost(entry["cost"], counts)
                 if cost is None:
                     break
-                costs.append({"cost": cost, "usage": dict(counts)})
+                segment_id = cost["segment_id"]
+                ledgers = result.get("call_ledgers", [])
+                if "call_ledger" in result:
+                    ledgers = [result["call_ledger"]]
+                matching = [ledger for ledger in ledgers if ledger["segment_id"] == segment_id]
+                if (ledgers and not matching
+                        and any("per_request" in route for route in cost["price_card"]["routes"])):
+                    break
+                if matching:
+                    # Restored aggregates must reconcile the same per-call
+                    # request units and reservations as individual segments.
+                    if not reconcile_call_costs(cost, matching[0]):
+                        break
+                costs.append({"cost": cost, "usage": dict(entry["usage"])})
             else:
                 if (len({entry["cost"]["segment_id"] for entry in costs}) == len(costs)
                         and all(sum(entry["usage"][k] for entry in costs) <= result[k] for k in fields)):

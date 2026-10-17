@@ -29,6 +29,9 @@ type RunPriceRoute struct {
 	CachedInputPerMillion   string `json:"cached_input_per_million"`
 	UncachedInputPerMillion string `json:"uncached_input_per_million"`
 	OutputPerMillion        string `json:"output_per_million"`
+	// PerRequest switches this route to standalone request billing. All token
+	// rates must be zero; nil retains the existing token-only schema.
+	PerRequest *string `json:"per_request,omitempty"`
 }
 
 type RunCallCost struct {
@@ -45,6 +48,7 @@ type RunCallReservation struct {
 	OutputTokens   uint64 `json:"output_tokens"`
 	ReservedAmount string `json:"reserved_amount"`
 	RetainedAmount string `json:"retained_amount"`
+	Requests       uint64 `json:"requests,omitempty"`
 }
 
 type RunCostReservationSnapshot struct {
@@ -70,6 +74,7 @@ type RunCostSnapshot struct {
 type runCostState struct {
 	card                        RunPriceCard
 	prices                      [][3]*big.Int
+	requestPrices               []*big.Int
 	amount                      big.Int // 10^-12 currency units, exact for rates with six decimals.
 	limit                       *big.Int
 	priced, unpriced            uint64
@@ -138,6 +143,16 @@ func compileRunPriceCard(card RunPriceCard) (*runCostState, error) {
 			prices[i] = value
 		}
 		c.prices = append(c.prices, prices)
+		var requestPrice *big.Int
+		if route.PerRequest != nil {
+			requestPrice, err = costDecimal(*route.PerRequest, 12)
+			if err != nil || prices[0].Sign() != 0 || prices[1].Sign() != 0 || prices[2].Sign() != 0 {
+				return nil, fmt.Errorf("request routes require an explicit nonnegative fee and zero token rates")
+			}
+			fee := *route.PerRequest
+			c.card.Routes[len(c.prices)-1].PerRequest = &fee
+		}
+		c.requestPrices = append(c.requestPrices, requestPrice)
 	}
 	return c, nil
 }
@@ -195,7 +210,7 @@ func (r *RunUsage) costSnapshot() *RunCostSnapshot {
 		return nil
 	}
 	card := r.cost.card
-	card.Routes = append([]RunPriceRoute(nil), card.Routes...)
+	card.Routes = cloneRunPriceRoutes(card.Routes)
 	mode := "disabled"
 	if r.cost.limit != nil {
 		mode = "post_response_threshold"
@@ -212,6 +227,16 @@ func (r *RunUsage) reserveCost(d ProviderUsageDescriptor, index int) (*RunCallRe
 	if !r.limits.ReserveCostBeforeDispatch {
 		return nil, nil, nil
 	}
+	if d.Request {
+		if index < 0 || r.cost.requestPrices[index] == nil || d.CostBound != nil {
+			return nil, nil, ErrRunUsageUnknown
+		}
+		amount := new(big.Int).Set(r.cost.requestPrices[index])
+		if err := r.reserveAmount(amount); err != nil {
+			return nil, nil, err
+		}
+		return &RunCallReservation{Provider: d.Provider, Model: r.cost.card.Routes[index].APIModel, Requests: 1, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
+	}
 	b := d.CostBound
 	if b == nil || index < 0 || b.Provider != d.Provider || b.Provider != "agenticdeepseek" || b.Model != r.cost.card.Routes[index].APIModel || runUsageModelLabel(b.Model) == "unknown" || b.InputTokens == 0 || b.OutputTokens == 0 || b.OutputTokens > uint64(r.limits.MaxOutputTokensPerCall) {
 		return nil, nil, ErrRunUsageUnknown
@@ -223,20 +248,27 @@ func (r *RunUsage) reserveCost(d ProviderUsageDescriptor, index int) (*RunCallRe
 	}
 	amount := new(big.Int).Mul(new(big.Int).SetUint64(b.InputTokens), inputPrice)
 	amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(b.OutputTokens), prices[2]))
+	if err := r.reserveAmount(amount); err != nil {
+		return nil, nil, err
+	}
+	return &RunCallReservation{Provider: b.Provider, Model: b.Model, InputTokens: b.InputTokens, OutputTokens: b.OutputTokens, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
+}
+
+func (r *RunUsage) reserveAmount(amount *big.Int) error {
 	exposure := new(big.Int).Add(&r.cost.amount, &r.cost.outstanding)
 	exposure.Add(exposure, &r.cost.retained)
 	exposure.Add(exposure, amount)
 	if exposure.Cmp(r.cost.limit) > 0 {
-		return nil, nil, ErrRunBudgetExceeded
+		return ErrRunBudgetExceeded
 	}
 	r.cost.outstanding.Add(&r.cost.outstanding, amount)
 	if exposure.Cmp(&r.cost.peak) > 0 {
 		r.cost.peak.Set(exposure)
 	}
-	return &RunCallReservation{Provider: b.Provider, Model: b.Model, InputTokens: b.InputTokens, OutputTokens: b.OutputTokens, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
+	return nil
 }
 
-func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool) error {
+func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool, requests uint64) error {
 	r := c.owner
 	if r.cost == nil {
 		return nil
@@ -262,6 +294,9 @@ func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool) er
 		for i, tokens := range []uint64{values.CachedPromptTokens, values.PromptTokens - values.CachedPromptTokens, values.CompletionTokens} {
 			amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(tokens), prices[i]))
 		}
+		if fee := r.cost.requestPrices[c.priceIndex]; fee != nil {
+			amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(requests), fee))
+		}
 		r.cost.amount.Add(&r.cost.amount, amount)
 		r.cost.priced++
 		result.State = "priced"
@@ -281,4 +316,15 @@ func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool) er
 		return ErrRunUsageUnknown
 	}
 	return nil
+}
+
+func cloneRunPriceRoutes(routes []RunPriceRoute) []RunPriceRoute {
+	result := append([]RunPriceRoute(nil), routes...)
+	for i := range result {
+		if result[i].PerRequest != nil {
+			fee := *result[i].PerRequest
+			result[i].PerRequest = &fee
+		}
+	}
+	return result
 }

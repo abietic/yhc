@@ -23,6 +23,10 @@ func CombineProviderUsage(first, second ProviderUsageAdmitter) ProviderUsageAdmi
 
 type combinedProviderUsage struct{ first, second ProviderUsageAdmitter }
 
+func (c *combinedProviderUsage) RequestUsageAvailable(d ProviderUsageDescriptor) bool {
+	return RequestUsageAvailable(c.first, d) && RequestUsageAvailable(c.second, d)
+}
+
 func (c *combinedProviderUsage) ProviderCostReservationPolicy() (bool, int) {
 	required, cap := false, 0
 	for _, owner := range []ProviderUsageAdmitter{c.first, c.second} {
@@ -60,6 +64,10 @@ func (c *combinedProviderUsage) AdmitProviderUsage(ctx context.Context, d Provid
 }
 
 type combinedProviderUsageCall struct{ first, second ProviderUsageCall }
+
+func (c *combinedProviderUsageCall) CompleteRequestUsage(billable bool) error {
+	return errors.Join(CompleteRequestUsage(c.first, billable), CompleteRequestUsage(c.second, billable))
+}
 
 func (c *combinedProviderUsageCall) ProviderCallID() string { return c.second.ProviderCallID() }
 func (c *combinedProviderUsageCall) CompleteProviderUsage(u *schema.TokenUsage) error {

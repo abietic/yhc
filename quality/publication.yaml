@@ -5352,6 +5352,41 @@ privacy:
       rule_id: credential-assignment
       match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
       purpose: synthetic-security-fixture
+    - path: docs/architecture/capabilities/tool-registry.md
+      line: 113
+      rule_id: credential-assignment
+      match_sha256: a0ee8e57e20c1482942c4d1f5fe31ac922bfb170456431f51679d355df38a819
+      purpose: documentation-example
+    - path: tools/websearch_test.go
+      line: 26
+      rule_id: bearer-token
+      match_sha256: 34cf85eb07dd403faed805c153b87dc81754722e361b86f48489e70bf5079300
+      purpose: synthetic-security-fixture
+    - path: tools/websearch_test.go
+      line: 36
+      rule_id: private-url
+      match_sha256: 85e3f833b4d1bfa6e1bba45ea2b52bfed0e524823a4d99c1082987636cb021bf
+      purpose: synthetic-security-fixture
+    - path: tools/websearch_test.go
+      line: 38
+      rule_id: credential-assignment
+      match_sha256: 34cf85eb07dd403faed805c153b87dc81754722e361b86f48489e70bf5079300
+      purpose: synthetic-security-fixture
+    - path: tools/websearch_test.go
+      line: 65
+      rule_id: private-url
+      match_sha256: 0aa8ce2507296c61488deddefe98ae94e2159469492abdacb00542eb2ab6aedf
+      purpose: synthetic-security-fixture
+    - path: tools/websearch_test.go
+      line: 80
+      rule_id: credential-assignment
+      match_sha256: 34cf85eb07dd403faed805c153b87dc81754722e361b86f48489e70bf5079300
+      purpose: synthetic-security-fixture
+    - path: tools/websearch_test.go
+      line: 123
+      rule_id: private-url
+      match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
+      purpose: synthetic-security-fixture
 dependencies:
   license_policy: quality/dependency-licenses.yaml
 rules:

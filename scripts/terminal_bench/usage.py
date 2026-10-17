@@ -117,7 +117,7 @@ def validated_ledger(value: object) -> dict | None:
                 or any(type(record.get(key)) is not int or record[key] < 0 for key in numbers)
                 or any(not _model_label(record.get(key)) for key in ("requested_model", "resolved_model"))
                 or record.get("provider") not in ("unknown", "agenticdeepseek", "agenticglm", "agenticclaude", "agenticgemini", "agenticopenai", "agenticark", "agenticqwen")
-                or record.get("source") not in ("other", "repl_main_thread", "sdk", "agent", "compact", "independent_verification", "independent_verification_coverage", "prompt_suggestion_generation", "tool_use_summary_generation", "yolo_classifier", "permission_explainer", "approval_review", "long_session_background")
+                or record.get("source") not in ("other", "repl_main_thread", "sdk", "agent", "compact", "independent_verification", "independent_verification_coverage", "prompt_suggestion_generation", "tool_use_summary_generation", "yolo_classifier", "permission_explainer", "approval_review", "long_session_background", "web_search")
                 or record.get("role") not in ("other", "main", "explore", "plan", "general", "summary")
                 or record.get("effort") not in ("unknown", "none", "low", "medium", "high", "max", "xhigh")
                 or record.get("state") not in ("in_flight", "known", "unknown", "released")):
@@ -135,6 +135,10 @@ def validated_ledger(value: object) -> dict | None:
             return None
         projected = {key: record[key] for key in (*identities, *numbers, "ordinal", "call_id", "requested_model", "resolved_model", "provider", "source", "role", "effort", "state")}
         records.append({**projected, "tokens": tokens})
+        if "requests" in record:
+            if record["state"] != "known" or type(record["requests"]) is not int or record["requests"] not in (0, 1) or any(tokens.values()):
+                return None
+            records[-1]["requests"] = record["requests"]
         if "cost" in record:
             cost = validated_call_cost(record["cost"], record["state"])
             if cost is not None:
