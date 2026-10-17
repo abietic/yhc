@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -20,8 +23,21 @@ const (
 	webSearchUserAgent  = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-// WebSearchTool returns a tool that searches the web using DuckDuckGo and returns results.
+type webSearchConfig struct {
+	apiKey string
+	client *http.Client
+}
+
+// WebSearchTool uses an explicitly configured DeepSeek search credential,
+// with DuckDuckGo as a credential-free fallback. Provider keys are not inferred.
 func WebSearchTool() ToolImpl {
+	return webSearchTool(webSearchConfig{apiKey: strings.TrimSpace(os.Getenv("YHC_DEEPSEEK_SEARCH_API_KEY"))})
+}
+
+func webSearchTool(config webSearchConfig) ToolImpl {
+	execute := func(ctx context.Context, input string) (string, error) {
+		return executeWebSearchCtx(ctx, input, config)
+	}
 	return ToolImpl{
 		Info: &schema.ToolInfo{
 			Name: "WebSearch",
@@ -40,11 +56,12 @@ func WebSearchTool() ToolImpl {
 		IsConcurrencySafe: func(input map[string]any) bool {
 			return true
 		},
-		Execute: executeWebSearch,
+		Execute:    func(input string) (string, error) { return execute(context.Background(), input) },
+		ExecuteCtx: execute,
 	}
 }
 
-func executeWebSearch(input string) (string, error) {
+func executeWebSearchCtx(ctx context.Context, input string, config webSearchConfig) (string, error) {
 	var params struct {
 		Query          string   `json:"query"`
 		AllowedDomains []string `json:"allowed_domains"`
@@ -57,17 +74,30 @@ func executeWebSearch(input string) (string, error) {
 		return "", fmt.Errorf("websearch: query is required and must be non-empty")
 	}
 
-	// Construct the DuckDuckGo HTML search URL.
-	searchURL := "https://html.duckduckgo.com/html/?q=" + url.QueryEscape(params.Query)
-
-	// Fetch the search results page.
-	body, err := fetchSearchPage(searchURL)
-	if err != nil {
-		return "", fmt.Errorf("websearch: failed to fetch search results: %w", err)
+	ctx, cancel := context.WithTimeout(ctx, webSearchTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-
-	// Parse search results from the HTML.
-	results := parseDuckDuckGoResults(body)
+	var results []searchResult
+	if config.apiKey != "" && utf8.RuneCountInString(params.Query) <= 128 {
+		var err error
+		results, err = searchDeepSeek(ctx, params.Query, config)
+		if execution.IsProviderUsageTerminalError(err) {
+			return "", err
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+	}
+	if len(results) == 0 {
+		searchURL := "https://html.duckduckgo.com/html/?q=" + url.QueryEscape(params.Query)
+		body, err := fetchSearchPageCtx(ctx, searchURL, config.client)
+		if err != nil {
+			return "", fmt.Errorf("websearch: DuckDuckGo unavailable: %w", err)
+		}
+		results = parseDuckDuckGoResults(body)
+	}
 
 	// Apply domain filtering.
 	results = filterByDomain(results, params.AllowedDomains, params.BlockedDomains)
@@ -102,18 +132,27 @@ type searchResult struct {
 }
 
 // fetchSearchPage fetches the search URL and returns the response body.
-func fetchSearchPage(searchURL string) (string, error) {
-	client := &http.Client{
-		Timeout: webSearchTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
+func searchHTTPClient(base *http.Client, paid bool) *http.Client {
+	client := http.Client{Timeout: webSearchTimeout}
+	if base != nil {
+		client = *base
 	}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if paid {
+			return http.ErrUseLastResponse
+		}
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		return nil
+	}
+	return &client
+}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, searchURL, nil)
+func fetchSearchPageCtx(ctx context.Context, searchURL string, base *http.Client) (string, error) {
+	client := searchHTTPClient(base, false)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
 	if err != nil {
 		return "", err
 	}

@@ -135,6 +135,17 @@ func (r *RunUsage) ProviderCostReservationPolicy() (bool, int) {
 
 func (r *RunUsage) NewLogicalRoundID() string { return uuid.NewString() }
 
+func (r *RunUsage) RequestUsageAvailable(d ProviderUsageDescriptor) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Even observation-only accounting must not pretend a paid tool is priced.
+	if r.cost == nil {
+		return !r.LimitsEnabled()
+	}
+	i := r.cost.route(d)
+	return i >= 0 && r.cost.card.Routes[i].PerRequest != nil
+}
+
 func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescriptor) (ProviderUsageCall, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -150,6 +161,8 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		priceIndex = r.cost.route(d)
 	}
 	switch {
+	case r.cost != nil && priceIndex >= 0 && d.Request != (r.cost.card.Routes[priceIndex].PerRequest != nil):
+		cause = ErrRunUsageUnknown
 	case r.cost != nil && r.cost.limit != nil && (r.cost.unpriced > 0 || r.untracked > 0 || priceIndex < 0):
 		cause = ErrRunUsageUnknown
 	case r.cost != nil && r.cost.limit != nil && !r.limits.ReserveCostBeforeDispatch && r.cost.amount.Cmp(r.cost.limit) >= 0:
@@ -185,7 +198,7 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	r.totals.InFlight++
 	route.ProviderCalls++
 	route.InFlight++
-	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now(), priceIndex: priceIndex, reservation: reservation, reserved: reserved}
+	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now(), priceIndex: priceIndex, reservation: reservation, reserved: reserved, request: d.Request}
 	r.appendCallRecord(d, call)
 	return call, nil
 }
@@ -207,6 +220,10 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 	s.CallLedger = RunUsageLedger{Version: 1, SegmentID: r.segmentID, DroppedRecords: r.droppedRecords, Records: make([]RunUsageRecord, len(r.records))}
 	for i, record := range r.records {
 		s.CallLedger.Records[i] = record
+		if record.Requests != nil {
+			n := *record.Requests
+			s.CallLedger.Records[i].Requests = &n
+		}
 		if record.Tokens != nil {
 			copied := *record.Tokens
 			s.CallLedger.Records[i].Tokens = &copied
@@ -260,6 +277,7 @@ type runUsageCall struct {
 	priceIndex            int
 	reservation           *RunCallReservation
 	reserved              *big.Int
+	request               bool
 }
 
 func (c *runUsageCall) ProviderCallID() string { return c.id }
@@ -270,7 +288,15 @@ func (c *runUsageCall) CompleteProviderUsage(u *schema.TokenUsage) error { retur
 func (c *runUsageCall) MarkProviderUsageAmbiguous(error) error           { return c.settle(nil, false) }
 func (c *runUsageCall) ReleaseProviderUsageBeforeDispatch() error        { return c.settle(nil, true) }
 
+func (c *runUsageCall) CompleteRequestUsage(billable bool) error {
+	return c.settleRequest(&schema.TokenUsage{}, false, &billable)
+}
+
 func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
+	return c.settleRequest(u, release, nil)
+}
+
+func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billable *bool) error {
 	r := c.owner
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -285,7 +311,7 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 	r.totals.InFlight--
 	c.route.InFlight--
 	if release {
-		_ = c.settleCost(RunUsageTotals{}, false, true)
+		_ = c.settleCost(RunUsageTotals{}, false, true, 0)
 		if record != nil {
 			record.State = "released"
 		}
@@ -302,11 +328,12 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 	r.totals.ProviderDurationMillis += duration
 	c.route.ProviderDurationMillis += duration
 	values, valid := runUsageTokens(u)
+	valid = valid && (c.request == (billable != nil))
 	if valid {
 		valid = canAddRunTokens(r.totals, values) && canAddRunTokens(c.route.RunUsageTotals, values)
 	}
 	if !valid {
-		_ = c.settleCost(RunUsageTotals{}, false, false)
+		_ = c.settleCost(RunUsageTotals{}, false, false, 0)
 		if record != nil {
 			record.State = "unknown"
 		}
@@ -318,13 +345,21 @@ func (c *runUsageCall) settle(u *schema.TokenUsage, release bool) error {
 		}
 		return c.settlementErr
 	}
+	var requests uint64
+	if billable != nil && *billable {
+		requests = 1
+	}
 	if record != nil {
 		record.State = "known"
+		if c.request {
+			n := requests
+			record.Requests = &n
+		}
 		record.Tokens = &RunUsageCallTokens{PromptTokens: values.PromptTokens, CompletionTokens: values.CompletionTokens, TotalTokens: values.TotalTokens, CachedPromptTokens: values.CachedPromptTokens, UncachedPromptTokens: values.PromptTokens - values.CachedPromptTokens, ReasoningTokens: values.ReasoningTokens}
 	}
 	addRunTokens(&r.totals, values)
 	addRunTokens(&c.route.RunUsageTotals, values)
-	c.settlementErr = c.settleCost(values, true, false)
+	c.settlementErr = c.settleCost(values, true, false, requests)
 	if c.settlementErr != nil {
 		r.stopReason = runUsageErrorCode(c.settlementErr)
 	}

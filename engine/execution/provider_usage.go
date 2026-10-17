@@ -26,6 +26,40 @@ type ProviderUsageDescriptor struct {
 	ModelProfile      string
 	ReasoningEffort   string
 	CostBound         *providercost.Bound
+	// Request identifies a standalone, token-free API request. It must settle
+	// through CompleteRequestUsage rather than inferred token usage.
+	Request bool
+}
+
+// RequestUsageAvailable checks whether a paid request can be accounted for.
+// An unpriced optional service may use a free fallback without poisoning the
+// model run's admission state. Actual admission remains atomic and authoritative.
+func RequestUsageAvailable(owner ProviderUsageAdmitter, d ProviderUsageDescriptor) bool {
+	if policy, ok := owner.(interface {
+		RequestUsageAvailable(ProviderUsageDescriptor) bool
+	}); ok {
+		return policy.RequestUsageAvailable(d)
+	}
+	return true
+}
+
+// CompleteRequestUsage records one known request, with either one billable unit
+// or zero (for example, an empty search). It never invents model token usage.
+func CompleteRequestUsage(call ProviderUsageCall, billable bool) error {
+	if call == nil {
+		return nil
+	}
+	var err error
+	if request, ok := call.(interface{ CompleteRequestUsage(bool) error }); ok {
+		err = request.CompleteRequestUsage(billable)
+	} else {
+		// Durable token-only Goal owners still observe the call and zero tokens.
+		err = call.CompleteProviderUsage(&schema.TokenUsage{})
+	}
+	if err != nil {
+		return &ProviderUsageTerminalError{Err: err}
+	}
+	return nil
 }
 
 // ProviderUsageAdmitter is the narrow provider-facing accounting capability.

@@ -43,6 +43,7 @@ type RunUsageRecord struct {
 	ProviderDurationMillis uint64              `json:"provider_duration_ms"`
 	Tokens                 *RunUsageCallTokens `json:"tokens"`
 	Cost                   *RunCallCost        `json:"cost,omitempty"`
+	Requests               *uint64             `json:"requests,omitempty"`
 }
 
 // RunUsageLedger is one process invocation's bounded incremental history. It is
@@ -110,7 +111,7 @@ func runUsageProvider(value string) string {
 
 func runUsageSource(value string) string {
 	switch value {
-	case "repl_main_thread", "sdk", "agent", "compact", "independent_verification", "independent_verification_coverage", "prompt_suggestion_generation", "tool_use_summary_generation", "yolo_classifier", "permission_explainer", "approval_review", "long_session_background":
+	case "repl_main_thread", "sdk", "agent", "compact", "independent_verification", "independent_verification_coverage", "prompt_suggestion_generation", "tool_use_summary_generation", "yolo_classifier", "permission_explainer", "approval_review", "long_session_background", "web_search":
 		return value
 	}
 	return "other"

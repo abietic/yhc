@@ -38,6 +38,43 @@ def priced_usage(currency="CNY", strict=False):
 
 
 class NativeCostTests(unittest.TestCase):
+    def test_request_fee_receipt_and_continuation_reconcile_without_tokens(self):
+        usage = priced_usage(strict=True)
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens", "cached_prompt_tokens", "reasoning_tokens"):
+            usage[key] = 0
+        route = usage["cost"]["price_card"]["routes"][0]
+        route.update(model="search", api_model="search", cached_input_per_million="0",
+                     uncached_input_per_million="0", output_per_million="0", per_request="0.005")
+        usage["cost"]["known_estimated_amount"] = "0.005000000000"
+        usage["cost"]["reservation"]["peak_exposure_amount"] = "0.005000000000"
+        record = dict(ordinal=1, call_id=str(uuid4()), logical_round_id="unknown", logical_request_id="unknown", model_attempt_id="unknown",
+                      attempt_index=0, retry_index=0, provider="agenticdeepseek", requested_model="search", resolved_model="unknown",
+                      source="web_search", role="other", effort="unknown", state="known", started_offset_ms=0, provider_duration_ms=1,
+                      requests=1, tokens=dict(prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_prompt_tokens=0, uncached_prompt_tokens=0, reasoning_tokens=0),
+                      cost=dict(state="priced", price_index=0, estimated_amount="0.005000000000", reservation=dict(provider="agenticdeepseek", model="search",
+                          input_tokens=0, output_tokens=0, requests=1, reserved_amount="0.005000000000", retained_amount="0.000000000000")))
+        usage["call_ledger"] = dict(version=1, segment_id=usage["cost"]["segment_id"], dropped_records=0, records=[record])
+        self.assertTrue(validated_usage(usage)["cost_complete"])
+        combined = sum_usage([priced_usage(), usage])
+        self.assertEqual(native_totals(combined)["CNY"]["known_estimated_amount"], "0.005030000000")
+        self.assertTrue(validated_usage(combined)["cost_complete"])
+        for mutate in (
+                lambda aggregate: aggregate["call_ledgers"][-1]["records"][0].update(requests=0),
+                lambda aggregate: aggregate["call_ledgers"][-1]["records"][0]["cost"]["reservation"].update(requests=2),
+                lambda aggregate: aggregate["cost_segments"][1]["cost"].update(segment_id=str(uuid4())),
+                lambda aggregate: aggregate["cost_segments"][1]["cost"].update(known_estimated_amount="0.000000000000")):
+            changed = copy.deepcopy(combined)
+            mutate(changed)
+            self.assertFalse(validated_usage(changed)["cost_complete"])
+        for mutate in (lambda: record.update(requests=True),
+                       lambda: record["tokens"].update(completion_tokens=1, total_tokens=1),
+                       lambda: record["cost"]["reservation"].update(requests=2)):
+            saved = copy.deepcopy(usage)
+            mutate()
+            self.assertFalse(validated_usage(usage)["cost_complete"])
+            usage = saved
+            record = usage["call_ledger"]["records"][0]
+
     def test_pre_dispatch_receipt_rejects_unsettled_or_over_bound_reservation(self):
         usage = priced_usage(strict=True)
         record = dict(ordinal=1, call_id=str(uuid4()), logical_round_id="unknown", logical_request_id="unknown", model_attempt_id="unknown",

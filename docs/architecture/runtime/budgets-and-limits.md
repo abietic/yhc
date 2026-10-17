@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-17
+**Last verified:** 2026-10-18
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -121,6 +121,30 @@ owns incremental history aggregation. [Headless usage tests](../../../cmd/yhc/cm
 exercise the supported CLI and fresh resume boundaries with local HTTP fixtures.
 
 ## Native currency estimates and stopping threshold
+
+Standalone paid APIs can use a request-price route in the same native-currency
+card. An explicit `per_request` decimal selects request billing; all three token
+rates must be zero. For DeepSeek WebSearch, configure provider
+`agenticdeepseek`, model/API model `search`, and `per_request: "0.005"` in a CNY
+card using the [official Search pricing](https://api-docs.deepseek.com/zh-cn/guides/search/)
+snapshot verified on 2026-10-18. This is a price estimate, not an attributed
+invoice or an assumption that the vendor's server-tool promotion covers YHC.
+
+Request calls use source `web_search`. `provider_calls` includes these API
+calls; separate them by source when comparing model call counts. A known
+request has explicit `requests: 0` or `1` and zero model tokens. Empty results
+and non-200 responses settle as zero-fee dispatched requests, never as
+undispatched releases. Strict admission reserves one request fee atomically
+with model reservations; a lost or malformed response retains that entire fee.
+The same optional limit, unknown-usage fence, retained exposure, and incremental
+resume receipts apply. Budgeted WebSearch without a request-price route falls
+back to DuckDuckGo without consuming a denied model admission. No price card or
+limit is installed automatically in the TUI or standalone MCP process.
+
+The [Harbor validator](../../../scripts/terminal_bench/native_cost.py)
+reconciles request units, fixed fees, and request reservations separately from
+tokens, including continuation segments. A malformed supplied ledger cannot be
+downgraded into a trusted legacy aggregate to claim complete cost evidence.
 
 `exec --price-card public-prices.json` constructs
 [`NewPricedRunUsage`](../../../engine/execution/run_cost.go) with a detached,
