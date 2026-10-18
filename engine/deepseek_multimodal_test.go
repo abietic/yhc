@@ -17,6 +17,9 @@ import (
 )
 
 func TestDeepSeekFlashRichTurnSurvivesHistorySnip(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "33000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
 	for _, modelID := range []string{"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"} {
 		for _, failTransport := range []bool{false, true} {
 			scenario := "complete"
@@ -87,8 +90,8 @@ func TestDeepSeekFlashRichTurnSurvivesHistorySnip(t *testing.T) {
 				if _, err := eng.ChangeReasoningEffort(t.Context(), "max"); err != nil {
 					t.Fatal(err)
 				}
-				// Forty messages and oversized historical tool results reproduce
-				// the snip boundary in the screenshot without a private transcript.
+				// Forty messages and oversized historical tool results cross the
+				// configured pressure threshold without a private transcript.
 				for index := range 10 {
 					id := fmt.Sprintf("history-%d", index)
 					eng.messages = append(eng.messages,

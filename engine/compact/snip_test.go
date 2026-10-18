@@ -1,19 +1,56 @@
 package compact
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestSnipCompactIfNeeded_ContextPressure(t *testing.T) {
+	reasoning := strings.Repeat("fixture reasoning ", 1000)
+	messages := []*schema.Message{{Role: schema.Assistant, ReasoningContent: reasoning}}
+	for len(messages) < snipThreshold {
+		messages = append(messages, &schema.Message{Role: schema.User, Content: "fixture"})
+	}
+	tokens := EstimateTokenCount(messages)
+	for _, tc := range []struct {
+		name, model, window, percentage string
+		applied                         bool
+	}{
+		{name: "healthy-1m", model: "deepseek-flash"},
+		{name: "unknown-model-fallback", model: "unknown-fixture-model"},
+		{name: "just-below-threshold", model: "deepseek-flash", window: strconv.Itoa(tokens + autoCompactBufferTokens + 1)},
+		{name: "at-threshold", model: "deepseek-flash", window: strconv.Itoa(tokens + autoCompactBufferTokens), applied: true},
+		{name: "percentage-override", model: "deepseek-flash", percentage: "0.2", applied: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", tc.window)
+			t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", tc.percentage)
+			result := SnipCompactIfNeeded(messages, tc.model)
+			if (result.BoundaryMessage != nil) != tc.applied || (result.TokensFreed > 0) != tc.applied {
+				t.Fatalf("boundary=%t tokens_freed=%d want_applied=%t", result.BoundaryMessage != nil, result.TokensFreed, tc.applied)
+			}
+			if !tc.applied && result.Messages[0] != messages[0] {
+				t.Fatal("healthy history was cloned or rewritten")
+			}
+			if messages[0].ReasoningContent != reasoning {
+				t.Fatal("caller history mutated")
+			}
+		})
+	}
+}
+
 func TestSnipCompactIfNeeded_BelowThreshold_ReturnsOriginal(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
 	messages := []*schema.Message{
 		{Role: schema.User, Content: "hello"},
 		{Role: schema.Assistant, Content: "hi"},
 	}
 
-	result := SnipCompactIfNeeded(messages)
+	result := SnipCompactIfNeeded(messages, "deepseek-flash")
 
 	if result == nil {
 		t.Fatalf("expected non-nil result")
@@ -35,6 +72,8 @@ func TestSnipCompactIfNeeded_BelowThreshold_ReturnsOriginal(t *testing.T) {
 }
 
 func TestSnipCompactIfNeeded_AboveThreshold_TrimsLongToolResult(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
 	longToolContent := strings.Repeat("x", 10000)
 	messages := make([]*schema.Message, 0, snipThreshold+1)
 	for i := 0; i < snipThreshold; i++ {
@@ -49,7 +88,7 @@ func TestSnipCompactIfNeeded_AboveThreshold_TrimsLongToolResult(t *testing.T) {
 		Extra:   map[string]any{"tool_name": "Read"},
 	})
 
-	result := SnipCompactIfNeeded(messages)
+	result := SnipCompactIfNeeded(messages, "deepseek-flash")
 
 	if result == nil {
 		t.Fatalf("expected non-nil result")
@@ -96,6 +135,8 @@ func TestSnipCompactIfNeeded_AboveThreshold_TrimsLongToolResult(t *testing.T) {
 }
 
 func TestSnipCompactIfNeeded_DoesNotMutateInput(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
 	longToolContent := strings.Repeat("y", 10000)
 	unrelatedExtra := map[string]any{"keep": "this"}
 	toolMsg := &schema.Message{
@@ -124,7 +165,7 @@ func TestSnipCompactIfNeeded_DoesNotMutateInput(t *testing.T) {
 	originalUnrelatedContent := unrelatedMsg.Content
 	originalUnrelatedExtraValue := unrelatedMsg.Extra["keep"]
 
-	result := SnipCompactIfNeeded(messages)
+	result := SnipCompactIfNeeded(messages, "deepseek-flash")
 
 	if result == nil {
 		t.Fatalf("expected non-nil result")
@@ -158,6 +199,8 @@ func TestSnipCompactIfNeeded_DoesNotMutateInput(t *testing.T) {
 }
 
 func TestSnipCompactIfNeeded_AboveThresholdNoSnippableContent_NoBoundary(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
 	messages := make([]*schema.Message, 0, snipThreshold+1)
 	for i := 0; i < snipThreshold+1; i++ {
 		messages = append(messages, &schema.Message{
@@ -166,7 +209,9 @@ func TestSnipCompactIfNeeded_AboveThresholdNoSnippableContent_NoBoundary(t *test
 		})
 	}
 
-	result := SnipCompactIfNeeded(messages)
+	messages[0].Content = strings.Repeat("user instruction ", 1000)
+
+	result := SnipCompactIfNeeded(messages, "deepseek-flash")
 
 	if result == nil {
 		t.Fatalf("expected non-nil result")
