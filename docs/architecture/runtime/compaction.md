@@ -1,7 +1,7 @@
 # Compaction
 
 **Status:** current
-**Last verified:** 2026-09-19
+**Last verified:** 2026-10-18
 
 > **Ownership:** canonical ProjectGraph preparation/reconciliation ordering;
 > `engine/compact` transformations
@@ -22,7 +22,8 @@ pipeline or its retry counters.
 1. Keep messages after the latest compact boundary.
 2. Apply the general tool-result budget.
 3. Run snip compaction and emit its boundary when material.
-4. Run microcompaction.
+4. Run microcompaction: keep the existing idle-time clearing policy, then trim
+   consumed history only at the preparation-time model's auto-compact threshold.
 5. Apply staged context collapses.
 6. Run pre-compact hooks and optional auto-compaction.
 7. On auto-compaction, run post-compact hooks, build post-compact messages,
@@ -71,6 +72,17 @@ model call because it is stateful and records newly persisted replacements.
 - Microcompaction does not normalize whitespace in message content or reasoning:
   indentation and spaces inside literals carry meaning. Explicit policies for
   long tool results, thinking blocks, and media remain bounded transformations.
+- Standard microcompaction uses the same model context capacity and configured
+  threshold overrides as auto-compaction. Below that threshold, it preserves
+  old tool output and reasoning rather than rewriting cached prefixes every
+  round. Under pressure, its savings target is the excess over that threshold;
+  the latest unconsumed tool round and signed reasoning remain protected. The
+  separate per-result budget, idle-time clearing, and overflow recovery still
+  apply; preserving a prefix does not disable those bounds.
+- Preparation resolves the runtime model, including existing Plan selection,
+  before measuring pressure. Dispatch still re-evaluates that existing policy
+  after context transformations; the pressure gate does not pin a route or
+  change Plan's context-dependent model selection.
 
 ## Small example
 

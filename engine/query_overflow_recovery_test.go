@@ -108,7 +108,10 @@ func TestQueryRecoveryCascadeRunsPreparationAndOverflowStagesInOrder(t *testing.
 	}
 }
 
-func TestQueryPreparationMicrocompactsBelowSnipThreshold(t *testing.T) {
+func TestQueryPreparationMicrocompactsUnderPressureBelowSnipThreshold(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
 	model := &scriptedOverflowModel{}
 	messages := []*schema.Message{
 		{Role: schema.User, Content: "question"},
