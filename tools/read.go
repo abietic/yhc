@@ -90,8 +90,8 @@ func ReadTool() ToolImpl {
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"file_path": {Type: schema.String, Desc: "The absolute path to the file to read", Required: true},
 				"limit":     {Type: schema.Integer, Desc: "The number of lines to read. Only provide if the file is too large to read at once."},
-				"offset":    {Type: schema.Integer, Desc: "The line number to start reading from. Only provide if the file is too large to read at once"},
-				"line":      {Type: schema.Integer, Desc: "Jump to a specific line number, centering the view around that line"},
+				"offset":    {Type: schema.Integer, Desc: "The zero-based line offset to start reading from. Only provide if the file is too large to read at once"},
+				"line":      {Type: schema.Integer, Desc: "The one-based target line number to center the view around"},
 				"pages":     {Type: schema.String, Desc: "Inclusive 1-indexed PDF page range such as 1-5 or 3; maximum 20 pages per request"},
 			}),
 		},
@@ -202,7 +202,11 @@ func ReadTool() ToolImpl {
 			isPartial := hasExplicitRange && (offset > 0 || len(lines) < totalLines)
 			RecordFileRead(fullPath, isPartial)
 
-			return formatReadResult(params.FilePath, offset, lines), nil
+			result := formatReadResult(params.FilePath, offset, lines)
+			if isPartial {
+				result += fmt.Sprintf("\n[Partial Read: lines %d-%d of %d.]\n", offset+1, offset+len(lines), totalLines)
+			}
+			return result, nil
 		},
 	}
 	impl.ExecuteCtx = func(ctx context.Context, input string) (string, error) {

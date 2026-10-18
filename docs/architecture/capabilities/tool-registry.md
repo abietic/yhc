@@ -1,7 +1,7 @@
 # Tool Registry and Model-Visible Pool
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-19
 
 > **Ownership:** `tools.Registry` for dispatch; QueryEngine and `AssembleToolPool` for model visibility
 
@@ -156,6 +156,22 @@ These are presentation limits: a preview cannot recover bytes already dropped
 by the shell's containment output cap, and it does not change execution,
 permissions, background-shell monitoring, or tool-error classification.
 
+Non-empty text `Read` windows retain their numbered content and append a bounded
+`Partial Read` notice when the selected window omits lines. The notice gives
+the actual displayed range and total line count, including default-window and
+hard-limit truncation. The input `offset` is zero-based, `line` is a one-based
+centering target, and displayed line numbers start at one. Complete windows
+keep their existing output. This notice describes the current view, not edit
+admission: a prior complete read or successful Write/Edit remains sufficient
+after a narrower reread.
+
+Edit and overwriting Write still require complete read/write state. Partial
+windows alone, even several separate windows, and shell reads do not establish
+that state. Model-visible Read/Edit/Write guidance states this existing rule;
+neither the state tracker nor the guard is relaxed. The per-call line limit
+still prevents a first complete Read of files larger than that limit; cumulative
+range admission is outside this change.
+
 `DefaultPermissionAllowed` is not a read-only claim or a general Auto escape:
 QueryEngine accepts it only for a declared built-in process-local action.
 TodoWrite uses it because it changes only process-local Session/Agent task
@@ -218,6 +234,9 @@ transition marker cannot expose Enter/Exit through standalone MCP.
 - [`Registry.RemoveOwnedTools`](../../../tools/registry.go)
 - [`ToolPoolOptions` and `AssembleToolPool`](../../../tools/tool_pool.go)
 - [`ToolSelection` and `ParseToolSelection`](../../../tools/presets.go)
+- [`ReadTool`](../../../tools/read.go) owns text-window feedback and read-state recording.
+- [`RecordFileRead` and `HasFileBeenRead`](../../../tools/read_state.go) own complete-read admission state.
+- [`editToolPrompt` and `readToolPrompt`](../../../tools/tool_prompts.go) describe the same rule to the model.
 - [`QueryEngine.modelVisibleTools`](../../../engine/engine.go)
 - [`PlanState` transition owner](../../../engine/plan_state.go)
 - [Central Plan tool policy](../../../engine/plan_tool_policy.go)
