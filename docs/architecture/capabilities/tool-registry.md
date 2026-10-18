@@ -31,13 +31,25 @@ and permissions.
 5. Stable sorting within built-in and MCP partitions.
 6. Deduplication with the built-in partition first.
 
+For each selected tool, `AssembleToolPool` includes host-owned `ToolImpl.Prompt`
+instructions in that tool's model-visible description. It evaluates callbacks
+outside the registry lock after pool filtering and decorates a copy of the
+schema, so refresh does not duplicate instructions or mutate dispatch metadata.
+Instructions already present in the description are not repeated. The model
+receives the instructions with the tool schema through the shared QueryEngine
+path, including child Agents; this does not add a checker or another model call.
+Tools without a registered prompt keep their existing descriptions. The Read
+guidance distinguishes successful text replacement from behavioral verification.
+
 QueryEngine translates `--tools` exclusions into deny rules as defense in
 depth, builds the initial projection in `ToolUseOptions.Tools`, and installs
 `RefreshTools`. Canonical ProjectGraph round preparation calls that refresh
 only between completed tool rounds, so one model request sees a stable tool
 surface.
 
-Plan Mode adds a central projection after ordinary assembly. While Active, the
+QueryEngine restricts the assembly name scope for Plan Mode, unavailable
+built-ins, and Goal visibility before tool instructions are evaluated. Child
+prompt assembly also applies Plan filtering first. While Plan is Active, the
 model sees only the explicit exploration and clarification allowlist,
 TodoWrite for process-local planning state, Write/Edit for the plan-file
 capability, and Exit. Bash, Agent/background, ordinary project mutators,

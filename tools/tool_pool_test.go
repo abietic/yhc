@@ -12,6 +12,99 @@ func toolInfo(name string) *schema.ToolInfo {
 	return &schema.ToolInfo{Name: name}
 }
 
+func TestAssembleToolPoolIncludesToolInstructionsWithoutMutatingRegistry(t *testing.T) {
+	r := NewRegistry()
+	info := &schema.ToolInfo{Name: "Read", Desc: "Read a file."}
+	r.Register(ToolImpl{
+		Info: info,
+		Prompt: func() string {
+			return "Read the entire target before replacing existing contents."
+		},
+	})
+	const want = "Read a file.\n\nRead the entire target before replacing existing contents."
+	for range 2 {
+		pool := AssembleToolPool(r, ToolPoolOptions{})
+		if len(pool) != 1 || pool[0].Desc != want {
+			t.Fatalf("model-visible description = %#v, want tool instructions", pool)
+		}
+		pool[0].Desc = "caller mutation"
+	}
+	if info.Desc != "Read a file." || r.List()[0].Desc != info.Desc {
+		t.Fatal("model projection changed the dispatch registry")
+	}
+}
+
+func TestAssembleToolPoolDoesNotEvaluateFilteredToolInstructions(t *testing.T) {
+	for _, mode := range []string{"hidden", "disabled", "scope", "selection", "simple", "denied"} {
+		t.Run(mode, func(t *testing.T) {
+			r := NewRegistry()
+			impl := ToolImpl{Info: toolInfo("Write"), Prompt: func() string {
+				t.Fatal("filtered tool instructions were evaluated")
+				return "unreachable"
+			}}
+			opts := ToolPoolOptions{}
+			switch mode {
+			case "hidden":
+				impl.IsHidden = true
+			case "scope":
+				opts.AllowedNames = []string{}
+			case "selection":
+				opts.BuiltInNames = []string{}
+			case "simple":
+				opts.Simple = true
+			case "denied":
+				opts.BlanketDeniedFn = func(string) bool { return true }
+			}
+			r.Register(impl)
+			if mode == "disabled" {
+				r.Disable("Write")
+			}
+			if pool := AssembleToolPool(r, opts); len(pool) != 0 {
+				t.Fatalf("filtered tool remained visible: %#v", pool)
+			}
+		})
+	}
+}
+
+func TestAssembleToolPoolRefreshesInstructionsAtTheNextSnapshot(t *testing.T) {
+	r := NewRegistry()
+	impl := ToolImpl{Info: &schema.ToolInfo{Name: "Read", Desc: "Read a file."}}
+	impl.Prompt = func() string {
+		// A callback may access its registry; projection must not hold its lock.
+		r.Register(ToolImpl{Info: toolInfo("Later")})
+		return "First instruction."
+	}
+	r.Register(impl)
+	first := AssembleToolPool(r, ToolPoolOptions{})
+	if len(first) != 1 || first[0].Desc != "Read a file.\n\nFirst instruction." {
+		t.Fatalf("first snapshot = %#v", first)
+	}
+	impl.Prompt = func() string { return "Replacement instruction." }
+	r.Update("Read", impl)
+	second := AssembleToolPool(r, ToolPoolOptions{})
+	if len(second) != 2 || second[1].Desc != "Read a file.\n\nReplacement instruction." {
+		t.Fatalf("refreshed snapshot = %#v", second)
+	}
+	if first[0].Desc != "Read a file.\n\nFirst instruction." {
+		t.Fatal("refresh changed an earlier request")
+	}
+}
+
+func TestAssembleToolPoolKeepsAlreadyEmbeddedAndEmptyInstructions(t *testing.T) {
+	for _, prompt := range []string{"", " \n", "Existing instruction."} {
+		t.Run(prompt, func(t *testing.T) {
+			r := NewRegistry()
+			r.Register(ToolImpl{
+				Info:   &schema.ToolInfo{Name: "Read", Desc: "Read a file.\n\nExisting instruction."},
+				Prompt: func() string { return prompt },
+			})
+			if got := AssembleToolPool(r, ToolPoolOptions{})[0].Desc; got != "Read a file.\n\nExisting instruction." {
+				t.Fatalf("description changed or duplicated: %q", got)
+			}
+		})
+	}
+}
+
 // newTestRegistry returns a registry with a mix of built-in and MCP tools in
 // non-alphabetical registration order. It includes hidden and disabled tools so
 // callers can exercise filtering behavior.

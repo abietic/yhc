@@ -6,15 +6,14 @@ func withPrompt(impl ToolImpl, fn func() string) ToolImpl {
 	return impl
 }
 
-// Tool prompt functions return per-tool system prompt content.
-// Reference: each tool in src/tools/<ToolName>/prompt.ts contributes
-// a section that is injected into the system prompt during context assembly.
+// Tool prompt functions return per-tool instructions. AssembleToolPool includes
+// them in the selected tool's description without mutating the registry.
 
 func bashToolPrompt() string {
 	return `# Instructions for Bash tool usage
 
 - Prefer dedicated tools over Bash when one fits (Read, Edit, Write, Glob, Grep) — reserve Bash for shell-only operations.
-- You can use the ` + "`run_in_background`" + ` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later.
+- Use the ` + "`run_in_background`" + ` parameter only when the result is not needed immediately. Use BashOutput with the returned Shell ID to inspect output and completion.
 - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, your command will timeout after 120000ms (2 minutes).
 - Always quote file paths that contain spaces with double quotes in your command.
 - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of cd.
@@ -26,14 +25,13 @@ func readToolPrompt() string {
 	return `# Instructions for Read tool usage
 
 - The file_path parameter must be an absolute path, not a relative path.
-- By default, it reads up to 2000 lines starting from the beginning of the file.
+- By default, it reads up to 250 lines starting from the beginning of the file; one call can read at most 2000 lines.
 - When you already know which part of the file you need, only read that part using offset and limit.
 - Results are returned using cat -n format, with line numbers starting at 1.
 - This tool can read images (PNG, JPG, etc), PDFs, and Jupyter notebooks (.ipynb).
 - For PDFs over 10 pages, provide the pages parameter (for example, "1-5"). PDF pages are 1-indexed and one call is limited to 20 pages.
 - This tool can only read files, not directories. To read a directory, use ls via the Bash tool.
-- If you read a file that exists but has empty contents you will receive a system reminder warning.
-- Do NOT re-read a file you just edited to verify — Edit would have errored if the change failed.`
+- A successful Edit confirms the text replacement, not behavioral correctness. Inspect the relevant final changes and run checks when needed to verify the requested behavior.`
 }
 
 func editToolPrompt() string {
@@ -47,12 +45,7 @@ func editToolPrompt() string {
 }
 
 func writeToolPromptSection() string {
-	return `# Instructions for Write tool usage
-
-- This tool will overwrite the existing file if there is one at the provided path.
-- If this is an existing file, you MUST use the Read tool first. This tool will fail if you did not read the file first.
-- Prefer the Edit tool for modifying existing files — it only sends the diff.
-- Only use this tool to create new files or for complete rewrites.`
+	return writeToolPrompt
 }
 
 func grepToolPrompt() string {
