@@ -3226,26 +3226,25 @@ func (e *QueryEngine) permissionRulesSnapshot() *permission.RulesEngine {
 // query/turn boundaries through ToolUseOptions.RefreshTools.
 func (e *QueryEngine) modelVisibleTools() []*schema.ToolInfo {
 	active := planPhaseRequiresContainment(e.PlanState().Phase)
-	var projected []*schema.ToolInfo
-	if e.toolRegistry == nil {
-		projected = filterPlanModelVisibleTools(
-			append([]*schema.ToolInfo(nil), e.config.Tools...),
-			active,
-			nil,
-		)
-	} else {
+	projected := e.config.Tools
+	if projected == nil && e.toolRegistry != nil {
+		projected = e.toolRegistry.List()
+	}
+	// Freeze the complete visible name scope before assembly can evaluate
+	// tool instructions. Hidden Plan/Goal capabilities must not run callbacks.
+	projected = filterPlanModelVisibleTools(projected, active, e.toolRegistry)
+	projected = filterUnavailableBuiltinToolInfos(projected)
+	if !e.goalModelToolsVisible() {
+		projected = filterGoalToolInfos(projected)
+	}
+	if e.toolRegistry != nil {
 		projected = assembleModelVisibleTools(
 			e.toolRegistry,
-			e.config.Tools,
+			projected,
 			e.config.ToolSelection,
 			e.config.SimpleTools,
 			e.permissionRulesSnapshot(),
 		)
-		projected = filterPlanModelVisibleTools(projected, active, e.toolRegistry)
-	}
-	projected = filterUnavailableBuiltinToolInfos(projected)
-	if !e.goalModelToolsVisible() {
-		projected = filterGoalToolInfos(projected)
 	}
 	return projected
 }

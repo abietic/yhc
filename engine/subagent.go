@@ -976,16 +976,12 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 	scopedTools = withAgentSkillToolDescription(scopedTools, skillRegistry)
 	childRules, _ := permission.LoadPermissionRules(cwd)
 	childRules = append(childRules, toolSelectionDenyRules(e.ToolRegistry, e.ToolSelection)...)
-	promptTools := filterPlanModelVisibleTools(
-		assembleModelVisibleTools(
-			e.ToolRegistry,
-			scopedTools,
-			e.ToolSelection,
-			e.SimpleTools,
-			permission.NewRulesEngine(childRules),
-		),
-		permMode == permission.ModePlan,
+	promptTools := assembleModelVisibleTools(
 		e.ToolRegistry,
+		filterPlanModelVisibleTools(scopedTools, permMode == permission.ModePlan, e.ToolRegistry),
+		e.ToolSelection,
+		e.SimpleTools,
+		permission.NewRulesEngine(childRules),
 	)
 
 	// Build system prompt for the sub-agent.

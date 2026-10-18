@@ -63,9 +63,10 @@ func AssembleToolPool(r *Registry, opts ToolPoolOptions) []*schema.ToolInfo {
 	}
 
 	type candidate struct {
-		name  string
-		info  *schema.ToolInfo
-		isMCP bool
+		name   string
+		info   *schema.ToolInfo
+		prompt func() string
+		isMCP  bool
 	}
 	r.mu.RLock()
 	candidates := make([]candidate, 0, len(r.order))
@@ -79,7 +80,9 @@ func AssembleToolPool(r *Registry, opts ToolPoolOptions) []*schema.ToolInfo {
 				continue
 			}
 		}
-		candidates = append(candidates, candidate{name: name, info: impl.Info, isMCP: IsMCPToolName(name)})
+		candidates = append(candidates, candidate{
+			name: name, info: impl.Info, prompt: impl.Prompt, isMCP: IsMCPToolName(name),
+		})
 	}
 	r.mu.RUnlock()
 
@@ -99,10 +102,27 @@ func AssembleToolPool(r *Registry, opts ToolPoolOptions) []*schema.ToolInfo {
 		if opts.BlanketDeniedFn != nil && opts.BlanketDeniedFn(candidate.name) {
 			continue
 		}
+		info := candidate.info
+		// Evaluate host-owned instructions outside the registry lock and only
+		// for selected tools. Decorate a copy so refreshes never accumulate text
+		// in the dispatch registry or change an earlier model request.
+		if candidate.prompt != nil {
+			if prompt := strings.TrimSpace(candidate.prompt()); prompt != "" {
+				copied := *info
+				if !strings.Contains(copied.Desc, prompt) {
+					if copied.Desc == "" {
+						copied.Desc = prompt
+					} else {
+						copied.Desc += "\n\n" + prompt
+					}
+				}
+				info = &copied
+			}
+		}
 		if candidate.isMCP {
-			mcpTools = append(mcpTools, candidate.info)
+			mcpTools = append(mcpTools, info)
 		} else {
-			builtIns = append(builtIns, candidate.info)
+			builtIns = append(builtIns, info)
 		}
 	}
 

@@ -5353,7 +5353,7 @@ privacy:
       match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
       purpose: synthetic-security-fixture
     - path: docs/architecture/capabilities/tool-registry.md
-      line: 113
+      line: 125
       rule_id: credential-assignment
       match_sha256: a0ee8e57e20c1482942c4d1f5fe31ac922bfb170456431f51679d355df38a819
       purpose: documentation-example
