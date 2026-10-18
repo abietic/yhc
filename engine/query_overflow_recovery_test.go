@@ -45,6 +45,9 @@ func overflowAPIError(errorType, content string) *schema.Message {
 }
 
 func TestQueryRecoveryCascadeRunsPreparationAndOverflowStagesInOrder(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "20000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
 	ctx := context.Background()
 	model := &scriptedOverflowModel{streams: [][]*schema.Message{
 		{overflowAPIError("413", "Prompt is too long")},

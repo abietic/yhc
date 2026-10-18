@@ -176,7 +176,11 @@ func runCanonicalRoundPreparation(
 		nil,
 		nil,
 	)
-	snipResult := compact.SnipCompactIfNeeded(messagesForQuery)
+	modelName := ""
+	if toolUseContext != nil && toolUseContext.Options != nil {
+		modelName = getRuntimeMainLoopModel(toolUseContext.Options, messagesForQuery)
+	}
+	snipResult := compact.SnipCompactIfNeeded(messagesForQuery, modelName)
 	messagesForQuery = snipResult.Messages
 	snipTokensFreed := snipResult.TokensFreed
 	if snipResult.BoundaryMessage != nil {
@@ -185,19 +189,17 @@ func runCanonicalRoundPreparation(
 			CompactBoundaryMessage: snipResult.BoundaryMessage,
 		})
 	}
-	modelName := ""
-	if toolUseContext != nil && toolUseContext.Options != nil {
-		modelName = getRuntimeMainLoopModel(toolUseContext.Options, messagesForQuery)
-	}
 	microResult := compact.Microcompact(
 		messagesForQuery,
 		string(input.params.QuerySource),
 		modelName,
 	)
 	messagesForQuery = microResult.Messages
-	collapseResult := compact.ApplyCollapsesIfNeeded(
+	collapseResult := compact.ApplyCollapsesWithState(
 		messagesForQuery,
 		string(input.params.QuerySource),
+		modelName,
+		nil,
 	)
 	messagesForQuery = collapseResult.Messages
 	fullSystemPrompt := promptctx.AppendSystemContext(

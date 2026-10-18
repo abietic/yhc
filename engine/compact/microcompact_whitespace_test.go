@@ -8,6 +8,8 @@ import (
 )
 
 func TestSnipCompactIfNeeded_PreservesWhitespaceSensitiveShortMessages(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
 	userContent := "Follow these exact instructions:\n\n\n    keep four leading spaces\nend"
 	readContent := "{\n  \"path\": \"example.py\",\n  \"content\": \"def run():\\n    if ready:\\n        return 'three   spaces'\\n\"\n}"
 	assistantContent := "Result:\n\n\n    preserve this block"
@@ -24,7 +26,7 @@ func TestSnipCompactIfNeeded_PreservesWhitespaceSensitiveShortMessages(t *testin
 	}
 	messages = append(messages, &schema.Message{Role: schema.Tool, Content: longToolContent})
 
-	result := SnipCompactIfNeeded(messages)
+	result := SnipCompactIfNeeded(messages, "deepseek-flash")
 
 	if result.BoundaryMessage == nil || result.TokensFreed <= 0 {
 		t.Fatalf("expected long tool result to be trimmed and accounted for, got boundary=%v tokens=%d", result.BoundaryMessage, result.TokensFreed)
