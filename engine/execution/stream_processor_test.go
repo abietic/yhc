@@ -69,6 +69,13 @@ func TestProcessStreamAggregatesToolCallChunks(t *testing.T) {
 	if final.ResponseMeta == nil || final.ResponseMeta.Usage == nil || final.ResponseMeta.Usage.TotalTokens != 16 || final.ResponseMeta.FinishReason != "tool_calls" {
 		t.Fatalf("expected response metadata to survive stream aggregation, got %#v", final.ResponseMeta)
 	}
+	if result.Usage == nil || result.Usage.TotalTokens != 16 {
+		t.Fatalf("stream accounting lost cumulative usage: %+v", result.Usage)
+	}
+	result.Usage.TotalTokens = 99
+	if final.ResponseMeta.Usage.TotalTokens != 16 {
+		t.Fatal("accounting receipt aliases assistant history")
+	}
 	if len(result.ToolUseBlocks) != 1 {
 		t.Fatalf("expected 1 tool use block, got %d", len(result.ToolUseBlocks))
 	}

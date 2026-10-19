@@ -144,8 +144,8 @@ func IsProviderUsageTerminalError(err error) bool {
 	return errors.As(err, &terminal)
 }
 
-// CompleteProviderUsage extracts the one final cumulative usage snapshot
-// produced by ProcessStream and commits it through the admitted Goal call.
+// CompleteProviderUsage extracts the final cumulative usage from a completed
+// provider message and commits it through the admitted call.
 func CompleteProviderUsage(
 	call ProviderUsageCall,
 	messages []*schema.Message,
@@ -160,10 +160,31 @@ func CompleteProviderUsage(
 			continue
 		}
 		if message.ResponseMeta != nil && message.ResponseMeta.Usage != nil {
-			copied := *message.ResponseMeta.Usage
-			usage = &copied
+			usage = message.ResponseMeta.Usage
 		}
 		break
+	}
+	return completeProviderUsage(call, usage)
+}
+
+// CompleteStreamProviderUsage settles the final cumulative stream receipt even
+// when the provider produced no assistant content. A stream error must still
+// use MarkProviderUsageAmbiguous rather than settling a partial receipt.
+func CompleteStreamProviderUsage(call ProviderUsageCall, result *StreamResult) error {
+	var usage *schema.TokenUsage
+	if result != nil {
+		usage = result.Usage
+	}
+	return completeProviderUsage(call, usage)
+}
+
+func completeProviderUsage(call ProviderUsageCall, usage *schema.TokenUsage) error {
+	if call == nil {
+		return nil
+	}
+	if usage != nil {
+		copied := *usage
+		usage = &copied
 	}
 	if err := call.CompleteProviderUsage(usage); err != nil {
 		return &ProviderUsageTerminalError{Err: err}

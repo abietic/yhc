@@ -5302,6 +5302,11 @@ privacy:
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
+    - path: cmd/yhc/cmd/headless_stream_failure_test.go
+      line: 88
+      rule_id: private-url
+      match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
+      purpose: synthetic-security-fixture
     - path: engine/execution/run_cost_test.go
       line: 14
       rule_id: private-url

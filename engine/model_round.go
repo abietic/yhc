@@ -682,9 +682,9 @@ func runCanonicalModelRound(
 			result.terminal = &terminal
 			return result
 		}
-		if usageErr := execution.CompleteProviderUsage(
+		if usageErr := execution.CompleteStreamProviderUsage(
 			callResult.ProviderUsageCall,
-			streamResult.AssistantMessages,
+			streamResult,
 		); usageErr != nil {
 			if activeAttempt != nil {
 				coordinator.emit(

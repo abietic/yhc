@@ -84,9 +84,9 @@ func SideQuery(ctx context.Context, chatModel model.BaseChatModel, opts SideQuer
 	if err != nil {
 		return nil, MarkProviderUsageAmbiguous(callResult.ProviderUsageCall, err)
 	}
-	if err := CompleteProviderUsage(
+	if err := CompleteStreamProviderUsage(
 		callResult.ProviderUsageCall,
-		streamResult.AssistantMessages,
+		streamResult,
 	); err != nil {
 		return nil, err
 	}
