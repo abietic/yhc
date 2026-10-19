@@ -56,6 +56,8 @@ func NewDispatcher() *Dispatcher {
 `
 	// The oracle checks independent progress and same-key exclusion while the
 	// first job is blocked. Final-state checks alone accept the coarse lock.
+	// This scripted fixture keeps channel guards, whose waits synctest can
+	// observe. A live implementation using sync.Mutex needs a different oracle.
 	const checks = `package fixture
 
 import (
