@@ -420,6 +420,7 @@ type provider struct {
 	wantTools []string
 	n         int
 	laneN     map[string]int
+	sequence  uint64
 	journal   []journal
 	prior     map[string]priorObservation
 	server    *httptest.Server
@@ -518,6 +519,7 @@ func (p *provider) serve(w http.ResponseWriter, r *http.Request) {
 	if step.Kind == "tool_call" {
 		item := map[string]any{"type": "function_call", "id": "item-" + step.CallID, "call_id": step.CallID, "name": step.Tool, "arguments": string(step.Arguments), "status": "completed"}
 		p.event(w, "response.output_item.added", map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item})
+		p.event(w, "response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
 	} else {
 		p.event(w, "response.output_text.delta", map[string]any{"type": "response.output_text.delta", "item_id": fmt.Sprintf("msg-%d", id), "output_index": 0, "content_index": 0, "delta": step.Text})
 		item := map[string]any{"type": "message", "id": fmt.Sprintf("msg-%d", id), "role": "assistant", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": step.Text, "annotations": []any{}}}}
@@ -614,7 +616,13 @@ func (p *provider) priorObservationSnapshot(callID string) (int, bool) {
 	return observation.count, ok && observation.consistent
 }
 
-func (p *provider) event(w http.ResponseWriter, n string, v any) {
+func (p *provider) event(w http.ResponseWriter, n string, v map[string]any) {
+	// Native DeepSeek requires ordered event envelopes and completed tool items.
+	// Keep one fixture protocol valid for both production Responses adapters.
+	p.mu.Lock()
+	v["sequence_number"] = p.sequence
+	p.sequence++
+	p.mu.Unlock()
 	b, _ := json.Marshal(v)
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", n, b)
 }
@@ -972,11 +980,11 @@ func assertDurableForegroundAgentCompletion(t *testing.T, sessionID, transcriptD
 	}
 }
 
-func runScenarioData(t *testing.T, s scenario, p providerScript, files map[string]string) {
+func runScenarioData(t *testing.T, s scenario, p providerScript, files map[string]string, extra ...string) {
 	t.Helper()
 	rawScenario, _ := json.Marshal(s)
 	rawScript, _ := json.Marshal(p)
-	runScenario(t, string(rawScenario), string(rawScript), files)
+	runScenario(t, string(rawScenario), string(rawScript), files, extra...)
 }
 
 func runFixtureScenario(t *testing.T, id string) {
@@ -1038,7 +1046,7 @@ func loadFixtureFiles(root string, manifest fixtureManifest) (map[string]string,
 	return files, nil
 }
 
-func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]string) {
+func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]string, extra ...string) {
 	t.Helper()
 	s, err := loadScenario([]byte(rawScenario))
 	if err != nil {
@@ -1058,7 +1066,7 @@ func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]s
 	binary := e2eBinary(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.TimeoutMillis)*time.Millisecond)
 	defer cancel()
-	out, err := runInvocation(ctx, t, binary, root, repo, s, provider.server.URL)
+	out, err := runInvocation(ctx, t, binary, root, repo, s, provider.server.URL, extra...)
 	if err != nil {
 		t.Fatalf("%s: binary failed: %v provider_requests=%d", s.ID, err, provider.requestCount())
 	}
