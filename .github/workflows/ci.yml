@@ -497,7 +497,25 @@ jobs:
       - name: Install pinned GNU Make on Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install make --version=4.4.1 --yes --no-progress
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageSource = Join-Path $env:RUNNER_TEMP 'yhc-make-4.4.1'
+          New-Item -ItemType Directory -Path $packageSource | Out-Null
+          $package = Join-Path $packageSource 'make.4.4.1.nupkg'
+          # Avoid the OData feed lookup; use the same immutable package.
+          # Its SHA512 matches Chocolatey's published package test record:
+          # https://gist.github.com/choco-bot/d17802bdb8b9b7253bfa719125042956
+          Invoke-WebRequest -Uri 'https://community.chocolatey.org/api/v2/package/make/4.4.1' -OutFile $package -TimeoutSec 60 -MaximumRetryCount 2 -RetryIntervalSec 3
+          $hash = Get-FileHash -LiteralPath $package -Algorithm SHA256
+          if ($hash.Hash.ToLowerInvariant() -cne '8b2dec73ed4c84163c4a4f9bfe658553b1e3d1fdfa8930d2aa438e030ff21f9d') {
+            throw 'GNU Make package checksum mismatch'
+          }
+          choco install make --version=4.4.1 --yes --no-progress --source="$packageSource"
+          if ($LASTEXITCODE -ne 0) { throw 'GNU Make installation failed' }
+          $version = & make --version
+          if ($LASTEXITCODE -ne 0 -or $version[0] -cne 'GNU Make 4.4.1') {
+            throw 'GNU Make version mismatch'
+          }
 
       - name: Build and verify native unpacked package
         shell: bash

@@ -83,6 +83,32 @@ func TestCodeQLAnalyzesGoAndDesktopJavaScript(t *testing.T) {
 	}
 }
 
+func TestWindowsMakeUsesVerifiedLocalPackageBeforeInstall(t *testing.T) {
+	ci := readWorkflowFiles(t)[".github/workflows/ci.yml"]
+	start := strings.Index(ci, "      - name: Install pinned GNU Make on Windows\n")
+	end := strings.Index(ci, "      - name: Build and verify native unpacked package\n")
+	if start < 0 || end <= start {
+		t.Fatal("CI lacks a bounded Windows Make setup step")
+	}
+	step := ci[start:end]
+	download := strings.Index(step, "https://community.chocolatey.org/api/v2/package/make/4.4.1")
+	verify := strings.Index(step, "Get-FileHash")
+	install := strings.Index(step, `choco install make --version=4.4.1 --yes --no-progress --source="$packageSource"`)
+	if download < 0 || verify <= download || install <= verify {
+		t.Fatal("Make must download the fixed package and verify its hash before installing from the local source")
+	}
+	for _, contract := range []string{
+		"8b2dec73ed4c84163c4a4f9bfe658553b1e3d1fdfa8930d2aa438e030ff21f9d",
+		"-Algorithm SHA256",
+		"throw 'GNU Make package checksum mismatch'",
+		"if ($LASTEXITCODE -ne 0)",
+	} {
+		if !strings.Contains(step, contract) {
+			t.Fatalf("Make setup lacks fail-closed package contract %q", contract)
+		}
+	}
+}
+
 func TestDesktopNativePackageMatrixUsesExactUnpackedSmokeTargets(t *testing.T) {
 	ci := readWorkflowFiles(t)[".github/workflows/ci.yml"]
 	start := strings.Index(ci, "  desktop-native-packages:\n")

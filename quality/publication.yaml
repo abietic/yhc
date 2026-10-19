@@ -46,6 +46,21 @@ privacy:
   test_sentinels:
     - sentinel-provider-credential
   reviewed_findings:
+    - path: .github/workflows/ci.yml
+      line: 507
+      rule_id: private-url
+      match_sha256: 6e933093d6c8f35f796a55f6f914fbbfcc96af49132289b1b4cc2443fdf0fbd6
+      purpose: build-metadata
+    - path: .github/workflows/ci.yml
+      line: 508
+      rule_id: private-url
+      match_sha256: b5ffadb5100a84d9aeb8ec88e078ffe7ca582ffccb31745315b9d30b4ab8f133
+      purpose: build-metadata
+    - path: scripts/publication/workflow_test.go
+      line: 94
+      rule_id: private-url
+      match_sha256: b5ffadb5100a84d9aeb8ec88e078ffe7ca582ffccb31745315b9d30b4ab8f133
+      purpose: build-metadata
     - path: docs/migration/reference/reference-repositories.yaml
       line: 66
       rule_id: private-email
