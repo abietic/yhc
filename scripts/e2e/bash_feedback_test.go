@@ -20,9 +20,25 @@ func TestBashFailureFeedbackReachesNextModelRequest(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		command string
+		model   string
+		extra   []string
+		masked  bool
 	}{
 		{name: "large output", command: "bash check.sh"},
 		{name: "command preview and large output", command: "bash check.sh\n# " + strings.Repeat("padding ", 750)},
+		{
+			name:    "native DeepSeek command preview and large output",
+			command: "bash check.sh\n# " + strings.Repeat("padding ", 750),
+			model:   "deepseek-flash",
+			extra:   []string{"--provider", "agenticdeepseek", "--model", "deepseek-flash"},
+		},
+		{
+			name:    "native DeepSeek failure before successful followup",
+			command: "bash check.sh\ntrue",
+			model:   "deepseek-flash",
+			extra:   []string{"--provider", "agenticdeepseek", "--model", "deepseek-flash"},
+			masked:  true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			args, err := json.Marshal(map[string]string{"command": test.command})
@@ -37,14 +53,17 @@ func TestBashFailureFeedbackReachesNextModelRequest(t *testing.T) {
 					FileSHA256: map[string]string{"check.sh": hex.EncodeToString(digest[:])}, GitStatus: []string{},
 				},
 			}
+			prior := []priorToolResult{{CallID: "fixture-check", Contains: "FINAL_ASSERTION_FAILED"}}
+			if !test.masked {
+				prior = append(prior, priorToolResult{CallID: "fixture-check", Contains: "[exit code: 7]"})
+			}
+			// A compound command reports its final command's status. Its earlier
+			// failed assertion must still reach the model as execution evidence.
 			p := providerScript{SchemaVersion: 1, Steps: []providerStep{
-				{Kind: "tool_call", CallID: "fixture-check", Tool: "Bash", Arguments: args},
-				{Kind: "final", Text: "The fixture check failed.", ExpectPrior: []priorToolResult{
-					{CallID: "fixture-check", Contains: "FINAL_ASSERTION_FAILED"},
-					{CallID: "fixture-check", Contains: "[exit code: 7]"},
-				}},
+				{Kind: "tool_call", CallID: "fixture-check", Tool: "Bash", Arguments: args, ExpectModel: test.model},
+				{Kind: "final", Text: "The fixture check failed.", ExpectModel: test.model, ExpectPrior: prior},
 			}}
-			runScenarioData(t, s, p, map[string]string{"check.sh": check})
+			runScenarioData(t, s, p, map[string]string{"check.sh": check}, test.extra...)
 		})
 	}
 }
