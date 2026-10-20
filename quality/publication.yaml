@@ -46,6 +46,28 @@ privacy:
   test_sentinels:
     - sentinel-provider-credential
   reviewed_findings:
+    # Public DeepSeek model cards and machine-local benchmark artifact paths.
+    # Keep reviews exact; this does not admit arbitrary Hugging Face URLs.
+    - path: docs/migration/reference/runtime/dsh-flash-terminal-bench-audit.md
+      line: 29
+      rule_id: private-url
+      match_sha256: 5c348986a15182f2f224ee2c5a6783ea3639c49ff1a68a3a3897f524fb0853e2
+      purpose: documentation-example
+    - path: docs/migration/reference/runtime/dsh-flash-terminal-bench-audit.md
+      line: 30
+      rule_id: private-url
+      match_sha256: 253ea0573ce5b6af457b2af75329b6930c17b92533f77b583e841832580c7f06
+      purpose: documentation-example
+    - path: docs/migration/reference/runtime/dsh-flash-terminal-bench-audit.md
+      line: 113
+      rule_id: high-entropy-token
+      match_sha256: 6c6b6565f14e56a5eeabd8224f1b76a03a252cf47ba511255d6d5d0ae635332a
+      purpose: documentation-example
+    - path: docs/migration/reference/runtime/dsh-flash-terminal-bench-audit.md
+      line: 118
+      rule_id: high-entropy-token
+      match_sha256: fb9d434a1f19473164d0a182992d786fbe4e3a00d1ba45a0249b67063160fb4b
+      purpose: documentation-example
     - path: .github/workflows/ci.yml
       line: 507
       rule_id: private-url
