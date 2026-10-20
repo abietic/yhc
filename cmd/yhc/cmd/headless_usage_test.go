@@ -182,7 +182,7 @@ func TestExecTimeoutCancelsProviderAndPreservesUnknownUsage(t *testing.T) {
 			return
 		}
 		encoded, _ := json.Marshal(body)
-		sawDeadline.Store(bytes.Contains(encoded, []byte("time_remaining_seconds=")))
+		sawDeadline.Store(bytes.Contains(encoded, []byte("deadline_utc=")))
 		<-r.Context().Done()
 	}))
 	defer server.Close()
