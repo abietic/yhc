@@ -1,7 +1,7 @@
 # Tool Registry and Model-Visible Pool
 
 **Status:** current
-**Last verified:** 2026-10-19
+**Last verified:** 2026-10-20
 
 > **Ownership:** `tools.Registry` for dispatch; QueryEngine and `AssembleToolPool` for model visibility
 
@@ -147,11 +147,13 @@ to use its existing direct-page implementation; this change integrates Search.
 
 Foreground `BashTool` formats captured results through
 [`formatShellResult`](../../../tools/bash.go). Command echoes have a separate
-2,000-byte preview budget; stdout and stderr each have a 10,000-byte preview
-budget, including truncation notices. Oversized previews retain the head and
+512-byte preview budget; the tool-call input retains the full command, so a
+long script is not repeated in full. Stdout and stderr each have a 10,000-byte
+preview budget, including truncation notices. Oversized previews retain the head and
 tail without splitting valid UTF-8, so final test summaries remain visible.
 The combined result stays within 30,000 bytes and preserves the existing
-nonzero-exit, timeout, and cancellation markers. Short results are unchanged.
+nonzero-exit, timeout, and cancellation markers. Commands up to 512 bytes keep
+their existing echoed text.
 These are presentation limits: a preview cannot recover bytes already dropped
 by the shell's containment output cap, and it does not change execution,
 permissions, background-shell monitoring, or tool-error classification.
