@@ -165,6 +165,8 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 	}
 	updateHeader := "func (store *Store) Update(key string, transform func([]byte) []byte) []byte {\n\t"
 	updateLock := updateHeader + "entry := store.find(key)\n\tentry.mu.Lock()\n\tdefer entry.mu.Unlock()"
+	getHeader := "func (store *Store) Get(key string) []byte {\n\t"
+	queuedLookup := "store.mu.Lock()\n\tentry := store.items[key]\n\tif entry == nil {\n\t\tentry = &item{}\n\t\tstore.items[key] = entry\n\t}\n\tentry.mu.Lock()\n\tstore.mu.Unlock()\n\tdefer entry.mu.Unlock()"
 	coarse := replace(mutex, "type Store struct {", "type Store struct {\n\tglobal sync.Mutex")
 	// Add serialization without removing the original per-key synchronization.
 	coarse = replace(coarse, updateHeader, updateHeader+"store.global.Lock()\n\tdefer store.global.Unlock()\n\t")
@@ -175,6 +177,8 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 		{name: "mutex", source: mutex, correct: true},
 		{name: "channel", source: channel, correct: true},
 		{name: "coarse-lock", source: coarse, expectedFailure: "TestDifferentKeyProgress"},
+		{name: "queued-update-convoy", source: replace(mutex, updateLock, updateHeader+queuedLookup), expectedFailure: "TestSameKeyExclusionAndQueue"},
+		{name: "queued-read-convoy", source: replace(mutex, getHeader+"entry := store.find(key)\n\tentry.mu.Lock()\n\tdefer entry.mu.Unlock()", getHeader+queuedLookup), expectedFailure: "TestSameKeyExclusionAndQueue"},
 		{name: "no-exclusion", source: noExclusion, expectedFailure: "TestSameKeyExclusionAndQueue"},
 		{name: "borrowed-input", source: replace(mutex, "transform(bytes.Clone(entry.value))", "transform(entry.value)"), expectedFailure: "TestPanicRollbackAndRelease"},
 		{name: "borrowed-transform-result", source: replace(mutex, "entry.value = bytes.Clone(next)", "entry.value = next"), expectedFailure: "TestTransformResultDetached"},

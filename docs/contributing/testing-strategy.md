@@ -123,9 +123,10 @@ Computer Use evidence.
 The `keyed-store-v1` fixture under `scripts/evaluation/testdata/` combines
 independent progress, same-key exclusion, detached byte slices, and panic
 rollback/release. Its opt-in calibration accepts independently written Mutex
-and channel controls, rejects seven single-fault mutations and the original
+and channel controls, rejects nine single-fault mutations and the original
 buggy fixture, and demonstrates that final-state-only tests miss coarse
-serialization:
+serialization. Its progress checks include queued same-key readers and writers
+alongside another key:
 
 ```bash
 EINO_VERIFICATION_CALIBRATION=1 go test ./scripts/evaluation \

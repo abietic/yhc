@@ -58,8 +58,9 @@ func TestSameKeyExclusionAndQueue(t *testing.T) {
 	if !waitFor(t, entered, "first transform did not start") {
 		return
 	}
-	secondEntered, secondDone := make(chan struct{}), make(chan struct{})
+	secondAttempted, secondEntered, secondDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	go func() {
+		close(secondAttempted)
 		store.Update("same", func(previous []byte) []byte {
 			close(secondEntered)
 			if !bytes.Equal(previous, []byte("first")) {
@@ -69,14 +70,37 @@ func TestSameKeyExclusionAndQueue(t *testing.T) {
 		})
 		close(secondDone)
 	}()
+	if !waitFor(t, secondAttempted, "queued update was not scheduled") {
+		return
+	}
+	readAttempted, readDone := make(chan struct{}), make(chan struct{})
+	go func() {
+		close(readAttempted)
+		store.Get("same")
+		close(readDone)
+	}()
+	if !waitFor(t, readAttempted, "concurrent read was not scheduled") {
+		return
+	}
 	select {
 	case <-secondEntered:
 		t.Error("same-key transforms overlapped")
 	case <-time.After(200 * time.Millisecond):
 	}
+	otherDone := make(chan struct{})
+	go func() {
+		store.Update("other", func([]byte) []byte { return []byte("other") })
+		if !bytes.Equal(store.Get("other"), []byte("other")) {
+			t.Error("independent key did not retain its update")
+		}
+		close(otherDone)
+	}()
+	waitFor(t, otherDone, "same-key waiters blocked an independent key")
 	unblock()
 	waitFor(t, firstDone, "first transform did not finish")
 	waitFor(t, secondDone, "queued transform did not finish after release")
+	waitFor(t, readDone, "read did not finish after release")
+	waitFor(t, otherDone, "independent key did not finish after release")
 }
 
 func TestTransformResultDetached(t *testing.T) {
