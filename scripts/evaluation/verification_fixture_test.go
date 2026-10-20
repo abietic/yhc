@@ -152,7 +152,8 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return string(data)
+		// These are repository-owned source templates, not submitted tests.
+		return strings.ReplaceAll(string(data), "\r\n", "\n")
 	}
 	mutex := read("controls/mutex.go")
 	channel := read("controls/channel.go")
@@ -231,10 +232,33 @@ func TestKeyedStoreControlSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	root = filepath.Join(root, "testdata", "keyed-store-v1")
-	for _, control := range keyedStoreControls(t, root) {
-		t.Run(control.name, func(t *testing.T) {
-			if _, err := parser.ParseFile(token.NewFileSet(), "store.go", control.source, parser.AllErrors); err != nil {
-				t.Fatalf("invalid control source: %v", err)
+	crlfRoot := t.TempDir()
+	for _, relative := range []string{"controls/mutex.go", "controls/channel.go", "fixture/store.go"} {
+		data, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(crlfRoot, relative)
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		lf := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+		if err := os.WriteFile(target, bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expected := keyedStoreControls(t, root)
+	for _, layout := range []struct{ name, root string }{{"checkout", root}, {"CRLF", crlfRoot}} {
+		t.Run(layout.name, func(t *testing.T) {
+			for index, control := range keyedStoreControls(t, layout.root) {
+				t.Run(control.name, func(t *testing.T) {
+					if control != expected[index] {
+						t.Fatal("line endings changed the control source or expectations")
+					}
+					if _, err := parser.ParseFile(token.NewFileSet(), "store.go", control.source, parser.AllErrors); err != nil {
+						t.Fatalf("invalid control source: %v", err)
+					}
+				})
 			}
 		})
 	}
