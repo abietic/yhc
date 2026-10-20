@@ -118,6 +118,35 @@ write-based session resume, and typed-overload fallback. Each claim is limited
 to its scenario's independent oracle; a green run is not live-provider or
 Computer Use evidence.
 
+## Offline Verification Fixture Calibration
+
+The `keyed-store-v1` fixture under `scripts/evaluation/testdata/` combines
+independent progress, same-key exclusion, detached byte slices, and panic
+rollback/release. Its opt-in calibration accepts independently written Mutex
+and channel controls, rejects nine single-fault mutations and the original
+buggy fixture, and demonstrates that final-state-only tests miss coarse
+serialization. Its progress checks include queued same-key readers and writers
+alongside another key:
+
+```bash
+EINO_VERIFICATION_CALIBRATION=1 go test ./scripts/evaluation \
+  -run '^TestKeyedStoreVerificationCalibration$' -count=1 -v -timeout=4m
+```
+
+This runs repository-owned Go fixtures with the race detector through the
+existing owned-process runner. It makes no model calls and is separate from
+the P43 `eval-baseline` scenario. It calibrates the oracle, not YHC's task
+success or a model's generated tests. Compile errors, missing/unfinished test
+events, interruption, and truncated output are incomplete evidence and cannot
+count as detected mutations. Same-key exclusion includes a bounded 200 ms
+negative observation; this is not an exhaustive scheduling proof.
+
+Only `fixture/` and `task.md` may enter an independent agent workspace. Keep
+`grader/` and `controls/` outside it. Future live evaluations must freeze their
+own model/binary, inputs, budget, and independent grading conditions. The
+calibration runner executes only trusted repository fixtures; it is not an OS
+sandbox for submitted code and must not be used to run untrusted agent tests.
+
 ## Persisted Iteration Evidence
 
 `make verify` remains the ordinary full-suite gate. Iteration evidence is an
