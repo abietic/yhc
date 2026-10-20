@@ -191,7 +191,7 @@ func runCanonicalModelRound(
 		messagesForCall,
 		input.userContext,
 	)
-	preparedMessagesForCall = appendRunBudgetReminder(modelCtx, preparedMessagesForCall, input.params.RunUsage)
+	preparedMessagesForCall = prependRunBudgetPolicy(modelCtx, preparedMessagesForCall, input.params.RunUsage)
 	preparedMessagesForCall = normalizeMessagesForAPI(preparedMessagesForCall)
 	immutablePreparedMessages, cloneErr := cloneModelRequestMessages(
 		preparedMessagesForCall,

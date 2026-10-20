@@ -33,7 +33,7 @@ func budgetNotice(input []*schema.Message) string {
 	return strings.Join(notices, "\nDUPLICATE\n")
 }
 
-func TestRunBudgetAwarenessSharedAndFresh(t *testing.T) {
+func TestRunBudgetPolicyStableWithSharedUsage(t *testing.T) {
 	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 3, MaxTotalTokens: 100})
 	probe := &runBudgetProbe{}
 	cfg := projectGraphEngineConfig(t, t.TempDir(), "budget-awareness", nil, tools.NewRegistry(), &tools.ToolSelection{})
@@ -55,17 +55,23 @@ func TestRunBudgetAwarenessSharedAndFresh(t *testing.T) {
 	if len(probe.inputs) != 3 {
 		t.Fatalf("calls=%d", len(probe.inputs))
 	}
-	for i, want := range []string{"provider_calls_remaining=3", "provider_calls_remaining=2", "provider_calls_remaining=1"} {
+	for i := range probe.inputs {
 		notice := budgetNotice(probe.inputs[i])
-		if !strings.Contains(notice, want) || strings.Contains(notice, "DUPLICATE") {
+		if !strings.Contains(notice, "provider_call_limit=3") ||
+			!strings.Contains(notice, "token_threshold=100") ||
+			strings.Contains(notice, "DUPLICATE") || notice != budgetNotice(probe.inputs[0]) {
 			t.Fatalf("round %d: %q", i, notice)
 		}
 	}
-	if !strings.Contains(budgetNotice(probe.inputs[2]), "known_tokens=24") {
-		t.Fatal("child usage missing from parent reminder")
+	if strings.Contains(budgetNotice(probe.inputs[2]), "remaining=") ||
+		strings.Contains(budgetNotice(probe.inputs[2]), "known_tokens=") {
+		t.Fatal("live usage must not rewrite the provider prefix")
 	}
-	if usage.Snapshot().ProviderCalls != 3 {
+	if snapshot := usage.Snapshot(); snapshot.ProviderCalls != 3 || snapshot.TotalTokens != 36 {
 		t.Fatal("reminder changed admission accounting")
+	}
+	if budgetNotice(eng.GetMessages()) != "" {
+		t.Fatal("invocation policy became canonical conversation history")
 	}
 }
 
@@ -92,7 +98,8 @@ func TestRunBudgetAwarenessDefaultOffAndDeadline(t *testing.T) {
 				t.Fatalf("calls=%d", len(probe.inputs))
 			}
 			notice := budgetNotice(probe.inputs[0])
-			if deadline && !strings.Contains(notice, "time_remaining_seconds=") {
+			if cutoff, ok := ctx.Deadline(); deadline && (!ok ||
+				!strings.Contains(notice, "deadline_utc="+cutoff.UTC().Format(time.RFC3339Nano))) {
 				t.Fatalf("missing enforced deadline: %q", notice)
 			}
 			if !deadline && notice != "" {
@@ -116,7 +123,7 @@ func TestRunBudgetAwarenessDetachedChildRetainsInvocationDeadline(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(probe.inputs) != 1 || !strings.Contains(budgetNotice(probe.inputs[0]), "time_remaining_seconds=") {
+	if len(probe.inputs) != 1 || !strings.Contains(budgetNotice(probe.inputs[0]), "deadline_utc=") {
 		t.Fatal("detached child lost invocation cutoff")
 	}
 }
@@ -135,7 +142,7 @@ func TestRunBudgetAwarenessResumedChildUsesConfiguredDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(probe.inputs) != 1 || !strings.Contains(budgetNotice(probe.inputs[0]), "time_remaining_seconds=") {
+	if len(probe.inputs) != 1 || !strings.Contains(budgetNotice(probe.inputs[0]), "deadline_utc=") {
 		t.Fatal("fresh child context escaped configured invocation cutoff")
 	}
 }

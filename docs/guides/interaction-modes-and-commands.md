@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-14
+**Last verified:** 2026-10-20
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -91,11 +91,12 @@ is enabled. With both controls off, usage collection preserves existing retry
 and fallback behavior. Opaque custom permission reviewers are skipped while
 limits apply; statistics-only runs mark their coverage incomplete.
 
-Before each main/child model round, explicitly enabled invocation limits are
-shown as a live budget snapshot at the request tail. This reminder is not saved
-as conversation history and does not rewrite the stable system prompt. Counts
-are shared with children and auxiliary calls; concurrent work can consume them
-after the snapshot. The admission checks remain authoritative.
+Main/child model requests include explicitly enabled invocation limits in a
+fixed policy block before conversation history. It describes total limits,
+including usage already consumed by children and auxiliary calls; it does not
+claim they are remaining allowances. Live counters stay in usage reporting so
+they cannot rewrite the cached request prefix each round. The policy is not
+saved as conversation history. Admission checks remain authoritative.
 
 `yhc exec --timeout 29m` optionally cancels the query after that duration,
 including its active child/tool/provider contexts. The timer starts after provider configuration,
@@ -105,7 +106,8 @@ An earlier caller deadline still wins. The explicit invocation deadline survives
 child foreground/background detachment and child continuation with fresh
 contexts; ordinary parent cancellation leases
 retain their existing behavior. With an invocation collector, enforced
-context deadlines are also included in the model's reminder. The reminder asks
+context deadlines are included as an absolute UTC cutoff in the model's policy,
+instead of a changing countdown. The policy asks
 for targeted verification and honest reporting of unfinished work; it cannot
 guarantee the model will finish early. Cancellation uses the existing exit
 `130` path and settles available usage; shutdown/logging can take additional
