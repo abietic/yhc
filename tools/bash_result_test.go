@@ -62,6 +62,45 @@ func TestFormatShellResultSmallOutputCompatibility(t *testing.T) {
 	}
 }
 
+func TestFormatShellResultBoundsRepeatedCommand(t *testing.T) {
+	for _, command := range []string{
+		"# begin\n" + strings.Repeat("long script body\n", 200) + "# finish",
+		"# begin\n" + strings.Repeat("脚本🙂\n", 200) + "# finish",
+	} {
+		result := &ShellResult{Stdout: "execution stdout", Stderr: "execution stderr", ExitCode: 7}
+		got := formatShellResult(command, result)
+		const evidence = "execution stdout\nexecution stderr\n[exit code: 7]\n"
+		if !strings.HasSuffix(got, evidence) {
+			t.Fatalf("command preview changed execution evidence: %q", got)
+		}
+		echo := strings.TrimSuffix(strings.TrimPrefix(got, "$ "), "\n"+evidence)
+		if len(echo) > 512 {
+			t.Errorf("repeated command exceeds 512-byte preview: %d", len(echo))
+		}
+		if !strings.HasPrefix(echo, "# begin\n") || !strings.HasSuffix(echo, "# finish") ||
+			!strings.Contains(echo, "[command truncated; showing head and tail]") {
+			t.Errorf("command preview lost identity or truncation notice: %q", echo)
+		}
+		if !utf8.ValidString(got) {
+			t.Error("command preview split a UTF-8 code point")
+		}
+	}
+}
+
+func TestFormatShellResultCommandPreviewBoundary(t *testing.T) {
+	for _, size := range []int{511, 512, 513} {
+		command := strings.Repeat("x", size)
+		got := formatShellResult(command, &ShellResult{Stdout: "done"})
+		if size <= 512 {
+			if want := "$ " + command + "\ndone\n"; got != want {
+				t.Errorf("%d-byte command changed: %q", size, got)
+			}
+		} else if strings.Contains(got, command) || !strings.Contains(got, "[command truncated;") {
+			t.Errorf("%d-byte command was repeated in full: %q", size, got)
+		}
+	}
+}
+
 func FuzzFormatShellResultPreservesUTF8AndOutcome(f *testing.F) {
 	f.Add("check", "stdout", "stderr")
 	f.Add(strings.Repeat("🙂", 10000), "head!"+strings.Repeat("界", 5000), "head!"+strings.Repeat("错", 5000))

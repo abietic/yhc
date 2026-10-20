@@ -330,7 +330,7 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 }
 
 const (
-	bashMaxCommandPreview   = 2000   // echoed command cannot crowd out execution evidence
+	bashMaxCommandPreview   = 512    // the tool-call input already retains the full command
 	bashMaxOutputPerStream  = 10000  // byte budget per stdout/stderr preview, including notice
 	bashMaxOutputDefault    = 30000  // combined byte budget, including notices
 	bashMaxOutputUpperLimit = 150000 // absolute ceiling
