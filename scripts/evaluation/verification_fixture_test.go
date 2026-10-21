@@ -173,7 +173,9 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 	coarse = replace(coarse, updateHeader, updateHeader+"store.global.Lock()\n\tdefer store.global.Unlock()\n\t")
 	noExclusion := replace(mutex, updateLock, updateHeader+"entry := store.find(key)")
 	leak := replace(mutex, updateLock, updateHeader+"entry := store.find(key)\n\tentry.mu.Lock()")
-	leak = replace(leak, "entry.value = bytes.Clone(next)", "entry.value = bytes.Clone(next)\n\tentry.mu.Unlock()")
+	// Keep normal-path reads inside the key lock. Only the panic path should
+	// leak it; reading entry.value after unlocking would add another fault.
+	leak = replace(leak, "entry.value = bytes.Clone(next)\n\treturn bytes.Clone(entry.value)", "entry.value = bytes.Clone(next)\n\tresult := bytes.Clone(entry.value)\n\tentry.mu.Unlock()\n\treturn result")
 	earlyAck := replace(mutex, `"sync"`, "\"sync\"\n\t\"time\"")
 	earlyAck = replace(earlyAck, updateHeader, "func (store *Store) update(key string, transform func([]byte) []byte) []byte {\n\t")
 	earlyAck += `
@@ -318,7 +320,85 @@ func TestKeyedStoreControlSources(t *testing.T) {
 	}
 }
 
-func runKeyedStoreTests(t *testing.T, sourceRoot, source string, includeOracle bool) verificationVerdict {
+func TestKeyedStorePanicLeakControlNormalPath(t *testing.T) {
+	root, err := commandRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root = filepath.Join(root, "testdata", "keyed-store-v1")
+	var source string
+	for _, control := range keyedStoreControls(t, root) {
+		if control.name == "panic-lock-leak" {
+			source = control.source
+		}
+	}
+	const unlock = "\tentry.mu.Unlock()\n"
+	if strings.Count(source, unlock) != 1 {
+		t.Fatal("panic control must have one explicit normal-path unlock")
+	}
+	// Pause after unlocking so a later update deterministically replaces the
+	// stored value before this update returns. Its own result must be preserved.
+	source = strings.Replace(source, unlock, unlock+"\tkeyedStoreControlAfterUnlock()\n", 1)
+	verdict := runKeyedStoreTests(t, root, source, false, keyedStoreNormalReturnProbe)
+	if verdict.state != "passed" || verdict.passed != 2 {
+		t.Fatalf("panic-only control broke normal-path results: %#v", verdict)
+	}
+}
+
+const keyedStoreNormalReturnProbe = `package fixture
+
+import (
+	"bytes"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+var keyedStoreControlAfterUnlock = func() {}
+
+func TestNormalUpdateKeepsItsOwnResult(t *testing.T) {
+	store := NewStore()
+	paused, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	var first atomic.Bool
+	keyedStoreControlAfterUnlock = func() {
+		if first.CompareAndSwap(false, true) {
+			close(paused)
+			<-release
+		}
+	}
+	done := make(chan []byte, 1)
+	go func() {
+		done <- store.Update("one", func([]byte) []byte { return []byte("first") })
+	}()
+	select {
+	case <-paused:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first update did not reach the unlock barrier")
+	}
+	if got := store.Update("one", func([]byte) []byte { return []byte("second") }); !bytes.Equal(got, []byte("second")) {
+		t.Fatalf("second update returned %q, want second", got)
+	}
+	unblock()
+	select {
+	case got := <-done:
+		if !bytes.Equal(got, []byte("first")) {
+			t.Fatalf("first update returned %q, want its own transform result", got)
+		}
+		got[0] = 'X'
+	case <-time.After(2 * time.Second):
+		t.Fatal("first update did not finish after release")
+	}
+	if got := store.Get("one"); !bytes.Equal(got, []byte("second")) {
+		t.Fatalf("stored value = %q, want detached second result", got)
+	}
+}
+`
+
+func runKeyedStoreTests(t *testing.T, sourceRoot, source string, includeOracle bool, probes ...string) verificationVerdict {
 	t.Helper()
 	directory := t.TempDir()
 	for _, name := range []string{"go.mod", "store_test.go"} {
@@ -332,6 +412,11 @@ func runKeyedStoreTests(t *testing.T, sourceRoot, source string, includeOracle b
 	}
 	if err := os.WriteFile(filepath.Join(directory, "store.go"), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	for index, probe := range probes {
+		if err := os.WriteFile(filepath.Join(directory, fmt.Sprintf("probe_%d_test.go", index)), []byte(probe), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if includeOracle {
 		data, err := os.ReadFile(filepath.Join(sourceRoot, "grader", "contract_test.go"))
