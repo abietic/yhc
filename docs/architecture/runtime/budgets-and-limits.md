@@ -192,6 +192,13 @@ error code still identify the budget stop, and cancellation keeps its existing
 precedence. A stream failure with unknown usage therefore retains its safe
 transport cause while blocking further dispatch and retaining uncertain cost.
 
+A tool's typed provider-usage terminal error also stops the shared query before
+the next model request. The complete committed tool round still publishes its
+results, preserving paired Session history for an explicitly granted resume.
+Ordinary tool failures remain recoverable; matching an error's display text is
+not a stop signal. Already admitted calls retain their existing settlement and
+refund rules.
+
 After a budget admission denial, `usage.budget_stop_cause` identifies the
 selected gate: `provider_calls`, `total_tokens`, `estimated_cost_threshold`, or
 `estimated_cost_reservation`. The last value means the next full request bound
