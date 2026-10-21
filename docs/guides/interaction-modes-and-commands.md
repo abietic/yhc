@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-20
+**Last verified:** 2026-10-21
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -133,8 +133,11 @@ Consequently a call can be denied while some budget remains. Unknown response
 cost retains the reservation and stops retries. This controls the declared
 estimate, not the provider's invoice or external tool charges.
 
-A rejected admission returns exit `1` with `error.code=run_budget_exceeded`;
-incomplete usage under a token or monetary threshold, or missing required pricing,
+A rejected admission returns exit `1` with `error.code=run_budget_exceeded`.
+`usage.budget_stop_cause` distinguishes `provider_calls`, `total_tokens`,
+`estimated_cost_threshold`, and `estimated_cost_reservation`. A reservation
+denial can occur while money remains because the next full bound cannot fit.
+Incomplete usage under a token or monetary threshold, or missing required pricing,
 returns `run_usage_unknown`. Cancellation
 retains exit `130`. Reaching a threshold in a successful final answer does not
 itself turn success into failure; the next admission is the enforcement point.

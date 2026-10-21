@@ -100,11 +100,12 @@ func TestExecRunUsageAndOptionalLimits(t *testing.T) {
 		calls  int32
 		failed bool
 		priced bool
+		cause  string
 	}{
 		{name: "default-off", calls: 2},
-		{name: "call-limit", flags: []string{"--max-provider-calls", "1"}, calls: 1, failed: true},
-		{name: "token-threshold", flags: []string{"--max-total-tokens", "1"}, calls: 1, failed: true},
-		{name: "native-cost-threshold", flags: []string{"--max-estimated-cost", "0.000025"}, calls: 1, failed: true, priced: true},
+		{name: "call-limit", flags: []string{"--max-provider-calls", "1"}, calls: 1, failed: true, cause: "provider_calls"},
+		{name: "token-threshold", flags: []string{"--max-total-tokens", "1"}, calls: 1, failed: true, cause: "total_tokens"},
+		{name: "native-cost-threshold", flags: []string{"--max-estimated-cost", "0.000025"}, calls: 1, failed: true, priced: true, cause: "estimated_cost_threshold"},
 		{name: "native-cost-report-only", calls: 2, priced: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -146,6 +147,9 @@ func TestExecRunUsageAndOptionalLimits(t *testing.T) {
 				t.Fatal(err)
 			}
 			u := result.Usage
+			if u == nil || u.BudgetStopCause != tc.cause {
+				t.Fatalf("budget cause: want %q, usage=%+v", tc.cause, u)
+			}
 			if calls.Load() != tc.calls || u == nil || u.ProviderCalls != uint64(tc.calls) || u.TotalTokens != uint64(tc.calls)*14 || u.CachedPromptTokens != uint64(tc.calls)*6 || u.ReasoningTokens != uint64(tc.calls)*2 || !u.Complete {
 				t.Fatalf("calls=%d usage=%+v routes=%+v ledger=%+v", calls.Load(), u, u.Routes, u.CallLedger.Records)
 			}
@@ -401,6 +405,13 @@ func TestExecReservationDenialAndOverloadDoNotRetry(t *testing.T) {
 			}
 			if err == nil || result.Error == nil || result.Error.Code != tc.code || calls.Load() != tc.wantCalls {
 				t.Fatalf("code=%+v calls=%d err=%v", result.Error, calls.Load(), err)
+			}
+			wantCause := ""
+			if tc.wantCalls == 0 {
+				wantCause = "estimated_cost_reservation"
+			}
+			if result.Usage == nil || result.Usage.BudgetStopCause != wantCause {
+				t.Fatalf("budget cause: want %q, usage=%+v", wantCause, result.Usage)
 			}
 			if tc.wantCalls == 1 && (result.Usage.Cost.Complete || result.Usage.Cost.Reservation.RetainedAmount != "2.097168000000" || result.Usage.ProviderCalls != 1) {
 				t.Fatalf("uncertain exposure=%+v", result.Usage)

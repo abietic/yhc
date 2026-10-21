@@ -5330,7 +5330,7 @@ privacy:
       match_sha256: 29add18e61d41760f69cb15c55069886bd480e96b9d3a64598a0283e39dee321
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/headless_usage_test.go
-      line: 346
+      line: 350
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
