@@ -122,11 +122,14 @@ Computer Use evidence.
 
 The `keyed-store-v1` fixture under `scripts/evaluation/testdata/` combines
 independent progress, same-key exclusion, detached byte slices, and panic
-rollback/release. Its opt-in calibration accepts independently written Mutex
-and channel controls, rejects nine single-fault mutations and the original
+rollback/release. Its opt-in calibration accepts independently written Mutex,
+channel, and snapshot-read controls, rejects eleven single-fault mutations and the original
 buggy fixture, and demonstrates that final-state-only tests miss coarse
 serialization. Its progress checks include queued same-key readers and writers
-alongside another key:
+alongside another key. It also checks that an update waits for its transform
+and that a blocked transform cannot publish its input mutations. A same-key
+read may wait or return the previous committed value; neither behavior is
+required exclusively:
 
 ```bash
 EINO_VERIFICATION_CALIBRATION=1 go test ./scripts/evaluation \
@@ -138,8 +141,11 @@ existing owned-process runner. It makes no model calls and is separate from
 the P43 `eval-baseline` scenario. It calibrates the oracle, not YHC's task
 success or a model's generated tests. Compile errors, missing/unfinished test
 events, interruption, and truncated output are incomplete evidence and cannot
-count as detected mutations. Same-key exclusion includes a bounded 200 ms
-negative observation; this is not an exhaustive scheduling proof.
+count as detected mutations. Update acknowledgment uses a `testing/synctest`
+clock and a blocked callback. Same-key exclusion and intermediate visibility
+include bounded 200 ms observations; these are not exhaustive scheduling
+proofs. The visibility check runs outside a fake-clock bubble because a
+contended Mutex is not durably blocked in `synctest`.
 
 Only `fixture/` and `task.md` may enter an independent agent workspace. Keep
 `grader/` and `controls/` outside it. Future live evaluations must freeze their

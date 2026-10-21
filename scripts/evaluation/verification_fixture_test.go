@@ -157,6 +157,7 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 	}
 	mutex := read("controls/mutex.go")
 	channel := read("controls/channel.go")
+	snapshot := read("controls/snapshot.go")
 	replace := func(source, old, next string) string {
 		if strings.Count(source, old) != 1 {
 			t.Fatalf("mutation target must occur once: %q", old)
@@ -173,9 +174,47 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 	noExclusion := replace(mutex, updateLock, updateHeader+"entry := store.find(key)")
 	leak := replace(mutex, updateLock, updateHeader+"entry := store.find(key)\n\tentry.mu.Lock()")
 	leak = replace(leak, "entry.value = bytes.Clone(next)", "entry.value = bytes.Clone(next)\n\tentry.mu.Unlock()")
+	earlyAck := replace(mutex, `"sync"`, "\"sync\"\n\t\"time\"")
+	earlyAck = replace(earlyAck, updateHeader, "func (store *Store) update(key string, transform func([]byte) []byte) []byte {\n\t")
+	earlyAck += `
+func (store *Store) Update(key string, transform func([]byte) []byte) []byte {
+	type result struct { value []byte; panicked bool; cause any }
+	done := make(chan result, 1)
+	go func() {
+		out := result{panicked: true}
+		defer func() {
+			if out.panicked { out.cause = recover() }
+			done <- out
+		}()
+		out.value = store.update(key, transform)
+		out.panicked = false
+	}()
+	select {
+	case out := <-done:
+		if out.panicked { panic(out.cause) }
+		return out.value
+	case <-time.After(500 * time.Millisecond):
+		return nil
+	}
+}
+`
+	earlyPublish := replace(snapshot, "previous := bytes.Clone(entry.value)\n\tstore.mu.Unlock()\n\tnext := transform(previous)", `previous := bytes.Clone(entry.value)
+	argument := bytes.Clone(previous)
+	entry.value = argument
+	store.mu.Unlock()
+	defer func() {
+		if cause := recover(); cause != nil {
+			store.mu.Lock()
+			entry.value = previous
+			store.mu.Unlock()
+			panic(cause)
+		}
+	}()
+	next := transform(argument)`)
 	return []verificationControl{
 		{name: "mutex", source: mutex, correct: true},
 		{name: "channel", source: channel, correct: true},
+		{name: "snapshot", source: snapshot, correct: true},
 		{name: "coarse-lock", source: coarse, expectedFailure: "TestDifferentKeyProgress"},
 		{name: "queued-update-convoy", source: replace(mutex, updateLock, updateHeader+queuedLookup), expectedFailure: "TestSameKeyExclusionAndQueue"},
 		{name: "queued-read-convoy", source: replace(mutex, getHeader+"entry := store.find(key)\n\tentry.mu.Lock()\n\tdefer entry.mu.Unlock()", getHeader+queuedLookup), expectedFailure: "TestSameKeyExclusionAndQueue"},
@@ -185,6 +224,8 @@ func keyedStoreControls(t *testing.T, root string) []verificationControl {
 		{name: "borrowed-update-return", source: replace(mutex, "entry.value = bytes.Clone(next)\n\treturn bytes.Clone(entry.value)", "entry.value = bytes.Clone(next)\n\treturn entry.value"), expectedFailure: "TestUpdateReturnDetached"},
 		{name: "borrowed-read-return", source: replace(mutex, "defer entry.mu.Unlock()\n\treturn bytes.Clone(entry.value)", "defer entry.mu.Unlock()\n\treturn entry.value"), expectedFailure: "TestGetReturnDetached"},
 		{name: "panic-lock-leak", source: leak, expectedFailure: "TestPanicRollbackAndRelease"},
+		{name: "early-update-ack", source: earlyAck, expectedFailure: "TestUpdateWaitsForTransform"},
+		{name: "early-input-publication", source: earlyPublish, expectedFailure: "TestBlockedTransformDoesNotPublishInput"},
 		{name: "initial-buggy-fixture", source: read("fixture/store.go"), expectedFailure: "TestDifferentKeyProgress"},
 	}
 }
@@ -209,8 +250,8 @@ func TestKeyedStoreVerificationCalibration(t *testing.T) {
 			if verdict.state != want {
 				t.Fatalf("calibration verdict = %#v, want %s", verdict, want)
 			}
-			if control.correct && verdict.passed != 7 {
-				t.Fatalf("correct control executed %d passing tests, want 7", verdict.passed)
+			if control.correct && verdict.passed != 9 {
+				t.Fatalf("correct control executed %d passing tests, want 9", verdict.passed)
 			}
 			if !control.correct && !strings.Contains("\n"+strings.Join(verdict.failedTests, "\n")+"\n", "\n"+control.expectedFailure+"\n") {
 				t.Fatalf("control failed tests %v, missing targeted check %s", verdict.failedTests, control.expectedFailure)
@@ -223,7 +264,16 @@ func TestKeyedStoreVerificationCalibration(t *testing.T) {
 		}
 	}
 	t.Run("final-state-only-misses-coarse-lock", func(t *testing.T) {
-		verdict := runKeyedStoreTests(t, root, controls[2].source, false)
+		var source string
+		for _, control := range controls {
+			if control.name == "coarse-lock" {
+				source = control.source
+			}
+		}
+		if source == "" {
+			t.Fatal("coarse-lock control is missing")
+		}
+		verdict := runKeyedStoreTests(t, root, source, false)
 		if verdict.state != "passed" || verdict.passed != 1 {
 			t.Fatalf("weak public tests should miss complete serialization: %#v", verdict)
 		}
@@ -237,7 +287,7 @@ func TestKeyedStoreControlSources(t *testing.T) {
 	}
 	root = filepath.Join(root, "testdata", "keyed-store-v1")
 	crlfRoot := t.TempDir()
-	for _, relative := range []string{"controls/mutex.go", "controls/channel.go", "fixture/store.go"} {
+	for _, relative := range []string{"controls/mutex.go", "controls/channel.go", "controls/snapshot.go", "fixture/store.go"} {
 		data, err := os.ReadFile(filepath.Join(root, relative))
 		if err != nil {
 			t.Fatal(err)

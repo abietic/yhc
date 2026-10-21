@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -101,6 +102,82 @@ func TestSameKeyExclusionAndQueue(t *testing.T) {
 	waitFor(t, secondDone, "queued transform did not finish after release")
 	waitFor(t, readDone, "read did not finish after release")
 	waitFor(t, otherDone, "independent key did not finish after release")
+}
+
+func TestUpdateWaitsForTransform(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := NewStore()
+		entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+		var once sync.Once
+		unblock := func() { once.Do(func() { close(release) }) }
+		defer unblock()
+		var result []byte
+		go func() {
+			result = store.Update("key", func([]byte) []byte {
+				close(entered)
+				<-release
+				return []byte("committed")
+			})
+			close(done)
+		}()
+		if !waitFor(t, entered, "transform did not start") {
+			return
+		}
+		// No competing key lock is acquired in this bubble. Time can advance
+		// while the transform remains blocked on a bubble-owned channel.
+		select {
+		case <-done:
+			t.Error("update returned before its transform completed")
+		case <-time.After(time.Second):
+		}
+		unblock()
+		if waitFor(t, done, "update did not finish after release") && !bytes.Equal(result, []byte("committed")) {
+			t.Error("update did not return its committed result")
+		}
+	})
+}
+
+func TestBlockedTransformDoesNotPublishInput(t *testing.T) {
+	store := NewStore()
+	store.Update("key", func([]byte) []byte { return []byte("before") })
+	entered, release, updated := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	go func() {
+		store.Update("key", func(previous []byte) []byte {
+			previous[0] = 'X'
+			close(entered)
+			<-release
+			return []byte("after")
+		})
+		close(updated)
+	}()
+	if !waitFor(t, entered, "transform did not reach its intermediate state") {
+		return
+	}
+	readDone := make(chan struct{})
+	var observed []byte
+	go func() {
+		observed = store.Get("key")
+		close(readDone)
+	}()
+	// Both waiting for the transform and reading its previous committed value
+	// are legal. A contended Mutex is not durably blocked in synctest, so use
+	// a bounded observation here rather than a fake-clock bubble.
+	select {
+	case <-readDone:
+		if !bytes.Equal(observed, []byte("before")) {
+			t.Error("in-progress transform input became visible")
+		}
+	case <-time.After(200 * time.Millisecond):
+	}
+	unblock()
+	waitFor(t, updated, "update did not finish after release")
+	waitFor(t, readDone, "read did not finish after release")
+	if !bytes.Equal(store.Get("key"), []byte("after")) {
+		t.Error("transform result was not committed")
+	}
 }
 
 func TestTransformResultDetached(t *testing.T) {
