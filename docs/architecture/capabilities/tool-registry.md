@@ -1,7 +1,7 @@
 # Tool Registry and Model-Visible Pool
 
 **Status:** current
-**Last verified:** 2026-10-20
+**Last verified:** 2026-10-21
 
 > **Ownership:** `tools.Registry` for dispatch; QueryEngine and `AssembleToolPool` for model visibility
 
@@ -163,7 +163,10 @@ Non-empty text `Read` windows retain their numbered content and append a bounded
 the actual displayed range and total line count, including default-window and
 hard-limit truncation. The input `offset` is zero-based, `line` is a one-based
 centering target, and displayed line numbers start at one. Complete windows
-keep their existing output. This notice describes the current view, not edit
+omit the notice. Within the existing per-line truncation limit, text after the
+line-number prefix preserves source tabs and spaces so it can be copied into
+an exact `Edit.old_string`. Read does not expand tabs for terminal layout;
+terminal consumers own that rendering. This notice describes the current view, not edit
 admission: a prior complete read or successful Write/Edit remains sufficient
 after a narrower reread.
 

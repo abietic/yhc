@@ -250,9 +250,8 @@ func formatReadResult(_ string, startLine int, lines []string) string {
 		lineNum := startLine + i + 1
 		numStr := strconv.Itoa(lineNum)
 
-		// Expand tabs to spaces for consistent terminal rendering.
-		line = expandTabs(line, 4)
-
+		// Keep source whitespace intact so text after the prefix can be used
+		// for Edit's exact matching. Terminal consumers own tab rendering.
 		// Truncate long lines.
 		if len(line) > maxCharsPerLine {
 			line = line[:maxCharsPerLine] + "..."
@@ -270,27 +269,6 @@ func formatReadResult(_ string, startLine int, lines []string) string {
 		b.WriteString("→")
 		b.WriteString(line)
 		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-func expandTabs(s string, tabWidth int) string {
-	if !strings.Contains(s, "\t") {
-		return s
-	}
-	var b strings.Builder
-	col := 0
-	for _, ch := range s {
-		if ch == '\t' {
-			spaces := tabWidth - (col % tabWidth)
-			for j := 0; j < spaces; j++ {
-				b.WriteByte(' ')
-			}
-			col += spaces
-		} else {
-			b.WriteRune(ch)
-			col++
-		}
 	}
 	return b.String()
 }

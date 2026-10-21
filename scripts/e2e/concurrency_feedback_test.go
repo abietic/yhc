@@ -151,7 +151,7 @@ func TestKeyIsolation(t *testing.T) {
 				},
 				{
 					Kind: "tool_call", CallID: "repair", Tool: "Edit", Arguments: args(map[string]string{"file_path": "dispatch.go", "old_string": before, "new_string": after}), ExpectModel: model,
-					ExpectPrior: []priorToolResult{{CallID: "read", Contains: "defer func() { d.mu <- struct{}{} }()"}},
+					ExpectPrior: []priorToolResult{{CallID: "read", Contains: "→\tdefer func() { d.mu <- struct{}{} }()"}},
 				},
 				{
 					Kind: "tool_call", CallID: "after", Tool: "Bash", Arguments: command, ExpectModel: model,
