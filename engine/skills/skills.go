@@ -319,6 +319,17 @@ func (r *SkillRegistry) Invoke(name string, args map[string]string) (string, err
 	return skill.Render(args)
 }
 
+// InvocationPrompt adds source context to an already-rendered skill body.
+// It does not read support files, change CWD, or grant tool permissions.
+func (skill *Skill) InvocationPrompt(content string) string {
+	heading := "Skill: " + skill.Name
+	if skill.FilePath != "" {
+		heading += "\nSource: " + skill.FilePath
+		heading += "\nBase directory: " + filepath.Dir(skill.FilePath)
+	}
+	return heading + "\n\n" + content
+}
+
 // Render substitutes argument placeholders in a stable skill snapshot.
 func (skill *Skill) Render(args map[string]string) (string, error) {
 	if skill == nil {

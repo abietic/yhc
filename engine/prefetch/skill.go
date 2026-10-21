@@ -3,6 +3,7 @@ package prefetch
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/skills"
 	"github.com/cloudwego/eino/schema"
@@ -66,16 +67,32 @@ func (p *SkillPrefetch) findMatchingSkills(userMsg string) []*schema.Message {
 		if !p.skillMatchesMessage(skill, lower) {
 			continue
 		}
-		content, err := p.registry.Invoke(skill.Name, nil)
+		// Render the same detached generation that supplied the source path and
+		// invocation flags, rather than looking up its name a second time.
+		content, err := skill.Render(nil)
 		if err != nil || strings.TrimSpace(content) == "" {
 			continue
 		}
-		if len(content) > 4000 {
-			content = content[:4000] + "\n...(truncated)"
+		prefix := ""
+		if skill.FilePath != "" {
+			prefix = skill.InvocationPrompt("")
+		}
+		// Never truncate the locator itself. The full skill remains available
+		// through explicit invocation when its header cannot fit prefetch.
+		const maxContentBytes = 4000
+		if len(prefix) >= maxContentBytes {
+			continue
+		}
+		if limit := maxContentBytes - len(prefix); len(content) > limit {
+			end := limit
+			for end > 0 && !utf8.RuneStart(content[end]) {
+				end--
+			}
+			content = content[:end] + "\n...(truncated)"
 		}
 		matches = append(matches, &schema.Message{
 			Role:    schema.User,
-			Content: content,
+			Content: prefix + content,
 			Extra: map[string]any{
 				"is_meta":         true,
 				"attachment_kind": "skill_prefetch",

@@ -38,7 +38,8 @@ func TestInitSkillsMakesProjectSkillsDiscoverableAndInvokable(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	if strings.TrimSpace(result) != "Hello Theo." {
+	want := "Skill: greet-project\nSource: " + filepath.Join(skillsDir, "greet.md") + "\nBase directory: " + skillsDir + "\n\nHello Theo."
+	if strings.TrimSpace(result) != want {
 		t.Fatalf("unexpected expanded skill: %q", result)
 	}
 }
