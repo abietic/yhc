@@ -126,11 +126,7 @@ func skillCommand(skill *skills.Skill, name string) *Command {
 			}
 			// Keep the expansion ordinary prompt text even for injected skills
 			// without a file path whose body starts with a slash command.
-			heading := "Skill: " + skill.Name
-			if skill.FilePath != "" {
-				heading += "\nSource: " + skill.FilePath
-			}
-			output = heading + "\n\n" + output
+			output = skill.InvocationPrompt(output)
 			return &CommandResult{Action: ActionPrompt, Output: output, Data: map[string]any{"skill": skill.Name}}, nil
 		},
 	}

@@ -1,7 +1,7 @@
 # Skills
 
 **Status:** current
-**Last verified:** 2026-10-05
+**Last verified:** 2026-10-22
 
 > **Ownership:** This file owns skill parsing, registry precedence, engine
 > binding, invocation, and query-time prefetch. Plugin discovery and whether
@@ -24,6 +24,14 @@ Session resume reloads the registry for the restored CWD and rebinds command
 discovery to it. A directory containing `SKILL.md` is one bundle: its support
 Markdown files do not become separate skills. A missing bundle name defaults
 to the directory name; flat Markdown files remain supported.
+
+File-backed Skill tool results, prefetch attachments, and explicit skill
+commands include the loaded source file and its containing base directory.
+Relative support paths resolve from that directory, even when the conversation
+CWD is elsewhere. This is prompt context: it does not read support files,
+execute scripts, change CWD, or grant tool permissions. Programmatically
+registered skills without a file path keep their existing plain tool/prefetch
+body; `Skill.Render` and `SkillRegistry.Invoke` also remain body-only APIs.
 
 ## Symbol Flow
 
@@ -49,6 +57,13 @@ flowchart LR
 | direct tool use | execution resolves the per-engine registry from context before the package-level compatibility registry |
 | worktree child | preserves user/runtime sources, replaces project-source skills from the worktree's `.claude/skills` and `.agents/skills`, and fails launch if that reload fails |
 | prefetch | each query iteration matches the latest user message against skill name, tags, and description words; bounded matches become user-role meta attachments |
+
+Prefetch renders one detached skill generation so its source locator and body
+cannot come from different registry updates. The existing 4,000-byte budget
+includes the complete source header and body, followed by a truncation marker
+when needed. Only the body is shortened, at a UTF-8 boundary. If a source header
+alone cannot fit, automatic prefetch skips it; explicit invocation remains
+available.
 
 The package-level `tools.DefaultSkillRegistry` remains a compatibility fallback.
 Production `QueryEngine` tool execution injects its own registry, so independent
@@ -77,8 +92,9 @@ positional binding, required checks, and defaults. Quoted arguments remain one
 value. `{{name}}` uses the existing named substitution; `$ARGUMENTS` expands the
 joined command arguments without shell evaluation. Free-form or extra arguments
 are appended when the body has no `$ARGUMENTS` placeholder. The resulting prompt
-includes the skill source path so relative support files can be resolved and
-uses the existing prompt-workflow path under ordinary tools and permissions.
+includes the skill source path and base directory so relative support files
+can be resolved and uses the existing prompt-workflow path under ordinary
+tools and permissions.
 
 Declared `args` can additionally provide `choices`, `completion`, and `suggest`.
 Choices and the existing default are advisory candidates; they do not add enum
@@ -118,6 +134,7 @@ resume, while programmatic registry updates appear on the next discovery read.
 | Symbol | Evidence |
 |---|---|
 | registry and invocation | [`engine/skills/skills.go`](../../../engine/skills/skills.go), [`SkillRegistry.Get`](../../../engine/skills/skills.go) |
+| invocation source context | [`Skill.InvocationPrompt`](../../../engine/skills/skills.go) formats the locator shared by tool, prefetch, and explicit commands |
 | default load precedence | [`LoadDefaultSkills`](../../../engine/skills/skills.go) |
 | worktree project generation | [`SkillRegistry.ForProjectDirectory`](../../../engine/skills/skills.go), [`SubAgentExecutor.ExecuteAgent`](../../../engine/subagent.go) |
 | engine binding | [`engine.QueryEngineConfig.SkillRegistry`](../../../engine/engine.go), [`NewQueryEngine`](../../../engine/engine.go), [query projection](../../../engine/engine.go) |
