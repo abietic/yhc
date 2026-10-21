@@ -66,6 +66,9 @@ type RunUsageSnapshot struct {
 	Routes         []RunUsageRoute  `json:"routes"`
 	CallLedger     RunUsageLedger   `json:"call_ledger"`
 	Cost           *RunCostSnapshot `json:"cost,omitempty"`
+
+	// BudgetStopCause identifies the rejected limit, not a reached-but-unused limit.
+	BudgetStopCause string `json:"budget_stop_cause,omitempty"`
 }
 
 // RunUsage is an invocation-local, concurrency-safe provider admission and
@@ -78,6 +81,7 @@ type RunUsage struct {
 	denied         uint64
 	untracked      uint64
 	stopReason     string
+	budgetCause    string
 	sealed         bool
 	routes         map[runUsageRouteKey]*RunUsageRoute
 	segmentID      string
@@ -156,6 +160,7 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		return nil, &ProviderUsageTerminalError{Err: context.Canceled}
 	}
 	var cause error
+	var budgetCause string
 	priceIndex := -1
 	if r.cost != nil {
 		priceIndex = r.cost.route(d)
@@ -167,21 +172,28 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		cause = ErrRunUsageUnknown
 	case r.cost != nil && r.cost.limit != nil && !r.limits.ReserveCostBeforeDispatch && r.cost.amount.Cmp(r.cost.limit) >= 0:
 		cause = ErrRunBudgetExceeded
+		budgetCause = "estimated_cost_threshold"
 	case r.limits.MaxTotalTokens > 0 && r.totals.UnknownCalls > 0:
 		cause = ErrRunUsageUnknown
 	case r.limits.MaxProviderCalls > 0 && r.totals.ProviderCalls >= uint64(r.limits.MaxProviderCalls):
 		cause = ErrRunBudgetExceeded
+		budgetCause = "provider_calls"
 	case r.limits.MaxTotalTokens > 0 && r.totals.TotalTokens >= uint64(r.limits.MaxTotalTokens):
 		cause = ErrRunBudgetExceeded
+		budgetCause = "total_tokens"
 	}
 	var reservation *RunCallReservation
 	var reserved *big.Int
 	if cause == nil {
 		reservation, reserved, cause = r.reserveCost(d, priceIndex)
+		if errors.Is(cause, ErrRunBudgetExceeded) {
+			budgetCause = "estimated_cost_reservation"
+		}
 	}
 	if cause != nil {
 		r.denied++
 		r.stopReason = runUsageErrorCode(cause)
+		r.budgetCause = budgetCause
 		return nil, &ProviderUsageTerminalError{Err: cause}
 	}
 	key := runUsageRouteKey{d.Model, d.QuerySource, d.ModelRole, d.ReasoningEffort}
@@ -209,10 +221,11 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 	s := RunUsageSnapshot{
 		RunUsageTotals: r.totals, Limits: r.limits,
 		DeniedCalls: r.denied, UntrackedCalls: r.untracked, StopReason: r.stopReason,
-		Complete:      r.untracked == 0 && r.totals.UnknownCalls == 0 && r.totals.InFlight == 0,
-		ElapsedMillis: time.Since(r.started).Milliseconds(),
-		Cost:          r.costSnapshot(),
-		Routes:        make([]RunUsageRoute, 0, len(r.routes)),
+		BudgetStopCause: r.budgetCause,
+		Complete:        r.untracked == 0 && r.totals.UnknownCalls == 0 && r.totals.InFlight == 0,
+		ElapsedMillis:   time.Since(r.started).Milliseconds(),
+		Cost:            r.costSnapshot(),
+		Routes:          make([]RunUsageRoute, 0, len(r.routes)),
 	}
 	for _, route := range r.routes {
 		s.Routes = append(s.Routes, *route)
@@ -342,6 +355,7 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 		if c.FailClosedOnAmbiguousUsage() {
 			c.settlementErr = ErrRunUsageUnknown
 			r.stopReason = runUsageErrorCode(c.settlementErr)
+			r.budgetCause = ""
 		}
 		return c.settlementErr
 	}
@@ -362,6 +376,7 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 	c.settlementErr = c.settleCost(values, true, false, requests)
 	if c.settlementErr != nil {
 		r.stopReason = runUsageErrorCode(c.settlementErr)
+		r.budgetCause = ""
 	}
 	return c.settlementErr
 }

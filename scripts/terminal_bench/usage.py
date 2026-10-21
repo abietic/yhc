@@ -11,6 +11,9 @@ USAGE_FIELDS = ("provider_calls", "known_calls", "unknown_calls", "in_flight",
                 "untracked_calls", "prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")
 
+BUDGET_STOP_CAUSES = ("provider_calls", "total_tokens", "estimated_cost_threshold",
+                      "estimated_cost_reservation")
+
 
 def validated_usage(value: object) -> dict | None:
     if not isinstance(value, dict) or type(value.get("complete")) is not bool:
@@ -26,6 +29,12 @@ def validated_usage(value: object) -> dict | None:
     if value["complete"] != complete:
         return None
     result = {**{key: value[key] for key in USAGE_FIELDS}, "complete": complete}
+    stop_reason = value.get("stop_reason")
+    if stop_reason in ("run_budget_exceeded", "run_usage_unknown"):
+        result["stop_reason"] = stop_reason
+        cause = value.get("budget_stop_cause")
+        if stop_reason == "run_budget_exceeded" and isinstance(cause, str) and cause in BUDGET_STOP_CAUSES:
+            result["budget_stop_cause"] = cause
     if "routes" in value:
         routes = value["routes"]
         if (not isinstance(routes, list) or any(not isinstance(route, dict)
@@ -54,6 +63,12 @@ def sum_usage(values: list) -> dict | None:
         return None  # Repeated invocation snapshot is never another increment.
     result = {key: sum(value[key] for value in usages) for key in USAGE_FIELDS}
     result["complete"] = all(value["complete"] for value in usages)
+    if len(usages) == 1:
+        # A multi-invocation total has no single stopping limit. Its history
+        # retains each segment's cause, including a budget pause before success.
+        for key in ("stop_reason", "budget_stop_cause"):
+            if key in usages[0]:
+                result[key] = usages[0][key]
     if any("routes" in value for value in usages):
         result["routes"] = []
         for value in usages:

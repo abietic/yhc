@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-18
+**Last verified:** 2026-10-21
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -191,6 +191,15 @@ terminal diagnostic when a budget stop also applies. The terminal reason and
 error code still identify the budget stop, and cancellation keeps its existing
 precedence. A stream failure with unknown usage therefore retains its safe
 transport cause while blocking further dispatch and retaining uncertain cost.
+
+After a budget admission denial, `usage.budget_stop_cause` identifies the
+selected gate: `provider_calls`, `total_tokens`, `estimated_cost_threshold`, or
+`estimated_cost_reservation`. The last value means the next full request bound
+cannot fit; it does not mean the declared amount has all been spent. This
+optional diagnostic preserves the existing terminal reason and error code,
+does not change gate ordering, and is absent before denial or when an unknown
+usage failure takes precedence. Harbor retains it per invocation; a combined
+multi-invocation usage total has no single stop cause.
 
 `--reserve-cost-before-dispatch` additionally enables a conservative admission
 ceiling on the declared estimate. It defaults to false and requires a positive
