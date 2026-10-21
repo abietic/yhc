@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -243,6 +244,7 @@ func runCanonicalToolRound(
 		)
 	}
 
+	var usageErr error
 	for index, planned := range schedule.Calls {
 		toolResult := completed[index]
 		if toolResult == nil || toolResult.ToolCallID != planned.CallID {
@@ -262,6 +264,9 @@ func runCanonicalToolRound(
 		outcomesMu.Unlock()
 		if outcome == nil {
 			outcome = canonicalOutcomeFromExecutionResult(toolResult)
+		}
+		if outcome.usageErr != nil {
+			usageErr = errors.Join(usageErr, outcome.usageErr)
 		}
 		result.outcomes = append(result.outcomes, toolRoundOutcome{
 			CallID:  planned.CallID,
@@ -304,7 +309,10 @@ func runCanonicalToolRound(
 		return canonicalToolRoundResult{}, err
 	}
 	result.decision = decision
-	return result, nil
+	// Publish every committed result before terminating so Session checkpoints
+	// remain paired and resumable. A paid tool's accounting failure must not
+	// become an ordinary recoverable error followed by another model request.
+	return result, usageErr
 }
 
 func canonicalToolInterruptBehavior(
