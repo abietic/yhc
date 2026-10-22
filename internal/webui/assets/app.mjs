@@ -1838,6 +1838,7 @@ async function send(event) {
       }
       return;
     }
+    if (turnDraftAttempts.has(current.id)) return;
     const attempt = { prompt, clientTurnID: crypto.randomUUID() };
     turnDraftAttempts.set(current.id, attempt);
     try {

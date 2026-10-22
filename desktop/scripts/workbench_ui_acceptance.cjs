@@ -1175,6 +1175,21 @@ async function main() {
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       }
       const settleHeldTurn = page => settleHeldReply(page, heldTurns, 'startTurn');
+      await check(`${surface} duplicate ordinary Send shares its unchanged draft request`, async () => {
+        const page = await createPage(surface, true);
+        try {
+          const before = turnRequests;
+          await page.locator('#prompt').fill('Submit this draft');
+          holdNextTurn = true;
+          await page.locator('#send').click();
+          await waitForHeldRead(heldTurns);
+          await page.locator('#send').click();
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          assert.equal(turnRequests, before + 1, 'an unchanged in-flight draft dispatches once');
+          await settleHeldTurn(page);
+          assert.equal(await page.locator('#prompt').inputValue(), '');
+        } finally { holdNextTurn = false; releaseReads(); await page.close(); }
+      });
       await check(`${surface} ordinary send clears only its unchanged draft`, async () => {
         const page = await createPage(surface, true);
         try {
