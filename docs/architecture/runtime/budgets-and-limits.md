@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-21
+**Last verified:** 2026-10-22
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -258,9 +258,13 @@ across those finite continuation grants. The same card and native currency
 apply throughout. Each next segment receives the lesser of its explicit grant
 and the remaining envelope; a call-only grant cannot disable strict money
 admission. Only a complete, reconciled receipt within the actual segment cap
-can release money for continuation. Unknown or retained exposure stops further
-solver dispatch. A well-formed `run_usage_unknown` failure with a matching
-process exit, fixed price card, zero in-flight/untracked calls, zero outstanding
+can release money for continuation. Before accepting a segment, the adapter
+reconciles its usage with prior segments. A repeated call-ledger or cost segment
+ID is a harness error before its cost is added, another grant is consumed, or
+success is returned; the raw segment logs remain available for diagnosis.
+Unknown or retained exposure stops further solver dispatch. A well-formed
+`run_usage_unknown` failure with a matching process exit, fixed price card,
+zero in-flight/untracked calls, zero outstanding
 reservations and no bound violation remains an ordinary agent failure when its
 known cost plus retained reservation and peak exposure fit the dispatched cap.
 Harbor can still run its independent official verifier; usage and cost remain

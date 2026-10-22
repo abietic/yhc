@@ -358,6 +358,7 @@ class YHCAgent(BaseInstalledAgent):
         await self.upload_instruction(instruction, environment)
         deadline = time.monotonic() + self.execution_timeout_sec if self.execution_timeout_sec else None
         segment = 0
+        segment_usages = []
         while True:
             if deadline is not None:
                 remaining_ms = int((deadline - time.monotonic()) * 1000)
@@ -386,6 +387,13 @@ class YHCAgent(BaseInstalledAgent):
             if self._segment_session and session_id != self._segment_session:
                 self.populate_context_post_run(context)
                 raise ValueError("YHC continuation changed session identity")
+            if usage is not None:
+                # Reconcile invocation identities before settling this receipt
+                # or consuming another grant; post-run aggregation is too late.
+                if sum_usage([*segment_usages, usage]) is None:
+                    self.populate_context_post_run(context)
+                    raise ValueError("YHC continuation usage cannot be reconciled across segments")
+                segment_usages.append(usage)
             active_limits = self._segment_limits or {"max_estimated_cost": self.max_estimated_cost}
             with localcontext() as ctx:
                 ctx.prec = 90

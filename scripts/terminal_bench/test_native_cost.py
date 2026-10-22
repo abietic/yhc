@@ -3,6 +3,7 @@
 import copy
 import json
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -168,6 +169,61 @@ class NativeAgentTests(AgentFixture, unittest.TestCase):
 
 
 class NativeRunTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
+    async def test_replayed_strict_receipt_stops_before_another_dispatch_or_charge(self):
+        await self.exercise_rejected_strict_receipt(completed=False)
+
+    async def test_completed_segment_cannot_reuse_an_earlier_strict_receipt(self):
+        await self.exercise_rejected_strict_receipt(completed=True)
+
+    async def test_completed_continuation_cannot_change_session_or_settle_its_cost(self):
+        await self.exercise_rejected_strict_receipt(completed=True, changed_session=True)
+
+    async def exercise_rejected_strict_receipt(self, *, completed, changed_session=False):
+        path = self.root / "upper-prices.json"
+        path.write_text(json.dumps(price_card(window="upper_bound", api_model="deepseek-v4-flash")))
+        keys = patch.dict("os.environ", {"YHC_BENCH_API_KEY": "test-key"})
+        keys.start()
+        self.addCleanup(keys.stop)
+        agent = self.agent(price_card_path=str(path), max_estimated_cost="0.000040",
+                           reserve_cost_before_dispatch=True, max_output_tokens_per_call=4,
+                           max_total_estimated_cost="0.000200",
+                           continuation_budgets=[{"max_estimated_cost": "0.000040"}] * 2)
+        agent.exec_as_root, agent.exec_as_agent = AsyncMock(), AsyncMock()
+        environment = SimpleNamespace(upload_file=AsyncMock(), exec=AsyncMock(), download_file=AsyncMock())
+        first = budget_terminal()
+        first["result"]["usage"] = priced_usage(strict=True)
+        second = copy.deepcopy(first)
+        if changed_session:
+            second["result"].update(session_id="another-session", usage=priced_usage(strict=True))
+        third = budget_terminal()
+        third["result"].update(status="completed", exit_code=0, terminal_reason="completed", error=None,
+                               usage=priced_usage(strict=True))
+        if completed:
+            second["result"].update(status="completed", exit_code=0, terminal_reason="completed", error=None)
+        records = [first, second, third]
+        commands = []
+
+        async def execute(**kwargs):
+            commands.append(kwargs["command"])
+            return SimpleNamespace(return_code=records[len(commands) - 1]["result"]["exit_code"])
+
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(records[len(commands) - 1]) + "\n")
+
+        environment.exec.side_effect, environment.download_file.side_effect = execute, download
+        context = AgentContext()
+        with self.assertRaises(ValueError):
+            await agent.run("original instruction", environment, context)
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(agent._total_estimated_spent, Decimal("0.000030000000"))
+        self.assertEqual(json.loads((agent.logs_dir / "yhc.segment-0000.jsonl").read_text()), first)
+        self.assertEqual(json.loads((agent.logs_dir / "yhc.jsonl").read_text()), second)
+        self.assertFalse((agent.logs_dir / "yhc.segment-0001.jsonl").exists())
+        self.assertEqual(context.metadata["yhc"]["continuation"]["segments"], 2)
+        if not changed_session:
+            self.assertNotIn("usage", context.metadata["yhc"])
+            self.assertIsNone(context.n_input_tokens)
+
     async def test_strict_completed_receipt_over_dispatched_limit_is_rejected(self):
         path = self.root / "upper-prices.json"
         path.write_text(json.dumps(price_card(window="upper_bound", api_model="deepseek-v4-flash")))
