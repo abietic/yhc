@@ -118,6 +118,19 @@ test('native dialogs own Escape before an open sheet', () => {
   assert.equal(shouldCloseSheetOnEscape('Escape', false, null), false);
 });
 
+test('sheet close controls do not animate inherited visibility before focus', async () => {
+  const css = await readFile(new URL('../../internal/webui/assets/styles.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.sheet-close\s*\{([^}]*)\}/);
+  assert.ok(rule, 'close controls need their own transition properties');
+  const declaration = rule[1].match(/transition-property:\s*([^;]+);/);
+  assert.ok(declaration, 'inherited visibility must not use the generic button transition');
+  const properties = declaration[1].split(',').map(value => value.trim());
+  assert.equal(properties.includes('visibility'), false);
+  assert.equal(properties.includes('all'), false);
+  assert.ok(properties.includes('opacity'));
+  assert.ok(properties.includes('transform'));
+});
+
 test('renderer shell exposes labelled panels and opt-in inspector geometry', async () => {
   const [html, app, css] = await Promise.all([
     readFile(new URL('../../internal/webui/assets/index.html', import.meta.url), 'utf8'),
