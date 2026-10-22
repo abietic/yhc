@@ -994,7 +994,7 @@ func runCanonicalAfterToolRound(
 		})
 		toolResults = append(toolResults, message)
 	}
-	for _, message := range input.skillPrefetch.Collect() {
+	for _, message := range input.skillPrefetch.CollectMissing(input.messagesForQuery) {
 		input.yield(QueryEvent{
 			Type:              EventAttachment,
 			AttachmentMessage: message,
