@@ -300,6 +300,16 @@ summary:focus-visible {
   display: none;
 }
 
+.sheet-close {
+  /* Inherit panel visibility without delaying the initial focus request. */
+  transition-property: background-color, color, border-color, box-shadow, opacity, transform;
+}
+
+.sheet-open .sheet-close {
+  /* An opening parent's visibility transition must not defer focus eligibility. */
+  visibility: visible;
+}
+
 .new-session {
   display: flex;
   align-items: center;

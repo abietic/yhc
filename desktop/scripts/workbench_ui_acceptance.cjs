@@ -2020,6 +2020,48 @@ async function main() {
         } finally { await page.close(); }
       });
     }
+    for (const surface of ['desktop', 'web']) {
+      await check(`${surface} animated sheet close controls keep immediate focus eligibility`, async () => {
+        const hadReducedMotion = Object.hasOwn(stored, 'reduced_motion');
+        const previousReducedMotion = stored.reduced_motion;
+        let page;
+        try {
+          stored.reduced_motion = false;
+          page = await createPage(surface, true);
+          await page.emulateMedia({ reducedMotion: 'no-preference' });
+          await page.setViewportSize({ width: 741, height: 844 });
+          assert.equal(await page.evaluate(() => document.documentElement.dataset.reducedMotion), 'false');
+          for (const [toggle, close, region] of [['navigation-toggle', 'navigation-close', 'navigation'], ['inspector-toggle', 'inspector-close', 'inspector']]) {
+            const properties = await page.locator('#' + close).evaluate(node => getComputedStyle(node).transitionProperty.split(',').map(value => value.trim()));
+            assert.equal(properties.includes('visibility'), false);
+            assert.equal(properties.includes('all'), false);
+            await page.waitForFunction(id => getComputedStyle(document.getElementById(id)).visibility === 'hidden', region);
+            const openingVisibility = await page.evaluate(({ toggle, close }) => {
+              document.getElementById(toggle).click();
+              return getComputedStyle(document.getElementById(close)).visibility;
+            }, { toggle, close });
+            assert.equal(openingVisibility, 'visible', 'opening visibility must not wait for another frame');
+            await focusIs(page, close);
+            await page.keyboard.press('Escape');
+            await focusIs(page, toggle);
+            for (let cycle = 0; cycle < 2; cycle++) {
+              await page.waitForFunction(id => getComputedStyle(document.getElementById(id)).visibility === 'hidden', region);
+              await page.locator('#' + toggle).click();
+              await focusIs(page, close);
+              await page.keyboard.press('ControlOrMeta+,');
+              await page.locator('#settings-dialog[open]').waitFor();
+              await page.locator('#settings-close').click();
+              await page.waitForFunction(() => !document.querySelector('#settings-dialog').open);
+              await focusIs(page, toggle);
+            }
+          }
+        } finally {
+          if (hadReducedMotion) stored.reduced_motion = previousReducedMotion;
+          else delete stored.reduced_motion;
+          await page?.close();
+        }
+      });
+    }
     await check('Closing Settings restores the current conversation draft and messages', async () => {
       await conversation.locator('#prompt').fill('Keep this unfinished request while I check the settings.');
       const text = await conversation.locator('#timeline').textContent();
