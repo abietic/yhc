@@ -1,7 +1,7 @@
 # Desktop / Web 体验与共享配置
 
 **Status:** current
-**Last verified:** 2026-10-11
+**Last verified:** 2026-10-22
 
 > **Ownership:** 当前工作台的信息架构、设置交互与实现边界。
 > 运行时与信任边界见 [Desktop architecture](desktop-workbench.md)，
@@ -34,6 +34,11 @@ prompt_suggestions。schema 返回类型、分组、默认值、来源、选项�
 project 范围只能由主机拥有的 live session 解析。API 不接收文件路径，继续保护
 bearer、同源 cookie 与 CSRF。null patch 删除本范围覆盖，false / 0 则是实际值；
 revision 冲突拒绝覆盖，未知字段在文件事务中保留但不返回给前端。
+
+浏览器整数编辑先检查十进制数字原文，再限制为 JavaScript safe integer；无效输入
+保留在草稿、提示具体字段并禁用 Save，不能把已舍入的值或旧 patch 写回。若 snapshot
+中的整数已超出浏览器安全范围，整个默认值表单拒绝显示数值或保存，只保留 Reload /
+Close。可经 TUI / CLI 修改后再加载；这不是 Go 配置整数范围的缩减。
 
 ## 设置动线
 

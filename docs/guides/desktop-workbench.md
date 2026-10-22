@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-10-11
+**Last verified:** 2026-10-22
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -225,6 +225,12 @@ the model/effort/access controls beside the composer still change only the
 current session. Theme and reduced-motion preferences preview their effective
 values in the current interface. Saving `prompt_suggestions` does not itself
 generate or send a prompt.
+
+Enter integer fields using nonnegative decimal digits, at most
+`9007199254740991` in this browser editor. Invalid input stays in the draft and
+disables Save with field-specific guidance. If a stored or effective integer
+exceeds that browser-safe range, use TUI/CLI to change it and Reload; the form
+does not display or save a rounded value. The shared Go setting range is unchanged.
 
 On normal-height windows, only the settings body scrolls. Short windows fall
 back to scrolling the whole dialog so an invalid field remains reachable.

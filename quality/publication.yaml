@@ -5645,37 +5645,37 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 144
+      line: 145
       rule_id: private-url
       match_sha256: 8605b8ba08c20d42f9e455151871896d0e0de980596286fb736d11eec013e2a4
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 155
+      line: 156
       rule_id: credential-assignment
       match_sha256: be8a446e7fcc02bc94158f4bf97fe65b04e25a05b698b121229a30d13dcf6ceb
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 492
+      line: 529
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 493
+      line: 530
       rule_id: private-url
       match_sha256: 3e6eaf6ba5439370afdf75eb9fcb5e2a2ad980bd4c2dca895bc60eb4916dcbd9
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 562
+      line: 599
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 616
+      line: 653
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 650
+      line: 687
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture

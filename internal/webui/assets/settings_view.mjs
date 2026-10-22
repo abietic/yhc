@@ -43,6 +43,22 @@ export function usesSettingChoices(field) {
   return field.choice_only === true || (field.options || []).length > 0 || field.type === 'boolean';
 }
 
+function hasUnsafeIntegerSnapshot(snapshot) {
+  return Object.values(snapshot.fields || {}).some(field => field.type === 'integer' &&
+    [field.stored_value, field.effective_value].some(value => value !== null && value !== undefined && !Number.isSafeInteger(value)));
+}
+
+function isInvalidIntegerInput(value) {
+  const parsed = Number(value);
+  // Check the raw decimal integer before coercion: a fractional spelling such
+  // as 9007199254740991.1 can round into an otherwise safe integer.
+  return !/^\d+$/.test(value) || !Number.isSafeInteger(parsed);
+}
+
+function integerInputGuidance(label) {
+  return 'Check ' + label + ': enter a nonnegative browser-safe integer using decimal digits.';
+}
+
 // Only selected-scope overrides (including pending resets) can be replaced.
 // Go owns the constraint list; inherited effective values are not deletions.
 export function settingsSelectionConflicts(key, snapshot, changes) {
@@ -69,6 +85,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   const dialog = $('settings-dialog');
   let snapshot = null;
   let changes = {};
+  let invalidIntegerFields = new Set();
   let scope = 'user';
   let sessionID;
   let trigger;
@@ -81,8 +98,8 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   let lastSelectionKey;
 
   function updateActions() {
-    const dirty = Object.keys(changes).length > 0;
-    $('settings-save').disabled = busy || !dirty || !snapshot || conflicted;
+    const dirty = Object.keys(changes).length > 0 || invalidIntegerFields.size > 0;
+    $('settings-save').disabled = busy || !dirty || !snapshot || conflicted || invalidIntegerFields.size > 0;
     $('settings-save').textContent = busy ? 'Working…' : 'Save changes';
     $('settings-scope').disabled = busy;
     $('settings-reload').disabled = busy;
@@ -90,7 +107,14 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     $('settings-credentials-open').disabled = busy;
     for (const update of fieldEditors) update();
     for (const button of $('settings-categories').querySelectorAll('button')) button.disabled = busy || !snapshot;
-    if (!busy && !conflicted && snapshot) $('settings-status').textContent = dirty ? 'Unsaved changes' : 'Up to date';
+    if (!busy && !conflicted && snapshot) {
+      if (invalidIntegerFields.size) {
+        const key = invalidIntegerFields.values().next().value;
+        $('settings-status').textContent = integerInputGuidance(snapshot.fields[key].label);
+      } else {
+        $('settings-status').textContent = dirty ? 'Unsaved changes' : 'Up to date';
+      }
+    }
   }
 
   function change(key, value) {
@@ -203,7 +227,12 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     let pendingReset = null;
     input.oninput = () => {
       // An empty number is not an intentional unlimited (0) setting.
-      if (field.type === 'integer' && input.value === '') { updateActions(); return; }
+      if (field.type === 'integer') {
+        if (isInvalidIntegerInput(input.value)) {
+          invalidIntegerFields.add(key); delete changes[key]; updateActions(); return;
+        }
+        invalidIntegerFields.delete(key);
+      }
       change(key, field.type === 'boolean' ? input.value === 'true' : field.type === 'integer' ? Number(input.value) : input.value);
     };
     const controls = node('div', 'setting-controls');
@@ -213,6 +242,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     pending.setAttribute('role', 'status');
     function updateEditor() {
       const edited = input.value !== initialValue || Object.hasOwn(changes, key);
+      input.setAttribute('aria-invalid', String(invalidIntegerFields.has(key)));
       input.hidden = pendingReset !== null;
       // A queued deletion must not submit or validate the old editor value.
       input.disabled = busy || pendingReset !== null || input.dataset.unavailableChoices === 'true';
@@ -226,6 +256,8 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
         input.value = pendingReset.value;
         if (pendingReset.hasChange) changes[key] = pendingReset.change;
         else delete changes[key];
+        if (pendingReset.invalid) invalidIntegerFields.add(key);
+        else invalidIntegerFields.delete(key);
         const { start, end, direction } = pendingReset;
         pendingReset = null; updateActions();
         if (!input.disabled) {
@@ -235,11 +267,12 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
       } else if (hasOverride) {
         // Keep raw DOM input as well as the tracked patch: a blank integer is
         // invalid and deliberately has no new numeric patch value.
-        pendingReset = { value: input.value, hasChange: Object.hasOwn(changes, key), change: changes[key], start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection };
+        pendingReset = { value: input.value, hasChange: Object.hasOwn(changes, key), change: changes[key], invalid: invalidIntegerFields.has(key), start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection };
+        invalidIntegerFields.delete(key);
         change(key, null);
       } else {
         input.value = initialValue;
-        delete changes[key]; updateActions();
+        invalidIntegerFields.delete(key); delete changes[key]; updateActions();
         if (!input.disabled) input.focus();
       }
     };
@@ -249,11 +282,17 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
 
   async function load() {
     const request = ++generation;
-    busy = true; conflicted = false; snapshot = null; changes = {}; lastSelectionKey = undefined;
+    busy = true; conflicted = false; snapshot = null; changes = {}; invalidIntegerFields = new Set(); lastSelectionKey = undefined;
     updateActions(); $('settings-status').textContent = 'Loading shared configuration…';
     try {
       const result = await api('getSettings', { scope, sessionID });
       if (request !== generation) return;
+      if (hasUnsafeIntegerSnapshot(result)) {
+        $('settings-fields').replaceChildren(node('p', 'settings-load-error', 'integer outside browser-safe range; use TUI/CLI then reload'));
+        $('settings-categories').replaceChildren(); renderedFields = {}; fieldEditors = [];
+        $('settings-status').textContent = 'integer outside browser-safe range; use TUI/CLI then reload';
+        return;
+      }
       snapshot = result; renderFields();
     } catch (error) {
       if (request !== generation) return;
@@ -266,12 +305,12 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   }
 
   async function discardAllowed() {
-    return Object.keys(changes).length === 0 || await confirmDiscard();
+    return (Object.keys(changes).length === 0 && invalidIntegerFields.size === 0) || await confirmDiscard();
   }
 
   async function close() {
     if (busy || !await discardAllowed()) return;
-    generation++; changes = {}; lastSelectionKey = undefined; dialog.close(); trigger?.focus();
+    generation++; changes = {}; invalidIntegerFields = new Set(); lastSelectionKey = undefined; dialog.close(); trigger?.focus();
   }
 
   // Native form validation must reveal a hidden invalid field before focusing it.
@@ -281,12 +320,15 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     event.preventDefault();
     category = groupID(snapshot.fields[row.dataset.setting]);
     $('settings-search').value = ''; filter();
-    $('settings-status').textContent = 'Check ' + snapshot.fields[row.dataset.setting].label + ' before saving.';
+    const key = row.dataset.setting;
+    $('settings-status').textContent = invalidIntegerFields.has(key)
+      ? integerInputGuidance(snapshot.fields[key].label)
+      : 'Check ' + snapshot.fields[key].label + ' before saving.';
     event.target.focus();
   }, true);
   $('settings-form').onsubmit = async (event) => {
     event.preventDefault();
-    if (busy || !snapshot || conflicted || !Object.keys(changes).length) return;
+    if (busy || !snapshot || conflicted || invalidIntegerFields.size > 0 || !Object.keys(changes).length) return;
     busy = true; updateActions();
     let selectionFocus;
     try {

@@ -26,6 +26,7 @@ let revision = 1;
 const stored = { theme: 'daybreak', provider: 'openai' };
 const projectStored = {};
 const settingsWrites = [];
+let unsafeIntegerSnapshot = false;
 let creations = 0;
 let sessionSettingWrites = 0;
 let turnRequests = 0;
@@ -55,8 +56,8 @@ function settings(scope = 'user') {
   return { scope, revision: String(revision).padStart(64, '0'), fields: Object.fromEntries(
     Object.entries(definitions).map(([key, definition]) => [key, {
       ...definition,
-      stored_value: Object.hasOwn(selected, key) ? selected[key] : null,
-      effective_value: Object.hasOwn(projectStored, key) ? projectStored[key] : Object.hasOwn(stored, key) ? stored[key] : definition.default,
+      stored_value: unsafeIntegerSnapshot && key === 'max_turns' ? JSON.parse('9007199254740993') : Object.hasOwn(selected, key) ? selected[key] : null,
+      effective_value: unsafeIntegerSnapshot && key === 'max_turns' ? JSON.parse('9007199254740993') : Object.hasOwn(projectStored, key) ? projectStored[key] : Object.hasOwn(stored, key) ? stored[key] : definition.default,
       source: Object.hasOwn(projectStored, key) ? 'project' : Object.hasOwn(stored, key) ? 'user' : 'default',
       overridden: scope === 'user' && Object.hasOwn(projectStored, key),
       apply: 'new_session',
@@ -312,17 +313,29 @@ async function main() {
       await savedGLM.locator('#provider-cancel').click();
     });
     await savedGLM.close();
-    await check('Integer settings reject blank, negative and fractional values before saving', async () => {
+    await check('Integer settings reject invalid values before saving or direct submit', async () => {
       await desktop.locator('#settings-open').click();
       await desktop.getByRole('button', { name: 'Agent behavior', exact: true }).click();
       await desktop.locator('#setting-max_turns').waitFor();
       await desktop.locator('#setting-max_turns').fill('3');
       const before = revision;
+      const writesBefore = settingsWrites.length;
       for (const invalid of ['', '-1', '1.5']) {
         await desktop.locator('#setting-max_turns').fill(invalid);
         assert.equal(await desktop.locator('#setting-max_turns').evaluate(node => node.checkValidity()), false);
-        await desktop.locator('#settings-save').click();
+        assert.equal(await desktop.locator('#settings-save').isDisabled(), true);
+        assert.equal(await desktop.locator('#settings-status').textContent(), 'Check Maximum turns: enter a nonnegative browser-safe integer using decimal digits.');
+        await desktop.locator('#settings-form').evaluate(async form => form.onsubmit({ preventDefault() {} }));
         assert.equal(revision, before);
+        assert.equal(settingsWrites.length, writesBefore, 'invalid integer does not send a PATCH');
+      }
+      for (const invalid of ['9007199254740993', '1.0000000000000001', '9007199254740991.1', '1e3']) {
+        await desktop.locator('#setting-max_turns').fill(invalid);
+        assert.equal(await desktop.locator('#settings-save').isDisabled(), true);
+        assert.equal(await desktop.locator('#settings-status').textContent(), 'Check Maximum turns: enter a nonnegative browser-safe integer using decimal digits.');
+        await desktop.locator('#settings-form').evaluate(async form => form.onsubmit({ preventDefault() {} }));
+        assert.equal(revision, before);
+        assert.equal(settingsWrites.length, writesBefore, 'unsafe integer spelling does not send a PATCH');
       }
       await desktop.locator('#setting-max_turns').fill('4');
       await desktop.locator('#settings-save').click();
@@ -330,6 +343,30 @@ async function main() {
       assert.equal(stored.max_turns, 4);
       await desktop.locator('#settings-close').click();
       await desktop.waitForFunction(() => !document.querySelector('#settings-dialog').open);
+    });
+    await check('Desktop and web Settings fail closed for unsafe integer snapshots', async () => {
+      const writesBefore = settingsWrites.length;
+      unsafeIntegerSnapshot = true;
+      try {
+        for (const surface of ['desktop', 'web']) {
+          const page = await createPage(surface);
+          try {
+            await page.locator('#settings-open').click();
+            await page.waitForFunction(() => document.querySelector('#settings-status').textContent === 'integer outside browser-safe range; use TUI/CLI then reload');
+            assert.equal(await page.locator('[data-setting="max_turns"]').count(), 0);
+            assert.equal(await page.locator('#settings-save').isDisabled(), true);
+            assert.equal(await page.locator('#settings-reload').isEnabled(), true);
+            assert.equal(await page.locator('#settings-close').isEnabled(), true);
+            await page.locator('#settings-reload').click();
+            await page.waitForFunction(() => document.querySelector('#settings-status').textContent === 'integer outside browser-safe range; use TUI/CLI then reload');
+            await page.locator('#settings-close').click();
+            await page.waitForFunction(() => !document.querySelector('#settings-dialog').open);
+          } finally { await page.close(); }
+        }
+        assert.equal(settingsWrites.length, writesBefore, 'unsafe snapshots cannot produce a PATCH');
+      } finally {
+        unsafeIntegerSnapshot = false;
+      }
     });
     const web = await createPage('web');
     await check('Web welcome exposes browsing instead of a dead new-session button', async () => {
@@ -571,7 +608,7 @@ async function main() {
               await reset('max_turns').click();
               assert.equal(await editor.locator('#setting-max_turns').inputValue(), '');
               assert.equal(await editor.locator('#setting-max_turns').evaluate(node => node.checkValidity()), false);
-              await editor.locator('#settings-save').click();
+              assert.equal(await editor.locator('#settings-save').isDisabled(), true);
               assert.equal(settingsWrites.length, writesBefore);
               await reset('max_turns').click();
               failNextSettingsWrite = true;
@@ -737,7 +774,8 @@ async function main() {
         await categories.locator('#setting-max_turns').fill('');
         await categories.getByRole('button', { name: 'Model & provider', exact: true }).click();
         const before = revision;
-        await categories.locator('#settings-save').click();
+        assert.equal(await categories.locator('#settings-save').isDisabled(), true);
+        assert.equal(await categories.locator('#settings-form').evaluate(form => form.reportValidity()), false);
         assert.equal(revision, before);
         assert.equal(await categories.locator('#setting-max_turns').isVisible(), true);
         await focusIs(categories, 'setting-max_turns');
@@ -820,7 +858,8 @@ async function main() {
               await editor.locator('#setting-prompt_suggestions').selectOption('false');
               await editor.getByRole('button', { name: 'Appearance & input', exact: true }).click();
               assert.equal(await editor.locator('[data-setting="max_turns"]').isVisible(), false);
-              await editor.locator('#settings-save').click();
+              assert.equal(await editor.locator('#settings-save').isDisabled(), true);
+              assert.equal(await editor.locator('#settings-form').evaluate(form => form.reportValidity()), false);
               const invalidState = await editor.locator('#setting-max_turns').evaluate(node => {
                 const r = node.getBoundingClientRect();
                 const footer = document.querySelector('.settings-footer').getBoundingClientRect();
@@ -831,6 +870,8 @@ async function main() {
               assert.equal(await editor.getByRole('button', { name: 'Agent behavior', exact: true }).getAttribute('aria-pressed'), 'true');
               assert.equal(await editor.locator('#settings-dialog').evaluate(node => node.scrollWidth <= node.clientWidth), true);
               await screenshot(editor, `settings-task-short-invalid-${surface}`);
+              await editor.locator('#setting-max_turns').fill('0');
+              assert.equal(await editor.locator('#settings-save').isEnabled(), true);
               await editor.locator('#settings-save').focus();
               assert.equal(await editor.locator('#settings-save').evaluate(node => {
                 const r = node.getBoundingClientRect();
