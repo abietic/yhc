@@ -5805,7 +5805,7 @@ privacy:
       purpose: synthetic-security-fixture
 
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 728
+      line: 771
       rule_id: private-url
       match_sha256: c4cbbc68a2b2421c95c56026ce85a6db91048719f4e139ab893616d36b4783f5
       purpose: synthetic-security-fixture
