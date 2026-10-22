@@ -58,6 +58,13 @@ flowchart LR
 | worktree child | preserves user/runtime sources, replaces project-source skills from the worktree's `.claude/skills` and `.agents/skills`, and fails launch if that reload fails |
 | prefetch | each query iteration matches the latest user message against skill name, tags, and description words; bounded matches become user-role meta attachments |
 
+Prefetch accepts one valid `Start` per instance before launching its background
+worker. `Collect` waits for that accepted worker to publish its result, even
+when discovery has not been scheduled yet; concurrent collectors share the
+same completed result. Collecting before a valid start returns empty without
+disabling a later start. Collection uses the existing runtime safe point and
+does not add a model round or invoke supporting files.
+
 Prefetch renders one detached skill generation so its source locator and body
 cannot come from different registry updates. The existing 4,000-byte budget
 includes the complete source header and body, followed by a truncation marker
