@@ -65,6 +65,18 @@ same completed result. Collecting before a valid start returns empty without
 disabling a later start. Collection uses the existing runtime safe point and
 does not add a model round or invoke supporting files.
 
+At the after-tool safe point, `SkillPrefetch.CollectMissing` compares candidates
+with the current model-visible context. An existing user-role meta attachment
+with kind `skill_prefetch`, the same skill name, and identical rendered content
+suppresses another delivery. Ordinary user text and other attachment kinds do
+not suppress guidance. Filtering leaves the existing history and completed
+discovery result unchanged.
+
+This check uses the active context after compaction, rather than a sticky
+session-level delivery flag. Guidance removed from that context can be delivered
+again; a changed rendered source header or body also remains eligible. Existing
+historical duplicates are retained rather than rewritten.
+
 Prefetch renders one detached skill generation so its source locator and body
 cannot come from different registry updates. The existing 4,000-byte budget
 includes the complete source header and body, followed by a truncation marker
@@ -145,7 +157,7 @@ resume, while programmatic registry updates appear on the next discovery read.
 | default load precedence | [`LoadDefaultSkills`](../../../engine/skills/skills.go) |
 | worktree project generation | [`SkillRegistry.ForProjectDirectory`](../../../engine/skills/skills.go), [`SubAgentExecutor.ExecuteAgent`](../../../engine/subagent.go) |
 | engine binding | [`engine.QueryEngineConfig.SkillRegistry`](../../../engine/engine.go), [`NewQueryEngine`](../../../engine/engine.go), [query projection](../../../engine/engine.go) |
-| query-time prefetch | [`NewSkillPrefetch`](../../../engine/round_lifecycle.go), [safe-point collection](../../../engine/round_lifecycle.go) |
+| query-time prefetch | [`NewSkillPrefetch`](../../../engine/round_lifecycle.go) starts discovery; [`SkillPrefetch.CollectMissing`](../../../engine/prefetch/skill.go) filters visible duplicates at the [after-tool safe point](../../../engine/round_lifecycle.go) |
 | matching and attachment construction | [`engine/prefetch/skill.go`](../../../engine/prefetch/skill.go), [`engine/prefetch/skill.go`](../../../engine/prefetch/skill.go) |
 | resume reload | [`engine/session_restore.go`](../../../engine/session_restore.go) |
 

@@ -73,6 +73,46 @@ func (p *SkillPrefetch) Collect() []*schema.Message {
 	return p.result
 }
 
+// CollectMissing returns only skill attachments absent from the active context.
+// Check at collection because compaction may remove an attachment after Start.
+// Neither the history nor the shared discovery result is modified.
+func (p *SkillPrefetch) CollectMissing(messages []*schema.Message) []*schema.Message {
+	seen := make(map[skillPrefetchKey]struct{})
+	for _, message := range messages {
+		if key, ok := prefetchedSkillKey(message); ok {
+			seen[key] = struct{}{}
+		}
+	}
+	var missing []*schema.Message
+	for _, message := range p.Collect() {
+		if key, ok := prefetchedSkillKey(message); ok {
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		missing = append(missing, message)
+	}
+	return missing
+}
+
+type skillPrefetchKey struct {
+	name    string
+	content string
+}
+
+func prefetchedSkillKey(message *schema.Message) (skillPrefetchKey, bool) {
+	if message == nil || message.Role != schema.User ||
+		message.Extra["is_meta"] != true || message.Extra["attachment_kind"] != "skill_prefetch" {
+		return skillPrefetchKey{}, false
+	}
+	name, ok := message.Extra["skill_name"].(string)
+	if !ok || name == "" {
+		return skillPrefetchKey{}, false
+	}
+	return skillPrefetchKey{name: name, content: message.Content}, true
+}
+
 func (p *SkillPrefetch) findMatchingSkills(userMsg string) []*schema.Message {
 	available := p.registry.List()
 	if len(available) == 0 {
