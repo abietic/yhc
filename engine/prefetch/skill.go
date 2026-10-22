@@ -14,7 +14,8 @@ import (
 // matching skill content as attachment messages for the query context.
 type SkillPrefetch struct {
 	registry *skills.SkillRegistry
-	once     sync.Once
+	mu       sync.Mutex
+	done     chan struct{}
 	result   []*schema.Message
 }
 
@@ -40,14 +41,35 @@ func (p *SkillPrefetch) Start(messages []*schema.Message) {
 		return
 	}
 
-	go p.once.Do(func() {
+	// Claim the start before returning. Collect must not be able to consume
+	// the worker's right to run while that goroutine is still unscheduled.
+	p.mu.Lock()
+	if p.done != nil {
+		p.mu.Unlock()
+		return
+	}
+	done := make(chan struct{})
+	p.done = done
+	p.mu.Unlock()
+
+	go func() {
+		defer close(done)
 		p.result = p.findMatchingSkills(lastUserMsg)
-	})
+	}()
 }
 
-// Collect returns prefetched skill content as attachment messages.
+// Collect waits for an accepted Start and returns its attachment messages.
+// Without a Start it returns nil, leaving a later valid Start available.
 func (p *SkillPrefetch) Collect() []*schema.Message {
-	p.once.Do(func() {}) // ensure Start completed
+	p.mu.Lock()
+	done := p.done
+	p.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	// Closing done publishes result to every collector. There is only one
+	// worker per instance and the result is not changed after publication.
+	<-done
 	return p.result
 }
 
