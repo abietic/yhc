@@ -345,7 +345,8 @@ async function backendRequest(pathname, method = 'GET', body) {
   if (!bootstrap) throw new Error('backend is unavailable');
   const headers = { Authorization: `Bearer ${bootstrap.token}` };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const isSettingsRequest = new URL(pathname, bootstrap.url).pathname === '/v1/settings';
+  const requestPath = new URL(pathname, bootstrap.url).pathname;
+  const isSettingsRequest = requestPath === '/v1/settings' || requestPath === '/v1/permission-settings';
   const controller = isSettingsRequest ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), SETTINGS_REQUEST_TIMEOUT_MS) : null;
   try {

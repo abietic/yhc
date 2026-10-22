@@ -2054,6 +2054,28 @@ summary:focus-visible {
 .settings-category:hover { background: var(--control); color: var(--text); }
 .settings-category[aria-pressed="true"] { color: var(--accent); border-color: var(--border); background: var(--accent-soft); }
 .settings-mcp { padding: 18px 30px 24px; }
+.settings-permissions { padding: 18px 30px 24px; }
+.permission-rule-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-block: 16px; }
+.permission-rule-controls select { flex: 1; min-width: 150px; }
+.permission-rule-controls button, .permission-rule-row button, .permission-rule-editor button { padding: 8px 12px; }
+.permission-rule-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.permission-rule-row code { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.permission-rule-row p { grid-column: 2; margin: 0; }
+.permission-rule-row > button { grid-column: 3; grid-row: 1 / span 2; }
+.permission-rule-draft { margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.permission-rule-draft:empty { display: none; }
+.permission-rule-draft .permission-rule-row code { grid-column: 1 / span 2; }
+.permission-rule-editor { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.permission-rule-editor input, .permission-rule-editor select { min-width: 0; width: 100%; }
+.permission-rule-editor input, .permission-rule-editor select, .permission-rule-controls select { min-height: 38px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--canvas); font-size: 12px; }
+.permission-rule-editor button, .permission-rule-editor p { grid-column: 2; }
+.settings-permission-actions { width: 100%; }
+.settings-permission-actions .permission-rule-controls { margin: 0; justify-content: flex-end; }
+.settings-permission-actions .permission-footer-summary { flex: 1 1 100px; }
+@media (max-width: 760px) {
+  .settings-permission-actions .permission-footer-summary { flex-basis: 100%; }
+  .settings-permissions { padding-inline: 18px; }
+}
 .mcp-heading, .mcp-server-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mcp-heading h3, .mcp-server-heading h4 { margin: 0; overflow-wrap: anywhere; }
 .mcp-heading button { flex-shrink: 0; }

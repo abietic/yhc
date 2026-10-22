@@ -566,6 +566,23 @@ provider/tool dialect.
 - [`Server.handleMCPInventory`](../../server/appserver/mcp_inventory.go) projects
   the owned session's existing MCP snapshot only; [`createMCPInventoryView`](../../internal/webui/assets/mcp_inventory.mjs)
   renders that observation without a connection-management control.
+- [`Server.permissionSettingsContext`](../../server/appserver/permission_settings.go)
+  binds workspace-rule edits to an owned session instead of a renderer path;
+  [`permission.RuleSettingsPatchContext`](../../engine/permission/settings.go)
+  owns the revision-bound atomic file update.
+- [`QueryEngine.ApplyPermissionRuleSettings`](../../engine/permission_settings.go)
+  serializes the shared execution-control check with persistence and refuses to
+  turn a pending interaction or Plan approval into a broader permission.
+  Its persist-to-install path and file-watcher reloads share one engine-owned
+  mutex from disk read through cache installation, so an older watcher read
+  cannot overwrite a newly applied rule. Watcher shutdown and MCP lifecycle
+  waits remain outside that mutex.
+- [`backendRequest`](../../desktop/main.cjs) and the
+  [browser transport](../../internal/webui/assets/transport.mjs) apply the same
+  15-second deadline to permission reads and writes through JSON-body completion.
+  The [permission controller](../../internal/webui/assets/permission_settings.mjs)
+  retires the old revision after conflicts or uncertain writes; only an explicit
+  Reload with draft-discard confirmation permits editing a fresh snapshot.
 
 - [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
   renderer's draft-clearing fence, not Turn execution or retry idempotency.
