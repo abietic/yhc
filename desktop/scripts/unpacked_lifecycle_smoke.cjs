@@ -1504,6 +1504,21 @@ function validatePlatformOptions(
   return normalized;
 }
 
+function buildUnpackedAppArguments(profilePath, {
+  platform = process.platform,
+  disableSandbox = false,
+} = {}) {
+  // Fixture cookie encryption must not use the user's login keychain.
+  return [
+    ...(disableSandbox ? ['--no-sandbox'] : []),
+    ...(platform === 'darwin' ? ['--use-mock-keychain'] : []),
+    '--disable-gpu',
+    '--remote-debugging-address=127.0.0.1',
+    '--remote-debugging-port=0',
+    `--user-data-dir=${profilePath}`,
+  ];
+}
+
 function parseArguments(argv) {
   let appPath;
   let crashActiveTurn = false;
@@ -1804,13 +1819,10 @@ async function runSmoke(
         workspace: activeTurnWorkspace,
       });
     }
-    const appArguments = [
-      ...(options.disableSandbox ? ['--no-sandbox'] : []),
-      '--disable-gpu',
-      '--remote-debugging-address=127.0.0.1',
-      '--remote-debugging-port=0',
-      `--user-data-dir=${path.join(temporaryRoot, 'profile')}`,
-    ];
+    const appArguments = buildUnpackedAppArguments(path.join(temporaryRoot, 'profile'), {
+      platform: layout.platform,
+      disableSandbox: options.disableSandbox,
+    });
     const activePortPath = path.join(temporaryRoot, 'profile', 'DevToolsActivePort');
     const launchCommand = layout.launcher === 'xvfb' ? xvfbRun : appPath;
     const launchArguments = layout.launcher === 'xvfb'
@@ -2237,6 +2249,7 @@ module.exports = {
   activeTurnProjectionMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
+  buildUnpackedAppArguments,
   closePackagedDesktop,
   combineSmokeFailure,
   crashContainmentMatches,

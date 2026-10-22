@@ -47,6 +47,7 @@ function withoutPrivatePaths(value) {
 export function reducer(state, action) {
   if (!backendAvailable(state) && ![
     'SESSION_SELECT',
+    'WORKBENCH_HOME',
     'SESSION_DRAFT',
   ].includes(action.type)) {
     return state;
@@ -58,6 +59,10 @@ export function reducer(state, action) {
       return upsertSession(state, action.session);
     case 'SESSION_SELECT':
       return state.sessions[action.id] ? { ...state, activeID: action.id } : state;
+    case 'WORKBENCH_HOME':
+      // Empty string is an explicit presentation selection; null means no
+      // selection yet. Neither closes, cancels or detaches a runtime session.
+      return { ...state, activeID: '' };
     case 'SESSION_REMOVE':
       return removeSession(state, action.id);
     case 'SESSION_NOTICE':
@@ -539,7 +544,7 @@ function applyDurableSessionPage(state, rows) {
   }
   return {
     ...state,
-    activeID: state.activeID || firstID || null,
+    activeID: state.activeID ?? (firstID || null),
     sessions,
   };
 }
@@ -558,7 +563,7 @@ function upsertSession(state, incoming) {
   });
   return {
     ...state,
-    activeID: state.activeID || session.id,
+    activeID: state.activeID ?? session.id,
     sessions: { ...state.sessions, [session.id]: session },
   };
 }
@@ -978,7 +983,7 @@ function applyEvent(state, event) {
   ) {
     return {
       ...state,
-      activeID: state.activeID || event.session_id,
+      activeID: state.activeID ?? event.session_id,
       sessions: { ...state.sessions, [event.session_id]: next },
     };
   }
@@ -1113,7 +1118,7 @@ function applyEvent(state, event) {
   }
   return {
     ...state,
-    activeID: state.activeID || event.session_id,
+    activeID: state.activeID ?? event.session_id,
     sessions: { ...state.sessions, [event.session_id]: next },
   };
 }

@@ -58,6 +58,7 @@ import { canReadTaskExplorer, createTaskExplorerView } from './task_explorer.mjs
 import { createAgentExecutionDetailView, executionDetailEligibility } from './agent_execution_detail.mjs';
 import { createAgentConversationView } from './agent_conversation.mjs';
 import { applyAppearance, createSettingsView } from './settings_view.mjs';
+import { homeConfigurationSummary, recentWorkbenchSessions } from './workbench_home.mjs';
 import {
   buildIdentityViewModel,
   interactionViewModel,
@@ -240,7 +241,7 @@ function dispatch(action, scrollMode = 'preserve') {
   if (persistenceEnabled) persist();
   render();
   if (before.activeID !== state.activeID || scrollMode === 'bottom') {
-    timeline.scrollTop = timeline.scrollHeight;
+    timeline.scrollTop = activeSession(state) ? timeline.scrollHeight : 0;
     return;
   }
   if (scrollMode === 'prepend') {
@@ -287,6 +288,7 @@ async function refreshSharedSettings() {
     sharedSettings = snapshot;
     applyAppearance(snapshot);
     renderProviderSetup();
+    if (!activeSession(state)) renderEmptyState();
   } catch { /* Do not interrupt conversation when preferences are unavailable. */ }
 }
 
@@ -392,6 +394,7 @@ function handleViewportResize() {
 
 function render() {
   const current = activeSession(state);
+  $('workbench-home').setAttribute('aria-current', current ? 'false' : 'page');
   const backendReady = backendAvailable(state);
   settingsView.updateContext();
   $('open-web').disabled = !backendReady;
@@ -678,12 +681,10 @@ function renderEmptyState() {
   if (!providerButton || !workspaceButton || !copy) return;
 
   const backendReady = backendAvailable(state);
-  timeline.querySelector('#empty-title').textContent = surface === 'web' ? 'Pick up where you left off.' : 'What are we building?';
+  timeline.querySelector('#empty-title').textContent = 'Your workbench';
   providerButton.hidden = !providerSetup.setupAvailable;
   providerButton.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
-  providerButton.textContent = providerSetup.configured
-    ? 'Review provider setup'
-    : 'Configure provider';
+  providerButton.textContent = providerSetup.configured ? 'Manage credentials' : 'Add credentials';
   providerButton.className = 'quiet';
   workspaceButton.hidden = surface === 'web';
   workspaceButton.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
@@ -692,26 +693,57 @@ function renderEmptyState() {
     ? 'Creating session…'
     : 'Open workspace';
   workspaceButton.className = 'primary';
-  copy.textContent = !backendReady
-    ? BACKEND_UNAVAILABLE_NOTICE
-    : surface === 'web'
-    ? 'Select a saved session to read its history or attach your next request.'
-    : (providerSetup.hostGuidance
-      ? 'Open a workspace on this host to start a coding session.'
-    : (providerSetup.launchReady
-      ? 'Open a folder to start coding with your existing configuration.'
-      : 'Open a folder to use its configuration, or connect a provider first.'));
+  copy.textContent = !backendReady ? BACKEND_UNAVAILABLE_NOTICE
+    : 'Continue a session or open a workspace. Browsing saved history does not start the agent.';
   providerButton.onclick = () => openProviderDialog();
   workspaceButton.onclick = () => beginSessionCreation();
-  timeline.querySelector('.welcome-guide').hidden = surface === 'web';
-  if (surface === 'web') {
-    providerButton.hidden = false;
-    providerButton.textContent = 'Browse sessions';
-    providerButton.className = 'primary';
-    providerButton.onclick = () => {
-      if (window.innerWidth < 760) openSheet('navigation', providerButton);
-      else $('session-filter').focus();
-    };
+
+  const summary = homeConfigurationSummary(surface, sharedSettings?.fields, providerSetup);
+  $('home-model-title').textContent = summary.title;
+  $('home-model-detail').textContent = summary.detail;
+  $('home-model-selection').replaceChildren(...summary.entries.map(entry => {
+    const row = element('div', 'home-model-entry');
+    const value = element('dd', '', entry.value);
+    value.append(element('small', 'home-source', entry.source));
+    row.append(element('dt', '', entry.label), value);
+    return row;
+  }));
+  const defaults = timeline.querySelector('[data-home-action="settings"]');
+  defaults.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
+  defaults.onclick = () => void settingsView.open(defaults);
+  $('home-start-title').textContent = surface === 'web' ? 'Continue on this host' : 'Open your project';
+  $('home-start-detail').textContent = surface === 'web'
+    ? 'Folders can only be opened in the Desktop App. Choose a session to read its history or send your next request.'
+    : 'Choose a local folder. The runtime resolves its project overrides and credentials before opening the session.';
+  const browse = trigger => {
+    if (window.innerWidth < 760) openSheet('navigation', trigger);
+    else $('session-filter').focus();
+  };
+  const browseButton = timeline.querySelector('[data-home-action="browse"]');
+  browseButton.hidden = surface !== 'web';
+  browseButton.onclick = () => browse(browseButton);
+  const all = timeline.querySelector('[data-home-action="all-sessions"]');
+  all.onclick = () => browse(all);
+  const catalogState = catalog?.snapshot();
+  const recent = recentWorkbenchSessions(Object.values(state.sessions));
+  $('home-session-status').textContent = catalogState?.error ||
+    (catalogState?.loading ? 'Loading saved sessions…' : recent.length ? '' : 'No sessions yet. Open a workspace to begin, or browse sessions on the host.');
+  const focused = document.activeElement?.dataset.homeSessionId;
+  $('home-sessions').replaceChildren(...recent.map(session => {
+    const row = element('button', 'home-session');
+    row.type = 'button';
+    row.dataset.homeSessionId = session.id;
+    row.append(element('strong', '', session.title || 'Untitled'));
+    row.append(element('span', 'home-session-project', session.workspace_label || 'Workspace unavailable'));
+    row.append(element('small', 'home-session-state', session.attention ? 'Needs attention'
+      : session.live ? ({running: 'Working', stopping: 'Stopping', restoring: 'Opening'})[session.status] || 'Live session'
+      : 'Saved history'));
+    row.onclick = () => { selectSession(session.id).catch(showError); };
+    return row;
+  }));
+  if (focused) {
+    const row = [...$('home-sessions').children].find(item => item.dataset.homeSessionId === focused);
+    (row || all).focus({ preventScroll: true });
   }
 }
 
@@ -2300,6 +2332,7 @@ async function synchronizeSession(summary, draft = '', durable = true) {
 
 async function restore() {
   const saved = readPersisted();
+  if (saved.activeID === '') dispatch({ type: 'WORKBENCH_HOME' });
   const descriptorsByID = new Map(
     saved.sessions.map((descriptor) => [descriptor.id, descriptor]),
   );
@@ -2633,6 +2666,10 @@ function beginSessionCreation() {
 
 $('new-session').onclick = () => beginSessionCreation();
 $('provider-settings').onclick = () => openProviderDialog();
+$('workbench-home').onclick = () => {
+  if (openSheetKind === 'navigation') closeSheet();
+  dispatch({ type: 'WORKBENCH_HOME' }, 'bottom');
+};
 $('settings-open').onclick = (event) => void settingsView.open(event.currentTarget);
 $('workbench-notice-dismiss').onclick = () => dismissWorkbenchNotice();
 $('toggle-session-history').onclick = () => {

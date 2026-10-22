@@ -18,6 +18,7 @@ const {
   activeTurnProjectionMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
+  buildUnpackedAppArguments,
   closePackagedDesktop,
   combineSmokeFailure,
   crashContainmentMatches,
@@ -44,6 +45,23 @@ const {
   terminateProcessGroup,
   validatePlatformOptions,
 } = require('../scripts/unpacked_lifecycle_smoke.cjs');
+
+test('native smoke launch args isolate Darwin keychain and preserve launch controls', () => {
+  const profile = '/private/tmp/isolated native profile';
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    for (const disableSandbox of [false, true]) {
+      const args = buildUnpackedAppArguments(profile, {platform, disableSandbox});
+      assert.deepEqual(args, [
+        ...(disableSandbox ? ['--no-sandbox'] : []),
+        ...(platform === 'darwin' ? ['--use-mock-keychain'] : []),
+        '--disable-gpu',
+        '--remote-debugging-address=127.0.0.1',
+        '--remote-debugging-port=0',
+        `--user-data-dir=${profile}`,
+      ]);
+    }
+  }
+});
 
 test('DevTools discovery accepts one ephemeral loopback browser endpoint', () => {
   const endpoint = 'ws://127.0.0.1:43127/devtools/browser/01234567-89ab-cdef-0123-456789abcdef';
