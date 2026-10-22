@@ -7,7 +7,7 @@ const asset = (name) => new URL(`../../internal/webui/assets/${name}`, import.me
 test('renderer exposes a semantic Desktop provider setup and reachable history', async () => {
   const html = await readFile(asset('index.html'), 'utf8');
   assert.match(html, /class="mark"[^>]*>Y<\/span>/);
-  assert.match(html, /class="empty-mark"[^>]*>YHC<\/span>/);
+  assert.match(html, /class="empty-mark"[^>]*>Y<\/span>/);
   assert.doesNotMatch(html, /class="(?:empty-)?mark"[^>]*>E<\/span>/);
   assert.match(html, /id="provider-settings"/);
   assert.match(html, /id="toggle-session-history"/);
@@ -18,6 +18,42 @@ test('renderer exposes a semantic Desktop provider setup and reachable history',
   assert.match(html, /id="provider-api-key"[^>]*type="password"/s);
   assert.match(html, /id="provider-api-key"[^>]*autocomplete="off"/s);
   assert.match(html, /id="provider-form"/);
+  assert.match(html, /id="settings-open"[^>]*type="button"/);
+  assert.match(html, /<dialog id="settings-dialog"[^>]*aria-labelledby="settings-title"/);
+  assert.match(html, /id="settings-close"[^>]*aria-label="Close settings"/);
+  assert.match(html, /id="settings-search"[^>]*type="search"/);
+  assert.match(html, /id="settings-scope"/);
+  assert.match(html, /id="settings-status"[^>]*role="status"/);
+});
+
+test('Web onboarding offers browsing and does not expose a dead new-session action', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const creationControls = app.slice(
+    app.indexOf('function renderSessionCreationControls()'),
+    app.indexOf('function option('),
+  );
+  const empty = app.slice(
+    app.indexOf('function renderEmptyState()'),
+    app.indexOf('function sessionDotClass('),
+  );
+  assert.match(creationControls, /button\.hidden = surface === 'web'/);
+  assert.match(creationControls, /button\.disabled = creating \|\| !backendAvailable\(state\)/);
+  assert.match(empty, /workspaceButton\.hidden = surface === 'web'/);
+  assert.match(empty, /providerButton\.textContent = 'Browse sessions'/);
+  assert.match(empty, /openSheet\('navigation', providerButton\)/);
+  assert.match(empty, /\$\('session-filter'\)\.focus\(\)/);
+});
+
+test('a healthy welcome screen reports its connection and saved sessions explain Send', async () => {
+  const [app, html] = await Promise.all([
+    readFile(asset('app.mjs'), 'utf8'),
+    readFile(asset('index.html'), 'utf8'),
+  ]);
+  assert.match(app, /!surface \? 'Connecting' : backendReady \? 'Connected' : 'Offline'/);
+  assert.match(app, /Send a message to continue this saved session\./);
+  assert.doesNotMatch(app, /Select this saved session to resume it\./);
+  assert.match(html, /id="workbench-notice"[^>]*role="alert"/);
+  assert.match(html, /id="prompt"[^>]*aria-label=/s);
 });
 
 test('renderer keeps provider key DOM-local and clears it after submit', async () => {
@@ -35,10 +71,21 @@ test('renderer keeps provider key DOM-local and clears it after submit', async (
     /workspaceButton\.disabled = !backendReady \|\| sessionCreation\.busy\(\)/,
   );
   assert.match(app, /createDurableHistoryLoader/);
-  assert.match(app, /shouldDeferWorkspaceForProvider/);
-  assert.match(app, /pendingWorkspace\.defer\(workspace\)/);
+  assert.match(app, /pendingWorkspace\.attempt\(workspace\)/);
+  assert.doesNotMatch(app, /shouldDeferWorkspaceForProvider/);
   assert.doesNotMatch(app, /state\.(?:provider|setup)[^\n]*(?:apiKey|PROV_API_KEY)/);
   assert.doesNotMatch(app, /localStorage[^\n]*(?:apiKey|provider-api-key|PROV_API_KEY)/);
+});
+
+test('workspace creation lets the runtime resolve shared configuration before requesting credentials', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const create = app.slice(
+    app.indexOf('async function createSession()'),
+    app.indexOf('async function loadExecutionSettings('),
+  );
+  assert.match(create, /await selectWorkspace\(\)/);
+  assert.match(create, /pendingWorkspace\.attempt\(workspace\)/);
+  assert.doesNotMatch(create, /providerSetup|openProviderDialog|pendingWorkspace\.defer/);
 });
 
 test('new Desktop sessions activate before target-scoped hydration', async () => {

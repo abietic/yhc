@@ -142,6 +142,14 @@ function executionUpdate(payload) {
 }
 
 function desktopOperation(operation, payload = {}) {
+  if (operation === 'getSettings' || operation === 'updateSettings') {
+    const scope = payload.scope || 'user';
+    if (!['user', 'project'].includes(scope)) throw new TypeError('invalid settings scope');
+    const query = new URLSearchParams({ scope });
+    if (payload.sessionID) query.set('session_id', requireSessionID(payload.sessionID));
+    return [`/v1/settings?${query}`, operation === 'getSettings' ? 'GET' : 'PATCH',
+      operation === 'getSettings' ? undefined : { revision: payload.revision, changes: payload.changes }];
+  }
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
     case 'health':

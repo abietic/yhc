@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-30
+**Last verified:** 2026-10-11
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > runtime-queue ownership, renderer/server trust boundaries, and user-visible
@@ -108,6 +108,33 @@ arbitrary replacement binary can still claim the expected version and build
 fields.
 
 ## Renderer projections
+
+The shared Desktop/Web renderer defaults to navigation plus conversation;
+Activity and Changes are optional. Narrow navigation/inspector drawers are
+mutually exclusive modal regions with inert backgrounds, Escape and focus
+return. An expanded wide inspector is non-modal. Empty Web state offers browsing,
+not a local workspace picker; a healthy backend with no session is Connected,
+not Offline. The composer is hidden until a session can use it.
+
+Settings use the shared Go schema and transaction service rather than a second
+configuration loader. User scope works without a session; project scope is
+resolved from a host-owned live session. The editor keeps revision-bound drafts,
+choice-only catalogs, explicit model-conflict confirmation and reversible
+override deletion. Its category/search filters preserve input nodes and drafts.
+Credentials are not part of the settings snapshot. See the
+[experience contract](workbench-experience.md) and
+[settings service](../guides/configuration-and-providers.md#edit-persistent-defaults).
+
+The optional preload `apiResult` channel carries public HTTP errors as plain
+data, preserving `message`, bounded `code` and HTTP `status` across contextBridge.
+The renderer constructs its own Error so a settings 409 remains a conflict.
+It shares the original operation allowlist and trusted-sender check; neither
+channel admits renderer-supplied workspace creation. Unknown host/network
+errors return fixed guidance, not stack/cause details. The legacy `api`
+success and rejection behavior remains compatible.
+
+Current execution effort choices come from `QueryEngine.ReasoningEffortOptions`,
+the same runtime owner used by TUI, rather than an AppServer provider table.
 
 The renderer keeps a bounded session state and reconciles snapshots with SSE.
 Messages are rendered with the locally vendored Marked parser into an explicit

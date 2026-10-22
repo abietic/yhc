@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-08-30
+**Last verified:** 2026-10-22
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -9,8 +9,8 @@
 
 ## Outcome
 
-The Desktop workbench gives one local three-panel view of sessions, chat, and
-semantic activity. It starts a loopback YHC app-server, keeps the renderer out
+The Desktop workbench puts session navigation beside the conversation, with
+Activity and Changes available on demand. It starts a loopback YHC app-server, keeps the renderer out
 of direct filesystem and process access, and sends normal coding turns through
 the existing `QueryEngine` only after the user submits a prompt. While one Turn
 is active, the same composer can durably queue later text prompts without
@@ -196,6 +196,56 @@ browser-only transport can also be started explicitly with:
 ```bash
 yhc serve app --web
 ```
+
+## Edit shared defaults
+
+Open **Settings** in the sidebar or press Cmd/Ctrl+comma. Desktop and the Web
+companion use the same Go settings service as TUI `/settings` and CLI
+`yhc config settings`. Credentials remain separate; the editor neither returns
+keys nor tests a provider connection.
+
+1. Choose **User defaults**, or **Workspace overrides** when a live session is
+   open. Project scope is resolved from that session, not a page-supplied path.
+2. The editor starts with model settings. Filter by category or search across
+   categories; changing filters preserves field nodes and unsaved edits.
+3. Inspect the stored value, effective value and source before editing. A model
+   profile is selected from the host's catalog, never typed into an empty list.
+   Switching between a profile and explicit model overrides requires a
+   confirmation before one revision-bound save removes conflicting overrides.
+   A non-editable blocking setting must be changed outside this editor.
+4. **Reset override** / **Use user default** stages a deletion, including for
+   stored false or zero values. **Undo reset** restores the prior draft. No
+   file changes until **Save changes**.
+5. A concurrent-write conflict preserves the draft and requires an explicit
+   **Reload**; YHC does not silently overwrite another writer. Leaving a dirty
+   editor also requires confirmation.
+
+Model, provider, turn limit and permission defaults apply to new sessions;
+the model/effort/access controls beside the composer still change only the
+current session. Theme and reduced-motion preferences preview their effective
+values in the current interface. Saving `prompt_suggestions` does not itself
+generate or send a prompt.
+
+Enter integer fields using nonnegative decimal digits, at most
+`9007199254740991` in this browser editor. Invalid input stays in the draft and
+disables Save with field-specific guidance. If a stored or effective integer
+exceeds that browser-safe range, use TUI/CLI to change it and Reload; the form
+does not display or save a rounded value. The shared Go setting range is unchanged.
+
+On normal-height windows, only the settings body scrolls. Short windows fall
+back to scrolling the whole dialog so an invalid field remains reachable.
+Credential guidance is a native expandable section near model settings;
+Desktop can open its existing secure-profile dialog after confirming any
+discarded draft, while Web only shows host-side guidance.
+
+The Desktop vault is a fallback, not a second defaults store: shared routing
+and existing host credentials take precedence, and a saved key is reused only
+for the same provider and endpoint. Opening a workspace lets the runtime
+resolve that configuration; missing vault metadata alone does not block it.
+
+See [configuration](configuration-and-providers.md#edit-persistent-defaults)
+for the nine-field whitelist and [experience boundaries](../architecture/workbench-experience.md)
+for ownership and verification limits.
 
 ## Use a session
 
