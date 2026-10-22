@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-09
 
 **Ownership:** `engine.QueryEngine` owns event identity and publication;
 [`RuntimeStateStore`](../../../../engine/runtime_state.go) owns bounded
@@ -270,6 +270,18 @@ event or sequence. P24.2b adds `usage_recorded`,
 `usage_admission_released`, `usage_limited`, and `budget_limited` phases plus
 detached coverage and pending-admission fields. Those diagnostics contain
 durable identity only and grant no provider, budget, or mutation capability.
+The reducer accepts all four phases after checking their logical-turn identity
+and phase-specific evidence: settled usage has no pending admission, a budget
+limit has a reached non-zero cap, and usage limitation retains the matching
+pending admission and `pending` coverage. Child usage may settle after the root
+terminal or while another root turn runs. These out-of-band diagnostics update
+only the Goal snapshot and ordered event projection; they do not reopen a
+terminal, clear a live message, take over the active turn, or change Agent
+execution state. A missing thread starts idle rather than inventing a running
+turn. Unknown phases and conflicting evidence leave the projection and
+sequence unchanged. A rejected final Goal projection carries its current
+reducer cause in the fail-closed terminal; the first `RuntimeStateError` remains
+available independently.
 
 ### Active-time projection
 
@@ -516,6 +528,9 @@ disabled state, permissions, and runtime assembly.
 - Goal ordering, replay, waits, persistence failure, guards, and exact child
   generation:
   [`engine/goal_runtime_test.go`](../../../../engine/goal_runtime_test.go)
+- Goal provider settlement projection, usage replay/negative evidence, and
+  final rejection diagnostics:
+  [`engine/goal_lifecycle_projection_test.go`](../../../../engine/goal_lifecycle_projection_test.go)
 - thread catalog: [`TestThreadCatalogClassifiesLiveReplayQuestionAndEvictedModes`](../../../../engine/thread_catalog_test.go)
 - attention filtering: [`TestThreadAttentionSnapshotsAreUnresolvedOnlyAndRetainTerminalOwner`](../../../../engine/thread_attention_test.go)
 - permission path: [`TestCoordinatorPermissionEventDoesNotDuplicateAdapterDialog`](../../../../internal/tui/permission_lifecycle_test.go)
