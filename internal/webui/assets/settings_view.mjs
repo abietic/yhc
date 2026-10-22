@@ -1,3 +1,5 @@
+import {createMCPInventoryView} from './mcp_inventory.mjs';
+
 function node(tag, className, text) {
   const item = document.createElement(tag);
   if (className) item.className = className;
@@ -96,6 +98,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   let renderedFields = {};
   let fieldEditors = [];
   let lastSelectionKey;
+  const mcpView = createMCPInventoryView({root: $('settings-mcp'), api, context});
 
   function updateActions() {
     const dirty = Object.keys(changes).length > 0 || invalidIntegerFields.size > 0;
@@ -106,7 +109,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     $('settings-close').disabled = busy;
     $('settings-credentials-open').disabled = busy;
     for (const update of fieldEditors) update();
-    for (const button of $('settings-categories').querySelectorAll('button')) button.disabled = busy || !snapshot;
+    for (const button of $('settings-categories').querySelectorAll('button')) button.disabled = busy || (!snapshot && button.dataset.settingsCategory !== 'mcp');
     if (!busy && !conflicted && snapshot) {
       if (invalidIntegerFields.size) {
         const key = invalidIntegerFields.values().next().value;
@@ -140,20 +143,20 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     }
     const credentialsVisible = settingsCredentialsMatches(category, query);
     $('settings-credentials').hidden = !credentialsVisible;
+    const mcpVisible = query ? 'mcp servers tools extensions runtime connection status'.includes(query) : category === 'mcp';
+    $('settings-fields').hidden = category === 'mcp' && !query;
+    $('settings-scope-label').hidden = category === 'mcp' && !query;
+    $('settings-save').hidden = category === 'mcp' && !query;
+    $('settings-reload').hidden = category === 'mcp' && !query;
+    mcpView.setVisible(dialog.open && mcpVisible);
     const noResults = $('settings-fields').querySelector('.settings-no-results');
-    if (noResults) noResults.hidden = visible > 0 || credentialsVisible;
+    if (noResults) noResults.hidden = visible > 0 || credentialsVisible || mcpVisible;
   }
 
-  function renderFields() {
-    const fields = $('settings-fields');
-    fields.replaceChildren();
-    fieldEditors = [];
-    renderedFields = snapshot.fields;
-    const groups = settingsGroups(renderedFields);
-    if (!groups.some(group => group.id === category)) category = 'all';
+  function renderNavigation(groups) {
     const navigation = $('settings-categories');
     navigation.replaceChildren();
-    for (const group of [{id: 'all', label: 'All settings'}, ...groups]) {
+    for (const group of [{id: 'all', label: 'All settings'}, ...groups, {id: 'mcp', label: 'Extensions · MCP'}]) {
       const button = node('button', 'settings-category', group.label);
       button.type = 'button'; button.dataset.settingsCategory = group.id;
       button.setAttribute('aria-controls', 'settings-body');
@@ -164,6 +167,16 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
       };
       navigation.append(button);
     }
+  }
+
+  function renderFields() {
+    const fields = $('settings-fields');
+    fields.replaceChildren();
+    fieldEditors = [];
+    renderedFields = snapshot.fields;
+    const groups = settingsGroups(renderedFields);
+    if (category !== 'mcp' && !groups.some(group => group.id === category)) category = 'all';
+    renderNavigation(groups);
     for (const [index, group] of groups.entries()) {
       const panel = node('section', 'settings-group-panel');
       panel.dataset.settingsGroup = group.id;
@@ -283,13 +296,14 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
   async function load() {
     const request = ++generation;
     busy = true; conflicted = false; snapshot = null; changes = {}; invalidIntegerFields = new Set(); lastSelectionKey = undefined;
+    renderNavigation([]);
     updateActions(); $('settings-status').textContent = 'Loading shared configuration…';
     try {
       const result = await api('getSettings', { scope, sessionID });
       if (request !== generation) return;
       if (hasUnsafeIntegerSnapshot(result)) {
         $('settings-fields').replaceChildren(node('p', 'settings-load-error', 'integer outside browser-safe range; use TUI/CLI then reload'));
-        $('settings-categories').replaceChildren(); renderedFields = {}; fieldEditors = [];
+        renderNavigation([]); renderedFields = {}; fieldEditors = [];
         $('settings-status').textContent = 'integer outside browser-safe range; use TUI/CLI then reload';
         return;
       }
@@ -297,7 +311,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     } catch (error) {
       if (request !== generation) return;
       $('settings-fields').replaceChildren(node('p', 'settings-load-error', error.message));
-      $('settings-categories').replaceChildren(); renderedFields = {}; fieldEditors = [];
+      renderNavigation([]); renderedFields = {}; fieldEditors = [];
       $('settings-status').textContent = 'Could not load settings. Reload to retry.';
     } finally {
       if (request === generation) { busy = false; updateActions(); }
@@ -310,7 +324,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
 
   async function close() {
     if (busy || !await discardAllowed()) return;
-    generation++; changes = {}; invalidIntegerFields = new Set(); lastSelectionKey = undefined; dialog.close(); trigger?.focus();
+    generation++; changes = {}; invalidIntegerFields = new Set(); lastSelectionKey = undefined; dialog.close(); mcpView.setVisible(false); trigger?.focus();
   }
 
   // Native form validation must reveal a hidden invalid field before focusing it.
@@ -374,7 +388,7 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
     scope = $('settings-scope').value; await load();
   };
   $('settings-credentials-open').onclick = async () => {
-    if (!busy && await discardAllowed()) { changes = {}; dialog.close(); manageCredentials(); }
+    if (!busy && await discardAllowed()) { changes = {}; dialog.close(); mcpView.setVisible(false); manageCredentials(); }
   };
 
   return {
@@ -398,5 +412,6 @@ export function createSettingsView({ api, context, confirmDiscard, confirmModelS
       dialog.showModal(); $('settings-search').focus(); await load();
     },
     isOpen: () => dialog.open,
+    updateContext: () => mcpView.updateContext(),
   };
 }

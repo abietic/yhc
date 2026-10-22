@@ -86,6 +86,8 @@ function fixture(result) {
   const form = add('settings-form', 'form');
   add('settings-fields');
   add('settings-categories');
+  add('settings-mcp');
+  add('settings-scope-label');
   add('settings-save', 'button');
   const scope = add('settings-scope', 'select'); scope.value = 'user'; scope.append(new Node('option')); scope.childNodes[0].value = 'project';
   add('settings-reload', 'button');
@@ -100,7 +102,7 @@ function fixture(result) {
   const calls = [];
   const view = createSettingsView({
     api: async (operation, input) => { calls.push([operation, input]); return result; },
-    context: () => ({ sessionID: '', workspace: '', manageCredentials: false, legacyProfile: false }),
+    context: () => ({ sessionID: '', workspace: '', backendReady: true, manageCredentials: false, legacyProfile: false }),
     confirmDiscard: async () => true,
   });
   return { document, priorDocument, elements, form, view, calls, restore: () => { globalThis.document = priorDocument; } };
@@ -139,6 +141,19 @@ test('unsafe JSON-decoded integer snapshot is fail-closed without displaying a r
     assert.equal(elements.get('settings-fields').querySelector('[data-setting]'), null);
     assert.equal(elements.get('settings-save').disabled, true);
     await form.onsubmit({ preventDefault() {} });
+    assert.deepEqual(calls, [['getSettings', { scope: 'user', sessionID: '' }]]);
+  });
+});
+
+test('unsafe shared defaults keep independent MCP diagnostics reachable without writing', async () => {
+  await withView(snapshot(JSON.parse('9007199254740993')), async ({ elements, calls }) => {
+    const category = elements.get('settings-categories').querySelectorAll('button').find(button => button.dataset.settingsCategory === 'mcp');
+    assert.ok(category);
+    assert.equal(category.disabled, false);
+    category.onclick();
+    assert.equal(elements.get('settings-mcp').hidden, false);
+    assert.equal(elements.get('settings-mcp').querySelector('.mcp-status').textContent, 'Open a live session to inspect its MCP servers.');
+    assert.equal(elements.get('settings-save').disabled, true);
     assert.deepEqual(calls, [['getSettings', { scope: 'user', sessionID: '' }]]);
   });
 });

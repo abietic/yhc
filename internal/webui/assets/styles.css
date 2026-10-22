@@ -2053,6 +2053,19 @@ summary:focus-visible {
 .settings-category { padding: 8px 10px; color: var(--text-muted); background: transparent; font-size: 12px; border: 1px solid transparent; }
 .settings-category:hover { background: var(--control); color: var(--text); }
 .settings-category[aria-pressed="true"] { color: var(--accent); border-color: var(--border); background: var(--accent-soft); }
+.settings-mcp { padding: 18px 30px 24px; }
+.mcp-heading, .mcp-server-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mcp-heading h3, .mcp-server-heading h4 { margin: 0; overflow-wrap: anywhere; }
+.mcp-heading button { flex-shrink: 0; }
+.mcp-status, .mcp-empty, .mcp-limit { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.mcp-servers { display: grid; gap: 12px; margin-top: 18px; }
+.mcp-server { border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+.mcp-state { border: 1px solid var(--border); border-radius: 20px; padding: 3px 8px; font-size: 11px; flex-shrink: 0; }
+.mcp-diagnostic { font-size: 12px; line-height: 1.6; }
+.mcp-tools summary { cursor: pointer; color: var(--accent); font-size: 12px; padding-block: 6px; }
+.mcp-tool { padding-block: 10px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.mcp-tool code { font-size: 12px; }
+.mcp-tool p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
 .settings-group-heading { margin: 16px 0 0; color: var(--text-muted); font-size: 12px; font-weight: 550; }
 .settings-group-panel[hidden], .setting-row[hidden] { display: none; }
 .setting-row { display: grid; grid-template-columns: minmax(0,1fr) 220px; gap: 32px; padding: 16px 0; border-bottom: 1px solid var(--border-subtle); }

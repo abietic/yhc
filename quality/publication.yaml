@@ -4219,27 +4219,27 @@ privacy:
       match_sha256: 6da19f5057f0dd1085db2213932a52da09a1df6b9194447953db96f7e48663a7
       purpose: synthetic-security-fixture
     - path: internal/webui/assets/app.mjs
-      line: 1702
+      line: 1704
       rule_id: credential-assignment
       match_sha256: 7be5b39a6e1069827d150a278fb65d3c2390f796795f7bb7de3965780d39150c
       purpose: runtime-loopback
     - path: internal/webui/assets/index.html
-      line: 437
+      line: 438
       rule_id: private-url
       match_sha256: 53aee2ca762b9729196afeefd22bd5abdcbdf87a0f29cc0dd2f6902a22e73e4f
       purpose: documentation-example
     - path: internal/webui/assets/transport.mjs
-      line: 307
+      line: 310
       rule_id: credential-assignment
       match_sha256: '08837d97bf9c4c8062f6312eee5c277996dbb6d1adcca148a60259ec9aa9359e'
       purpose: runtime-loopback
     - path: internal/webui/assets/transport.mjs
-      line: 319
+      line: 322
       rule_id: credential-assignment
       match_sha256: 1291cff3f746c18486d68c284cffa0dfde36e68ec5ceda1f05c0b211f28fd88e
       purpose: runtime-loopback
     - path: internal/webui/assets/transport.mjs
-      line: 379
+      line: 382
       rule_id: credential-assignment
       match_sha256: 00c84d869449a83a830b1177e502e6afa6920c634bb22259c0ae1b0a70c048f7
       purpose: runtime-loopback
@@ -5054,7 +5054,7 @@ privacy:
       match_sha256: 4c5dc9b7708905f77f5e5d16316b5dfb425e68cb326dcd55a860e90a7707031e
       purpose: synthetic-security-fixture
     - path: server/appserver/server.go
-      line: 586
+      line: 587
       rule_id: bearer-token
       match_sha256: b9d90628453938c578c7f826de5e5bd2bcac29e10c5526888384ba74fcea563e
       purpose: runtime-loopback
@@ -5645,37 +5645,37 @@ privacy:
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 252
+      line: 264
       rule_id: private-url
       match_sha256: 8605b8ba08c20d42f9e455151871896d0e0de980596286fb736d11eec013e2a4
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 281
+      line: 293
       rule_id: credential-assignment
       match_sha256: be8a446e7fcc02bc94158f4bf97fe65b04e25a05b698b121229a30d13dcf6ceb
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 727
+      line: 800
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 728
+      line: 801
       rule_id: private-url
       match_sha256: 3e6eaf6ba5439370afdf75eb9fcb5e2a2ad980bd4c2dca895bc60eb4916dcbd9
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 797
+      line: 870
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 851
+      line: 924
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
     - path: desktop/scripts/workbench_ui_acceptance.cjs
-      line: 885
+      line: 958
       rule_id: private-url
       match_sha256: ca596ae86d2e18746b0c83440bfa88150cb12b64e2a32554882cdfb442c2fd69
       purpose: synthetic-security-fixture
@@ -5758,6 +5758,12 @@ privacy:
       line: 180
       rule_id: private-url
       match_sha256: 3c412fb9cbe6e9d7d723f46728c637596f8b4dc6be4fc7e17883627fd9c5b1b9
+      purpose: synthetic-security-fixture
+
+    - path: desktop/test/mcp_inventory.test.mjs
+      line: 20
+      rule_id: credential-assignment
+      match_sha256: 4791fb6ac9403c0e197015a34fa2bba123cca92849afe6a5d5c5b6ca7874ee0f
       purpose: synthetic-security-fixture
 
 dependencies:

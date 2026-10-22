@@ -166,6 +166,9 @@ function parseSSEFrames(input, emit) {
 function operationPath(operation, payload = {}) {
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
+    case 'getMCPInventory':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('MCP inventory requires only a session id');
+      return [`/v1/sessions/${id()}/mcp-inventory`, 'GET'];
     case 'getSettings':
     case 'updateSettings': {
       const scope = payload.scope || 'user';

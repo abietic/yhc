@@ -297,6 +297,14 @@ execution is replay-only, pre-dispatch, incomplete, or has changed since the
 read began, return to Tasks and refresh instead of assuming a different Agent's
 data is equivalent.
 
+### View current MCP availability
+
+The MCP panel reports the selected live session's current servers, exposed
+tools, diagnostics, and revision. It is read-only: use the normal shared
+configuration and session lifecycle to change MCP setup. This screen neither
+authorizes a connection nor toggles, reconnects, refreshes, or restarts a
+server at runtime.
+
 An ordinary Send awaiting its admission reply does not prevent further typing.
 The reply clears only its untouched original draft. Later edits remain in their
 own session, even when edited back to the same text. Failure keeps the current

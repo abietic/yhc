@@ -50,6 +50,8 @@ const stored = { theme: 'daybreak', provider: 'openai' };
 const projectStored = {};
 const settingsWrites = [];
 let unsafeIntegerSnapshot = false;
+let mcpReads = 0;
+let mcpMode = 'normal';
 let creations = 0;
 let sessionSettingWrites = 0;
 let turnRequests = 0;
@@ -88,6 +90,16 @@ function settings(scope = 'user') {
   ) };
 }
 function operation(op, input = {}, conversation = false) {
+  if (op === 'getMCPInventory') {
+    mcpReads++;
+    if (mcpMode === 'error') return {fixtureError: true, status: 503, code: 'fixture_unavailable', message: '/private/synthetic-mcp-error'};
+    return {session_id: input.sessionID, revision: '18446744073709551615', source: 'runtime', hidden_servers: 0, hidden_tools: 0,
+      servers: mcpMode === 'empty' ? [] : [
+        {name: 'Documentation', source: 'runtime-manager', status: 'connected', health: 'healthy', diagnostic: '', truncated: false, hidden_tools: 0,
+          tools: [{name: 'search', description: '<script>window.__mcpUnsafe = true</script> <SCRIPT>window.__mcpUnsafe = true</SCRIPT>', truncated: false}]},
+        {name: 'Unavailable server', source: 'runtime-manager', status: 'failed', health: 'unavailable', diagnostic: 'connect_failed', tools: [], hidden_tools: 3, truncated: false},
+      ]};
+  }
   if (op === 'getTaskExplorer') {
     taskReads++;
     if (failNextTasks) {
@@ -342,7 +354,7 @@ async function main() {
       }
       if (end === 'command-completions') { reply(res, operation('completeCommand', await readBody(req))); return; }
       if (end === 'execution-settings' && req.method === 'PATCH') sessionSettingWrites++;
-      const mapped = { transcript: 'transcriptPage', snapshot: 'snapshot', 'execution-settings': 'getExecutionSettings', 'review-diff': 'reviewDiff', turns: 'startTurn' }[end];
+      const mapped = { transcript: 'transcriptPage', snapshot: 'snapshot', 'execution-settings': 'getExecutionSettings', 'review-diff': 'reviewDiff', turns: 'startTurn', 'mcp-inventory': 'getMCPInventory' }[end];
       if (mapped) { reply(res, operation(mapped, { sessionID: url.pathname.split('/').at(-2) })); return; }
       if (url.pathname === '/favicon.ico') { res.writeHead(204).end(); return; }
       const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
@@ -547,7 +559,7 @@ async function main() {
       unsafeIntegerSnapshot = true;
       try {
         for (const surface of ['desktop', 'web']) {
-          const page = await createPage(surface);
+          const page = await createPage(surface, true);
           try {
             await page.locator('#settings-open').click();
             await page.waitForFunction(() => document.querySelector('#settings-status').textContent === 'integer outside browser-safe range; use TUI/CLI then reload');
@@ -557,6 +569,12 @@ async function main() {
             assert.equal(await page.locator('#settings-close').isEnabled(), true);
             await page.locator('#settings-reload').click();
             await page.waitForFunction(() => document.querySelector('#settings-status').textContent === 'integer outside browser-safe range; use TUI/CLI then reload');
+            const readsBefore = mcpReads;
+            await page.getByRole('button', { name: 'Extensions · MCP', exact: true }).click();
+            await page.locator('.mcp-status').filter({ hasText: 'Read-only snapshot' }).waitFor();
+            assert.equal(mcpReads, readsBefore + 1, 'MCP remains a separate explicit read when defaults are unsafe');
+            assert.equal(await page.locator('[data-setting="max_turns"]').count(), 0);
+            assert.equal(await page.locator('#settings-save').isDisabled(), true);
             await page.locator('#settings-close').click();
             await page.waitForFunction(() => !document.querySelector('#settings-dialog').open);
           } finally { await page.close(); }
@@ -654,6 +672,61 @@ async function main() {
       }
     });
     await settingsTimeout.close();
+    for (const surface of ['desktop', 'web']) {
+      const mcpPage = await createPage(surface, true);
+      await check(`${surface} MCP is a lazy read-only settings category preserving unsaved defaults`, async () => {
+        await mcpPage.locator('.session-row').first().click();
+        await mcpPage.locator('#prompt').waitFor({state: 'visible'});
+        const readsBefore = mcpReads;
+        const writesBefore = settingsWrites.length;
+        await mcpPage.locator('#settings-open').click();
+        await mcpPage.locator('#setting-model').waitFor();
+        assert.equal(mcpReads, readsBefore);
+        await mcpPage.getByRole('button', {name: 'Appearance & input', exact: true}).click();
+        const initialTheme = await mcpPage.locator('#setting-theme').inputValue();
+        const draftTheme = initialTheme === 'daybreak' ? 'polar-night' : 'daybreak';
+        await mcpPage.locator('#setting-theme').selectOption(draftTheme);
+        await mcpPage.getByRole('button', {name: 'Extensions · MCP', exact: true}).click();
+        await mcpPage.locator('.mcp-server').first().waitFor();
+        assert.equal(mcpReads, readsBefore + 1);
+        assert.equal(await mcpPage.locator('#settings-scope-label').isVisible(), false);
+        assert.equal(await mcpPage.locator('#settings-save').isVisible(), false);
+        assert.equal(await mcpPage.locator('.mcp-server').count(), 2);
+        await mcpPage.locator('.mcp-tools summary').click();
+        for (const tag of ['<script>', '<SCRIPT>']) assert.equal((await mcpPage.locator('.mcp-tool').textContent()).includes(tag), true);
+        assert.equal(await mcpPage.locator('#settings-mcp script').count(), 0);
+        assert.equal(await mcpPage.evaluate(() => window.__mcpUnsafe), undefined);
+        assert.match(await mcpPage.locator('#settings-mcp').textContent(), /Connection failed/);
+        await screenshot(mcpPage, `${surface}-mcp-wide`);
+        await mcpPage.setViewportSize({width: 390, height: 844});
+        assert.equal(await mcpPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await screenshot(mcpPage, `${surface}-mcp-narrow`);
+        await mcpPage.getByRole('button', {name: 'Appearance & input', exact: true}).click();
+        assert.equal(await mcpPage.locator('#setting-theme').inputValue(), draftTheme);
+        assert.equal(settingsWrites.length, writesBefore);
+        await mcpPage.locator('#setting-theme').selectOption(initialTheme);
+        await mcpPage.locator('#settings-close').click();
+      });
+      await check(`${surface} MCP search, explicit refresh, empty and safe-error states`, async () => {
+        await mcpPage.setViewportSize({width: 1440, height: 1000});
+        await mcpPage.locator('#settings-open').click();
+        await mcpPage.locator('#setting-model').waitFor();
+        await mcpPage.locator('#settings-search').fill('mcp');
+        await mcpPage.locator('.mcp-server').first().waitFor();
+        mcpMode = 'empty';
+        await mcpPage.locator('#settings-mcp button').click();
+        await mcpPage.locator('.mcp-empty').waitFor();
+        mcpMode = 'error';
+        await mcpPage.locator('#settings-mcp button').click();
+        await mcpPage.waitForFunction(() => document.querySelector('.mcp-status').textContent.includes('Refresh to retry'));
+        assert.equal((await mcpPage.locator('#settings-mcp').textContent()).includes('/private'), false);
+        mcpMode = 'normal';
+        await mcpPage.locator('#settings-mcp button').click();
+        await mcpPage.locator('.mcp-server').first().waitFor();
+        await mcpPage.locator('#settings-close').click();
+      });
+      await mcpPage.context().close();
+    }
     for (const surface of ['desktop', 'web']) {
       const choices = await createPage(surface);
       await check(`${surface} Empty profile catalog stays select-only through edit, save and reload`, async () => {
