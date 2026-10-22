@@ -20,6 +20,21 @@ const heldWrites = [];
 const heldSuggestions = [];
 const heldTurns = [];
 const heldCloses = [];
+const heldTasks = [];
+const heldDetails = [];
+let holdNextDetail = false;
+let failNextDetail = false;
+let detailMode = 'normal';
+const detailReads = [];
+const heldAgentPages = [];
+const agentPageReads = [];
+let holdNextAgentPage = false;
+let failNextAgentPage = false;
+let agentPageMode = 'live_attach';
+let holdNextTasks = false;
+let failNextTasks = false;
+let taskSnapshotMode = 'normal';
+let taskReads = 0;
 let holdNextTurn = false;
 let holdNextClose = false;
 let failNextTurn = false;
@@ -73,9 +88,73 @@ function settings(scope = 'user') {
   ) };
 }
 function operation(op, input = {}, conversation = false) {
+  if (op === 'getTaskExplorer') {
+    taskReads++;
+    if (failNextTasks) {
+      failNextTasks = false;
+      return { fixtureError: true, status: 503, code: 'fixture_unavailable', message: 'Fixture tasks are temporarily unavailable.' };
+    }
+    const work = (board, title) => ({ board_id: board, id: 'same-item', revision: '9007199254740993',
+      order: 1, title, status: 'in_progress', description: 'Read-only canonical board item', owner: 'Builder',
+      blocks: [], blocked_by: [], attention: [] });
+    const execution = (generation) => ({ agent_id: 'same-agent', generation, name: 'Builder', task: 'Verify the task flow',
+      execution_session_id: 'synthetic-child', thread_id: `synthetic-thread-${generation}`,
+      description: 'Exact generation', status: 'running', phase: 'waiting_input', activity: 'Running-looking activity text',
+      display_mode: 'background', observation_ordinal: '0', ordinal_present: false, tool_use_count: 3, token_count: 21,
+      attention: ['permission'], transcript_path: '/private/synthetic-task-data', allowed_actions: ['pause'] });
+    const body = { session_id: input.sessionID, available: taskSnapshotMode !== 'partial',
+      unavailable_reason: taskSnapshotMode === 'partial' ? 'workboard_unavailable' : '', board_id: 'primary-board',
+      revision: { board: '9007199254740993', runtime: '18446744073709551615' },
+      work_items: [work('primary-board', 'Implement task overview'), work('other-board', 'Review task overview')],
+      executions: [execution('9007199254740992'), execution('9007199254740993')],
+      links: [{ board_id: 'primary-board', work_item_id: 'same-item', agent_id: 'same-agent', generation: '9007199254740993', state: 'valid', unavailable_reason: '' }],
+      attention: [], diagnostics: [], hidden: { work_items: {}, executions: { other: 2 }, attention: {}, links: 0,
+        runtime_events_dropped: '0', execution_generations_evicted: '0', hidden_live_executions: '0' },
+    };
+    if (taskSnapshotMode === 'reordered') { body.work_items.reverse(); body.executions.reverse(); }
+    if (taskSnapshotMode === 'partial') body.work_items = [];
+    if (taskSnapshotMode === 'empty') { body.work_items = []; body.executions = []; body.links = []; body.hidden.executions = {}; }
+    return body;
+  }
+  if (op === 'getAgentExecutionDetail') {
+    detailReads.push(input);
+    if (failNextDetail) {
+      failNextDetail = false;
+      return { fixtureError: true, status: 409, code: 'agent_execution_selection_changed', message: '/private/synthetic-detail-path' };
+    }
+    return { session_id: input.sessionID, agent_id: input.agentID, generation: input.generation,
+      execution_session_id: input.executionSessionID, thread_id: detailMode === 'wrong-lineage' ? 'different-thread' : input.threadID,
+      revision: '18446744073709551615', metadata: { name: 'Builder', status: detailMode === 'live' ? 'running' : 'completed',
+        task: 'Verify the exact detail flow', parent_session_id: 'synthetic-parent-session', parent_thread_id: 'synthetic-parent-thread',
+        parent_agent_id: 'synthetic-parent-agent', parent_tool_use_id: 'synthetic-spawn', last_tool_name: 'Bash', tool_use_count: 3, token_count: 21,
+        cwd: '/private/synthetic-detail-path' },
+      output: { requested: input.includeOutput, text: input.includeOutput && detailMode !== 'live'
+        ? `${detailMode === 'long' ? '界'.repeat(30000) : ''}<script>synthetic exact output</script>` : '',
+        truncated: false, error_category: '' }, output_file: '/private/synthetic-detail-path' };
+  }
   if (op === 'promptSuggestion') {
     suggestionRequests++;
     return { session_id: input.sessionID, suggestion: 'run the focused tests' };
+  }
+  if (op === 'getAgentTranscript') {
+    agentPageReads.push(input);
+    if (failNextAgentPage) {
+      failNextAgentPage = false;
+      return { fixtureError: true, status: 409, code: 'agent_transcript_selection_changed', message: '/private/synthetic-page-error' };
+    }
+    const item = (id, content) => ({ id, transcript_entry_id: id, role: 'assistant', content,
+      reasoning_content: 'Synthetic reasoning evidence', tool_call_id: '', tool_name: '', tool_calls: [], prompt_parts: [],
+      completed: true, source: 'durable', replay: agentPageMode !== 'live_attach', truncated: false });
+    const newest = item('agent-newest', '## Exact child conversation\n\nRead-only synthetic child evidence.\n\n<script>not executable</script>');
+    const part = (kind, text, mime = '') => ({ kind, text, mime_type: mime, image_detail: '', size_bytes: 10, width: 0, height: 0 });
+    newest.prompt_parts = [part('text', newest.content), part('image', '', 'image/png'), part('text', 'After media')];
+    return { session_id: input.sessionID, agent_id: input.agentID, generation: input.generation,
+      execution_session_id: input.executionSessionID, thread_id: input.threadID, revision: '18446744073709551615',
+      mode: agentPageMode, replay: agentPageMode !== 'live_attach', storage: 'durable',
+      messages: input.cursor ? [item('agent-older-1', 'Equal conversation text'), item('agent-older-2', 'Equal conversation text')]
+        : [newest],
+      has_more: !input.cursor, next_cursor: input.cursor ? '' : 'synthetic-older-cursor', corruptions: 0,
+      transcript_path: '/private/synthetic-page-path' };
   }
   if (op === 'startTurn') {
     turnRequests++;
@@ -158,7 +237,7 @@ function releaseHeld(queue) {
   for (const { res, body } of queue.splice(0)) reply(res, body);
 }
 function releaseReads() {
-  for (const queue of [heldReads, heldWrites, heldSuggestions, heldTurns, heldCloses]) releaseHeld(queue);
+  for (const queue of [heldReads, heldWrites, heldSuggestions, heldTurns, heldCloses, heldTasks, heldDetails, heldAgentPages]) releaseHeld(queue);
 }
 async function main() {
   const args = process.argv.slice(2);
@@ -176,6 +255,15 @@ async function main() {
       if (url.pathname === '/fixture/rpc') {
         const input = await readBody(req);
         const body = operation(input.op, input.input, conversation);
+        if (input.op === 'getTaskExplorer' && holdNextTasks) {
+          holdNextTasks = false; heldTasks.push({ res, body }); return;
+        }
+        if (input.op === 'getAgentExecutionDetail' && holdNextDetail) {
+          holdNextDetail = false; heldDetails.push({ res, body }); return;
+        }
+        if (input.op === 'getAgentTranscript' && holdNextAgentPage) {
+          holdNextAgentPage = false; heldAgentPages.push({ res, body }); return;
+        }
         if (input.op === 'startTurn' && holdNextTurn) {
           holdNextTurn = false; heldTurns.push({ res, body }); return;
         }
@@ -220,9 +308,30 @@ async function main() {
         res.write(': connected\n\n'); streams.set(res, url.pathname.split('/').at(-2)); req.on('close', () => streams.delete(res)); return;
       }
       const end = url.pathname.split('/').at(-1);
+      if (end === 'tasks') {
+        const body = operation('getTaskExplorer', { sessionID: url.pathname.split('/').at(-2) });
+        if (holdNextTasks) { holdNextTasks = false; heldTasks.push({ res, body }); return; }
+        reply(res, body); return;
+      }
+      if (end === 'agent-execution-detail') {
+        const body = operation('getAgentExecutionDetail', { sessionID: url.pathname.split('/').at(-2),
+          agentID: url.searchParams.get('agent_id'), generation: url.searchParams.get('generation'),
+          executionSessionID: url.searchParams.get('execution_session_id'), threadID: url.searchParams.get('thread_id'),
+          includeOutput: url.searchParams.get('include_output') === 'true' });
+        if (holdNextDetail) { holdNextDetail = false; heldDetails.push({ res, body }); return; }
+        reply(res, body); return;
+      }
       if (end === 'prompt-suggestion') {
         const body = operation('promptSuggestion', { sessionID: url.pathname.split('/').at(-2) });
         if (holdNextSuggestion) { holdNextSuggestion = false; heldSuggestions.push({ res, body }); return; }
+        reply(res, body); return;
+      }
+      if (end === 'agent-transcript') {
+        const body = operation('getAgentTranscript', { sessionID: url.pathname.split('/').at(-2),
+          agentID: url.searchParams.get('agent_id'), generation: url.searchParams.get('generation'),
+          executionSessionID: url.searchParams.get('execution_session_id'), threadID: url.searchParams.get('thread_id'),
+          ...(url.searchParams.has('cursor') ? { cursor: url.searchParams.get('cursor') } : {}), limit: Number(url.searchParams.get('limit')) });
+        if (holdNextAgentPage) { holdNextAgentPage = false; heldAgentPages.push({ res, body }); return; }
         reply(res, body); return;
       }
       if (end === 'turns' && req.method === 'POST') {
@@ -284,7 +393,8 @@ async function main() {
             ? { ok: true, value: body }
             : { ok: false, error: { message: body.error.message, code: body.error.code, status: response.status } };
         },
-        onEventStream: () => () => {}, onBackendExit: () => () => {},
+        onEventStream: listener => { window.__fixtureTaskEvent = listener; return () => { window.__fixtureTaskEvent = null; }; },
+        onBackendExit: listener => { window.__fixtureBackendExit = listener; return () => { window.__fixtureBackendExit = null; }; },
         startEvents: async () => ({ status: 'open' }), stopEvents: async () => {},
         selectWorkspace: async () => {
           if (recovery) {
@@ -1560,6 +1670,361 @@ async function main() {
       await conversation.waitForFunction(() => document.querySelector('#queued-prompts').hidden);
       assert.equal(await conversation.evaluate(title => document.activeElement.matches('.session-select') && document.activeElement.textContent.includes(title), session.title), true);
     });
+    let taskEventID = 10000;
+    for (const surface of ['desktop', 'web']) {
+      taskSnapshotMode = 'normal';
+      const taskPage = await createPage(surface, true);
+      const writesBefore = settingsWrites.length;
+      const sessionWritesBefore = sessionSettingWrites;
+      const turnsBefore = turnRequests;
+      const creationsBefore = creations;
+      const emitTask = async () => {
+        const event = { id: taskEventID++, session_id: session.id, type: 'task_progress', data: {}, engine_sequence: taskEventID };
+        if (surface === 'desktop') await taskPage.evaluate(event => window.__fixtureTaskEvent({ kind: 'event', sessionID: event.session_id, event }), event);
+        else for (const [response, owner] of streams) if (owner === session.id) response.write(`data: ${JSON.stringify(event)}\n\n`);
+      };
+      await check(`${surface} Tasks reads canonical mixed rows with exact decimal generations`, async () => {
+        const before = taskReads;
+        assert.equal(await taskPage.locator('#inspector-toggle').getAttribute('aria-label'), 'Show activity, tasks and changes');
+        await taskPage.locator('#inspector-toggle').click();
+        await taskPage.locator('#tasks-tab').click();
+        await taskPage.waitForFunction(() => document.querySelectorAll('.task-row').length === 4);
+        assert.equal(taskReads, before + 1);
+        assert.match(await taskPage.locator('#task-status').textContent(), /18446744073709551615/);
+        const executionRows = taskPage.locator('.task-row[data-kind="execution"]');
+        assert.equal(await executionRows.count(), 2);
+        assert.equal(await executionRows.first().locator('.task-phase').textContent(), 'waiting input');
+        await executionRows.first().locator('summary').click();
+        await executionRows.last().locator('summary').click();
+        assert.match(await executionRows.first().textContent(), /9007199254740992/);
+        assert.equal(await executionRows.first().locator('dt').filter({ hasText: /^Link$/ }).count(), 0);
+        assert.equal(await executionRows.last().locator('dt').filter({ hasText: /^Link$/ }).count(), 1);
+        assert.equal((await taskPage.locator('#task-list').textContent()).includes('/private/synthetic-task-data'), false);
+        await screenshot(taskPage, `${surface}-tasks-wide`);
+      });
+      const inspect = async () => {
+        const row = taskPage.locator('.task-row[data-kind="execution"]').last();
+        if (!await row.evaluate(node => node.open)) await row.locator('summary').click();
+        await row.locator('.task-inspect').click();
+      };
+      const waitDetail = () => taskPage.waitForFunction(() =>
+        !document.querySelector('#refresh-execution-detail').disabled &&
+        document.querySelector('#execution-detail-status').textContent.includes('Observed runtime revision'));
+      const openAgent = async () => {
+        if (!await taskPage.locator('#inspector').isVisible()) await taskPage.locator('#inspector-toggle').click();
+        await inspect(); await waitDetail(); await taskPage.locator('#open-agent-conversation').click();
+      };
+      const waitAgent = () => taskPage.waitForFunction(() => !document.querySelector('#refresh-agent-conversation').disabled &&
+        document.querySelector('#agent-conversation-status').textContent.includes('runtime revision'));
+      await check(`${surface} exact execution lineage is explicit, path-free and preserves the task context`, async () => {
+        const before = detailReads.length;
+        await taskPage.locator('#prompt').fill('Keep this exact detail draft');
+        await inspect(); await waitDetail();
+        assert.equal(detailReads.length, before + 1);
+        assert.equal(detailReads.at(-1).includeOutput, false);
+        assert.equal(detailReads.at(-1).generation, '9007199254740993');
+        assert.match(await taskPage.locator('#execution-detail-identity').textContent(), /9007199254740993/);
+        assert.match(await taskPage.locator('#execution-lineage-facts').textContent(), /synthetic-parent-agent/);
+        assert.equal((await taskPage.locator('#execution-detail').textContent()).includes('/private/synthetic-detail-path'), false);
+        await focusIs(taskPage, 'execution-lineage-tab');
+        await screenshot(taskPage, `${surface}-execution-lineage-wide`);
+        await taskPage.locator('#back-to-tasks').click();
+        assert.equal(await taskPage.locator('.task-row[data-kind="execution"]').last().locator('.task-inspect').evaluate(node => document.activeElement === node), true);
+        assert.equal(await taskPage.locator('#prompt').inputValue(), 'Keep this exact detail draft');
+      });
+      await check(`${surface} Output is lazy, plain text, bounded and independently cached`, async () => {
+        await inspect(); await waitDetail(); detailMode = 'long';
+        const before = detailReads.length;
+        await taskPage.locator('#execution-lineage-tab').press('End'); await waitDetail();
+        await focusIs(taskPage, 'execution-output-tab');
+        assert.equal(detailReads.length, before + 1);
+        assert.equal(detailReads.at(-1).includeOutput, true);
+        assert.match(await taskPage.locator('#execution-output').textContent(), /<script>synthetic exact output<\/script>$/);
+        assert.equal(await taskPage.locator('#execution-output script').count(), 0);
+        assert.ok(await taskPage.locator('#execution-output').evaluate(node => new TextEncoder().encode(node.textContent).length <= 65536));
+        assert.match(await taskPage.locator('#execution-output-note').textContent(), /last 64 KiB/);
+        await taskPage.locator('#execution-output-tab').press('Home'); await taskPage.locator('#execution-lineage-tab').press('ArrowRight');
+        assert.equal(detailReads.length, before + 1, 'tab cache does not poll');
+        await screenshot(taskPage, `${surface}-execution-output-wide`);
+        await taskPage.locator('#back-to-tasks').click(); detailMode = 'normal';
+      });
+      await check(`${surface} entering an exact child conversation preserves parent DOM, draft, selection, scroll and native undo`, async () => {
+        await taskPage.locator('#prompt').fill('Parent navigation draft');
+        await taskPage.locator('#prompt').press('End'); await taskPage.locator('#prompt').pressSequentially(' +keep');
+        await taskPage.evaluate(() => {
+          window.fixtureParentPrompt = document.querySelector('#prompt');
+          window.fixtureParentMessage = document.querySelector('#timeline article.assistant');
+          window.fixtureParentMessage.querySelector('details.reasoning').open = true;
+          window.fixtureParentPrompt.setSelectionRange(3, 8, 'forward');
+          const timeline = document.querySelector('#timeline');
+          timeline.style.maxHeight = '40px';
+          timeline.scrollTop = Math.min(80, timeline.scrollHeight - timeline.clientHeight);
+          window.fixtureParentScroll = timeline.scrollTop;
+        });
+        assert.ok(await taskPage.evaluate(() => window.fixtureParentScroll > 0), 'parent scroll fixture must actually overflow');
+        const before = agentPageReads.length;
+        await openAgent(); await waitAgent();
+        await focusIs(taskPage, 'back-to-parent-conversation');
+        assert.equal(agentPageReads.length, before + 1);
+        assert.equal(agentPageReads.at(-1).generation, '9007199254740993');
+        assert.equal(agentPageReads.at(-1).threadID, 'synthetic-thread-9007199254740993');
+        assert.match(await taskPage.locator('#agent-conversation').textContent(), /Read only/);
+        assert.equal(await taskPage.locator('#composer').isVisible(), false);
+        assert.equal(await taskPage.locator('#interaction-panel').isVisible(), false);
+        assert.equal(await taskPage.locator('#agent-conversation script').count(), 0);
+        assert.equal((await taskPage.locator('#agent-conversation').textContent()).includes('/private/synthetic-page-path'), false);
+        assert.deepEqual(await taskPage.locator('#agent-conversation-timeline article').first().evaluate(card =>
+          [...card.children].slice(1, 4).map(node => node.textContent.trim())),
+        ['Exact child conversationRead-only synthetic child evidence.<script>not executable</script>', 'image · image/png · 10 bytes', 'After media']);
+        await screenshot(taskPage, `${surface}-agent-conversation-wide`);
+        await taskPage.locator('#back-to-parent-conversation').click();
+        await focusIs(taskPage, 'prompt');
+        assert.deepEqual(await taskPage.locator('#prompt').evaluate(input => [input === window.fixtureParentPrompt, input.value,
+          input.selectionStart, input.selectionEnd, input.selectionDirection]), [true, 'Parent navigation draft +keep', 3, 8, 'forward']);
+        assert.equal(await taskPage.evaluate(() => document.querySelector('#timeline article.assistant') === window.fixtureParentMessage &&
+          window.fixtureParentMessage.querySelector('details.reasoning').open), true);
+        await taskPage.waitForFunction(() => document.querySelector('#timeline').scrollTop === window.fixtureParentScroll);
+        await taskPage.evaluate(() => document.querySelector('#timeline').style.removeProperty('max-height'));
+        await taskPage.keyboard.press('ControlOrMeta+z');
+        assert.equal(await taskPage.locator('#prompt').inputValue(), 'Parent navigation draft');
+      });
+      await check(`${surface} completed and evicted conversations remain explicitly read-only`, async () => {
+        for (const mode of ['replay_only', 'evicted_transcript']) {
+          agentPageMode = mode; await openAgent(); await waitAgent();
+          assert.match(await taskPage.locator('#agent-conversation-status').textContent(),
+            mode === 'replay_only' ? /Completed execution history/ : /Evicted thread history/);
+          assert.equal(await taskPage.locator('#composer').isVisible(), false);
+          assert.match(await taskPage.locator('#agent-conversation').textContent(), /Read only/);
+          await taskPage.keyboard.press('Escape'); await focusIs(taskPage, 'prompt');
+        }
+        agentPageMode = 'live_attach';
+      });
+      await check(`${surface} child history paging is explicit, ordered and snapshot-only through activity and errors`, async () => {
+        await openAgent(); await waitAgent();
+        const before = agentPageReads.length;
+        await taskPage.locator('#agent-conversation-timeline details.reasoning summary').click();
+        await taskPage.locator('#agent-conversation-older').click(); await waitAgent();
+        assert.equal(agentPageReads.length, before + 1);
+        assert.equal(agentPageReads.at(-1).cursor, 'synthetic-older-cursor');
+        assert.deepEqual(await taskPage.locator('#agent-conversation-timeline article').evaluateAll(nodes => nodes.map(node => node.dataset.messageId)),
+          ['agent-older-1', 'agent-older-2', 'agent-newest']);
+        assert.equal(await taskPage.locator('#agent-conversation-timeline details.reasoning').last().evaluate(node => node.open), true);
+        assert.equal(await taskPage.locator('#agent-conversation-older').isVisible(), false);
+        await emitTask();
+        await taskPage.waitForFunction(() => document.querySelector('#agent-conversation-status').textContent.includes('Session activity changed'));
+        assert.equal(agentPageReads.length, before + 1);
+        failNextAgentPage = true; await taskPage.locator('#refresh-agent-conversation').click();
+        await taskPage.waitForFunction(() => document.querySelector('#agent-conversation-status').textContent.includes('exact conversation changed'));
+        assert.equal(await taskPage.locator('#agent-conversation-timeline article').count(), 3);
+        assert.equal((await taskPage.locator('#agent-conversation').textContent()).includes('/private/synthetic-page-error'), false);
+        await taskPage.keyboard.press('Escape'); await focusIs(taskPage, 'prompt');
+      });
+      await check(`${surface} leaving or switching parent sessions retires pending child content without persistence`, async () => {
+        holdNextAgentPage = true; await openAgent(); await waitForHeldRead(heldAgentPages);
+        const held = heldAgentPages.shift(); await taskPage.locator('#back-to-parent-conversation').click();
+        reply(held.res, held.body); await openAgent(); await waitAgent();
+        assert.equal(await taskPage.locator('#agent-conversation-timeline article').count(), 1);
+        holdNextAgentPage = true; await taskPage.locator('#refresh-agent-conversation').click(); await waitForHeldRead(heldAgentPages);
+        const switched = heldAgentPages.shift();
+        await taskPage.locator('.session-select').filter({ hasText: secondSession.title }).click();
+        await taskPage.waitForFunction(id => document.querySelector('.session-row.active')?.dataset.sessionId === id, secondSession.id);
+        reply(switched.res, switched.body);
+        assert.equal(await taskPage.locator('#agent-conversation').isVisible(), false);
+        assert.equal(await taskPage.locator('#agent-conversation-timeline').textContent(), '');
+        await taskPage.locator('.session-select').filter({ hasText: session.title }).click();
+        await taskPage.waitForFunction(id => document.querySelector('.session-row.active')?.dataset.sessionId === id &&
+          !document.querySelector('#refresh-tasks').disabled, session.id);
+        const saved = await taskPage.evaluate(() => JSON.stringify({ ...localStorage }));
+        assert.equal(saved.includes('synthetic-older-cursor'), false);
+        assert.equal(saved.includes('synthetic child evidence'), false);
+        await taskPage.locator('#inspector-toggle').click();
+      });
+      await check(`${surface} detail activity and failed refresh keep only exact cached facts without polling`, async () => {
+        await inspect(); await waitDetail();
+        const before = detailReads.length;
+        await emitTask();
+        await taskPage.waitForFunction(() => document.querySelector('#execution-detail-status').textContent.includes('Session activity changed'));
+        assert.equal(detailReads.length, before);
+        failNextDetail = true;
+        await taskPage.locator('#refresh-execution-detail').click();
+        await taskPage.waitForFunction(() => document.querySelector('#execution-detail-status').textContent.includes('no longer current'));
+        assert.match(await taskPage.locator('#execution-lineage-facts').textContent(), /synthetic-parent-agent/);
+        assert.equal((await taskPage.locator('#execution-detail').textContent()).includes('/private/synthetic-detail-path'), false);
+        await taskPage.locator('#back-to-tasks').click();
+      });
+      await check(`${surface} tab switches, Back and list refresh retire late exact-detail responses`, async () => {
+        holdNextDetail = true; await inspect(); await waitForHeldRead(heldDetails);
+        const lineage = heldDetails.shift();
+        await taskPage.locator('#execution-output-tab').click(); await waitDetail();
+        reply(lineage.res, { ...lineage.body, metadata: { name: 'OLD LINEAGE RESPONSE' } });
+        // A completed refresh is a processing barrier following the old reply.
+        await taskPage.locator('#refresh-execution-detail').click(); await waitDetail();
+        assert.equal((await taskPage.locator('#execution-detail').textContent()).includes('OLD LINEAGE RESPONSE'), false);
+        holdNextDetail = true; await taskPage.locator('#refresh-execution-detail').click(); await waitForHeldRead(heldDetails);
+        const back = heldDetails.shift(); await taskPage.locator('#back-to-tasks').click(); reply(back.res, back.body);
+        await taskPage.locator('#refresh-tasks').click();
+        await taskPage.waitForFunction(() => !document.querySelector('#refresh-tasks').disabled);
+        assert.equal(await taskPage.locator('#execution-detail').isVisible(), false);
+      });
+      await check(`${surface} mismatched lineage and live empty output do not borrow another generation`, async () => {
+        detailMode = 'wrong-lineage'; await inspect();
+        await taskPage.waitForFunction(() => document.querySelector('#execution-detail-status').textContent.includes('response is invalid'));
+        assert.equal(await taskPage.locator('#execution-lineage-facts').textContent(), '');
+        await taskPage.locator('#back-to-tasks').click(); detailMode = 'live';
+        await inspect(); await waitDetail(); await taskPage.locator('#execution-output-tab').click(); await waitDetail();
+        assert.equal(await taskPage.locator('#execution-output').textContent(), '');
+        assert.match(await taskPage.locator('#execution-output-note').textContent(), /current terminal generation/);
+        await taskPage.locator('#back-to-tasks').click(); detailMode = 'normal';
+      });
+      await check(`${surface} session switch retires a held detail response without attaching or reopening it`, async () => {
+        holdNextDetail = true; await inspect(); await waitForHeldRead(heldDetails);
+        const old = heldDetails.shift();
+        await taskPage.locator('.session-select').filter({ hasText: secondSession.title }).click();
+        await taskPage.waitForFunction(id => document.querySelector('.session-row.active')?.dataset.sessionId === id, secondSession.id);
+        reply(old.res, { ...old.body, metadata: { name: 'OLD SESSION DETAIL RESPONSE' } });
+        await taskPage.waitForFunction(() => !document.querySelector('#refresh-tasks').disabled);
+        assert.equal(await taskPage.locator('#execution-detail').isVisible(), false);
+        assert.equal(await taskPage.locator('#execution-lineage-facts').textContent(), '');
+        await taskPage.locator('.session-select').filter({ hasText: session.title }).click();
+        await taskPage.waitForFunction(id => document.querySelector('.session-row.active')?.dataset.sessionId === id && !document.querySelector('#refresh-tasks').disabled, session.id);
+        assert.equal(await taskPage.locator('#execution-detail').isVisible(), false);
+      });
+      await check(`${surface} task filters are local and all inspector tabs support roving keyboard focus`, async () => {
+        const before = taskReads;
+        await taskPage.locator('#task-kind').selectOption('execution');
+        await taskPage.locator('#task-search').fill('Builder');
+        assert.equal(await taskPage.locator('.task-row').count(), 2);
+        await taskPage.locator('#task-search').fill('unmatched');
+        assert.equal(await taskPage.locator('.task-row').count(), 0);
+        assert.match(await taskPage.locator('#task-list').textContent(), /No tasks match/);
+        assert.equal(taskReads, before, 'search/filter cannot perform a server read');
+        await taskPage.locator('#task-search').fill('');
+        await taskPage.locator('#task-kind').selectOption('all');
+        await taskPage.locator('#tasks-tab').focus();
+        await taskPage.keyboard.press('End'); await focusIs(taskPage, 'review-tab');
+        await taskPage.keyboard.press('Home'); await focusIs(taskPage, 'activity-tab');
+        await taskPage.keyboard.press('ArrowRight'); await focusIs(taskPage, 'tasks-tab');
+        await taskPage.waitForFunction(() => !document.querySelector('#refresh-tasks').disabled);
+        assert.deepEqual(await taskPage.locator('.inspector-tab').evaluateAll(nodes => nodes.map(node => node.tabIndex)), [-1, 0, -1]);
+      });
+      await check(`${surface} task refresh and reorder preserve the exact expanded row and focus`, async () => {
+        const first = taskPage.locator('.task-row[data-kind="execution"]').first();
+        if (!await first.evaluate(node => node.open)) await first.locator('summary').click();
+        await first.evaluate(node => { window.__taskRow = node; window.__taskSummary = node.firstElementChild; });
+        taskSnapshotMode = 'reordered'; holdNextTasks = true;
+        await taskPage.locator('#refresh-tasks').click(); await waitForHeldRead(heldTasks);
+        await taskPage.evaluate(() => window.__taskSummary.focus());
+        assert.equal(await taskPage.locator('.task-row').count(), 4, 'refresh retains previous snapshot');
+        const held = heldTasks.shift(); reply(held.res, held.body);
+        await taskPage.waitForFunction(() => !document.querySelector('#refresh-tasks').disabled);
+        assert.equal(await taskPage.evaluate(() => window.__taskRow.isConnected && window.__taskRow.open), true);
+        assert.equal(await taskPage.evaluate(() => document.activeElement === window.__taskSummary), true);
+        assert.equal(await taskPage.locator('.task-row[data-kind="execution"]').last().evaluate(node => node === window.__taskRow), true);
+      });
+      await check(`${surface} task activity during a read stays visibly stale without automatic polling or draft loss`, async () => {
+        await taskPage.locator('#prompt').fill('Keep this task draft');
+        holdNextTasks = true;
+        await taskPage.locator('#refresh-tasks').click(); await waitForHeldRead(heldTasks);
+        const before = taskReads;
+        await emitTask();
+        await taskPage.waitForFunction(() => document.querySelector('#task-status').textContent.includes('Session activity changed'));
+        const held = heldTasks.shift(); reply(held.res, held.body);
+        await taskPage.waitForFunction(() => !document.querySelector('#refresh-tasks').disabled);
+        assert.match(await taskPage.locator('#task-status').textContent(), /Session activity changed/);
+        assert.equal(taskReads, before);
+        assert.equal(await taskPage.locator('#prompt').inputValue(), 'Keep this task draft');
+      });
+      await check(`${surface} partial and failed task reads retain honest diagnostics and accepted data`, async () => {
+        taskSnapshotMode = 'partial';
+        await taskPage.locator('#refresh-tasks').click();
+        await taskPage.waitForFunction(() => document.querySelector('#task-status').textContent.includes('workboard_unavailable'));
+        assert.equal(await taskPage.locator('.task-row').count(), 2);
+        assert.match(await taskPage.locator('#task-status').textContent(), /execution other: 2/);
+        failNextTasks = true;
+        await taskPage.locator('#refresh-tasks').click();
+        await taskPage.waitForFunction(() => document.querySelector('#task-status').textContent.includes('Task read failed'));
+        assert.equal(await taskPage.locator('.task-row').count(), 2);
+        assert.equal(await taskPage.locator('#workbench-notice').isVisible(), false, 'failure remains panel-local');
+        taskSnapshotMode = 'empty';
+        holdNextTasks = true;
+        await taskPage.locator('#refresh-tasks').click();
+        await waitForHeldRead(heldTasks);
+        await taskPage.locator('.task-row summary').first().focus();
+        const held = heldTasks.shift(); reply(held.res, held.body);
+        await taskPage.waitForFunction(() => document.querySelector('#task-list').textContent.includes('No tasks in this snapshot'));
+        assert.equal(await taskPage.locator('.task-row').count(), 0);
+        await focusIs(taskPage, 'refresh-tasks');
+      });
+      await check(`${surface} a late task response remains with its session and narrow Tasks stays usable`, async () => {
+        taskSnapshotMode = 'normal'; holdNextTasks = true;
+        await taskPage.locator('#refresh-tasks').click(); await waitForHeldRead(heldTasks);
+        await taskPage.locator('.session-select').filter({ hasText: secondSession.title }).click();
+        await taskPage.waitForFunction(id => document.querySelector('.session-row.active')?.dataset.sessionId === id, secondSession.id);
+        const held = heldTasks.shift(); reply(held.res, { ...held.body, work_items: [{ ...held.body.work_items[0], title: 'OLD SESSION RESPONSE' }] });
+        await taskPage.waitForFunction(() => document.querySelectorAll('.task-row').length === 4);
+        assert.equal((await taskPage.locator('#task-list').textContent()).includes('OLD SESSION RESPONSE'), false);
+        await taskPage.locator('#inspector-toggle').click();
+        await taskPage.setViewportSize({ width: 360, height: 800 });
+        await taskPage.locator('#inspector-toggle').click();
+        assert.equal(await taskPage.locator('#inspector').getAttribute('aria-modal'), 'true');
+        assert.equal(await taskPage.locator('#conversation').evaluate(node => node.inert), true);
+        assert.equal(await taskPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await screenshot(taskPage, `${surface}-tasks-narrow`);
+        await inspect(); await waitDetail();
+        await taskPage.locator('#execution-output-tab').click(); await waitDetail();
+        assert.equal(await taskPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await screenshot(taskPage, `${surface}-execution-output-narrow`);
+        await taskPage.locator('#execution-output-tab').press('Home');
+        await taskPage.locator('#open-agent-conversation').click(); await waitAgent();
+        assert.equal(await taskPage.locator('#conversation').evaluate(node => node.inert), false);
+        assert.equal(await taskPage.locator('#inspector').isVisible(), false);
+        assert.equal(await taskPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await screenshot(taskPage, `${surface}-agent-conversation-narrow`);
+        await taskPage.keyboard.press('Escape'); await focusIs(taskPage, 'prompt');
+        await taskPage.locator('#inspector-toggle').click(); await inspect(); await waitDetail();
+        await taskPage.locator('#execution-output-tab').click(); await waitDetail();
+        await taskPage.keyboard.press('Escape');
+        assert.equal(await taskPage.locator('#inspector').getAttribute('aria-modal'), 'true', 'first Escape returns to Tasks');
+        assert.equal(await taskPage.locator('.task-row[data-kind="execution"]').last().locator('.task-inspect').evaluate(node => document.activeElement === node), true);
+        assert.equal(await taskPage.locator('#execution-output').textContent(), '', 'retired output is cleared, not just hidden');
+        await taskPage.keyboard.press('Escape'); await focusIs(taskPage, 'inspector-toggle');
+        const saved = await taskPage.evaluate(() => JSON.stringify({ ...localStorage }));
+        assert.equal(saved.includes('18446744073709551615'), false, 'task cache is not persisted');
+        assert.equal(saved.includes('/private/synthetic-task-data'), false);
+        assert.equal(saved.includes('synthetic exact output'), false);
+        assert.equal(settingsWrites.length, writesBefore);
+        assert.equal(sessionSettingWrites, sessionWritesBefore);
+        assert.equal(turnRequests, turnsBefore);
+        assert.equal(creations, creationsBefore);
+      });
+      holdNextTasks = false; failNextTasks = false; releaseHeld(heldTasks);
+      if (surface === 'desktop') await check('Desktop backend loss retires pending task reads and controls', async () => {
+        await taskPage.setViewportSize({ width: 1440, height: 1000 });
+        await openAgent(); await waitAgent();
+        holdNextAgentPage = true;
+        await taskPage.locator('#refresh-agent-conversation').click(); await waitForHeldRead(heldAgentPages);
+        await taskPage.locator('#inspector-toggle').click();
+        holdNextTasks = true;
+        await taskPage.locator('#refresh-tasks').click(); await waitForHeldRead(heldTasks);
+        holdNextDetail = true; await inspect(); await waitForHeldRead(heldDetails);
+        await taskPage.evaluate(() => window.__fixtureBackendExit({}));
+        const held = heldTasks.shift(); reply(held.res, held.body);
+        const detail = heldDetails.shift(); reply(detail.res, detail.body);
+        const conversation = heldAgentPages.shift(); reply(conversation.res, conversation.body);
+        await taskPage.waitForFunction(() => document.querySelector('#task-status').textContent.includes('Backend stopped'));
+        assert.equal(await taskPage.locator('#refresh-tasks').isDisabled(), true);
+        assert.equal(await taskPage.locator('.task-row').count(), 0);
+        assert.equal(await taskPage.locator('#execution-detail').isVisible(), false);
+        assert.equal(await taskPage.locator('#execution-lineage-facts').textContent(), '');
+        assert.equal(await taskPage.locator('#agent-conversation').isVisible(), false);
+        assert.equal(await taskPage.locator('#agent-conversation-timeline').textContent(), '');
+      });
+      holdNextTasks = false; failNextTasks = false; releaseHeld(heldTasks);
+      holdNextDetail = false; failNextDetail = false; releaseHeld(heldDetails);
+      holdNextAgentPage = false; failNextAgentPage = false; releaseHeld(heldAgentPages);
+      await taskPage.context().close();
+    }
+    taskSnapshotMode = 'normal';
     assert.deepEqual(errors, [], 'Renderer emitted no unhandled page errors');
   } catch (error) {
     results.push({ name: 'Acceptance runner', status: 'fail', error: error.message });

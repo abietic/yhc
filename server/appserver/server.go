@@ -420,6 +420,9 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /v1/settings", s.handleGetSettings)
 	api.HandleFunc("PATCH /v1/settings", s.handleUpdateSettings)
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
+	api.HandleFunc("GET /v1/sessions/{session_id}/tasks", s.handleTaskExplorer)
+	api.HandleFunc("GET /v1/sessions/{session_id}/agent-execution-detail", s.handleAgentExecutionDetail)
+	api.HandleFunc("GET /v1/sessions/{session_id}/agent-transcript", s.handleAgentTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/transcript", s.handleTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/review-diff", s.handleReviewDiff)
 	api.HandleFunc("GET /v1/sessions/{session_id}/execution-settings", s.handleGetExecutionSettings)
@@ -707,24 +710,27 @@ func (s *Server) handleWebAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 var webAssetPaths = map[string]string{
-	"/":                       "assets/index.html",
-	"/activity.mjs":           "assets/activity.mjs",
-	"/app.mjs":                "assets/app.mjs",
-	"/catalog.mjs":            "assets/catalog.mjs",
-	"/command_completion.mjs": "assets/command_completion.mjs",
-	"/prompt_suggestion.mjs":  "assets/prompt_suggestion.mjs",
-	"/layout.mjs":             "assets/layout.mjs",
-	"/timeline_view.mjs":      "assets/timeline_view.mjs",
-	"/settings_view.mjs":      "assets/settings_view.mjs",
-	"/session_creation.mjs":   "assets/session_creation.mjs",
-	"/replay.mjs":             "assets/replay.mjs",
-	"/markdown.mjs":           "assets/markdown.mjs",
-	"/provider_setup.mjs":     "assets/provider_setup.mjs",
-	"/state.mjs":              "assets/state.mjs",
-	"/styles.css":             "assets/styles.css",
-	"/transport.mjs":          "assets/transport.mjs",
-	"/vendor/marked.esm.js":   "assets/vendor/marked.esm.js",
-	"/view_models.mjs":        "assets/view_models.mjs",
+	"/":                           "assets/index.html",
+	"/activity.mjs":               "assets/activity.mjs",
+	"/app.mjs":                    "assets/app.mjs",
+	"/catalog.mjs":                "assets/catalog.mjs",
+	"/command_completion.mjs":     "assets/command_completion.mjs",
+	"/prompt_suggestion.mjs":      "assets/prompt_suggestion.mjs",
+	"/layout.mjs":                 "assets/layout.mjs",
+	"/settings_view.mjs":          "assets/settings_view.mjs",
+	"/timeline_view.mjs":          "assets/timeline_view.mjs",
+	"/task_explorer.mjs":          "assets/task_explorer.mjs",
+	"/agent_execution_detail.mjs": "assets/agent_execution_detail.mjs",
+	"/agent_conversation.mjs":     "assets/agent_conversation.mjs",
+	"/session_creation.mjs":       "assets/session_creation.mjs",
+	"/replay.mjs":                 "assets/replay.mjs",
+	"/markdown.mjs":               "assets/markdown.mjs",
+	"/provider_setup.mjs":         "assets/provider_setup.mjs",
+	"/state.mjs":                  "assets/state.mjs",
+	"/styles.css":                 "assets/styles.css",
+	"/transport.mjs":              "assets/transport.mjs",
+	"/vendor/marked.esm.js":       "assets/vendor/marked.esm.js",
+	"/view_models.mjs":            "assets/view_models.mjs",
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

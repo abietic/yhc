@@ -14,7 +14,7 @@ function productionBetween(start, end) {
 }
 
 const bind = new Function('initialState', 'activeSession', 'reducer', 'canSubmitTurn', 'canQueuePrompt',
-  'canClearSubmittedDraft', 'api', 'crypto', '$', 'commandCompletion', 'promptSuggestion', `
+  'canClearSubmittedDraft', 'api', 'crypto', '$', 'commandCompletion', 'promptSuggestion', 'agentConversationView', `
   const attachAttempts = new Map();
   const queueAttempts = new Map();
   const turnDraftAttempts = new Map();
@@ -34,7 +34,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function fixture() {
+function fixture({ childConversationOpen = false } = {}) {
   const prompt = { value: '' };
   const calls = [];
   const requests = [];
@@ -65,6 +65,7 @@ function fixture() {
     id => { assert.equal(id, 'prompt'); return prompt; },
     { dismiss() {} },
     { dismiss() {} },
+    { isOpen: () => childConversationOpen },
   );
   const event = { preventDefault() {} };
   return {
@@ -77,6 +78,14 @@ function fixture() {
     select(id) { app.select(id); },
   };
 }
+
+test('a read-only child conversation cannot submit or clear the parent draft', async () => {
+  const current = fixture({ childConversationOpen: true });
+  current.edit('Draft X');
+  await current.send();
+  assert.equal(current.calls.length, 0);
+  assert.equal(current.app.state().sessions.first.draft, 'Draft X');
+});
 
 test('ordinary Send admits one unchanged live-session draft until its request settles', async () => {
   const current = fixture();

@@ -205,6 +205,9 @@ desktop-check: desktop-test
 	node --check internal/webui/assets/session_creation.mjs
 	node --check internal/webui/assets/settings_view.mjs
 	node --check internal/webui/assets/timeline_view.mjs
+	node --check internal/webui/assets/task_explorer.mjs
+	node --check internal/webui/assets/agent_execution_detail.mjs
+	node --check internal/webui/assets/agent_conversation.mjs
 	node --check internal/webui/assets/state.mjs
 	node --check internal/webui/assets/transport.mjs
 	node --check internal/webui/assets/view_models.mjs
