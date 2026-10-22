@@ -81,6 +81,59 @@ func TestWorkspaceHandleCanRetryAfterSessionCreationFailure(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHandleBelongsToOneServerLifetime(t *testing.T) {
+	// Keep the original server alive: rejection by its replacement must come
+	// from capability ownership, not expiration or single-use consumption.
+	previous := newWorkspaceHandleTestServer(t, time.Now)
+	previousHTTP := httptest.NewServer(previous.Handler())
+	t.Cleanup(previousHTTP.Close)
+	t.Cleanup(func() { shutdownTestServer(t, previous) })
+	current := newWorkspaceHandleTestServer(t, time.Now)
+	currentHTTP := httptest.NewServer(current.Handler())
+	t.Cleanup(currentHTTP.Close)
+	t.Cleanup(func() { shutdownTestServer(t, current) })
+	workspace := t.TempDir()
+	old := registerWorkspace(t, previousHTTP.URL, previous.Token(), workspace)
+	create := func(server *Server, baseURL, handle string) *http.Response {
+		return doJSON(t, baseURL+"/v1/sessions", server.Token(), http.MethodPost,
+			map[string]string{"workspace_handle": handle})
+	}
+	rejected := create(current, currentHTTP.URL, old.WorkspaceHandle)
+	if rejected.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("previous server handle = %d: %s", rejected.StatusCode, readBody(t, rejected))
+	}
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	decodeResponse(t, rejected, &response)
+	_ = rejected.Body.Close()
+	if response.Error.Code != "workspace_handle_invalid" {
+		t.Fatalf("previous server error = %q", response.Error.Code)
+	}
+	current.mu.Lock()
+	sessionCount := len(current.sessions)
+	current.mu.Unlock()
+	if sessionCount != 0 {
+		t.Fatal("rejected capability created a session in the replacement server")
+	}
+	stillValid := create(previous, previousHTTP.URL, old.WorkspaceHandle)
+	if stillValid.StatusCode != http.StatusCreated {
+		t.Fatalf("original server handle = %d: %s", stillValid.StatusCode, readBody(t, stillValid))
+	}
+	_ = stillValid.Body.Close()
+	fresh := registerWorkspace(t, currentHTTP.URL, current.Token(), workspace)
+	if fresh.WorkspaceHandle == old.WorkspaceHandle {
+		t.Fatal("new server reused the old capability")
+	}
+	accepted := create(current, currentHTTP.URL, fresh.WorkspaceHandle)
+	if accepted.StatusCode != http.StatusCreated {
+		t.Fatalf("fresh server handle = %d: %s", accepted.StatusCode, readBody(t, accepted))
+	}
+	_ = accepted.Body.Close()
+}
+
 func TestWorkspaceHandleRejectsBrowserAndStrictCreateInput(t *testing.T) {
 	server := newWorkspaceHandleTestServer(t, time.Now)
 	request := httptest.NewRequest(http.MethodPost, "/v1/workspaces", strings.NewReader(`{"cwd":"/tmp"}`))

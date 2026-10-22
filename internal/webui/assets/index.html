@@ -194,6 +194,13 @@
               </button>
             </div>
           </div>
+          <div id="prompt-suggestion" class="prompt-suggestion" hidden>
+            <button id="suggest-prompt" type="button" class="quiet" aria-describedby="suggestion-note">Suggest next step</button>
+            <button id="accept-suggestion" type="button" class="suggestion-candidate" hidden></button>
+            <button id="dismiss-suggestion" type="button" class="quiet" hidden>Dismiss</button>
+            <span id="suggestion-note" class="composer-hint">Uses your model; may incur cost. Never sends automatically.</span>
+            <span id="suggestion-status" class="composer-hint" role="status" aria-live="polite"></span>
+          </div>
           <p id="execution-scope" class="composer-hint">Changes here apply to this session. Set defaults in Settings.</p>
         </form>
       </section>

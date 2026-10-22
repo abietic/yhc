@@ -37,7 +37,7 @@ test('Web onboarding offers browsing and does not expose a dead new-session acti
     app.indexOf('function sessionDotClass('),
   );
   assert.match(creationControls, /button\.hidden = surface === 'web'/);
-  assert.match(creationControls, /button\.disabled = creating \|\| !backendAvailable\(state\)/);
+  assert.match(creationControls, /button\.disabled = creating \|\| providerSetupBusy \|\| !backendAvailable\(state\)/);
   assert.match(empty, /workspaceButton\.hidden = surface === 'web'/);
   assert.match(empty, /providerButton\.textContent = 'Browse sessions'/);
   assert.match(empty, /openSheet\('navigation', providerButton\)/);
@@ -68,7 +68,7 @@ test('renderer keeps provider key DOM-local and clears it after submit', async (
   assert.match(app, /button\.disabled = creating/);
   assert.match(
     app,
-    /workspaceButton\.disabled = !backendReady \|\| sessionCreation\.busy\(\)/,
+    /workspaceButton\.disabled = !backendReady \|\| providerSetupBusy \|\| sessionCreation\.busy\(\)/,
   );
   assert.match(app, /createDurableHistoryLoader/);
   assert.match(app, /pendingWorkspace\.attempt\(workspace\)/);

@@ -253,7 +253,7 @@ type QueryEngineConfig struct {
 	WorktreePath              string
 	WorktreeBranch            string
 	EnableLongSessionServices bool // interactive main-thread memory, extraction, and auto-dream
-	EnablePromptSuggestions   bool // model-backed next-prompt suggestions for the root TUI only
+	EnablePromptSuggestions   bool // model-backed next-prompt suggestions for root interactive clients
 	CommandEntrypoint         commands.Entrypoint
 	WorkspaceCommandRunner    WorkspaceCommandRunner
 	WorkspaceCommandTimeout   time.Duration
@@ -799,12 +799,12 @@ func newQueryEngineWithOptions(
 	}
 
 	// Prompt suggestions are synchronous from the service's point of view. The
-	// TUI owns the cancellable Bubble Tea command, so no resident goroutine or
+	// Interactive client owns the cancellable request, so no resident goroutine or
 	// additional Close boundary is introduced here.
 	if config.ChatModel != nil &&
 		config.AgentID == "" &&
 		config.EnablePromptSuggestions &&
-		config.CommandEntrypoint == commands.EntrypointTUI &&
+		(config.CommandEntrypoint == commands.EntrypointTUI || config.CommandEntrypoint == commands.EntrypointAppServer) &&
 		!construction.administration &&
 		!construction.restoreStaging {
 		eng.promptSuggestionService = services.NewPromptSuggestionService(

@@ -325,6 +325,7 @@ func (s *session) startNextRuntimeItemLocked() {
 		display = strings.TrimSpace(item.UserPrompt.Display)
 	}
 	s.mu.Lock()
+	s.cancelPromptSuggestionLocked()
 	s.activeTurnID = turnID
 	s.activePrompt = display
 	s.activeCancel = cancel

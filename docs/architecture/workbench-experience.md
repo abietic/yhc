@@ -76,6 +76,16 @@ settings GET / PATCH 的主机与 Web 请求有固定 15 秒 deadline，涵盖�
 
 ## 证据与后续范围
 
+普通 Send 的晚到回应只能清除原会话中未再编辑的提交草稿；恢复成同文也算编辑。
+关闭持久会话在回应时保留最新草稿，不恢复旧捕获值。创建错误属于全局创建尝试，
+不是当前对话；成功只清理该发布身份。provider 保存替换 backend 后必须重新使用
+原生目录选择器获取新 handle，不能复用旧 capability。
+
+显式 Suggest next step 复用共享偏好和 QueryEngine 生成器；不在后台自动生成。
+候选接受是一次可撤销编辑，Send 仍须另行执行。输入、会话或执行状态改变会使旧候选
+失效。费用、取消和关闭边界见
+[interactive suggestions](platform/runtime-services.md#interactive-prompt-suggestions)。
+
 命令候选复用 Go registry 的 app-server capability admission、参数元数据与引用规则。
 候选只读，不 attach 历史、不调用 provider、不发送 turn。前端按会话、草稿、选区和
 运行状态拒绝迟到结果；IME 暂停列表。显式接受使用原生 textarea 编辑，Undo / Redo
@@ -91,7 +101,7 @@ HTTP SSE 和隔离 context。原生共享设置 smoke 经实际 form → preload
 
 当前 diff / HEAD 的 focused、clean committed merge 与 evidence-ready 才是本轮
 本地门禁。整合候选的原生结果不能当作每个拆分 HEAD 的逐项原生证明。
-显式 prompt suggestion、Task Explorer、MCP、权限编辑、Goal
+Task Explorer、MCP、权限编辑、Goal
 和工作台 Home 由各自后续切片交付，不由本设置界面宣称已完成。
 
 主要 owner：
