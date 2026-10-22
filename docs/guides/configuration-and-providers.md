@@ -141,6 +141,52 @@ inspection process has no active conversation, `session.transcript` is also
 `skipped`; use the in-session `/doctor` command when transcript health is part
 of the diagnosis.
 
+## Edit persistent defaults
+
+`/settings` is an idle-only TUI command for non-secret user or project
+defaults. It is distinct from read-only `/config` and from the current
+session's `/model` or `/permissions` controls. A saved default applies to new
+sessions; it does not change an already running session or claim that a
+provider connection has been tested.
+
+```text
+/settings user
+/settings project max_turns 0
+/settings project reduced_motion false
+/settings project model "openai:gpt-4o"
+/settings project model null
+```
+
+The provider-free CLI uses the same store:
+
+```bash
+yhc config settings --scope project
+yhc config set max_turns 0 --scope project
+yhc config reset max_turns --scope project
+```
+
+The nine editable keys are `provider`, `model`, `model_profile`,
+`api_base_url`, `max_turns`, `permission_mode`, `theme`, `reduced_motion`,
+and `prompt_suggestions`. Each snapshot distinguishes the selected scope's
+stored value, the merged file value, and its `default`, `user`, or `project`
+source. Flags and environment may still override those file values at launch.
+An explicit project `false` overrides user `true`; `null` removes an override.
+Profiles are select-only existing user-owned entries and cannot coexist with
+legacy provider/model/endpoint selection. Credentials and permission bypass
+are not editable through this surface.
+
+The AppServer exposes schema metadata and scope-bound snapshots through
+`GET /v1/settings`; updates use `PATCH /v1/settings`. Writes require the
+observed revision, serialize with permission-document writes through one OS
+lock, preserve unknown keys, and install a synced temporary file atomically.
+Stale revisions, unsafe paths, contention, invalid values, and caller
+cancellation fail without committing a replacement document. HTTP clients
+must still obey the AppServer's existing authentication and workspace boundary.
+
+Implementation: [`workbench_settings.go`](../../engine/config/workbench_settings.go),
+[`cmd_settings.go`](../../engine/commands/cmd_settings.go), and
+[`settings.go`](../../server/appserver/settings.go).
+
 ## Provider environment variables
 
 | Provider | Key variables | Base URL variable |

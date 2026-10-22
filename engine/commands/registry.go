@@ -980,6 +980,7 @@ var coreDiscoveryMetadata = map[string]commandDiscoveryMetadata{
 	"usage":    {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2050, phase: PhaseScopeIdleOnly},
 	"context":  {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2060, phase: PhaseScopeIdleOnly},
 	"config":   {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2070, phase: PhaseScopeIdleOnly},
+	"settings": {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2075, phase: PhaseScopeIdleOnly},
 	"effort":   {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2080, phase: PhaseScopeIdleOnly},
 	"hooks":    {category: CommandCategorySafety, tier: DiscoveryTierSecondary, order: 3010, phase: PhaseScopeIdleOnly},
 	"doctor":   {category: CommandCategorySafety, tier: DiscoveryTierSecondary, order: 3020, phase: PhaseScopeIdleOnly},
@@ -2043,6 +2044,19 @@ Examples:
 	})
 
 	r.mustRegister(&Command{
+		Name:           "settings",
+		Description:    "Inspect or persist shared user/project settings for new sessions",
+		Usage:          "/settings [user|project [<key> <JSON value>]]",
+		DetailedHelp:   "Uses the shared settings service and yhc config. Values are JSON; null removes a scoped override. Changes apply to new sessions. /config still shows the current effective runtime configuration.",
+		Kind:           CommandKindAdministration,
+		Entrypoints:    EntrypointsTUI,
+		SideEffect:     SideEffectWorkspace,
+		ResultKind:     ResultKindText,
+		ExecutionOwner: ExecutionOwnerEntrypoint,
+		Execute:        executeSettings,
+	})
+
+	r.mustRegister(&Command{
 		Name:        "diff",
 		Description: "Show git diff summary for uncommitted changes",
 		Usage:       "/diff [full|staged|stat]",
@@ -2306,7 +2320,6 @@ func registerRemovedDefaults(r *Registry) {
 		{Name: "output-style", Reason: "output style belongs to project configuration", Replacement: "project config; /config reports effective state", RemovedIn: "P21.0"},
 		{Name: "session", Aliases: []string{"remote"}, Reason: "legacy remote session shortcuts are retired", Replacement: "/sessions", RemovedIn: "P21.0"},
 		{Name: "stats", Aliases: []string{"cost"}, Reason: "usage aliases expired", Replacement: "/usage", RemovedIn: "P21.0"},
-		{Name: "settings", Reason: "configuration alias expired", Replacement: "/config", RemovedIn: "P21.0"},
 		{Name: "allowed-tools", Reason: "permissions alias expired", Replacement: "/permissions", RemovedIn: "P21.0"},
 		{Name: "bashes", Reason: "tasks alias expired", Replacement: "/tasks", RemovedIn: "P21.0"},
 		{Name: "summary", Reason: "conversation summaries are ordinary requests, not a default workflow", Replacement: "ask for a summary normally; /compact only when context compaction is desired", RemovedIn: "P21.2"},
