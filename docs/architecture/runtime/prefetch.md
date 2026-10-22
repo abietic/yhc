@@ -27,8 +27,8 @@ sequenceDiagram
     loop each query iteration
         Q->>S: Start(current messages)
         Q->>Q: model stream and tool round
-        Q->>M: Collect()
-        M-->>Q: bounded memory attachment
+        Q->>M: CollectMissing(active messages)
+        M-->>Q: missing bounded memory attachment
         Q->>S: CollectMissing(active messages)
         S-->>Q: up to two missing skill attachments
         Q->>R: append attachments to continuation
@@ -42,9 +42,19 @@ the compact memory store, ranks entries against the latest user query, formats
 them under an approximate character budget, and returns a system attachment.
 `Collect` waits for that goroutine.
 
-The result is non-consuming: later Graph iterations can collect the same memory
-attachment again. The canonical lifecycle, not the prefetcher, owns whether that
-attachment is appended to another continuation.
+The result remains non-consuming. At the after-tool safe point, the canonical
+lifecycle uses `CollectMissing` against the active model context. A system-role
+meta attachment of kind `memory_prefetch` with exactly the same rendered content
+suppresses another delivery. Ordinary text and other roles or attachment kinds
+do not suppress it. Collection preserves both history and the completed result;
+it does not set a lifetime delivery flag.
+
+Memory removed by compaction can be attached again at a later after-tool safe
+point in the same query. A new query still loads and ranks its own snapshot; a
+changed snapshot remains eligible even if some entries overlap earlier memory.
+Existing duplicates are not rewritten. The shared QueryEngine/ProjectGraph path
+therefore avoids adding the same visible attachment on every tool round without
+changing memory extraction, ranking, budgets, or the initial delivery timing.
 
 ### Skill prefetch
 

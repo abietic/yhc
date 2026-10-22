@@ -987,7 +987,7 @@ func runCanonicalAfterToolRound(
 		})
 		toolResults = append(toolResults, attachment)
 	}
-	for _, message := range input.memoryPrefetch.Collect() {
+	for _, message := range input.memoryPrefetch.CollectMissing(input.messagesForQuery) {
 		input.yield(QueryEvent{
 			Type:              EventAttachment,
 			AttachmentMessage: message,
