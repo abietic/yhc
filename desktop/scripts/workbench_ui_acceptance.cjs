@@ -96,7 +96,7 @@ function operation(op, input = {}, conversation = false) {
     return {session_id: input.sessionID, revision: '18446744073709551615', source: 'runtime', hidden_servers: 0, hidden_tools: 0,
       servers: mcpMode === 'empty' ? [] : [
         {name: 'Documentation', source: 'runtime-manager', status: 'connected', health: 'healthy', diagnostic: '', truncated: false, hidden_tools: 0,
-          tools: [{name: 'search', description: '<script>window.__mcpUnsafe = true</script>', truncated: false}]},
+          tools: [{name: 'search', description: '<script>window.__mcpUnsafe = true</script> <SCRIPT>window.__mcpUnsafe = true</SCRIPT>', truncated: false}]},
         {name: 'Unavailable server', source: 'runtime-manager', status: 'failed', health: 'unavailable', diagnostic: 'connect_failed', tools: [], hidden_tools: 3, truncated: false},
       ]};
   }
@@ -693,7 +693,7 @@ async function main() {
         assert.equal(await mcpPage.locator('#settings-save').isVisible(), false);
         assert.equal(await mcpPage.locator('.mcp-server').count(), 2);
         await mcpPage.locator('.mcp-tools summary').click();
-        assert.match(await mcpPage.locator('.mcp-tool').textContent(), /<script>/);
+        for (const tag of ['<script>', '<SCRIPT>']) assert.equal((await mcpPage.locator('.mcp-tool').textContent()).includes(tag), true);
         assert.equal(await mcpPage.locator('#settings-mcp script').count(), 0);
         assert.equal(await mcpPage.evaluate(() => window.__mcpUnsafe), undefined);
         assert.match(await mcpPage.locator('#settings-mcp').textContent(), /Connection failed/);
