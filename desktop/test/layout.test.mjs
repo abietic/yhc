@@ -129,6 +129,9 @@ test('sheet close controls do not animate inherited visibility before focus', as
   assert.equal(properties.includes('all'), false);
   assert.ok(properties.includes('opacity'));
   assert.ok(properties.includes('transform'));
+  const openRule = css.match(/\.sheet-open\s+\.sheet-close\s*\{([^}]*)\}/);
+  assert.ok(openRule, 'an opened panel must not delay its close control through inherited visibility');
+  assert.match(openRule[1], /visibility:\s*visible\s*;/);
 });
 
 test('renderer shell exposes labelled panels and opt-in inspector geometry', async () => {

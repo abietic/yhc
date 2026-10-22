@@ -2035,6 +2035,15 @@ async function main() {
             const properties = await page.locator('#' + close).evaluate(node => getComputedStyle(node).transitionProperty.split(',').map(value => value.trim()));
             assert.equal(properties.includes('visibility'), false);
             assert.equal(properties.includes('all'), false);
+            await page.waitForFunction(id => getComputedStyle(document.getElementById(id)).visibility === 'hidden', region);
+            const openingVisibility = await page.evaluate(({ toggle, close }) => {
+              document.getElementById(toggle).click();
+              return getComputedStyle(document.getElementById(close)).visibility;
+            }, { toggle, close });
+            assert.equal(openingVisibility, 'visible', 'opening visibility must not wait for another frame');
+            await focusIs(page, close);
+            await page.keyboard.press('Escape');
+            await focusIs(page, toggle);
             for (let cycle = 0; cycle < 2; cycle++) {
               await page.waitForFunction(id => getComputedStyle(document.getElementById(id)).visibility === 'hidden', region);
               await page.locator('#' + toggle).click();
