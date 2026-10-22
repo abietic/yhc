@@ -573,6 +573,10 @@ provider/tool dialect.
 - [`QueryEngine.ApplyPermissionRuleSettings`](../../engine/permission_settings.go)
   serializes the shared execution-control check with persistence and refuses to
   turn a pending interaction or Plan approval into a broader permission.
+  Its persist-to-install path and file-watcher reloads share one engine-owned
+  mutex from disk read through cache installation, so an older watcher read
+  cannot overwrite a newly applied rule. Watcher shutdown and MCP lifecycle
+  waits remain outside that mutex.
 - [`backendRequest`](../../desktop/main.cjs) and the
   [browser transport](../../internal/webui/assets/transport.mjs) apply the same
   15-second deadline to permission reads and writes through JSON-body completion.

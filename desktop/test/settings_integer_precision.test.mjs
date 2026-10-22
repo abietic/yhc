@@ -21,6 +21,7 @@ class Node {
   }
 
   append(...nodes) { for (const item of nodes) this.appendChild(item); }
+  get options() { return this.childNodes.filter(item => item.tagName === 'option'); }
   appendChild(item) { this.childNodes.push(item); item.parentNode = this; return item; }
   prepend(item) { this.childNodes.unshift(item); item.parentNode = this; }
   replaceChildren(...nodes) { this.childNodes = []; this.append(...nodes); }
@@ -87,6 +88,8 @@ function fixture(result) {
   add('settings-fields');
   add('settings-categories');
   add('settings-mcp');
+  add('settings-permissions');
+  add('settings-permission-actions');
   add('settings-scope-label');
   add('settings-save', 'button');
   const scope = add('settings-scope', 'select'); scope.value = 'user'; scope.append(new Node('option')); scope.childNodes[0].value = 'project';

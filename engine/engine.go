@@ -84,6 +84,7 @@ type QueryEngine struct {
 	skillRegistry                *skills.SkillRegistry
 	approvalTracker              *permission.ApprovalTracker
 	permissionRules              *permission.RulesEngine
+	permissionRulesReloadMu      sync.Mutex
 	permissionRegistry           *PermissionCoordinatorRegistry
 	permissionCoordinator        *PermissionCoordinator
 	permissionProjectIdentity    PermissionProjectIdentity
@@ -3204,11 +3205,26 @@ func (e *QueryEngine) resetPermissionDenials() {
 }
 
 func (e *QueryEngine) reloadPermissionRules() {
-	rules, _ := permission.LoadPermissionRules(e.config.PermissionProjectRoot)
+	_ = e.reloadPermissionRulesWithLoader(permission.LoadPermissionRules)
+}
+
+func (e *QueryEngine) reloadPermissionRulesWithLoader(load func(string) ([]permission.PermissionRule, error)) error {
+	e.permissionRulesReloadMu.Lock()
+	defer e.permissionRulesReloadMu.Unlock()
+	return e.reloadPermissionRulesLocked(load, false)
+}
+
+func (e *QueryEngine) reloadPermissionRulesLocked(load func(string) ([]permission.PermissionRule, error), keepCurrentOnLoadError bool) error {
+	root := e.permissionSettingsProjectRoot()
+	rules, err := load(root)
+	if err != nil && keepCurrentOnLoadError {
+		return err
+	}
 	rules = append(rules, toolSelectionDenyRules(e.toolRegistry, e.config.ToolSelection)...)
 	e.mu.Lock()
 	e.permissionRules = permission.NewRulesEngine(rules)
 	e.mu.Unlock()
+	return err
 }
 
 func (e *QueryEngine) permissionRulesSnapshot() *permission.RulesEngine {

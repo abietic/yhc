@@ -31,6 +31,10 @@ func (e *QueryEngine) PermissionRuleSettings(scope string) (permission.RuleSetti
 // admission. It never changes mode, Plan state, the registry, or a submitted
 // model request. The ordinary next-turn pool assembly observes blanket denies.
 func (e *QueryEngine) ApplyPermissionRuleSettings(ctx context.Context, scope, revision string, changes []permission.RuleSettingsChange) (PermissionRuleSettingsResult, error) {
+	return e.applyPermissionRuleSettingsWithLoader(ctx, scope, revision, changes, permission.LoadPermissionRules)
+}
+
+func (e *QueryEngine) applyPermissionRuleSettingsWithLoader(ctx context.Context, scope, revision string, changes []permission.RuleSettingsChange, load func(string) ([]permission.PermissionRule, error)) (PermissionRuleSettingsResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -41,6 +45,8 @@ func (e *QueryEngine) ApplyPermissionRuleSettings(ctx context.Context, scope, re
 		return PermissionRuleSettingsResult{}, ErrPermissionSettingsActiveTurn
 	}
 	defer e.planMu.Unlock()
+	e.permissionRulesReloadMu.Lock()
+	defer e.permissionRulesReloadMu.Unlock()
 	if e.planState.Phase == PlanPhaseAwaitingApproval {
 		return PermissionRuleSettingsResult{}, ErrPermissionSettingsActiveTurn
 	}
@@ -52,15 +58,11 @@ func (e *QueryEngine) ApplyPermissionRuleSettings(ctx context.Context, scope, re
 	result := PermissionRuleSettingsResult{RuleSettings: snapshot}
 	// Persistence has committed. Even if the request is cancelled now, report
 	// and attempt live application rather than imply that disk was unchanged.
-	rules, err := permission.LoadPermissionRules(root)
+	err = e.reloadPermissionRulesLocked(load, true)
 	if err != nil {
 		result.Diagnostic = "runtime_reload_failed"
 		return result, nil
 	}
-	rules = append(rules, toolSelectionDenyRules(e.toolRegistry, e.config.ToolSelection)...)
-	e.mu.Lock()
-	e.permissionRules = permission.NewRulesEngine(rules)
-	e.mu.Unlock()
 	result.RuntimeApplied = true
 	return result, nil
 }
