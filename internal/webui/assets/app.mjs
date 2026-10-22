@@ -49,6 +49,7 @@ import {
   synchronizeReplayGap,
 } from './replay.mjs';
 import { createTransport } from './transport.mjs';
+import { mountCommandCompletion } from './command_completion.mjs';
 import { createTimelineRenderer } from './timeline_view.mjs';
 import { applyAppearance, createSettingsView } from './settings_view.mjs';
 import {
@@ -87,6 +88,22 @@ const primaryModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ct
 const $ = (id) => document.getElementById(id);
 const timeline = $('timeline');
 const timelineRenderer = createTimelineRenderer(timeline, renderMessage);
+const commandCompletion = mountCommandCompletion({
+  input: $('prompt'), popup: $('command-completion'), status: $('command-completion-status'),
+  request: payload => api('completeCommand', payload),
+  onEdit: updateDraft,
+  snapshot: () => {
+    const current = activeSession(state);
+    const input = $('prompt');
+    return {
+      sessionID: current?.id, input: input.value,
+      cursor: [...input.value.slice(0, input.selectionStart)].length,
+      selectionEnd: [...input.value.slice(0, input.selectionEnd)].length,
+      enabled: backendAvailable(state) && current?.live && canSubmitTurn(current) && !document.querySelector('dialog[open]') && !openSheetKind,
+      fence: JSON.stringify([current?.cursor, current?.execution, current?.active_turn_id]),
+    };
+  },
+});
 const settingsView = createSettingsView({
   api,
   context: () => ({
@@ -328,6 +345,7 @@ function render() {
     $('cancel').disabled = true;
     renderExecutionControls(null);
     $('composer').hidden = true;
+    commandCompletion.dismiss();
     return;
   }
 
@@ -353,6 +371,7 @@ function render() {
   $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (${primaryModifier}⏎)`;
   $('cancel').disabled = !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
+  commandCompletion.refresh();
 
   if (current.messages.length === 0) {
     timelineRenderer.reset();
@@ -1732,6 +1751,7 @@ function updateDraft(value) {
 
 async function send(event) {
   event.preventDefault();
+  commandCompletion.dismiss();
   const current = activeSession(state);
   const prompt = $('prompt').value.trim();
   if (!current || !prompt ||
@@ -2476,6 +2496,11 @@ $('refresh-review').onclick = () => void loadReview();
 $('ignore-whitespace').onchange = () => void loadReview();
 $('prompt').oninput = () => updateDraft($('prompt').value);
 $('prompt').onkeydown = (event) => {
+  if (commandCompletion.keydown(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (!event.isComposing && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
     $('composer').requestSubmit();

@@ -259,6 +259,8 @@ function operationPath(operation, payload = {}) {
       return [`/v1/sessions/${id()}/interactions/${encodeURIComponent(requireInteractionRequestID(payload.requestID))}/plan`, 'GET'];
     case 'getExecutionSettings':
       return [`/v1/sessions/${id()}/execution-settings`, 'GET'];
+    case 'completeCommand':
+      return [`/v1/sessions/${id()}/command-completions`, 'POST', commandCompletionInput(payload)];
     case 'updateExecutionSetting':
       return [
         `/v1/sessions/${id()}/execution-settings`,
@@ -268,6 +270,16 @@ function operationPath(operation, payload = {}) {
     default:
       throw new TypeError('unsupported client API operation');
   }
+}
+
+function commandCompletionInput(payload) {
+  if (Object.keys(payload).some(key => !['sessionID', 'input', 'cursor'].includes(key)) ||
+      typeof payload.input !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(payload.input) ||
+      !Number.isInteger(payload.cursor) || payload.cursor < 0 || payload.cursor > [...payload.input].length || [...payload.input].length > 2048 ||
+      /[\uD800-\uDFFF]/u.test(payload.input)) {
+    throw new TypeError('valid bounded command input and rune cursor required');
+  }
+  return { input: payload.input, cursor: payload.cursor };
 }
 
 async function exchangeBrowserPairing() {

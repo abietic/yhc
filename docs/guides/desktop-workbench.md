@@ -273,6 +273,25 @@ for ownership and verification limits.
    questions, Plan approval, and repeated-tool calls each have their own typed
    controls. Do not answer one kind of card by pasting JSON into chat.
 
+### Insert a command without running it
+
+In an idle live session, type `/` to browse commands admitted by the app-server.
+Up/Down previews a candidate without changing the draft. Tab inserts the
+selected or first candidate; Enter inserts only after selecting a row. Clicking
+a row also inserts it. Escape dismisses the list and preserves the draft.
+Cmd/Ctrl+Enter retains Send; ordinary Enter remains a newline when no row is
+selected. Input-method composition suspends the menu.
+
+For example, completing `/mod` inserts `/model `, then shows model candidates.
+Arguments and quoting share TUI's command registry. In Chromium, each accepted
+candidate is one native edit: Cmd/Ctrl+Z restores the prior draft and the
+platform Redo shortcut reapplies it. Neither sends a turn. The compatibility
+fallback still inserts text but does not guarantee undo history.
+
+Completion is unavailable in detached history or while a turn or decision is
+pending. It does not scan paths, enumerate session IDs or call a model. Only a
+later explicit Send executes the draft.
+
 When you quit while turns are active, choose **Quit and stop turns** only when
 you are ready to interrupt them. Normal shutdown is usually immediate, but YHC
 allows a running local backend 17 seconds to finish bounded cleanup and, if
