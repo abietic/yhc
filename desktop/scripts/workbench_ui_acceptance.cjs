@@ -559,7 +559,7 @@ async function main() {
       unsafeIntegerSnapshot = true;
       try {
         for (const surface of ['desktop', 'web']) {
-          const page = await createPage(surface);
+          const page = await createPage(surface, true);
           try {
             await page.locator('#settings-open').click();
             await page.waitForFunction(() => document.querySelector('#settings-status').textContent === 'integer outside browser-safe range; use TUI/CLI then reload');
@@ -569,6 +569,12 @@ async function main() {
             assert.equal(await page.locator('#settings-close').isEnabled(), true);
             await page.locator('#settings-reload').click();
             await page.waitForFunction(() => document.querySelector('#settings-status').textContent === 'integer outside browser-safe range; use TUI/CLI then reload');
+            const readsBefore = mcpReads;
+            await page.getByRole('button', { name: 'Extensions · MCP', exact: true }).click();
+            await page.locator('.mcp-status').filter({ hasText: 'Read-only snapshot' }).waitFor();
+            assert.equal(mcpReads, readsBefore + 1, 'MCP remains a separate explicit read when defaults are unsafe');
+            assert.equal(await page.locator('[data-setting="max_turns"]').count(), 0);
+            assert.equal(await page.locator('#settings-save').isDisabled(), true);
             await page.locator('#settings-close').click();
             await page.waitForFunction(() => !document.querySelector('#settings-dialog').open);
           } finally { await page.close(); }
