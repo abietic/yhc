@@ -5170,7 +5170,7 @@ privacy:
       purpose: synthetic-security-fixture
     # Public price-card fixture and non-secret Python configuration identifiers.
     - path: scripts/terminal_bench/test_agent.py
-      line: 509
+      line: 543
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
       purpose: synthetic-security-fixture
@@ -5365,22 +5365,22 @@ privacy:
       match_sha256: 0aaa69ac66922af05824d7faefb0b2923bc18bab9938358d05fcdddf0624a291
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 25
+      line: 26
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 119
+      line: 120
       rule_id: private-email
       match_sha256: 9200dbf872c5546a9359de16a0786b5df08137cd942a7797d0fe9148b05011ab
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 119
+      line: 120
       rule_id: private-url
       match_sha256: 0aaa69ac66922af05824d7faefb0b2923bc18bab9938358d05fcdddf0624a291
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_native_cost.py
-      line: 119
+      line: 120
       rule_id: private-url
       match_sha256: 5615950465cdf8def5c02d3c074e9699790a02e5d0814a68d98d592446d87571
       purpose: synthetic-security-fixture

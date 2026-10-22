@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 from unittest.mock import AsyncMock, patch
 
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
@@ -253,6 +254,39 @@ class RunTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.metadata["yhc"]["continuation"]["segments"], 2)
         self.assertTrue((self.subject.logs_dir / "yhc.segment-0000.jsonl").exists())
         self.assertEqual(read_result(self.subject.logs_dir / "yhc.jsonl")["status"], "completed")
+
+    async def test_replayed_call_ledger_without_cost_stops_before_a_third_dispatch(self):
+        self.subject.continuation_budgets = [{"max_provider_calls": 1}] * 2
+        records = [budget_terminal(), budget_terminal(), budget_terminal()]
+        usage = records[0]["result"]["usage"]
+        usage["call_ledger"] = dict(version=1, segment_id=str(uuid4()), dropped_records=0, records=[dict(
+            ordinal=1, call_id=str(uuid4()), logical_round_id="unknown", logical_request_id="unknown",
+            model_attempt_id="unknown", attempt_index=0, retry_index=0, provider="agenticdeepseek",
+            requested_model="deepseek-v4-flash", resolved_model="deepseek-v4-flash", source="sdk",
+            role="main", effort="low", state="known", started_offset_ms=0, provider_duration_ms=1,
+            tokens=dict(prompt_tokens=10, completion_tokens=4, total_tokens=14,
+                        cached_prompt_tokens=6, uncached_prompt_tokens=4, reasoning_tokens=2))])
+        records[1]["result"]["usage"] = usage
+        records[2]["result"].update(status="completed", exit_code=0, terminal_reason="completed", error=None)
+        commands = []
+
+        async def execute(**kwargs):
+            commands.append(kwargs["command"])
+            return SimpleNamespace(return_code=records[len(commands) - 1]["result"]["exit_code"])
+
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(records[len(commands) - 1]) + "\n")
+
+        self.environment.exec.side_effect = execute
+        self.environment.download_file.side_effect = download
+        context = AgentContext()
+        with self.assertRaises(ValueError):
+            await self.subject.run("original instruction", self.environment, context)
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(json.loads((self.subject.logs_dir / "yhc.segment-0000.jsonl").read_text()), records[0])
+        self.assertEqual(json.loads((self.subject.logs_dir / "yhc.jsonl").read_text()), records[1])
+        self.assertNotIn("usage", context.metadata["yhc"])
+        self.assertEqual(context.metadata["yhc"]["continuation"]["segments"], 2)
 
     async def test_continuation_does_not_retry_unknown_usage_other_errors_or_missing_session(self):
         records = [budget_terminal(complete=False), budget_terminal(session=""), terminal("failed", 1),
