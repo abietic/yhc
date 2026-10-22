@@ -424,6 +424,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
 	api.HandleFunc("GET /v1/sessions/{session_id}/tasks", s.handleTaskExplorer)
 	api.HandleFunc("GET /v1/sessions/{session_id}/mcp-inventory", s.handleMCPInventory)
+	api.HandleFunc("GET /v1/sessions/{session_id}/goal", s.handleGetGoal)
+	api.HandleFunc("POST /v1/sessions/{session_id}/goal/control", s.handleControlGoal)
 	api.HandleFunc("GET /v1/sessions/{session_id}/agent-execution-detail", s.handleAgentExecutionDetail)
 	api.HandleFunc("GET /v1/sessions/{session_id}/agent-transcript", s.handleAgentTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/transcript", s.handleTranscriptPage)
@@ -722,6 +724,7 @@ var webAssetPaths = map[string]string{
 	"/layout.mjs":                 "assets/layout.mjs",
 	"/settings_view.mjs":          "assets/settings_view.mjs",
 	"/mcp_inventory.mjs":          "assets/mcp_inventory.mjs",
+	"/goal.mjs":                   "assets/goal.mjs",
 	"/permission_settings.mjs":    "assets/permission_settings.mjs",
 	"/timeline_view.mjs":          "assets/timeline_view.mjs",
 	"/task_explorer.mjs":          "assets/task_explorer.mjs",
@@ -826,6 +829,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessions[owned.id] = owned
+	owned.server = s
 	owned.startRuntimeInputPump()
 	s.mu.Unlock()
 	s.settleWorkspaceHandle(handle, true)

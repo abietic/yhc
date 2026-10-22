@@ -53,6 +53,7 @@ func (e *QueryEngine) goalWorkflowEnabled() bool {
 		capability.Enabled &&
 		(entrypoint == commands.EntrypointTUI ||
 			entrypoint == commands.EntrypointPlain ||
+			entrypoint == commands.EntrypointAppServer ||
 			entrypoint == commands.EntrypointHeadlessGoal ||
 			(entrypoint == commands.EntrypointACP &&
 				capability.ACPNegotiated)) &&
@@ -76,7 +77,7 @@ func (e *QueryEngine) GoalCommandAvailability() (bool, string) {
 		return false, "Goal requires an engine runtime"
 	}
 	if !e.goalWorkflowEnabled() {
-		return false, "Goal is available only when enabled for a saved root TUI, Plain, or dedicated headless Goal session, or a negotiated saved-root ACP session"
+		return false, "Goal requires an enabled saved root TUI, Plain, AppServer, dedicated headless Goal, or negotiated ACP session"
 	}
 	if planPhaseRequiresContainment(e.PlanState().Phase) {
 		return false, "Goal is unavailable while Plan mode is active"
@@ -94,6 +95,12 @@ func (e *QueryEngine) goalDefaultTokenBudget() *uint64 {
 		return nil
 	}
 	return cloneUint64(e.config.GoalCapability.DefaultTokenBudget)
+}
+
+// GoalDefaultTokenBudget returns a detached host default for typed user
+// interfaces. Reading it never creates or starts a Goal.
+func (e *QueryEngine) GoalDefaultTokenBudget() *uint64 {
+	return e.goalDefaultTokenBudget()
 }
 
 func isGoalToolName(name string) bool {

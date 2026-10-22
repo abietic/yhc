@@ -61,6 +61,13 @@ const permissionRules = new Map();
 let creations = 0;
 let sessionSettingWrites = 0;
 let turnRequests = 0;
+const goals = new Map();
+const goalWrites = [];
+let conflictNextGoal = false;
+function goalState(id) {
+  return { session_id: id, available: true, diagnostic: '',
+    default_token_budget: '9007199254740993', goal: goals.get(id) || null };
+}
 const session = { id: 'acceptance-session', title: 'Improve the search experience', workspace_label: 'demo-workspace', status: 'idle', active_turn_id: '', resumable: true };
 const secondSession = { ...session, id: 'acceptance-second-session', title: 'Review the keyboard flow' };
 const messages = [
@@ -96,6 +103,29 @@ function settings(scope = 'user') {
   ) };
 }
 function operation(op, input = {}, conversation = false) {
+  if (op === 'getGoal') return goalState(input.sessionID);
+  if (op === 'controlGoal') {
+    goalWrites.push(structuredClone(input));
+    const goal = goals.get(input.sessionID);
+    if (conflictNextGoal || input.expected_goal_id !== (goal?.goal_id || '') ||
+      input.expected_revision !== (goal?.revision || '0')) {
+      conflictNextGoal = false;
+      return { fixtureError: true, status: 409, code: 'goal_conflict', message: '/private/fixture-goal-error' };
+    }
+    const next = goal ? { ...goal, revision: String(BigInt(goal.revision) + 1n) } : {
+      goal_id: 'goal-fixture', objective: input.objective, status: 'active', revision: '1',
+      token_budget: input.token_budget || '9007199254740993', tokens_used: '0',
+      root_active_time_ms: '0', usage_coverage: 'complete', status_reason_code: '', status_reason: '',
+    };
+    if (input.operation === 'edit') next.objective = input.objective;
+    if (input.operation === 'budget') next.token_budget = input.token_budget;
+    if (input.operation === 'pause') next.status = 'paused';
+    if (input.operation === 'resume') next.status = 'active';
+    if (input.operation === 'continue') next.revision = goal.revision;
+    if (input.operation === 'clear') goals.delete(input.sessionID);
+    else goals.set(input.sessionID, next);
+    return { state: goalState(input.sessionID), saved: input.operation !== 'continue', started: false };
+  }
   if (op === 'getPermissionSettings' || op === 'updatePermissionSettings') {
     const scope=input.scope || 'user', owner=input.sessionID || input.session_id || '';
     const key=scope==='user' ? scope : `${owner}:${scope}`;
@@ -355,6 +385,12 @@ async function main() {
         res.write(': connected\n\n'); streams.set(res, url.pathname.split('/').at(-2)); req.on('close', () => streams.delete(res)); return;
       }
       const end = url.pathname.split('/').at(-1);
+      if (end === 'goal' || (end === 'control' && url.pathname.endsWith('/goal/control'))) {
+        const parts = url.pathname.split('/');
+        const sessionID = parts[3];
+        reply(res, operation(end === 'goal' ? 'getGoal' : 'controlGoal',
+          { ...await readBody(req), sessionID })); return;
+      }
       if (end === 'tasks') {
         const body = operation('getTaskExplorer', { sessionID: url.pathname.split('/').at(-2) });
         if (holdNextTasks) { holdNextTasks = false; heldTasks.push({ res, body }); return; }
@@ -707,6 +743,68 @@ async function main() {
       }
     });
     await settingsTimeout.close();
+    for (const surface of ['desktop', 'web']) {
+      goals.clear();
+      const goalPage = await createPage(surface, true);
+      const goalAction = op => goalPage.locator('[data-goal-operation="' + op + '"]');
+      const objective = goalPage.getByRole('textbox', { name: 'Goal 目标', exact: true });
+      const budget = goalPage.getByRole('textbox', { name: 'Goal 令牌预算', exact: true });
+      await check(surface + ' Goal create is explicit, exact-budget and honest about not-started admission', async () => {
+        await goalPage.locator('.session-row').first().click();
+        await goalPage.locator('.goal-toggle').click();
+        await goalPage.waitForFunction(() => document.querySelector('.goal-status').textContent.includes('尚未创建'));
+        assert.equal(await goalAction('create').isDisabled(), true);
+        await objective.fill('<img src=x> 改善搜索体验');
+        await budget.fill('18446744073709551616');
+        assert.equal(await goalAction('create').isDisabled(), true);
+        await budget.fill('9007199254740993');
+        await goalAction('create').click();
+        await goalPage.waitForFunction(() => document.querySelector('.goal-status').textContent.includes('尚未开始'));
+        assert.equal(goalWrites.at(-1).token_budget, '9007199254740993');
+        assert.equal(goalWrites.at(-1).expected_revision, '0');
+        assert.equal(await goalPage.locator('#goal-panel img').count(), 0);
+        assert.equal(await goalPage.locator('#prompt').isDisabled(), false);
+        await screenshot(goalPage, surface + '-goal-wide');
+      });
+      await check(surface + ' Goal independent field saves retain drafts, conflict safely and use explicit continue', async () => {
+        await objective.fill('保存目标但保留预算');
+        await budget.fill('9007199254740994');
+        await goalAction('edit').click();
+        await goalPage.waitForFunction(() => document.querySelector('.goal-status').textContent === '已保存。');
+        assert.equal(await budget.inputValue(), '9007199254740994');
+        await goalAction('budget').click();
+        await goalPage.waitForFunction(() => document.querySelector('[data-goal-operation="budget"]').disabled === true);
+        assert.equal(goalWrites.at(-1).expected_revision, '2');
+        await goalAction('continue').click();
+        await goalPage.waitForFunction(() => document.querySelector('.goal-status').textContent.includes('目标仍有效'));
+        await goalAction('pause').click();
+        await goalPage.waitForFunction(() => !document.querySelector('[data-goal-operation="resume"]').hidden);
+        await goalAction('resume').click();
+        await goalPage.waitForFunction(() => !document.querySelector('[data-goal-operation="continue"]').hidden);
+        await objective.fill('保留冲突草稿');
+        conflictNextGoal = true;
+        await goalAction('edit').click();
+        await goalPage.waitForFunction(() => document.querySelector('.goal-status').textContent.includes('草稿版本'));
+        assert.equal(await objective.inputValue(), '保留冲突草稿');
+        assert.equal((await goalPage.locator('#goal-panel').textContent()).includes('/private'), false);
+        await goalAction('reload').click();
+        assert.equal(await goalPage.locator('#confirm-title').textContent(), '丢弃 Goal 草稿？');
+        await goalPage.locator('#confirm-accept').click();
+        await goalPage.waitForFunction(() => !document.querySelector('#confirm-dialog').open);
+        await goalAction('clear').click();
+        assert.equal(await goalPage.locator('#confirm-title').textContent(), '清除 Goal？');
+        await goalPage.locator('#confirm-cancel').click();
+        assert.equal(goals.size, 1);
+        await goalPage.setViewportSize({ width: 390, height: 844 });
+        assert.equal(await goalPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await screenshot(goalPage, surface + '-goal-narrow');
+        await goalAction('clear').click();
+        await goalPage.locator('#confirm-accept').click();
+        await goalPage.waitForFunction(() => !document.querySelector('[data-goal-operation="create"]').hidden);
+        assert.equal(goals.size, 0);
+      });
+      await goalPage.context().close();
+    }
     for (const surface of ['desktop', 'web']) {
       const mcpPage = await createPage(surface, true);
       await check(`${surface} MCP is a lazy read-only settings category preserving unsaved defaults`, async () => {
