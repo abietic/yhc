@@ -95,6 +95,37 @@ func (p *MemoryPrefetch) Start(messages []*schema.Message) {
 	}()
 }
 
+// CollectMissing returns only memory attachments absent from the active context.
+// Filtering is non-consuming and does not mutate history. A memory attachment
+// removed by compaction remains eligible at a later after-tool safe point.
+func (p *MemoryPrefetch) CollectMissing(messages []*schema.Message) []*schema.Message {
+	seen := make(map[string]struct{})
+	for _, message := range messages {
+		if content, ok := prefetchedMemoryContent(message); ok {
+			seen[content] = struct{}{}
+		}
+	}
+	var missing []*schema.Message
+	for _, message := range p.Collect() {
+		if content, ok := prefetchedMemoryContent(message); ok {
+			if _, exists := seen[content]; exists {
+				continue
+			}
+			seen[content] = struct{}{}
+		}
+		missing = append(missing, message)
+	}
+	return missing
+}
+
+func prefetchedMemoryContent(message *schema.Message) (string, bool) {
+	if message == nil || message.Role != schema.System ||
+		message.Extra["is_meta"] != true || message.Extra["attachment_kind"] != "memory_prefetch" {
+		return "", false
+	}
+	return message.Content, true
+}
+
 func latestUserQuery(messages []*schema.Message) string {
 	for index := len(messages) - 1; index >= 0; index-- {
 		message := messages[index]
