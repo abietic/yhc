@@ -102,7 +102,7 @@ class CostTests(unittest.TestCase):
                 "total_tokens": 14, "cached_prompt_tokens": 6, "reasoning_tokens": 2,
                 "cost": {"version": 1, "segment_id": str(uuid4()),
                     "price_card": {"version": 1, "currency": currency,
-                        "source": "https://example.org/synthetic-prices",
+                        "source": "https://github.com/example/synthetic-prices",
                         "as_of": "2026-10-23T00:00:00Z", "window": "fixed",
                         "routes": [{"provider": "agenticdeepseek", "model": "flash",
                             "cached_input_per_million": "1", "uncached_input_per_million": "2",
