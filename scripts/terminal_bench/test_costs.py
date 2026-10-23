@@ -1,6 +1,9 @@
 import unittest
 import json
 import tempfile
+import subprocess
+import sys
+from uuid import uuid4
 from pathlib import Path
 
 from scripts.terminal_bench.report_costs import build_report, hydrate_continuation
@@ -92,6 +95,84 @@ class CostTests(unittest.TestCase):
             result = build_report([hydrate_continuation(row)], [self.card])
             self.assertEqual(result["trials"][0]["cost_scenarios"]["scenario"], "0.098")
             self.assertEqual(result["trials"][0]["usage_coverage"], "lower_bound")
+
+    def native_usage(self, currency="CNY"):
+        # 6 cached + 4 uncached + 4 output at 1/2/4 per million = 0.000030.
+        return {**self.usage, "prompt_tokens": 10, "completion_tokens": 4,
+                "total_tokens": 14, "cached_prompt_tokens": 6, "reasoning_tokens": 2,
+                "cost": {"version": 1, "segment_id": str(uuid4()),
+                    "price_card": {"version": 1, "currency": currency,
+                        "source": "https://example.org/synthetic-prices",
+                        "as_of": "2026-10-23T00:00:00Z", "window": "fixed",
+                        "routes": [{"provider": "agenticdeepseek", "model": "flash",
+                            "cached_input_per_million": "1", "uncached_input_per_million": "2",
+                            "output_per_million": "4"}]},
+                    "known_estimated_amount": "0.000030000000", "actual_billed_amount": None,
+                    "priced_calls": 1, "unpriced_calls": 0, "complete": True,
+                    "limit_mode": "post_response_threshold"}}
+
+    def write_continuation(self, directory, usages, segments):
+        (Path(directory) / "result.json").write_text(json.dumps({"agent_result": {
+            "metadata": {"yhc": {"continuation": {"segments": segments,
+                "history": [{"usage": usage} for usage in usages]}}}}}))
+        return {**self.row, "trial_path": directory, "usage": usages[-1] if usages else None}
+
+    def test_incomplete_continuation_retains_native_cost_as_lower_bound(self):
+        usage = self.native_usage()
+        for history in ([usage], [usage, None]):
+            with self.subTest(history_length=len(history)), tempfile.TemporaryDirectory() as directory:
+                row = self.write_continuation(directory, history, segments=2)
+                report = build_report([hydrate_continuation(row)], [], display_currency="USD",
+                    fx_snapshots=[{"base": "CNY", "quote": "USD", "rate": "0.1",
+                        "as_of": "2026-10-23T00:00:00Z", "source": "synthetic fixture"}])
+                trial = report["trials"][0]
+                self.assertEqual(trial["usage_coverage"], "lower_bound")
+                self.assertEqual(trial["tokens"]["total_tokens"], 14)
+                cost = trial["invocation_native_estimates"]["CNY"]
+                self.assertEqual(cost["known_estimated_amount"], "0.000030000000")
+                self.assertFalse(cost["complete"])
+                self.assertIsNone(cost["actual_billed_amount"])
+                self.assertFalse(report["successful_trials"]["invocation_native_estimates"]["CNY"]["complete"])
+                conversion = trial["converted_invocation_estimates"]["CNY"]
+                self.assertEqual(conversion["original_amount"], "0.000030000000")
+                self.assertEqual(conversion["amount"], "0.0000030000000")
+
+    def test_partial_native_costs_keep_currencies_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            row = self.write_continuation(directory,
+                [self.native_usage("CNY"), self.native_usage("USD")], segments=3)
+            report = build_report([hydrate_continuation(row)], [])
+            for native in (report["trials"][0]["invocation_native_estimates"],
+                           report["all_supplied_trials"]["invocation_native_estimates"]):
+                self.assertEqual(set(native), {"CNY", "USD"})
+                for cost in native.values():
+                    self.assertEqual(cost["known_estimated_amount"], "0.000030000000")
+                    self.assertFalse(cost["complete"])
+
+    def test_partial_history_never_prices_invalid_or_repeated_native_receipts(self):
+        invalid = self.native_usage()
+        invalid["cost"]["known_estimated_amount"] = "NaN"
+        duplicate = self.native_usage()
+        for history in ([invalid], [duplicate, duplicate]):
+            with self.subTest(history_length=len(history)), tempfile.TemporaryDirectory() as directory:
+                row = self.write_continuation(directory, history, segments=3)
+                report = build_report([hydrate_continuation(row)], [])
+                self.assertEqual(report["trials"][0]["invocation_native_estimates"], {})
+                self.assertNotEqual(report["trials"][0]["usage_coverage"], "complete")
+
+    def test_cli_keeps_native_lower_bound_when_latest_segment_is_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            row = self.write_continuation(directory, [self.native_usage()], segments=2)
+            statistics = Path(directory) / "statistics.json"
+            output = Path(directory) / "costs.json"
+            statistics.write_text(json.dumps([row]))
+            subprocess.run([sys.executable, "-m", "scripts.terminal_bench.report_costs",
+                "--statistics", str(statistics), "--output", str(output)],
+                check=True, capture_output=True, text=True, timeout=10)
+            trial = json.loads(output.read_text())["trials"][0]
+            self.assertEqual(trial["invocation_native_estimates"]["CNY"]["known_estimated_amount"],
+                             "0.000030000000")
+            self.assertFalse(trial["invocation_native_estimates"]["CNY"]["complete"])
 
     def test_mixed_model_routes_do_not_get_one_model_price(self):
         self.usage["routes"] = [{"model": "flash"}, {"model": "pro"}]

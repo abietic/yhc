@@ -234,7 +234,12 @@ the experiment's explicitly recorded `manifest.model_request`. Each model has
 `output_per_million`. Statistics are trial rows with unique `trial_path`,
 `manifest`, `reward` and `usage`, as emitted by the experiment summarizer.
 Historical recovered subsets use `partial_usage_lower_bound` with
-`complete=false` and `totals`. Cache and thinking subsets are not charged twice.
+`complete=false` and `totals`. When continuation records are missing, `totals`
+retains validated usage and native cost receipts from the available segments.
+Their known native estimates remain separate by currency and explicitly
+incomplete; a missing segment is not a zero-cost segment. Older token-only
+subsets cannot supply a native estimate. Cache and thinking subsets are not
+charged twice.
 No rate is guessed for an unlisted model, and `actual_billed_cost` stays null.
 Choose the rate card in the account's settlement currency: providers can publish
 independent CNY and USD prices, so their ratio is not a foreign-exchange rate.
