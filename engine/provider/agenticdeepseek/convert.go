@@ -136,6 +136,40 @@ type responseUsage struct {
 		ReasoningTokens int `json:"reasoning_tokens"`
 	} `json:"output_tokens_details"`
 	TotalTokens int `json:"total_tokens"`
+
+	finalReceiptValid bool
+}
+
+func (u *responseUsage) UnmarshalJSON(data []byte) error {
+	type wireUsage responseUsage
+	var wire wireUsage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	// Pointer presence distinguishes explicit zero usage from absent/null
+	// counters; zero-valued Go fields alone are not a financial receipt.
+	var present struct {
+		Input        *int `json:"input_tokens"`
+		Output       *int `json:"output_tokens"`
+		Total        *int `json:"total_tokens"`
+		InputDetails struct {
+			Cached *int `json:"cached_tokens"`
+		} `json:"input_tokens_details"`
+		OutputDetails struct {
+			Reasoning *int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	}
+	if err := json.Unmarshal(data, &present); err != nil {
+		return err
+	}
+	*u = responseUsage(wire)
+	u.finalReceiptValid = present.Input != nil && present.Output != nil && present.Total != nil &&
+		present.InputDetails.Cached != nil && present.OutputDetails.Reasoning != nil &&
+		u.InputTokens >= 0 && u.OutputTokens >= 0 && u.TotalTokens >= u.InputTokens &&
+		u.TotalTokens-u.InputTokens >= u.OutputTokens &&
+		u.InputTokensDetails.CachedTokens >= 0 && u.InputTokensDetails.CachedTokens <= u.InputTokens &&
+		u.OutputTokensDetails.ReasoningTokens >= 0 && u.OutputTokensDetails.ReasoningTokens <= u.OutputTokens
+	return nil
 }
 
 func buildResponseRequest(
@@ -582,7 +616,7 @@ func responseToAgentic(response *responseObject) (*schema.AgenticMessage, error)
 		return nil, &ProtocolError{ReasonCode: "response_object_invalid"}
 	}
 	if response.Status == ResponseStatusFailed {
-		return nil, apiErrorFromResponse(response)
+		return nil, failedResponseError(response)
 	}
 	if response.Status != ResponseStatusCompleted && response.Status != ResponseStatusIncomplete {
 		return nil, &ProtocolError{ReasonCode: "response_status_not_terminal"}
@@ -739,6 +773,16 @@ func apiErrorFromResponse(response *responseObject) *APIError {
 	if response != nil && response.Error != nil {
 		err.Code = boundedText(response.Error.Code, 128)
 		err.Message = boundedText(response.Error.Message, 1024)
+	}
+	return err
+}
+
+func failedResponseError(response *responseObject) *APIError {
+	err := apiErrorFromResponse(response)
+	if response != nil && response.Object == "response" && response.ID != "" && response.Model != "" &&
+		response.Status == ResponseStatusFailed && response.Usage != nil && response.Usage.finalReceiptValid {
+		err.finalUsage = responseMeta(response).TokenUsage
+		err.responseModel = response.Model
 	}
 	return err
 }

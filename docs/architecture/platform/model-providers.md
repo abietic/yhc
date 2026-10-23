@@ -182,6 +182,13 @@ terminal. The deferred model-round collector cannot execute a tool. Only a
 completely classified successful attempt enters canonical assistant/tool
 history.
 
+DeepSeek failed terminal responses may carry a complete usage receipt. The
+adapter retains that receipt on the typed error, and shared execution settles
+it while preserving the original failure. Every required counter must be
+explicit, nonnegative and internally consistent; reserved bounds still apply.
+Missing or invalid usage and interrupted streams remain unknown and retain
+their reservation. A known cost never makes a failed response successful.
+
 TUI attaches assistant, thinking, and uncommitted tool projection to the exact
 attempt, removes only a tombstoned attempt, and shows one bounded warning for a
 later `started` attempt. Plain and Headless write the same safe notice only to

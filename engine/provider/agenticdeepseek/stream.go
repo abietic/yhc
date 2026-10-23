@@ -163,7 +163,7 @@ func (s *streamState) convertEvent(event *streamEvent) (*schema.AgenticMessage, 
 		if event.Response == nil {
 			return nil, false, &ProtocolError{ReasonCode: "stream_failed_response_missing"}
 		}
-		return nil, false, apiErrorFromResponse(event.Response)
+		return nil, false, failedResponseError(event.Response)
 	case "error", "response.error":
 		return nil, false, &APIError{
 			Code:    boundedText(event.Code, 128),
