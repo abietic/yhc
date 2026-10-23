@@ -181,6 +181,7 @@ desktop-stage-windows-amd64: build/desktop/windows-amd64/yhc.exe
 
 desktop-install:
 	npm --prefix desktop ci --no-audit --no-fund
+	$(NODE) desktop/node_modules/electron/install.js
 
 desktop-test:
 	node --test desktop/test/*.test.mjs
