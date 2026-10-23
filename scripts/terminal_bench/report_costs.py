@@ -126,7 +126,8 @@ def hydrate_continuation(stat: dict) -> dict:
     known = [value for value in values if validated_usage(value) is not None]
     total = sum_usage(known)
     # A missing latest stream remains unknown; retain only the proven lower bound.
-    partial = {"complete": False, "totals": token_totals(total)} if total else None
+    # Keep validated native receipts with the known subset, not only its tokens.
+    partial = {"complete": False, "totals": total} if total else None
     if partial is not None and "routes" in total:
         partial["routes"] = total["routes"]
     return {**stat, "usage": None, "partial_usage_lower_bound": partial}
@@ -256,7 +257,14 @@ def build_report(statistics: list[dict], rate_cards: list[dict], *,
         reward = stat.get("reward")
         if isinstance(reward, dict):
             reward = reward.get("reward")
-        native = native_totals(validated_usage(stat.get("usage")) or {})
+        native_usage = stat.get("usage")
+        if native_usage is None and coverage == "lower_bound":
+            native_usage = stat["partial_usage_lower_bound"]["totals"]
+        native = native_totals(validated_usage(native_usage) or {})
+        if coverage != "complete":
+            # A complete receipt for the known subset cannot cover a missing segment.
+            for value in native.values():
+                value["complete"] = False
         rows.append({"trial_path": path, "task": manifest.get("task"), "model_request": model,
                      "invocation_native_estimates": native,
                      "effort": stat.get("effort"), "started_at": manifest.get("started_at"),
