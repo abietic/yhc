@@ -202,6 +202,19 @@ type APIError struct {
 	Code       string
 	Message    string
 	RequestID  string
+
+	finalUsage    *schema.TokenUsage
+	responseModel string
+}
+
+// FinalProviderUsage returns a detached receipt only when a failed terminal
+// response supplied every required usage counter. Error text is not evidence.
+func (e *APIError) FinalProviderUsage() (*schema.TokenUsage, string) {
+	if e == nil || e.finalUsage == nil {
+		return nil, ""
+	}
+	usage := *e.finalUsage
+	return &usage, e.responseModel
 }
 
 func (e *APIError) Error() string {

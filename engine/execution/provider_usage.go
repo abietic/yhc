@@ -169,7 +169,8 @@ func CompleteProviderUsage(
 
 // CompleteStreamProviderUsage settles the final cumulative stream receipt even
 // when the provider produced no assistant content. A stream error must still
-// use MarkProviderUsageAmbiguous rather than settling a partial receipt.
+// use MarkProviderUsageAmbiguous, which accepts only explicitly authoritative
+// terminal-error receipts and never settles partial stream counters.
 func CompleteStreamProviderUsage(call ProviderUsageCall, result *StreamResult) error {
 	var usage *schema.TokenUsage
 	if result != nil {
@@ -192,11 +193,24 @@ func completeProviderUsage(call ProviderUsageCall, usage *schema.TokenUsage) err
 	return nil
 }
 
-// MarkProviderUsageAmbiguous fails closed unless a call explicitly opts into
-// observation-only ambiguity. Existing Goal owners remain strict by default.
+// MarkProviderUsageAmbiguous settles an explicit final error receipt, retaining
+// the provider failure. Without one it fails closed unless the call explicitly
+// opts into observation-only ambiguity. Goal owners remain strict by default.
 func MarkProviderUsageAmbiguous(call ProviderUsageCall, cause error) error {
 	if call == nil {
 		return cause
+	}
+	var receipt providercost.FinalUsageError
+	if errors.As(cause, &receipt) {
+		if usage, responseModel := receipt.FinalProviderUsage(); usage != nil {
+			if observer, ok := call.(interface{ ObserveProviderResponseModel(string) }); ok {
+				observer.ObserveProviderResponseModel(responseModel)
+			}
+			if err := completeProviderUsage(call, usage); err != nil {
+				return errors.Join(cause, err)
+			}
+			return cause
+		}
 	}
 	accountingErr := call.MarkProviderUsageAmbiguous(cause)
 	if policy, ok := call.(interface{ FailClosedOnAmbiguousUsage() bool }); ok && !policy.FailClosedOnAmbiguousUsage() && accountingErr == nil {

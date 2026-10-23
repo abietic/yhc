@@ -12,6 +12,15 @@ import (
 
 var ErrUnsupported = errors.New("provider does not support bounded cost dispatch")
 
+// FinalUsageError carries an authoritative terminal receipt despite a failed
+// provider response. Partial stream counters must never implement this contract.
+// A nil usage means no complete receipt is available. Callers still return the
+// original provider error after accounting for a non-nil receipt.
+type FinalUsageError interface {
+	error
+	FinalProviderUsage() (usage *schema.TokenUsage, responseModel string)
+}
+
 type Bound struct {
 	Provider     string
 	Model        string
