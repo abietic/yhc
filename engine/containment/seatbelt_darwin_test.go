@@ -63,7 +63,9 @@ func TestSeatbeltDarwinSysctlAllowlist(t *testing.T) {
 	spawn, err := binding.Prepare(context.Background(), SpawnRequest{
 		Binding: binding, Executable: helper, Dir: identity.Path,
 		Args: []string{"-test.run=^TestSeatbeltDarwinSysctlAllowlist$"},
-		Env:  []string{"YHC_SEATBELT_SYSCTL_HELPER=1"},
+		// Go's cover-mode test main creates temporary coverage data at exit.
+		// Keep that housekeeping inside the declared root, not ambient /tmp.
+		Env: []string{"YHC_SEATBELT_SYSCTL_HELPER=1", "TMPDIR=" + identity.Path},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +76,7 @@ func TestSeatbeltDarwinSysctlAllowlist(t *testing.T) {
 	defer cancel()
 	command := exec.CommandContext(ctx, spawn.Path, spawn.Args...)
 	command.Dir, command.Env = spawn.Dir, spawn.Env
-	if err := command.Run(); err != nil {
-		t.Fatalf("Guest sysctl allowlist subprocess failed: %v (context: %v)", err, ctx.Err())
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("Guest sysctl allowlist subprocess failed: %v (context: %v): %s", err, ctx.Err(), output)
 	}
 }
