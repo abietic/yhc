@@ -82,6 +82,31 @@ func TestSeatbeltProfileUsesParametersAndDeniesNetwork(t *testing.T) {
 	}
 }
 
+func TestSeatbeltProfileAllowsOnlyRuntimeSysctls(t *testing.T) {
+	profile, _, err := renderSeatbeltProfile(Spec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An explicit allowlist rejects blanket sysctl access and broader prefixes.
+	const allowed = `(allow sysctl-read
+  (sysctl-name "hw.activecpu")
+  (sysctl-name "hw.machine")
+  (sysctl-name "hw.memsize")
+  (sysctl-name "hw.ncpu")
+  (sysctl-name "hw.pagesize")
+  (sysctl-name "hw.pagesize_compat")
+  (sysctl-name "kern.hostname")
+  (sysctl-name "kern.osproductversion")
+  (sysctl-name "kern.osrelease")
+  (sysctl-name "kern.ostype")
+  (sysctl-name "kern.version")
+  (sysctl-name-prefix "hw.optional.arm.")
+  (sysctl-name-prefix "kern.proc.pid."))`
+	if strings.Count(profile, "(allow sysctl-read") != 1 || !strings.Contains(profile, allowed+"\n") {
+		t.Fatal("runtime sysctl allowlist changed")
+	}
+}
+
 func TestSeatbeltProbeBindsOnlyAdapterOwnedAxes(t *testing.T) {
 	root := t.TempDir()
 	identity := RootIdentity{Path: root, Device: 1, Inode: 2}
@@ -248,6 +273,13 @@ func TestSeatbeltDarwinIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("uname", func(t *testing.T) {
+		// uname(3), also used by Node's test runner, needs the hostname and
+		// machine sysctls. Discard stdout rather than retaining host metadata.
+		if err := runDarwinSeatbelt(t, binding, root, "/usr/bin/uname", []string{"-a"}); err != nil {
+			t.Fatalf("uname denied in workspace-write Guest: %v", err)
+		}
+	})
 	inside := filepath.Join(root, "inside")
 	if err := runDarwinSeatbelt(t, binding, root, "/bin/sh", []string{"-c", "echo allowed > \"$1\"", "sh", inside}); err != nil {
 		t.Fatal(err)
