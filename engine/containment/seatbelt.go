@@ -13,7 +13,7 @@ import (
 
 const (
 	darwinSeatbeltExecutable = "/usr/bin/sandbox-exec"
-	darwinSeatbeltGeneration = "darwin-seatbelt-v1"
+	darwinSeatbeltGeneration = "darwin-seatbelt-v2"
 	seatbeltProbeTimeout     = 5 * time.Second
 	seatbeltProfileSource    = `(version 1)
 (deny default)
@@ -24,12 +24,15 @@ const (
 (allow process-fork)
 (allow process-info* (target same-sandbox))
 (allow signal (target same-sandbox))
+;; Project-native uname(3) compatibility needs exact machine and hostname reads.
 (allow sysctl-read
   (sysctl-name "hw.activecpu")
+  (sysctl-name "hw.machine")
   (sysctl-name "hw.memsize")
   (sysctl-name "hw.ncpu")
   (sysctl-name "hw.pagesize")
   (sysctl-name "hw.pagesize_compat")
+  (sysctl-name "kern.hostname")
   (sysctl-name "kern.osproductversion")
   (sysctl-name "kern.osrelease")
   (sysctl-name "kern.ostype")

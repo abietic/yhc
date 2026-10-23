@@ -1,7 +1,7 @@
 # Runtime Services
 
 **Status:** current
-**Last verified:** 2026-10-11
+**Last verified:** 2026-10-23
 
 > **Ownership:** entrypoint-specific background-service construction, rebinding, shutdown, and disconnected helpers
 
@@ -79,6 +79,18 @@ Each adapter performs a real capability probe before the binding becomes
 available. The launch path proves declared reads/writes, network denial, root
 identity, descendant confinement, process-group cleanup, wall time, and
 bounded retained output.
+
+The Darwin policy allows exact `kern.hostname` and `hw.machine` sysctl reads,
+providing the OS metadata required by `uname(3)` and Node's test runner.
+This exposes the host name and machine type, not blanket sysctl access or
+sysctl writes. It does not widen filesystem roots or network access. The
+adapter capability generation changes with this policy; the executable
+regressions are `TestSeatbeltProfileAllowsOnlyRuntimeSysctls` and
+`TestSeatbeltDarwinIntegration` in
+[`seatbelt_test.go`](../../../engine/containment/seatbelt_test.go), plus real
+allowed/denied sysctl calls in `TestSeatbeltDarwinSysctlAllowlist` in
+[`seatbelt_darwin_test.go`](../../../engine/containment/seatbelt_darwin_test.go).
+
 `ShellManager` passes the current `os.Environ()` byte-for-byte, pins the exact
 binding before persistent Bash starts, and rechecks both binding digest and
 workspace device/inode before every start/command. A missing executable,
