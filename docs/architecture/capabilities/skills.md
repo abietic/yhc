@@ -1,7 +1,7 @@
 # Skills
 
 **Status:** current
-**Last verified:** 2026-10-22
+**Last verified:** 2026-10-24
 
 > **Ownership:** This file owns skill parsing, registry precedence, engine
 > binding, invocation, and query-time prefetch. Plugin discovery and whether
@@ -83,6 +83,21 @@ includes the complete source header and body, followed by a truncation marker
 when needed. Only the body is shortened, at a UTF-8 boundary. If a source header
 alone cannot fit, automatic prefetch skips it; explicit invocation remains
 available.
+
+Before the provider request is snapshotted, `ProjectSkillToolResults` projects a
+shorter reference for a successful plain-text Skill result only when its exact
+complete rendered content is already present in an earlier skill-prefetch
+attachment. The paired Skill call must name the same skill; source headers stay
+in the reference. Truncated prefetch, different arguments or generations,
+errors, and non-text results retain their existing content. Tiny results are
+unchanged when a reference would not save bytes.
+
+This projection leaves canonical tool results, hooks, events, and session history
+unchanged. After compaction removes the earlier attachment, the retained full
+tool result is eligible for the next model request again. There is no persistent
+"already loaded" flag. Only preceding attachments can justify a reference, so
+later prefetch or registry updates cannot rewrite an already sent prefix. The
+projection adds no model calls and preserves ordinary permissions and budgets.
 
 The package-level `tools.DefaultSkillRegistry` remains a compatibility fallback.
 Production `QueryEngine` tool execution injects its own registry, so independent
