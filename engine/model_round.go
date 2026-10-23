@@ -11,6 +11,7 @@ import (
 	promptctx "github.com/abietic/yhc/engine/context"
 	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/internal/providerorigin"
+	"github.com/abietic/yhc/engine/prefetch"
 	"github.com/abietic/yhc/engine/recovery"
 )
 
@@ -187,6 +188,7 @@ func runCanonicalModelRound(
 	if input.providerMessagesForCall != nil {
 		messagesForCall = input.providerMessagesForCall
 	}
+	messagesForCall = prefetch.ProjectSkillToolResults(messagesForCall)
 	preparedMessagesForCall := promptctx.PrependUserContext(
 		messagesForCall,
 		input.userContext,
