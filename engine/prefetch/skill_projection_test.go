@@ -64,11 +64,11 @@ func TestProjectSkillToolResultsRequiresCompleteVisibleMaterial(t *testing.T) {
 			return m
 		}, false},
 		{"multimodal attachment", func(m []*schema.Message) []*schema.Message {
-			m[0].MultiContent = []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeText, Text: "other visible input"}}
+			m[0].UserInputMultiContent = []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "other visible input"}}
 			return m
 		}, false},
 		{"multimodal result", func(m []*schema.Message) []*schema.Message {
-			m[2].MultiContent = []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeText, Text: body}}
+			m[2].AssistantGenMultiContent = []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: body}}
 			return m
 		}, false},
 		{"reasoning result", func(m []*schema.Message) []*schema.Message { m[2].ReasoningContent = "retained reasoning"; return m }, false},
@@ -179,5 +179,21 @@ func TestProjectSkillToolResultsNilInput(t *testing.T) {
 	input := []*schema.Message{nil}
 	if got := ProjectSkillToolResults(input); len(got) != 1 || got[0] != nil {
 		t.Fatal("nil message changed")
+	}
+}
+
+func TestProjectSkillToolResultsKeepsLegacyMultimodalHistory(t *testing.T) {
+	body := strings.Repeat("Retain legacy serialized multimodal context.\n", 16)
+	for _, index := range []int{0, 2} {
+		t.Run(string(rune('0'+index)), func(t *testing.T) {
+			messages := projectionFixture(body)
+			// Exercise persisted legacy JSON without constructing deprecated SDK types.
+			if err := json.Unmarshal([]byte(`{"multi_content":[{"type":"text","text":"legacy visible input"}]}`), messages[index]); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(ProjectSkillToolResults(messages), messages) {
+				t.Fatal("legacy multimodal material was shortened")
+			}
+		})
 	}
 }
