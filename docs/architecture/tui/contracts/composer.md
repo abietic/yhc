@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-10-24
+**Last verified:** 2026-10-25
 
 **Ownership:** `internal/tui` owns one mutable active-draft projection;
 `QueryEngine` owns accepted prompt and queued-input truth.
@@ -182,6 +182,39 @@ and is not generated from Git history.
 
 Loading failures remain visible errors or ordinary text; they never create a
 hidden submit payload.
+
+### File line ranges
+
+TUI file mentions accept `@path#N` and `@path#N-M`, including the `@file:`
+prefix. Lines are positive, one-based and inclusive. Tab stages the selected
+candidate without submitting. Exact indexed filenames take precedence over
+range syntax, including literal names containing `#` and case-insensitive
+completion matches; append another selector to select lines from such a file.
+Parsing and projection live in
+[`composer_file_range.go`](../../../../internal/tui/composer_file_range.go).
+
+[`ReadFileRange`](../../../../internal/tui/attachments/file_range.go) reads a
+regular UTF-8 text file through the existing 5 MiB source limit and a bounded
+reader. Empty files, NUL/non-UTF-8 sources, invalid ranges and endpoints past
+EOF fail without clamping, truncating or falling back to full-file context.
+The captured excerpt preserves LF/CRLF and final-newline bytes. Once loaded,
+submission, undo and thread switching use that captured content without
+rereading a subsequently changed file.
+
+While the editor cursor is within or immediately after an accepted range, the
+hint area shows selected lines, total source lines and selected byte size.
+Its preview reads at most 1024 bytes and three lines, escapes terminal control
+characters, and reports preview clipping separately from the complete attached
+excerpt. In the standard editor, Backspace at the reference end removes the
+reference and payload as one undoable edit; editing inside a label retains
+ordinary reconciliation. A removed element cannot be restored by a late read.
+
+The existing `composer_context` block keeps the original path in `source` and
+adds numeric `start_line` and `end_line` only for a selected range. Submission
+rejects inconsistent range metadata. Sanitized history retains only the visible
+range reference; history recall does not reload the file or restore its body.
+Whole-file, Skill and MCP references keep their existing contracts. No model
+call is needed to select, preview or remove a range.
 
 ## Ordered Submission
 

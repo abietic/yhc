@@ -36,6 +36,8 @@ type composerMentionHint struct {
 	MIMEType    string
 	Data        string
 	Description string
+	StartLine   int
+	EndLine     int
 }
 
 type (
@@ -59,10 +61,11 @@ type composerMentionIndexLoadedMsg struct {
 }
 
 type composerMentionPayloadMsg struct {
-	elementID string
-	data      string
-	mimeType  string
-	err       error
+	elementID  string
+	data       string
+	mimeType   string
+	totalLines int
+	err        error
 }
 
 func (a *App) updateMentionHints() {
@@ -84,13 +87,20 @@ func (a *App) updateMentionHints() {
 
 	hints := make([]composerMentionHint, 0, maxMentionHints)
 	if sourceFilter == "" || sourceFilter == "file" {
+		fileQuery, lines, rangeErr := a.fileMentionQuery(query)
 		for _, path := range a.mentionIndex.files {
 			label := "@" + filepath.ToSlash(path)
-			if mentionMatches(query, label, path) {
+			if rangeErr == nil && mentionMatches(fileQuery, label, path) {
+				description := "file"
+				if lines.Valid() {
+					label += lines.String()
+					description = fmt.Sprintf("lines %d-%d", lines.Start, lines.End)
+				}
 				hints = append(hints, composerMentionHint{
 					Kind: composerElementKindFile, Label: label, Name: filepath.Base(path),
 					Value: filepath.ToSlash(path), Source: a.absoluteMentionPath(path),
-					MIMEType: "text/plain", Description: "file",
+					MIMEType: "text/plain", Description: description,
+					StartLine: lines.Start, EndLine: lines.End,
 				})
 			}
 		}
@@ -327,6 +337,7 @@ func (a *App) acceptMentionHint() tea.Cmd {
 	a.composerElements = append(a.composerElements, threadComposerElement{
 		ID: elementID, Kind: hint.Kind, Label: hint.Label, Name: hint.Name,
 		Value: hint.Value, MIMEType: hint.MIMEType, Data: hint.Data,
+		StartLine: hint.StartLine, EndLine: hint.EndLine,
 		Start: start, End: start + utf8.RuneCountInString(hint.Label),
 	})
 	a.markComposerChanged()
@@ -337,6 +348,9 @@ func (a *App) acceptMentionHint() tea.Cmd {
 	switch hint.Kind {
 	case composerElementKindFile:
 		a.showToast("Loading file mention: " + hint.Value)
+		if hint.StartLine > 0 {
+			return loadFileRangeMention(elementID, hint.Source, attachments.LineRange{Start: hint.StartLine, End: hint.EndLine})
+		}
 		return loadFileMention(elementID, hint.Source)
 	case composerElementKindMCPResource:
 		a.showToast("Loading MCP resource: " + hint.Name)
@@ -425,6 +439,7 @@ func (a *App) handleMentionPayload(msg composerMentionPayloadMsg) {
 		return
 	}
 	a.composerElements[index].Data = msg.data
+	a.composerElements[index].TotalLines = msg.totalLines
 	if msg.mimeType != "" {
 		a.composerElements[index].MIMEType = msg.mimeType
 	}
@@ -438,7 +453,7 @@ func (a *App) setTextareaRuneCursor(position int) {
 
 func (a *App) renderMentionHints() string {
 	if len(a.mentionHints) == 0 || a.focus != FocusEditor {
-		return ""
+		return a.renderFileMentionRangeError()
 	}
 	const maxVisible = 10
 	start := max(0, a.mentionHintIdx-maxVisible/2)

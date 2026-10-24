@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-24
+**Last verified:** 2026-10-25
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -48,6 +48,22 @@ reasoning, provider responses, raw noncanonical tool events, or an interactive
 approval channel. Consumers should branch on `schema_version`, `type`, and
 `event.kind`, ignore unknown additive fields, and treat the single `result`
 record as process closure.
+
+### Attach selected file lines in the TUI
+
+Type a file mention with an inclusive line range, for example
+`Explain @engine/prompt_suggestion.go#1-20`, then press Tab to attach the
+selected candidate. `#20` selects one line; `@file:path#20-80` also works.
+The source must be a regular UTF-8 text file no larger than 5 MiB. Invalid or
+out-of-bounds ranges report an error and never attach the whole file instead.
+
+Keep the cursor on or immediately after the reference to see its selected
+lines, byte size and a short preview. A clipped preview still submits the
+complete selected range. In the standard editor, Backspace at the reference
+end removes the attachment; Ctrl+Z restores it. The attachment retains the
+content captured when it loaded, even if the file later changes. Remove and
+reattach to capture a newer version. History recall restores only the visible
+reference. See the [composer contract](../architecture/tui/contracts/composer.md#file-line-ranges).
 
 ### Request a next-step suggestion
 
