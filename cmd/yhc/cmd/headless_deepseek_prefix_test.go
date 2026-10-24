@@ -70,7 +70,7 @@ func TestExecDeepSeekKeepsBudgetedRequestPrefix(t *testing.T) {
 		mu.Lock()
 		outputs = append(outputs, output)
 		mu.Unlock()
-		emit("response.completed", map[string]any{"response": map[string]any{"id": fmt.Sprintf("response-%d", n), "object": "response", "status": "completed", "model": "deepseek-flash", "output": output, "usage": map[string]int{"input_tokens": 100, "output_tokens": 20, "total_tokens": 120}}})
+		emit("response.completed", map[string]any{"response": map[string]any{"id": fmt.Sprintf("response-%d", n), "object": "response", "status": "completed", "model": "deepseek-flash", "output": output, "usage": map[string]any{"input_tokens": 100, "output_tokens": 20, "total_tokens": 120, "input_tokens_details": map[string]int{"cached_tokens": 0}, "output_tokens_details": map[string]int{"reasoning_tokens": 0}}}})
 	}))
 	defer s.Close()
 	var out, stderr bytes.Buffer

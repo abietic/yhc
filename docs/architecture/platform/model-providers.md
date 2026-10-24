@@ -182,12 +182,16 @@ terminal. The deferred model-round collector cannot execute a tool. Only a
 completely classified successful attempt enters canonical assistant/tool
 history.
 
-DeepSeek failed terminal responses may carry a complete usage receipt. The
-adapter retains that receipt on the typed error, and shared execution settles
-it while preserving the original failure. Every required counter must be
-explicit, nonnegative and internally consistent; reserved bounds still apply.
-Missing or invalid usage and interrupted streams remain unknown and retain
-their reservation. A known cost never makes a failed response successful.
+All DeepSeek terminal responses publish usage only when input, output, total,
+cached-input and reasoning counters are explicit, nonnegative and internally
+consistent. A completed or incomplete response keeps its content and status
+when its usage is missing or invalid, but exposes no token receipt; strict
+accounting stops before committing its tools and retains the reservation.
+Explicit zero counters remain known usage. Failed terminal responses retain a
+valid receipt on the typed error, and shared execution settles it while
+preserving the original failure. Reserved bounds still apply, interrupted
+streams remain unknown, and a known cost never makes a failed response
+successful.
 
 TUI attaches assistant, thinking, and uncommitted tool projection to the exact
 attempt, removes only a tombstoned attempt, and shows one bounded warning for a
