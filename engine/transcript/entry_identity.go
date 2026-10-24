@@ -175,8 +175,8 @@ func legacyTranscriptEntryIdentity(
 func transcriptEntryPayloadDigest(entry recordEntry) (string, error) {
 	persisted := entry.persistable()
 	payload, err := json.Marshal(struct {
-		Message          *schema.Message          `json:"message,omitempty"`
-		Messages         []*schema.Message        `json:"messages,omitempty"`
+		Message          *digestMessage           `json:"message,omitempty"`
+		Messages         []*digestMessage         `json:"messages,omitempty"`
 		UserPrompt       *promptrecord.Record     `json:"user_prompt,omitempty"`
 		PromptMessages   []promptMessageRecord    `json:"prompt_messages,omitempty"`
 		Replacements     []Replacement            `json:"replacements,omitempty"`
@@ -187,8 +187,8 @@ func transcriptEntryPayloadDigest(entry recordEntry) (string, error) {
 		GoalUsage        *GoalUsageRecord         `json:"goal_usage,omitempty"`
 		AssistantOrigins *assistantOriginEnvelope `json:"assistant_origins,omitempty"`
 	}{
-		Message:          persisted.Message,
-		Messages:         persisted.Messages,
+		Message:          (*digestMessage)(persisted.Message),
+		Messages:         digestMessages(persisted.Messages),
 		UserPrompt:       persisted.UserPrompt,
 		PromptMessages:   persisted.PromptMessages,
 		Replacements:     persisted.Replacements,
@@ -208,11 +208,11 @@ func transcriptEntryPayloadDigest(entry recordEntry) (string, error) {
 
 func transcriptMessageDigest(kind string, message *schema.Message) (string, error) {
 	payload, err := json.Marshal(struct {
-		Kind    string          `json:"kind"`
-		Message *schema.Message `json:"message"`
+		Kind    string         `json:"kind"`
+		Message *digestMessage `json:"message"`
 	}{
 		Kind:    kind,
-		Message: message,
+		Message: (*digestMessage)(message),
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode transcript message payload: %w", err)
