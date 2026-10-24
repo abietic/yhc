@@ -112,11 +112,18 @@ turn a collision into a pass.
 packs. It invokes the built binary against a local scripted provider and checks
 independent file hashes, Git status, and prior tool-result assertions. Its
 Make target also executes the selected engine, ACP, permission-race, and PTY
-seams. The real-binary pack owns six bounded scenarios: permission rejection,
-read/edit/test execution, malformed tool input, streamed cancellation,
-write-based session resume, and typed-overload fallback. Each claim is limited
-to its scenario's independent oracle; a green run is not live-provider or
-Computer Use evidence.
+seams. The real-binary pack covers permission rejection, read/edit/test execution,
+malformed tool input, streamed cancellation, write-based session resume,
+interrupted-stream cold recovery, and typed-overload fallback. The cold-recovery
+scenario truncates or resets a native DeepSeek stream, or supplies a completed
+terminal without usable usage, after an earlier committed write. It then starts a
+fresh CLI process with an explicit new invocation allowance.
+It checks exact prior tool results, unchanged files, discarded partial calls, and
+separate known/unknown usage segments. Synthetic successful receipts include
+explicit zero cache and reasoning counts so strict accounting reaches the fault
+instead of stopping at an invalid control response. Each claim is limited to its
+scenario's independent oracle; a green run is not live-provider or Computer Use
+evidence.
 
 ## Offline Verification Fixture Calibration
 

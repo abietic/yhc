@@ -944,7 +944,7 @@ privacy:
       match_sha256: 1c4bbc5d685983c9b30bca0939ed3da59e747dfb171ccc79ece13d1a4c394ef3
       purpose: documentation-example
     - path: docs/architecture/runtime/recovery.md
-      line: 265
+      line: 270
       rule_id: high-entropy-token
       match_sha256: b620fa5300bef91c1cf45acff348860a0656f8a503e98746510b673e69e1dfbf
       purpose: documentation-example
@@ -4354,7 +4354,7 @@ privacy:
       match_sha256: 3de132cd98be7bf26b6f08e81c31c799a891bc32046b61f0b6fe3671ca2e44b5
       purpose: synthetic-security-fixture
     - path: scripts/e2e/harness_test.go
-      line: 1135
+      line: 1154
       rule_id: private-email
       match_sha256: 5b03e9e76d0e381bfdfcdbfe4fc288c159291aaaed13e6a00b6b03b59ccf2386
       purpose: synthetic-security-fixture

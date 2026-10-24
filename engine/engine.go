@@ -2028,6 +2028,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 				e.observeCompactBoundaryUsageMessage(evt.CompactBoundaryMessage)
 			}
 			if evt.Type == EventToolResult &&
+				!evt.modelRoundRejected &&
 				e.backgroundServices != nil &&
 				!e.goalProviderUsageRequired() {
 				e.backgroundServices.RecordToolCall(backgroundMessageStrings(history.Messages()))
@@ -2710,7 +2711,9 @@ func cloneMessageExtra(extra map[string]any) map[string]any {
 
 func shouldCheckpointTranscript(evt QueryEvent) bool {
 	switch evt.Type {
-	case EventToolResult, EventUserInterruption:
+	case EventToolResult:
+		return !evt.modelRoundRejected
+	case EventUserInterruption:
 		return true
 	case EventAttachment:
 		return evt.AttachmentMessage != nil
@@ -4588,6 +4591,12 @@ func newConversationHistory(base []*schema.Message) *conversationHistory {
 }
 
 func (h *conversationHistory) Observe(evt QueryEvent) {
+	if evt.modelRoundRejected {
+		h.pendingAssistant = nil
+		if evt.Type == EventToolResult {
+			return
+		}
+	}
 	switch evt.Type {
 	case EventAssistant:
 		if evt.AssistantMessage != nil {
