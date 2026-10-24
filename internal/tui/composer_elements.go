@@ -541,7 +541,7 @@ func (a *App) captureComposerSubmission() (composerSubmissionSnapshot, error) {
 				kind: engine.QueuedPromptPartImage, image: image,
 			})
 			imageCount++
-		case composerElementKindFile, composerElementKindSkill, composerElementKindMCPResource:
+		case composerElementKindFile, composerElementKindSkill, composerElementKindMCPResource, composerElementKindTerminalOutput:
 			if element.Data == "" {
 				return composerSubmissionSnapshot{}, fmt.Errorf("%s is still loading", element.Label)
 			}
@@ -668,6 +668,8 @@ func expandComposerElementsForPersistence(text string, elements []threadComposer
 			return element.Value, true
 		case composerElementKindImage:
 			return element.Label + " (image content not restored)", true
+		case composerElementKindTerminalOutput:
+			return element.Label + " (output content not restored)", true
 		case composerElementKindFile, composerElementKindSkill, composerElementKindMCPResource:
 			return element.Label, true
 		default:

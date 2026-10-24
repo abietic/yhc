@@ -83,7 +83,7 @@ func newRootCommand() *cobra.Command {
 	bindRuntimeFlags(root.Flags(), &options.runtime)
 	root.Flags().BoolVarP(&options.print, "print", "p", false, "Compatibility headless mode; prefer the exec subcommand")
 	root.Flags().BoolVar(&options.plain, "plain", false, "Plain text REPL (no TUI)")
-	root.Flags().BoolVar(&options.mouse, "mouse", true, "Enable mouse tracking for scroll (use Shift+drag for text selection; YHC_DISABLE_MOUSE=1 disables it, with EINO_AGENT_DISABLE_MOUSE kept as an alias)")
+	root.Flags().BoolVar(&options.mouse, "mouse", true, "Enable mouse scroll and in-app selection (Shift+drag uses terminal selection; YHC_DISABLE_MOUSE=1 disables tracking, with EINO_AGENT_DISABLE_MOUSE kept as an alias)")
 	root.Flags().StringVar(&options.resume, "resume", "", "Resume a previous session by ID")
 	root.Flags().StringVar(&options.outputFormat, "output-format", string(outputFormatText), "Headless output format (text, json, or jsonl)")
 

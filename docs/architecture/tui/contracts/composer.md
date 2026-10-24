@@ -41,7 +41,7 @@ Paste:  range -> visible label; Value -> retained source text
    draft.
 6. Submission rejects the whole snapshot on a missing, duplicate, edited,
    overlapping, unsupported, or inconsistent element.
-7. Paste, image, file, and MCP-resource payloads are individually bounded by
+7. Paste, image, file, MCP-resource, and selected-output payloads are individually bounded by
    5 MiB. The App retains at most 10 MiB of image bytes and at most 32
    elements across active thread drafts.
 8. Durable history, chat, rewrite, search, selection, queue preview, and
@@ -216,6 +216,48 @@ range reference; history recall does not reload the file or restore its body.
 Whole-file, Skill and MCP references keep their existing contracts. No model
 call is needed to select, preview or remove a range.
 
+### Selected terminal output
+
+The configurable `selection:attachContext` action (`Alt+A` by default) captures
+the current chat selection or the current conversation's expanded-view
+selection. The ordinary mouse drag remains the application selection path;
+Shift+drag belongs to the terminal. Selection itself keeps the existing
+copy-on-select behavior. The explicit action adds one `terminal_output`
+element at the draft cursor and returns to the composer without submitting.
+
+[`attachSelectedOutputContext`](../../../../internal/tui/composer_output_context.go)
+reads the selected rendered text through the existing copy semantics. Chat
+selection uses semantic spans and soft/hard line boundaries; expanded selection
+uses display-line copying. `source` identifies `chat_selection` or
+`expanded_transcript_selection`. These labels identify a display view;
+canonical runtime events continue to own execution outcomes. The new context
+block is added to the next prompt alongside the existing conversation history.
+
+Extraction checks a 5 MiB budget before appending each selected segment and
+counts separators. Expanded source rows have the same individual bound.
+Oversized, empty, invalid-text or stale selections fail without partial
+attachments. The shared 10 MiB draft and 32-element limits still apply.
+Search, external-editor, pending-admission, command/shell, replay-only and
+Session-preview input owners cannot attach a selection into another draft.
+Insertion inside an existing attachment label is rejected rather than
+silently discarding its payload.
+
+Chat selection retains its existing content/environment/endpoint identity
+checks. Entering, leaving, replacing or changing the raw projection of an
+expanded view clears its selection; geometry changes also clear it. Switching
+threads closes an expanded current-conversation view before restoring the new
+draft. Once attached, the captured text survives source updates, undo and
+thread switching without following the live output.
+
+The shared
+[`context preview`](../../../../internal/tui/composer_context_preview.go)
+shows byte size and at most 1024 bytes/three lines with escaped terminal
+controls. Preview clipping leaves the complete selected text in the attachment.
+Standard-editor Backspace at the reference end removes one whole context
+element; undo restores it. History and view sidecars keep visible references,
+while history recall explicitly marks output content as not restored. Selection,
+preview and removal perform no provider call, storage reread or command replay.
+
 ## Ordered Submission
 
 [`captureComposerSubmission`](../../../../internal/tui/composer_submission.go)
@@ -225,7 +267,7 @@ performs one stable rune walk over the validated draft:
 2. paste placeholders expand in place;
 3. images become `engine.UntrustedPromptImage` parts at the placeholder
    position;
-4. file, skill, and MCP placeholders remain visible while their existing
+4. file, skill, MCP and selected-output placeholders remain visible while their
    `composer_context` blocks append to trailing text; and
 5. only leading whitespace on the first text part and trailing whitespace on
    the last text part are trimmed.

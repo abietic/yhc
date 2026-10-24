@@ -109,6 +109,7 @@ func DefaultBindings() []Block {
 				"ctrl+end":     ActionScrollBottom,
 				"y":            ActionSelectionCopy,
 				"ctrl+shift+c": ActionSelectionCopy,
+				"alt+a":        ActionSelectionAttach,
 			},
 		},
 		{

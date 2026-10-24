@@ -936,6 +936,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		idleActive := a.mascotAnim.IdleActive()
 		a.invalidateMascotIdle()
 		if a.width != msg.Width || a.height != msg.Height {
+			a.selection.clearExpandSelection()
 			a.renderEnvironment = a.renderEnvironment.withGeometry()
 			if a.threadViews != nil {
 				a.threadViews.SetRenderEnvironment(a.renderEnvironment)
@@ -1783,7 +1784,7 @@ func (a *App) renderHintSection() string {
 		hints = a.renderComposerSuggestionFeedback()
 	}
 	if hints == "" {
-		hints = a.renderComposerFileRangePreview()
+		hints = a.renderComposerContextPreview()
 	}
 	queued := a.renderQueuedInputRows()
 	if a.layout.mode == layoutModeCompact && hints != "" {
@@ -1975,7 +1976,7 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 	if handled, cmd := a.resolveEditorKeyAction(msg); handled {
 		return cmd
 	}
-	if msg.String() == "backspace" && a.removeComposerFileRange() {
+	if msg.String() == "backspace" && a.removeComposerContext() {
 		a.dismissComposerSuggestion()
 		return nil
 	}
@@ -5516,6 +5517,8 @@ func (a *App) enterExpandView() {
 }
 
 func (a *App) enterExpandContent(content string, returnDialog AppState) {
+	a.selection.Clear()
+	a.selection.clearExpandSelection()
 	a.expandContent = content
 	a.expandLines = strings.Split(a.expandContent, "\n")
 	a.expandOffset = 0
@@ -5527,6 +5530,7 @@ func (a *App) enterExpandContent(content string, returnDialog AppState) {
 }
 
 func (a *App) leaveExpandView() {
+	a.selection.clearExpandSelection()
 	returnDialog := a.expandReturnDialog
 	a.expandReturnDialog = 0
 	a.expandConversation = false
@@ -5608,6 +5612,7 @@ func (a *App) toggleExpandRawProjection() {
 	if !a.expandConversation {
 		return
 	}
+	a.selection.clearExpandSelection()
 	a.expandRaw = !a.expandRaw
 	if a.expandRaw {
 		a.expandContent = a.chat.RenderAllRaw(a.width)

@@ -116,6 +116,9 @@ func TestG11F1ProductionGeometrySelectorsAreClassified(t *testing.T) {
 		{"composer_mentions.go", "App.acceptMentionHint", "unicode/utf8.RuneCountInString"}: {
 			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
 		},
+		{"composer_output_context.go", "App.attachSelectedOutputContext", "unicode/utf8.RuneCountInString"}: {
+			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
+		},
 		{"key_actions.go", "App.handleVimEditorKey", "unicode/utf8.RuneCountInString"}: {
 			owner: "Vim editor cursor", removalCondition: "Vim adapter accepts native editor offsets", calls: 1,
 		},
