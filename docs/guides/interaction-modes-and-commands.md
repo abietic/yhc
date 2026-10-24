@@ -176,6 +176,11 @@ settlement state, and known cached/uncached input plus output/thinking tokens.
 `dropped_records` reports omitted details; aggregate totals still include those
 calls. Unsettled/unknown/released records have null tokens. `resolved_model` is
 observed from supported typed response metadata and otherwise says `unknown`.
+`cache_write_prompt_tokens` is a subset of input, paired with
+`cache_write_reported_calls` in invocation and route totals. A per-call write
+counter is omitted when unreported and can explicitly be zero. `cache_ttl` is
+included only when supported typed response metadata actually reports it;
+request settings do not supply it. This adds no separate write-token price.
 The [invocation usage contract](../architecture/runtime/budgets-and-limits.md#invocation-usage-and-per-call-history)
 explains identity, privacy, truncation, and supported entrypoint boundaries.
 Harbor continuation metadata retains one ledger per incremental invocation in

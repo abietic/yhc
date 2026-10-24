@@ -435,3 +435,48 @@ class UsageLedgerTests(unittest.TestCase):
         total=sum_usage([value])
         self.assertTrue(total["call_ledger_complete"])
         self.assertEqual(total["call_ledgers"][0]["records"][0]["source"],"independent_verification_coverage")
+
+    def test_cache_write_presence_kimi_and_mixed_historical_segments(self):
+        from scripts.terminal_bench.usage import validated_usage
+        historical, zero, written = self.usage(), self.usage(), self.usage()
+        for value, count in ((zero, 0), (written, 3)):
+            value.update(cache_write_prompt_tokens=count, cache_write_reported_calls=1)
+            record = value["call_ledger"]["records"][0]
+            record.update(provider="agentickimi", requested_model="kimi-k3", resolved_model="kimi-k3", cache_ttl="5m")
+            record["tokens"]["cache_write_prompt_tokens"] = count
+        projected = validated_usage(zero)
+        self.assertTrue(projected["call_ledger_complete"])
+        self.assertEqual(projected["call_ledger"]["records"][0]["tokens"]["cache_write_prompt_tokens"], 0)
+        total = sum_usage([historical, zero, written])
+        self.assertEqual(total["total_tokens"], 42)
+        self.assertEqual(total["cache_write_prompt_tokens"], 3)
+        self.assertEqual(total["cache_write_reported_calls"], 2)
+        self.assertTrue(total["call_ledger_complete"])
+        self.assertEqual(validated_usage(total), total)
+        self.assertNotIn("cache_write_prompt_tokens", total["call_ledgers"][0]["records"][0]["tokens"])
+        total["call_ledgers"][1]["records"][0]["tokens"]["cache_write_prompt_tokens"] = 99
+        self.assertEqual(zero["call_ledger"]["records"][0]["tokens"]["cache_write_prompt_tokens"], 0)
+
+    def test_cache_write_invalid_subsets_presence_and_history(self):
+        from scripts.terminal_bench.usage import validated_usage
+        for extra in (dict(cache_write_prompt_tokens=1),
+                      dict(cache_write_prompt_tokens=1, cache_write_reported_calls=0),
+                      dict(cache_write_prompt_tokens=5, cache_write_reported_calls=1),
+                      dict(cache_write_prompt_tokens=0, cache_write_reported_calls=2),
+                      dict(cache_write_prompt_tokens=True, cache_write_reported_calls=1)):
+            with self.subTest(extra=extra):
+                self.assertIsNone(validated_usage(dict(self.usage(), **extra)))
+        for mutation in (lambda record: record["tokens"].update(cache_write_prompt_tokens=4),
+                         lambda record: record["tokens"].update(cache_write_prompt_tokens=None),
+                         lambda record: record.update(cache_ttl="private text")):
+            value = self.usage()
+            value.update(cache_write_prompt_tokens=3, cache_write_reported_calls=1)
+            record = value["call_ledger"]["records"][0]
+            record["tokens"]["cache_write_prompt_tokens"] = 3
+            record["cache_ttl"] = "5m"
+            mutation(record)
+            result = validated_usage(value)
+            self.assertEqual(result["cache_write_prompt_tokens"], 3)
+            self.assertFalse(result["call_ledger_complete"])
+            self.assertNotIn("call_ledger", result)
+            self.assertNotIn("private text", json.dumps(result))

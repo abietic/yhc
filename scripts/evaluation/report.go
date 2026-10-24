@@ -246,26 +246,28 @@ func redactionSentinels(manifest scenarioManifest, script providerScript, paths 
 // policy payloads are retained as JSON but do not grade the subject's behavior;
 // provider observations and filesystem assertions remain independent oracles.
 type headlessUsage struct {
-	ProviderCalls          uint64          `json:"provider_calls"`
-	KnownCalls             uint64          `json:"known_calls"`
-	UnknownCalls           uint64          `json:"unknown_calls"`
-	InFlight               uint64          `json:"in_flight"`
-	ReleasedCalls          uint64          `json:"released_calls"`
-	PromptTokens           uint64          `json:"prompt_tokens"`
-	CompletionTokens       uint64          `json:"completion_tokens"`
-	TotalTokens            uint64          `json:"total_tokens"`
-	CachedPromptTokens     uint64          `json:"cached_prompt_tokens"`
-	ReasoningTokens        uint64          `json:"reasoning_tokens"`
-	ProviderDurationMillis uint64          `json:"provider_duration_ms"`
-	DeniedCalls            uint64          `json:"denied_calls"`
-	UntrackedCalls         uint64          `json:"untracked_calls"`
-	ElapsedMillis          int64           `json:"elapsed_ms"`
-	Complete               bool            `json:"complete"`
-	StopReason             string          `json:"stop_reason"`
-	Limits                 json.RawMessage `json:"limits"`
-	Routes                 json.RawMessage `json:"routes"`
-	CallLedger             json.RawMessage `json:"call_ledger"`
-	Cost                   json.RawMessage `json:"cost"`
+	ProviderCalls           uint64          `json:"provider_calls"`
+	KnownCalls              uint64          `json:"known_calls"`
+	UnknownCalls            uint64          `json:"unknown_calls"`
+	InFlight                uint64          `json:"in_flight"`
+	ReleasedCalls           uint64          `json:"released_calls"`
+	PromptTokens            uint64          `json:"prompt_tokens"`
+	CompletionTokens        uint64          `json:"completion_tokens"`
+	TotalTokens             uint64          `json:"total_tokens"`
+	CachedPromptTokens      uint64          `json:"cached_prompt_tokens"`
+	ReasoningTokens         uint64          `json:"reasoning_tokens"`
+	CacheWritePromptTokens  uint64          `json:"cache_write_prompt_tokens"`
+	CacheWriteReportedCalls uint64          `json:"cache_write_reported_calls"`
+	ProviderDurationMillis  uint64          `json:"provider_duration_ms"`
+	DeniedCalls             uint64          `json:"denied_calls"`
+	UntrackedCalls          uint64          `json:"untracked_calls"`
+	ElapsedMillis           int64           `json:"elapsed_ms"`
+	Complete                bool            `json:"complete"`
+	StopReason              string          `json:"stop_reason"`
+	Limits                  json.RawMessage `json:"limits"`
+	Routes                  json.RawMessage `json:"routes"`
+	CallLedger              json.RawMessage `json:"call_ledger"`
+	Cost                    json.RawMessage `json:"cost"`
 }
 
 func validateHeadlessEnvelope(data []byte, assistantText string) error {
@@ -295,7 +297,7 @@ func validateHeadlessEnvelope(data []byte, assistantText string) error {
 	if usage := envelope.Usage; usage != nil {
 		if !usage.Complete || usage.UnknownCalls != 0 || usage.InFlight != 0 ||
 			usage.PromptTokens > usage.TotalTokens || usage.CompletionTokens > usage.TotalTokens-usage.PromptTokens ||
-			usage.CachedPromptTokens > usage.PromptTokens || usage.ReasoningTokens > usage.CompletionTokens {
+			usage.CachedPromptTokens > usage.PromptTokens || usage.CacheWritePromptTokens > usage.PromptTokens-usage.CachedPromptTokens || usage.CacheWriteReportedCalls > usage.KnownCalls || usage.CacheWritePromptTokens > 0 && usage.CacheWriteReportedCalls == 0 || usage.ReasoningTokens > usage.CompletionTokens {
 			return fail("headless_envelope_invalid", fmt.Errorf("incomplete or inconsistent usage"))
 		}
 	}

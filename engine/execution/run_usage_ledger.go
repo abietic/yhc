@@ -11,8 +11,9 @@ import (
 // Once full, new calls still settle normally and increment DroppedRecords.
 const MaxRunUsageRecords = 1024
 
-// RunUsageCallTokens is known cumulative response usage. Cached input and
-// reasoning output are subsets; UncachedPromptTokens is input minus cache.
+// RunUsageCallTokens is known cumulative response usage. Cache reads and writes
+// are disjoint input subsets; reasoning is an output subset. UncachedPromptTokens
+// remains input minus cache reads, including cache writes, for existing pricing.
 type RunUsageCallTokens struct {
 	PromptTokens         uint64 `json:"prompt_tokens"`
 	CompletionTokens     uint64 `json:"completion_tokens"`
@@ -20,6 +21,8 @@ type RunUsageCallTokens struct {
 	CachedPromptTokens   uint64 `json:"cached_prompt_tokens"`
 	UncachedPromptTokens uint64 `json:"uncached_prompt_tokens"`
 	ReasoningTokens      uint64 `json:"reasoning_tokens"`
+	// Nil means unreported; a non-nil zero is an explicit provider receipt.
+	CacheWritePromptTokens *uint64 `json:"cache_write_prompt_tokens,omitempty"`
 }
 
 // RunUsageRecord contains only bounded routing labels, opaque UUIDs and numbers.
@@ -44,6 +47,7 @@ type RunUsageRecord struct {
 	Tokens                 *RunUsageCallTokens `json:"tokens"`
 	Cost                   *RunCallCost        `json:"cost,omitempty"`
 	Requests               *uint64             `json:"requests,omitempty"`
+	CacheTTL               string              `json:"cache_ttl,omitempty"`
 }
 
 // RunUsageLedger is one process invocation's bounded incremental history. It is
@@ -136,15 +140,17 @@ func runUsageEffort(value string) string {
 // ProviderResponseModelObserver is optional. Existing durable owners and their
 // settlement interfaces remain unchanged; combined owners forward observations.
 type (
-	ProviderResponseModelObserver    interface{ ObserveProviderResponseModel(string) }
+	ProviderResponseModelObserver interface{ ObserveProviderResponseModel(string) }
+	// ProviderCacheWriteObserver accepts only validated cumulative terminal receipts.
+	ProviderCacheWriteObserver       interface{ ObserveProviderCacheWrite(int, string) }
 	providerUsageResponseObserverKey struct{}
 )
 
 func withProviderUsageResponseObserver(ctx context.Context, call ProviderUsageCall) context.Context {
-	if observer, ok := call.(ProviderResponseModelObserver); ok {
-		return context.WithValue(ctx, providerUsageResponseObserverKey{}, observer)
+	if call == nil {
+		return ctx
 	}
-	return ctx
+	return context.WithValue(ctx, providerUsageResponseObserverKey{}, call)
 }
 
 // ObserveProviderResponseModel accepts only model identity from typed response
@@ -174,4 +180,37 @@ func (c *runUsageCall) ObserveProviderResponseModel(model string) {
 		label = "unknown"
 	}
 	r.records[c.recordIndex].ResolvedModel = label
+}
+
+// ObserveProviderCacheWrite carries reported cache-write presence and actual
+// response TTL from typed metadata. A request default is not an observation.
+func ObserveProviderCacheWrite(ctx context.Context, tokens int, ttl string) {
+	if ctx == nil {
+		return
+	}
+	if observer, ok := ctx.Value(providerUsageResponseObserverKey{}).(ProviderCacheWriteObserver); ok {
+		observer.ObserveProviderCacheWrite(tokens, ttl)
+	}
+}
+
+func (c *runUsageCall) ObserveProviderCacheWrite(tokens int, ttl string) {
+	r := c.owner
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if c.settled || c.request {
+		return
+	}
+	if tokens < 0 || c.cacheWriteSeen && c.cacheWriteTokens != tokens {
+		c.cacheWriteConflict = true
+	}
+	c.cacheWriteSeen = true
+	c.cacheWriteTokens = tokens
+	// TTL is a finite protocol label, never arbitrary provider text.
+	if ttl != "5m" && ttl != "1h" {
+		return
+	}
+	if c.cacheTTL != "" && c.cacheTTL != ttl {
+		c.cacheTTLConflict = true
+	}
+	c.cacheTTL = ttl
 }

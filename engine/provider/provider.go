@@ -1046,6 +1046,11 @@ func observeResponseModel(ctx context.Context, am *schema.AgenticMessage) {
 		return
 	}
 	meta := am.ResponseMeta
+	if receipt, ok := meta.Extension.(interface{ ProviderCacheWriteReceipt() (int, bool, string) }); ok {
+		if tokens, known, ttl := receipt.ProviderCacheWriteReceipt(); known {
+			execution.ObserveProviderCacheWrite(ctx, tokens, ttl)
+		}
+	}
 	var name string
 	switch ext := meta.Extension.(type) {
 	case *agenticdeepseek.ResponseMetaExtension:

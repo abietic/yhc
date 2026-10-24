@@ -32,19 +32,23 @@ var (
 )
 
 // RunUsageTotals counts known provider usage, never estimates missing usage.
-// Cached and reasoning tokens are subsets of input/output, not extra tokens.
+// Cache reads and writes are disjoint input subsets; reasoning is an output
+// subset. None are added to input/output again. ReportedCalls distinguishes
+// known cache-write zero from no observed cache-write detail.
 type RunUsageTotals struct {
-	ProviderCalls          uint64 `json:"provider_calls"`
-	KnownCalls             uint64 `json:"known_calls"`
-	UnknownCalls           uint64 `json:"unknown_calls"`
-	InFlight               uint64 `json:"in_flight"`
-	ReleasedCalls          uint64 `json:"released_calls"`
-	PromptTokens           uint64 `json:"prompt_tokens"`
-	CompletionTokens       uint64 `json:"completion_tokens"`
-	TotalTokens            uint64 `json:"total_tokens"`
-	CachedPromptTokens     uint64 `json:"cached_prompt_tokens"`
-	ReasoningTokens        uint64 `json:"reasoning_tokens"`
-	ProviderDurationMillis uint64 `json:"provider_duration_ms"`
+	ProviderCalls           uint64 `json:"provider_calls"`
+	KnownCalls              uint64 `json:"known_calls"`
+	UnknownCalls            uint64 `json:"unknown_calls"`
+	InFlight                uint64 `json:"in_flight"`
+	ReleasedCalls           uint64 `json:"released_calls"`
+	PromptTokens            uint64 `json:"prompt_tokens"`
+	CompletionTokens        uint64 `json:"completion_tokens"`
+	TotalTokens             uint64 `json:"total_tokens"`
+	CachedPromptTokens      uint64 `json:"cached_prompt_tokens"`
+	ReasoningTokens         uint64 `json:"reasoning_tokens"`
+	CacheWritePromptTokens  uint64 `json:"cache_write_prompt_tokens"`
+	CacheWriteReportedCalls uint64 `json:"cache_write_reported_calls"`
+	ProviderDurationMillis  uint64 `json:"provider_duration_ms"`
 }
 
 type RunUsageRoute struct {
@@ -239,6 +243,10 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 		}
 		if record.Tokens != nil {
 			copied := *record.Tokens
+			if copied.CacheWritePromptTokens != nil {
+				n := *copied.CacheWritePromptTokens
+				copied.CacheWritePromptTokens = &n
+			}
 			s.CallLedger.Records[i].Tokens = &copied
 		}
 		if record.Cost != nil {
@@ -287,6 +295,11 @@ type runUsageCall struct {
 	recordIndex           int
 	responseModelSeen     bool
 	responseModelConflict bool
+	cacheWriteSeen        bool
+	cacheWriteConflict    bool
+	cacheWriteTokens      int
+	cacheTTL              string
+	cacheTTLConflict      bool
 	priceIndex            int
 	reservation           *RunCallReservation
 	reserved              *big.Int
@@ -342,6 +355,12 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 	c.route.ProviderDurationMillis += duration
 	values, valid := runUsageTokens(u)
 	valid = valid && (c.request == (billable != nil))
+	if valid && c.cacheWriteSeen {
+		valid = !c.cacheWriteConflict && c.cacheWriteTokens == u.PromptTokenDetails.CacheWriteTokens
+		if valid {
+			values.CacheWriteReportedCalls = 1
+		}
+	}
 	if valid {
 		valid = canAddRunTokens(r.totals, values) && canAddRunTokens(c.route.RunUsageTotals, values)
 	}
@@ -370,6 +389,13 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 			record.Requests = &n
 		}
 		record.Tokens = &RunUsageCallTokens{PromptTokens: values.PromptTokens, CompletionTokens: values.CompletionTokens, TotalTokens: values.TotalTokens, CachedPromptTokens: values.CachedPromptTokens, UncachedPromptTokens: values.PromptTokens - values.CachedPromptTokens, ReasoningTokens: values.ReasoningTokens}
+		if values.CacheWriteReportedCalls > 0 {
+			n := values.CacheWritePromptTokens
+			record.Tokens.CacheWritePromptTokens = &n
+			if c.cacheWriteSeen && !c.cacheTTLConflict {
+				record.CacheTTL = c.cacheTTL
+			}
+		}
 	}
 	addRunTokens(&r.totals, values)
 	addRunTokens(&c.route.RunUsageTotals, values)
@@ -382,18 +408,23 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 }
 
 func runUsageTokens(u *schema.TokenUsage) (RunUsageTotals, bool) {
-	if u == nil || u.PromptTokens < 0 || u.CompletionTokens < 0 || u.TotalTokens < 0 || u.PromptTokenDetails.CachedTokens < 0 || u.CompletionTokensDetails.ReasoningTokens < 0 || u.PromptTokenDetails.CachedTokens > u.PromptTokens || u.CompletionTokensDetails.ReasoningTokens > u.CompletionTokens {
+	if u == nil || u.PromptTokens < 0 || u.CompletionTokens < 0 || u.TotalTokens < 0 || u.PromptTokenDetails.CachedTokens < 0 || u.PromptTokenDetails.CacheWriteTokens < 0 || u.CompletionTokensDetails.ReasoningTokens < 0 || u.PromptTokenDetails.CachedTokens > u.PromptTokens || u.PromptTokenDetails.CacheWriteTokens > u.PromptTokens-u.PromptTokenDetails.CachedTokens || u.CompletionTokensDetails.ReasoningTokens > u.CompletionTokens {
 		return RunUsageTotals{}, false
 	}
 	p, o := uint64(u.PromptTokens), uint64(u.CompletionTokens)
 	if math.MaxUint64-p < o {
 		return RunUsageTotals{}, false
 	}
-	return RunUsageTotals{PromptTokens: p, CompletionTokens: o, TotalTokens: max(uint64(u.TotalTokens), p+o), CachedPromptTokens: uint64(u.PromptTokenDetails.CachedTokens), ReasoningTokens: uint64(u.CompletionTokensDetails.ReasoningTokens)}, true
+	values := RunUsageTotals{PromptTokens: p, CompletionTokens: o, TotalTokens: max(uint64(u.TotalTokens), p+o), CachedPromptTokens: uint64(u.PromptTokenDetails.CachedTokens), ReasoningTokens: uint64(u.CompletionTokensDetails.ReasoningTokens)}
+	if u.PromptTokenDetails.CacheWriteTokens > 0 {
+		values.CacheWritePromptTokens = uint64(u.PromptTokenDetails.CacheWriteTokens)
+		values.CacheWriteReportedCalls = 1
+	}
+	return values, true
 }
 
 func canAddRunTokens(a, b RunUsageTotals) bool {
-	return math.MaxUint64-a.PromptTokens >= b.PromptTokens && math.MaxUint64-a.CompletionTokens >= b.CompletionTokens && math.MaxUint64-a.TotalTokens >= b.TotalTokens && math.MaxUint64-a.CachedPromptTokens >= b.CachedPromptTokens && math.MaxUint64-a.ReasoningTokens >= b.ReasoningTokens
+	return math.MaxUint64-a.PromptTokens >= b.PromptTokens && math.MaxUint64-a.CompletionTokens >= b.CompletionTokens && math.MaxUint64-a.TotalTokens >= b.TotalTokens && math.MaxUint64-a.CachedPromptTokens >= b.CachedPromptTokens && math.MaxUint64-a.ReasoningTokens >= b.ReasoningTokens && math.MaxUint64-a.CacheWritePromptTokens >= b.CacheWritePromptTokens && math.MaxUint64-a.CacheWriteReportedCalls >= b.CacheWriteReportedCalls
 }
 
 func addRunTokens(a *RunUsageTotals, b RunUsageTotals) {
@@ -403,6 +434,8 @@ func addRunTokens(a *RunUsageTotals, b RunUsageTotals) {
 	a.TotalTokens += b.TotalTokens
 	a.CachedPromptTokens += b.CachedPromptTokens
 	a.ReasoningTokens += b.ReasoningTokens
+	a.CacheWritePromptTokens += b.CacheWritePromptTokens
+	a.CacheWriteReportedCalls += b.CacheWriteReportedCalls
 }
 
 func (r *RunUsage) LimitsEnabled() bool {
