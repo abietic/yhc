@@ -680,7 +680,10 @@ func responseMeta(response *responseObject) *schema.AgenticResponseMeta {
 			LogProbs:         logProbs,
 		},
 	}
-	if response.Usage != nil {
+	// A successful terminal status does not turn omitted/null counters into
+	// known zero usage. Preserve its content and status, but publish a receipt
+	// only after the same validation used for failed terminal responses.
+	if response.Usage != nil && response.Usage.finalReceiptValid {
 		meta.TokenUsage = &schema.TokenUsage{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
