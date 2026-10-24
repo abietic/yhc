@@ -50,10 +50,19 @@ func WithReasoningEffort(value ReasoningEffort) model.Option {
 // ResponseMetaExtension retains Kimi terminal metadata without granting opaque
 // continuation authority. Kimi reasoning is replayed as documented plain text.
 type ResponseMetaExtension struct {
-	ID           string
-	Model        string
-	FinishReason string
-	CacheTTL     string
+	ID               string
+	Model            string
+	FinishReason     string
+	CacheTTL         string
+	cacheWriteTokens *int
+}
+
+// ProviderCacheWriteReceipt preserves explicit zero separately from missing usage.
+func (e *ResponseMetaExtension) ProviderCacheWriteReceipt() (int, bool, string) {
+	if e == nil || e.cacheWriteTokens == nil {
+		return 0, false, ""
+	}
+	return *e.cacheWriteTokens, true, e.CacheTTL
 }
 
 type ConversionError struct {
@@ -80,6 +89,7 @@ type APIError struct {
 	Code          string
 	finalUsage    *schema.TokenUsage
 	responseModel string
+	cacheTTL      string
 }
 
 func (e *APIError) Error() string {
@@ -92,6 +102,13 @@ func (e *APIError) FinalProviderUsage() (*schema.TokenUsage, string) {
 	}
 	u := *e.finalUsage
 	return &u, e.responseModel
+}
+
+func (e *APIError) ProviderCacheWriteReceipt() (int, bool, string) {
+	if e == nil || e.finalUsage == nil {
+		return 0, false, ""
+	}
+	return e.finalUsage.PromptTokenDetails.CacheWriteTokens, true, e.cacheTTL
 }
 
 type transportError struct{ err error }

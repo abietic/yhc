@@ -428,7 +428,9 @@ fail the attempt. Redirects and hidden retries are disabled. Missing usage
 stays nil; present usage requires complete valid counts, with cache read/write
 as disjoint input subsets and reasoning as an output subset. Counts reach the
 Eino callback and classic bridge without being added twice. Cache TTL is
-retained in the native response extension only when actually returned.
+retained in the native response extension and invocation call record only when
+actually returned. Explicit cache-write zero remains distinct from missing detail
+through the typed terminal receipt; failed terminal usage is retained as well.
 Abandoning an idle stream requires context cancellation and reader close.
 Offline HTTP/SSE and QueryEngine tool-loop fixtures establish this wiring;
 real-provider acceptance and a Kimi price/reservation contract remain separate.

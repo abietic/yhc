@@ -362,7 +362,11 @@ func terminalAPIError(response *wireResponse) error {
 	if response.Error != nil {
 		code = safeCode(response.Error.Code)
 	}
-	return &APIError{Code: code, finalUsage: usage, responseModel: response.Model}
+	ttl := ""
+	if response.PromptCacheOptions != nil {
+		ttl = response.PromptCacheOptions.TTL
+	}
+	return &APIError{Code: code, finalUsage: usage, responseModel: response.Model, cacheTTL: ttl}
 }
 
 func callbackConfig(req *wireRequest) *model.AgenticConfig {

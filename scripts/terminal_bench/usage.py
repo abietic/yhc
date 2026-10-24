@@ -11,6 +11,8 @@ USAGE_FIELDS = ("provider_calls", "known_calls", "unknown_calls", "in_flight",
                 "untracked_calls", "prompt_tokens", "completion_tokens", "total_tokens",
                 "cached_prompt_tokens", "reasoning_tokens")
 
+CACHE_WRITE_FIELDS = ("cache_write_prompt_tokens", "cache_write_reported_calls")
+
 BUDGET_STOP_CAUSES = ("provider_calls", "total_tokens", "estimated_cost_threshold",
                       "estimated_cost_reservation")
 
@@ -29,6 +31,13 @@ def validated_usage(value: object) -> dict | None:
     if value["complete"] != complete:
         return None
     result = {**{key: value[key] for key in USAGE_FIELDS}, "complete": complete}
+    if any(key in value for key in CACHE_WRITE_FIELDS):
+        if (any(type(value.get(key)) is not int or value[key] < 0 for key in CACHE_WRITE_FIELDS)
+                or value["cache_write_prompt_tokens"] > value["prompt_tokens"] - value["cached_prompt_tokens"]
+                or value["cache_write_reported_calls"] > value["known_calls"]
+                or value["cache_write_prompt_tokens"] > 0 and value["cache_write_reported_calls"] == 0):
+            return None
+        result.update({key: value[key] for key in CACHE_WRITE_FIELDS})
     stop_reason = value.get("stop_reason")
     if stop_reason in ("run_budget_exceeded", "run_usage_unknown"):
         result["stop_reason"] = stop_reason
@@ -63,6 +72,9 @@ def sum_usage(values: list) -> dict | None:
         return None  # Repeated invocation snapshot is never another increment.
     result = {key: sum(value[key] for value in usages) for key in USAGE_FIELDS}
     result["complete"] = all(value["complete"] for value in usages)
+    if any(key in value for value in usages for key in CACHE_WRITE_FIELDS):
+        # Older segments contribute no observed detail, not a claim of zero writes.
+        result.update({key: sum(value.get(key, 0) for value in usages) for key in CACHE_WRITE_FIELDS})
     if len(usages) == 1:
         # A multi-invocation total has no single stopping limit. Its history
         # retains each segment's cause, including a budget pause before success.
@@ -131,7 +143,7 @@ def validated_ledger(value: object) -> dict | None:
         if (any(record.get(key) != "unknown" and not _uuid(record.get(key)) for key in identities)
                 or any(type(record.get(key)) is not int or record[key] < 0 for key in numbers)
                 or any(not _model_label(record.get(key)) for key in ("requested_model", "resolved_model"))
-                or record.get("provider") not in ("unknown", "agenticdeepseek", "agenticglm", "agenticclaude", "agenticgemini", "agenticopenai", "agenticark", "agenticqwen")
+                or record.get("provider") not in ("unknown", "agenticdeepseek", "agenticglm", "agentickimi", "agenticclaude", "agenticgemini", "agenticopenai", "agenticark", "agenticqwen")
                 or record.get("source") not in ("other", "repl_main_thread", "sdk", "agent", "compact", "independent_verification", "independent_verification_coverage", "prompt_suggestion_generation", "tool_use_summary_generation", "yolo_classifier", "permission_explainer", "approval_review", "long_session_background", "web_search")
                 or record.get("role") not in ("other", "main", "explore", "plan", "general", "summary")
                 or record.get("effort") not in ("unknown", "none", "low", "medium", "high", "max", "xhigh")
@@ -145,11 +157,22 @@ def validated_ledger(value: object) -> dict | None:
                     or tokens["reasoning_tokens"] > tokens["completion_tokens"]
                     or tokens["total_tokens"] < tokens["prompt_tokens"] + tokens["completion_tokens"]):
                 return None
-            tokens = {key: tokens[key] for key in LEDGER_TOKEN_FIELDS}
+            projected_tokens = {key: tokens[key] for key in LEDGER_TOKEN_FIELDS}
+            if "cache_write_prompt_tokens" in tokens:
+                written = tokens["cache_write_prompt_tokens"]
+                if type(written) is not int or written < 0 or written > tokens["uncached_prompt_tokens"]:
+                    return None
+                projected_tokens["cache_write_prompt_tokens"] = written
+            tokens = projected_tokens
         elif tokens is not None:
             return None
         projected = {key: record[key] for key in (*identities, *numbers, "ordinal", "call_id", "requested_model", "resolved_model", "provider", "source", "role", "effort", "state")}
         records.append({**projected, "tokens": tokens})
+        if "cache_ttl" in record:
+            if (record["state"] != "known" or "cache_write_prompt_tokens" not in tokens
+                    or record["cache_ttl"] not in ("5m", "1h")):
+                return None
+            records[-1]["cache_ttl"] = record["cache_ttl"]
         if "requests" in record:
             if record["state"] != "known" or type(record["requests"]) is not int or record["requests"] not in (0, 1) or any(tokens.values()):
                 return None
@@ -181,6 +204,11 @@ def _ledger_projection(value: dict, result: dict) -> None:
         observed = {count: sum(record["state"] == state for record in records) for state, count in states}
         observed.update({key: sum(record["tokens"][key] for record in records if record["state"] == "known")
                          for key in LEDGER_TOKEN_FIELDS if key != "uncached_prompt_tokens"})
+        if "cache_write_reported_calls" in result:
+            reported = [record["tokens"] for record in records if record["state"] == "known"
+                        and "cache_write_prompt_tokens" in record["tokens"]]
+            observed.update(cache_write_prompt_tokens=sum(tokens["cache_write_prompt_tokens"] for tokens in reported),
+                            cache_write_reported_calls=len(reported))
         # Incomplete histories remain usable lower bounds, never exceed totals.
         valid = all(count == result[key] if exact else count <= result[key] for key, count in observed.items())
     if valid:

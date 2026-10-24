@@ -8,7 +8,7 @@ from decimal import Decimal, localcontext
 from urllib.parse import urlsplit
 from uuid import UUID
 
-PROVIDERS = {"agenticdeepseek", "agenticglm", "agenticclaude", "agenticgemini",
+PROVIDERS = {"agenticdeepseek", "agenticglm", "agentickimi", "agenticclaude", "agenticgemini",
              "agenticopenai", "agenticark", "agenticqwen"}
 
 

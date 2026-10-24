@@ -249,7 +249,12 @@ func responseMessage(response *wireResponse) (*schema.AgenticMessage, error) {
 	if response.PromptCacheOptions != nil {
 		cacheTTL = response.PromptCacheOptions.TTL
 	}
-	message.ResponseMeta = &schema.AgenticResponseMeta{TokenUsage: usage, Extension: &ResponseMetaExtension{ID: response.ID, Model: response.Model, FinishReason: finishReason, CacheTTL: cacheTTL}}
+	ext := &ResponseMetaExtension{ID: response.ID, Model: response.Model, FinishReason: finishReason, CacheTTL: cacheTTL}
+	if usage != nil {
+		n := usage.PromptTokenDetails.CacheWriteTokens
+		ext.cacheWriteTokens = &n
+	}
+	message.ResponseMeta = &schema.AgenticResponseMeta{TokenUsage: usage, Extension: ext}
 	return message, nil
 }
 

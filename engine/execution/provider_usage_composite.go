@@ -92,6 +92,14 @@ func (c *combinedProviderUsageCall) FailClosedOnAmbiguousUsage() bool {
 	return false
 }
 
+func (c *combinedProviderUsageCall) ObserveProviderCacheWrite(tokens int, ttl string) {
+	for _, call := range []ProviderUsageCall{c.first, c.second} {
+		if observer, ok := call.(ProviderCacheWriteObserver); ok {
+			observer.ObserveProviderCacheWrite(tokens, ttl)
+		}
+	}
+}
+
 func (c *combinedProviderUsageCall) ObserveProviderResponseModel(model string) {
 	for _, call := range []ProviderUsageCall{c.first, c.second} {
 		if observer, ok := call.(ProviderResponseModelObserver); ok {

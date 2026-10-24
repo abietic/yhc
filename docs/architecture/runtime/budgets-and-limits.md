@@ -84,7 +84,7 @@ usage coverage, independently of truncated call history or unknown model names.
 
 `requested_model` is the configured call label and may be an alias/profile;
 `provider` is the descriptor's configured provider or `unknown`. The project
-Agentic bridge observes `resolved_model` only from typed DeepSeek/GLM response
+Agentic bridge observes `resolved_model` only from typed DeepSeek/GLM/Kimi response
 metadata for Stream and Generate. Absent, invalid, conflicting, or unsupported
 response identities stay `unknown`; requested labels never prove the responding
 model. Observation is an optional capability forwarded through combined owners;
@@ -100,6 +100,30 @@ client work from admission to settlement and can overlap. They do not enumerate
 hidden SDK HTTP retries, external MCP/hook provider work, or server thinking
 latency. Cached and reasoning tokens remain subsets; `uncached_prompt_tokens`
 is input minus cache, never an additional billed token class.
+
+Cache writes are a separately observed input subset. Invocation and route
+summaries expose `cache_write_prompt_tokens` and `cache_write_reported_calls`;
+the latter counts calls with an observed value, including explicit zero.
+Per-call `tokens.cache_write_prompt_tokens` is omitted when unreported and is
+numeric zero only with a typed presence receipt. Positive Eino cache-write counts
+are retained even when that adapter has no presence receipt; a scalar zero alone
+cannot prove presence. The native Kimi adapter carries this receipt for Stream,
+Generate, and authoritative failed terminals. Missing usage remains unknown.
+Cache reads plus writes cannot exceed input; inconsistent receipts invalidate
+usage. Snapshot copies detach the optional counter as well.
+
+Per-call `cache_ttl` contains only an actually returned `5m`/`1h` value; missing,
+unsupported, or conflicting TTL observations are omitted. Request defaults never
+prove a response TTL. Kimi currently requests only `5m`. Cache writes stay inside
+`uncached_prompt_tokens` (input minus reads), preserving the existing three-rate
+price-card calculation without adding tokens or a second charge. This breakdown
+adds no cache-write price, Kimi price card, or Kimi monetary reservation guarantee.
+It does not extend the durable Goal ledger or reconstruct old receipts.
+
+Harbor validates and retains these optional counters across incremental segments;
+older segments contribute no reported detail. `cache_write_reported_calls` versus
+`known_calls` exposes that partial detail coverage. Token completeness and call
+history completeness keep their existing meanings.
 
 Each resumed process emits a fresh incremental ledger. Harbor retains these as
 `usage.call_ledgers`, checks duplicate segment IDs, and reports
