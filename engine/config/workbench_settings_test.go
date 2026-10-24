@@ -37,6 +37,21 @@ func TestWorkbenchSettingsSupportsGLMWithoutCredentials(t *testing.T) {
 	}
 }
 
+func TestWorkbenchSettingsSupportsKimiWithoutCredentials(t *testing.T) {
+	projectDir := workbenchSettingsFixture(t, "", "")
+	snapshot, err := SettingsSnapshot(projectDir, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(snapshot.Fields["provider"].Options, "kimi") {
+		t.Fatal("shared settings omit Kimi")
+	}
+	result, err := SettingsPatch(projectDir, "user", snapshot.Revision, map[string]json.RawMessage{"provider": json.RawMessage(`"kimi"`), "model": json.RawMessage(`"kimi-k3"`)})
+	if err != nil || string(result.Fields["provider"].StoredValue) != `"kimi"` {
+		t.Fatalf("setting Kimi without credentials: %#v, %v", result.Fields["provider"], err)
+	}
+}
+
 func workbenchSettingsFixture(t *testing.T, user, project string) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())

@@ -9,6 +9,7 @@ import (
 type CostTier string
 
 const (
+	CostTierUnknown  CostTier = "unknown"
 	CostTierFree     CostTier = "free"
 	CostTierBudget   CostTier = "budget"
 	CostTierStandard CostTier = "standard"
@@ -117,6 +118,7 @@ func (r *ModelRegistry) GroupedByProvider() []ProviderGroup {
 		CostTierStandard: 1,
 		CostTierBudget:   2,
 		CostTierFree:     3,
+		CostTierUnknown:  4,
 	}
 	for provider := range groups {
 		entries := groups[provider]
@@ -132,7 +134,7 @@ func (r *ModelRegistry) GroupedByProvider() []ProviderGroup {
 	}
 
 	// Build sorted provider groups.
-	providerOrder := []string{"Anthropic", "OpenAI", "Google", "DeepSeek", "Qwen", "ByteDance"}
+	providerOrder := []string{"Anthropic", "OpenAI", "Google", "DeepSeek", "Kimi", "Qwen", "ByteDance"}
 	var result []ProviderGroup
 	seen := make(map[string]bool)
 	for _, p := range providerOrder {
@@ -235,6 +237,8 @@ func buildDefaultEntries() []RegistryEntry {
 		{modelID: "glm-5.3-flashx", provider: "GLM", displayName: "GLM 5.3 FlashX", toolCalls: true, streaming: true},
 		{modelID: "glm-5.3-flash", provider: "GLM", displayName: "GLM 5.3 Flash", toolCalls: true, streaming: true},
 
+		{modelID: "kimi-k3", provider: "Kimi", displayName: "Kimi K3", toolCalls: true, streaming: true},
+
 		// Qwen
 		{modelID: "qwen-max", provider: "Qwen", displayName: "Qwen Max", toolCalls: true, streaming: true},
 		{modelID: "qwen-plus", provider: "Qwen", displayName: "Qwen Plus", toolCalls: true, streaming: true},
@@ -266,6 +270,8 @@ func deriveCostTier(cap *ModelCapabilities) CostTier {
 	// mistake absent USD rates for free access; exact dated prices live in
 	// the native-currency rate card used by the delivery cost report.
 	switch cap.Name {
+	case "kimi-k3":
+		return CostTierUnknown
 	case "glm-5.3":
 		return CostTierStandard
 	case "glm-5.3-flash", "glm-5.3-flashx":

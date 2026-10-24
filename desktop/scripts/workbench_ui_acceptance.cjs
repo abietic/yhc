@@ -79,7 +79,7 @@ const messages = [
 // Keep this bounded, secret-free fixture aligned with
 // engine/config/workbench_settings.go:workbenchSettingDefinitions.
 const definitions = {
-  provider: { label: 'Provider', type: 'string', group: 'model', description: 'Default provider; launch flags and environment may override this value.', choice_only: true, options: ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'qwen', 'ark'], default: '' },
+  provider: { label: 'Provider', type: 'string', group: 'model', description: 'Default provider; launch flags and environment may override this value.', choice_only: true, options: ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'kimi', 'qwen', 'ark'], default: '' },
   model: { label: 'Model', type: 'string', group: 'model', description: 'Default model for new sessions. Use a provider model identifier or configured alias.', default: 'default' },
   model_profile: { label: 'Model profile', type: 'string', group: 'model', description: 'Select an existing user-owned model profile; cannot be combined with legacy provider fields.', choice_only: true, default: '' },
   api_base_url: { label: 'API endpoint', type: 'string', group: 'model', description: 'Optional HTTP(S) provider endpoint, without credentials, query parameters, or fragment.', default: '' },
@@ -766,7 +766,7 @@ async function main() {
       }
     });
     await settingsTimeout.close();
-    for (const provider of ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'qwen', 'ark']) {
+    for (const provider of ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'kimi', 'qwen', 'ark']) {
       await check(`Desktop saved ${provider} credentials retain their selection through cancel and explicit save`, async () => {
         const profile = { provider, model: 'saved-fixture-model', baseURL: 'https://fixture.example.invalid/' };
         const page = await createPage('desktop', false, false, 'openai', '', profile);

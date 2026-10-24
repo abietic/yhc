@@ -63,7 +63,7 @@ type workbenchSettingDefinition struct {
 
 func workbenchSettingDefinitions() map[string]workbenchSettingDefinition {
 	return map[string]workbenchSettingDefinition{
-		"provider":           {"Provider", "string", "model", "Default provider; launch flags and environment may override this value.", []string{"anthropic", "openai", "google", "deepseek", "glm", "qwen", "ark"}, func(c *Config) any { return c.Provider }},
+		"provider":           {"Provider", "string", "model", "Default provider; launch flags and environment may override this value.", []string{"anthropic", "openai", "google", "deepseek", "glm", "kimi", "qwen", "ark"}, func(c *Config) any { return c.Provider }},
 		"model":              {"Model", "string", "model", "Default model for new sessions. Use a provider model identifier or configured alias.", nil, func(c *Config) any { return c.Model }},
 		"model_profile":      {"Model profile", "string", "model", "Select an existing user-owned model profile; cannot be combined with legacy provider fields.", nil, func(c *Config) any { return c.ModelProfile }},
 		"api_base_url":       {"API endpoint", "string", "model", "Optional HTTP(S) provider endpoint, without credentials, query parameters, or fragment.", nil, func(c *Config) any { return c.APIBaseURL }},

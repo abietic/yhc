@@ -602,6 +602,8 @@ func normalizePortfolioProvider(raw string) (enginemodel.ProviderID, error) {
 		return enginemodel.ProviderDeepSeek, nil
 	case "glm", "zhipu", "zai", "agenticglm":
 		return enginemodel.ProviderGLM, nil
+	case "kimi", "moonshot", "agentickimi":
+		return enginemodel.ProviderKimi, nil
 	case "qwen", "dashscope", "agenticqwen":
 		return enginemodel.ProviderQwen, nil
 	case "ark", "volcengine", "agenticark":

@@ -21,6 +21,7 @@ import (
 	enginemessages "github.com/abietic/yhc/engine/messages"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 	"github.com/abietic/yhc/engine/provider/agenticglm"
+	"github.com/abietic/yhc/engine/provider/agentickimi"
 )
 
 // Provider enumerates supported model providers.
@@ -29,6 +30,7 @@ type Provider string
 const (
 	ProviderAgenticDeepSeek Provider = "agenticdeepseek"
 	ProviderAgenticGLM      Provider = "agenticglm"
+	ProviderAgenticKimi     Provider = "agentickimi"
 	ProviderAgenticClaude   Provider = "agenticclaude"
 	ProviderAgenticGemini   Provider = "agenticgemini"
 	ProviderAgenticOpenAI   Provider = "agenticopenai"
@@ -45,7 +47,7 @@ type Config struct {
 	// ModelAliases maps user-facing names to provider model identifiers.
 	ModelAliases map[string]string
 
-	// Maximum output tokens for native Claude and GLM clients; zero uses the
+	// Maximum output tokens for native Claude, GLM and Kimi clients; zero uses the
 	// adapter default. Other adapters currently do not consume this field.
 	MaxTokens int
 }
@@ -66,6 +68,8 @@ func newAgenticModel(ctx context.Context, cfg Config) (model.AgenticModel, error
 		return newAgenticDeepSeek(ctx, cfg)
 	case ProviderAgenticGLM:
 		return newAgenticGLM(ctx, cfg)
+	case ProviderAgenticKimi:
+		return agentickimi.New(ctx, &agentickimi.Config{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model, MaxTokens: cfg.MaxTokens})
 	case ProviderAgenticClaude:
 		return newAgenticClaude(ctx, cfg)
 	case ProviderAgenticGemini:
@@ -77,7 +81,7 @@ func newAgenticModel(ctx context.Context, cfg Config) (model.AgenticModel, error
 	case ProviderAgenticQwen:
 		return newAgenticQwen(ctx, cfg)
 	default:
-		return nil, fmt.Errorf("unknown provider: %q (supported: agenticdeepseek, agenticglm, agenticclaude, agenticgemini, agenticopenai, agenticark, agenticqwen)", cfg.Provider)
+		return nil, fmt.Errorf("unknown provider: %q (supported: agenticdeepseek, agenticglm, agentickimi, agenticclaude, agenticgemini, agenticopenai, agenticark, agenticqwen)", cfg.Provider)
 	}
 }
 
@@ -984,6 +988,9 @@ func agenticFinishReason(am *schema.AgenticMessage) string {
 		if ext, ok := meta.Extension.(*agenticglm.ResponseMetaExtension); ok && ext != nil {
 			return ext.FinishReason
 		}
+		if ext, ok := meta.Extension.(*agentickimi.ResponseMetaExtension); ok && ext != nil {
+			return ext.FinishReason
+		}
 	}
 	for _, value := range am.Extra {
 		switch ext := value.(type) {
@@ -1046,6 +1053,10 @@ func observeResponseModel(ctx context.Context, am *schema.AgenticMessage) {
 			name = ext.Model
 		}
 	case *agenticglm.ResponseMetaExtension:
+		if ext != nil {
+			name = ext.Model
+		}
+	case *agentickimi.ResponseMetaExtension:
 		if ext != nil {
 			name = ext.Model
 		}

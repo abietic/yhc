@@ -17,6 +17,7 @@ const (
 	ReasoningDialectGeminiThinking     ReasoningDialect = "gemini-thinking"
 	ReasoningDialectDeepSeek           ReasoningDialect = "deepseek"
 	ReasoningDialectGLM                ReasoningDialect = "glm"
+	ReasoningDialectKimi               ReasoningDialect = "kimi-responses"
 )
 
 // ResolvedReasoningEffort is the adapter-owned lowering of one canonical
@@ -72,6 +73,7 @@ var reasoningAdapterPolicies = []reasoningAdapterPolicy{
 		dialect:  ReasoningDialectGLM,
 		efforts:  []string{"low", "high", "max"},
 	},
+	{provider: "agentickimi", aliases: []string{"kimi", "moonshot"}, dialect: ReasoningDialectKimi, efforts: []string{"low", "high", "max"}},
 	{
 		provider: "agenticqwen",
 		aliases:  []string{"qwen", "dashscope"},
@@ -163,6 +165,9 @@ func DefaultReasoningEfforts(provider, modelID string) ([]string, bool) {
 		default:
 			return nil, false
 		}
+	}
+	if policy.dialect == ReasoningDialectKimi && capabilities.Name != "kimi-k3" {
+		return nil, false
 	}
 	return append([]string(nil), policy.efforts...), true
 }

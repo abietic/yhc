@@ -859,6 +859,12 @@ var modelTable = map[string]*ModelCapabilities{
 		SupportsSystemPrompt: true,
 		IsFirstParty:         false,
 	},
+	// Initial K3 product bounds: conservative 1M context and the API default
+	// generation cap. Media remains unavailable in this text/functions slice.
+	"kimi-k3": {
+		Name: "kimi-k3", ContextWindow: 1000000, MaxOutputTokens: 131072,
+		SupportsThinking: true, SupportsTools: true, SupportsStreaming: true, SupportsSystemPrompt: true,
+	},
 }
 
 // aliases maps short/common names to canonical model identifiers.

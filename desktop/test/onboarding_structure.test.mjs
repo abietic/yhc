@@ -10,7 +10,7 @@ test('provider dialog preserves every supported saved selection and never preloa
   const start = app.indexOf('function openProviderDialog(');
   const end = app.indexOf('function closeProviderDialog(', start);
   assert.ok(start >= 0 && end > start);
-  const providers = ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'qwen', 'ark'];
+  const providers = ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'kimi', 'qwen', 'ark'];
   for (const provider of [...providers, 'unknown-provider']) {
     const nodes = new Map();
     const node = id => {

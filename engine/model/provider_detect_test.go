@@ -38,6 +38,8 @@ func TestDetectProvider_Prefixes(t *testing.T) {
 
 		// GLM
 		{"glm 5.3 flash", "glm-5.3-flash", ProviderGLM},
+		{"kimi k3", "kimi-k3", ProviderKimi},
+		{"moonshot service name", "moonshot-legacy", ProviderKimi},
 
 		// Qwen
 		{"qwen max", "qwen-max", ProviderQwen},
@@ -74,6 +76,9 @@ func TestDetectProvider_ProviderPrefix(t *testing.T) {
 		{"agenticgemini prefix", "agenticgemini:gemini-2.5-flash", ProviderGoogle},
 		{"agenticdeepseek prefix", "agenticdeepseek:deepseek-v4-pro", ProviderDeepSeek},
 		{"agenticglm prefix", "agenticglm:glm-5.3-flash", ProviderGLM},
+		{"kimi prefix", "kimi:kimi-k3", ProviderKimi},
+		{"moonshot prefix", "moonshot:kimi-k3", ProviderKimi},
+		{"agentickimi prefix", "agentickimi:kimi-k3", ProviderKimi},
 		{"zhipu prefix", "zhipu:glm-5.3-flash", ProviderGLM},
 		{"zai prefix", "zai:glm-5.3-flash", ProviderGLM},
 		{"agenticqwen prefix", "agenticqwen:qwen-max", ProviderQwen},
@@ -100,6 +105,7 @@ func TestDetectProvider_CaseInsensitive(t *testing.T) {
 		{"GEMINI-2.5-pro", ProviderGoogle},
 		{"DeepSeek-Chat", ProviderDeepSeek},
 		{"GLM-5.3-Flash", ProviderGLM},
+		{"KIMI-K3", ProviderKimi},
 	}
 
 	for _, tt := range tests {
@@ -150,6 +156,7 @@ func TestGetProviderEnvConfig(t *testing.T) {
 		{ProviderGoogle, false, "GOOGLE_API_KEY"},
 		{ProviderDeepSeek, false, "DEEPSEEK_API_KEY"},
 		{ProviderGLM, false, "ZAI_API_KEY"},
+		{ProviderKimi, false, "MOONSHOT_API_KEY"},
 		{ProviderQwen, false, "DASHSCOPE_API_KEY"},
 		{ProviderArk, false, "ARK_API_KEY"},
 		{ProviderUnknown, true, ""},

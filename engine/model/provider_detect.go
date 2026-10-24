@@ -13,6 +13,7 @@ const (
 	ProviderGoogle    ProviderID = "google"
 	ProviderDeepSeek  ProviderID = "deepseek"
 	ProviderGLM       ProviderID = "glm"
+	ProviderKimi      ProviderID = "kimi"
 	ProviderQwen      ProviderID = "qwen"
 	ProviderArk       ProviderID = "ark"
 	ProviderUnknown   ProviderID = "unknown"
@@ -71,6 +72,13 @@ var providerEnvConfigs = map[ProviderID]*ProviderEnvConfig{
 		DefaultBaseURL: "https://open.bigmodel.cn/api/paas/v4",
 		DefaultModel:   "glm-5.3-flash",
 	},
+	ProviderKimi: {
+		Provider:       ProviderKimi,
+		APIKeyEnvVars:  []string{"MOONSHOT_API_KEY", "KIMI_API_KEY", "PROV_API_KEY"},
+		BaseURLEnvVar:  "KIMI_BASE_URL",
+		DefaultBaseURL: "https://api.moonshot.ai/v1",
+		DefaultModel:   "kimi-k3",
+	},
 	ProviderQwen: {
 		Provider:       ProviderQwen,
 		APIKeyEnvVars:  []string{"DASHSCOPE_API_KEY", "QWEN_API_KEY", "PROV_API_KEY"},
@@ -119,6 +127,8 @@ func DetectProvider(modelName string) ProviderID {
 			return ProviderDeepSeek
 		case strings.Contains(prefix, "glm") || strings.Contains(prefix, "zhipu") || strings.Contains(prefix, "zai"):
 			return ProviderGLM
+		case strings.Contains(prefix, "kimi") || strings.Contains(prefix, "moonshot"):
+			return ProviderKimi
 		case strings.Contains(prefix, "qwen"):
 			return ProviderQwen
 		case strings.Contains(prefix, "ark"):
@@ -145,6 +155,8 @@ func DetectProvider(modelName string) ProviderID {
 		return ProviderDeepSeek
 	case strings.HasPrefix(normalized, "glm-"):
 		return ProviderGLM
+	case strings.HasPrefix(normalized, "kimi-") || strings.HasPrefix(normalized, "moonshot-"):
+		return ProviderKimi
 	case strings.HasPrefix(normalized, "qwen"):
 		return ProviderQwen
 	case strings.HasPrefix(normalized, "doubao"):
@@ -166,6 +178,8 @@ func DetectProvider(modelName string) ProviderID {
 		return ProviderDeepSeek
 	case strings.Contains(normalized, "zhipu") || strings.Contains(normalized, "bigmodel"):
 		return ProviderGLM
+	case strings.Contains(normalized, "kimi") || strings.Contains(normalized, "moonshot"):
+		return ProviderKimi
 	case strings.Contains(normalized, "qwen"):
 		return ProviderQwen
 	}
