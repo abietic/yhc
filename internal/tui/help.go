@@ -288,6 +288,7 @@ func (h *HelpOverlay) keybindingCategories() []helpCategory {
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatNewline, "ctrl+j"), desc: "Insert newline"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatImagePaste, "ctrl+v"), desc: "Paste image"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatArgumentSuggest, "ctrl+space"), desc: "Suggest next prompt / command argument"},
+				{key: "@path#N-M + Tab", desc: "Attach inclusive file lines; preview at reference"},
 				{key: "/", desc: "Enter command mode"},
 				{key: "!", desc: "Enter shell mode"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatCancel, "esc"), desc: "Cancel / clear input"},

@@ -1782,6 +1782,9 @@ func (a *App) renderHintSection() string {
 	if hints == "" {
 		hints = a.renderComposerSuggestionFeedback()
 	}
+	if hints == "" {
+		hints = a.renderComposerFileRangePreview()
+	}
 	queued := a.renderQueuedInputRows()
 	if a.layout.mode == layoutModeCompact && hints != "" {
 		// Autocomplete owns the compact hint window while it is active. Keep
@@ -1971,6 +1974,10 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if handled, cmd := a.resolveEditorKeyAction(msg); handled {
 		return cmd
+	}
+	if msg.String() == "backspace" && a.removeComposerFileRange() {
+		a.dismissComposerSuggestion()
+		return nil
 	}
 
 	switch {

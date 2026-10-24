@@ -546,10 +546,19 @@ func (a *App) captureComposerSubmission() (composerSubmissionSnapshot, error) {
 				return composerSubmissionSnapshot{}, fmt.Errorf("%s is still loading", element.Label)
 			}
 			appendText(element.Label)
-			encoded, err := json.Marshal(map[string]string{
+			metadata := map[string]any{
 				"kind": element.Kind, "name": element.Name, "source": element.Value,
 				"mime_type": element.MIMEType, "content": element.Data,
-			})
+			}
+			if element.StartLine != 0 || element.EndLine != 0 {
+				lines := attachments.LineRange{Start: element.StartLine, End: element.EndLine}
+				if element.Kind != composerElementKindFile || !lines.Valid() || element.EndLine > element.TotalLines {
+					return composerSubmissionSnapshot{}, fmt.Errorf("%s has inconsistent file line metadata", element.Label)
+				}
+				metadata["start_line"] = element.StartLine
+				metadata["end_line"] = element.EndLine
+			}
+			encoded, err := json.Marshal(metadata)
 			if err != nil {
 				return composerSubmissionSnapshot{}, fmt.Errorf("encode %s: %w", element.Label, err)
 			}
