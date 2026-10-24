@@ -65,6 +65,28 @@ content captured when it loaded, even if the file later changes. Remove and
 reattach to capture a newer version. History recall restores only the visible
 reference. See the [composer contract](../architecture/tui/contracts/composer.md#file-line-ranges).
 
+### Attach selected terminal output in the TUI
+
+With an ordinary prompt draft, drag over the relevant output in the chat and
+press **Alt+A** to
+attach that selection to the draft. Mouse tracking is enabled by default;
+Shift+drag uses the terminal's own selection and does not create a YHC
+selection. For longer output, press **Ctrl+O**, select text in the current
+expanded transcript and press Alt+A to return with the snippet attached.
+Help and `/keybindings` show the configured `selection:attachContext` binding.
+
+The `[Output #N]` reference retains the selected text when the source later
+changes. Move the cursor onto or immediately after it to preview the captured
+bytes. Preview clipping affects display only. Backspace at the reference end
+removes the attachment; Ctrl+Z restores it in the standard editor. Press Enter
+separately when ready to send the draft.
+
+A selection can contain up to 5 MiB; oversized or changed selections give a
+reason and preserve the draft. Select again after resizing or changing the
+expanded projection. History recall restores a visible reference and marks
+its output body as not restored. See the
+[composer contract](../architecture/tui/contracts/composer.md#selected-terminal-output).
+
 ### Request a next-step suggestion
 
 In the TUI, leave the leader input empty and press `Ctrl+Space`. YHC shows

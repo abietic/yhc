@@ -178,7 +178,7 @@ func TestComposerFileRangePreviewWidthGolden(t *testing.T) {
 				t.Errorf("width %d lost %q: %s", width, want, rendered)
 			}
 		}
-		if strings.Contains(app.renderComposerFileRangePreview(), "\x1b]52") || strings.Contains(rendered, "selected-but-preview-hidden") {
+		if strings.Contains(app.renderComposerContextPreview(), "\x1b]52") || strings.Contains(rendered, "selected-but-preview-hidden") {
 			t.Fatal("preview emitted a control sequence or exceeded its line bound")
 		}
 		for _, row := range strings.Split(rendered, "\n") {

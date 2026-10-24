@@ -498,8 +498,13 @@ func (c *ChatView) GetItemLine(itemIdx, lineInItem int) string {
 // RenderItemRange extracts text from the given item range, slicing at the
 // specified line/col boundaries.
 func (c *ChatView) RenderItemRange(startItem, startLine, startCol, endItem, endLine, endCol int) string {
+	text, _ := c.renderItemRange(startItem, startLine, startCol, endItem, endLine, endCol, 0)
+	return text
+}
+
+func (c *ChatView) renderItemRange(startItem, startLine, startCol, endItem, endLine, endCol, maxBytes int) (string, error) {
 	if len(c.items) == 0 {
-		return ""
+		return "", nil
 	}
 	if startItem < 0 {
 		startItem = 0
@@ -510,13 +515,13 @@ func (c *ChatView) RenderItemRange(startItem, startLine, startCol, endItem, endL
 		endItem = len(c.items) - 1
 	}
 	if startItem > endItem {
-		return ""
+		return "", nil
 	}
 	if _, _, ok := c.selectionMetadata(startItem, startLine); !ok {
-		return ""
+		return "", nil
 	}
 	if _, _, ok := c.selectionMetadata(endItem, endLine); !ok {
-		return ""
+		return "", nil
 	}
 	rw := c.renderWidth()
 	var (
@@ -566,7 +571,15 @@ func (c *ChatView) RenderItemRange(startItem, startLine, startCol, endItem, endL
 				ce,
 			)
 			if text != "" {
-				if emitted && (idx != lastItem || pendingHard) {
+				separator := emitted && (idx != lastItem || pendingHard)
+				additional := len(text)
+				if separator {
+					additional++
+				}
+				if maxBytes > 0 && additional > maxBytes-result.Len() {
+					return "", errSelectedOutputTooLarge
+				}
+				if separator {
 					result.WriteByte('\n')
 				}
 				result.WriteString(text)
@@ -579,7 +592,7 @@ func (c *ChatView) RenderItemRange(startItem, startLine, startCol, endItem, endL
 			}
 		}
 	}
-	return result.String()
+	return result.String(), nil
 }
 
 func NewChatView(styles Styles) *ChatView {

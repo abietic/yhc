@@ -189,6 +189,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionScrollBottom:
 		a.chat.ResetFollow()
 		return true, nil
+	case keybindings.ActionSelectionAttach:
+		a.attachSelectedOutputContext()
+		return true, nil
 	case keybindings.ActionSelectionCopy:
 		if !a.selection.HasSelection() {
 			return false, nil
@@ -559,6 +562,7 @@ func (a *App) keybindingSummary() string {
 		{keybindings.ContextChat, keybindings.ActionChatExternalEditor, "external editor"},
 		{keybindings.ContextChat, keybindings.ActionChatUndo, "undo composer edit"},
 		{keybindings.ContextChat, keybindings.ActionChatArgumentSuggest, "suggest next prompt / command argument"},
+		{keybindings.ContextScroll, keybindings.ActionSelectionAttach, "attach selected output as context"},
 		{keybindings.ContextGlobal, keybindings.ActionAppInterrupt, "interrupt / double-press exit"},
 		{keybindings.ContextGlobal, keybindings.ActionAppExit, "exit"},
 		{keybindings.ContextGlobal, keybindings.ActionAppToggleTranscript, "expanded transcript"},

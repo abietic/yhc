@@ -167,15 +167,16 @@ const (
 
 // Scroll actions
 const (
-	ActionScrollPageUp   Action = "scroll:pageUp"
-	ActionScrollPageDown Action = "scroll:pageDown"
-	ActionScrollHalfUp   Action = "scroll:halfPageUp"
-	ActionScrollHalfDown Action = "scroll:halfPageDown"
-	ActionScrollLineUp   Action = "scroll:lineUp"
-	ActionScrollLineDown Action = "scroll:lineDown"
-	ActionScrollTop      Action = "scroll:top"
-	ActionScrollBottom   Action = "scroll:bottom"
-	ActionSelectionCopy  Action = "selection:copy"
+	ActionScrollPageUp    Action = "scroll:pageUp"
+	ActionScrollPageDown  Action = "scroll:pageDown"
+	ActionScrollHalfUp    Action = "scroll:halfPageUp"
+	ActionScrollHalfDown  Action = "scroll:halfPageDown"
+	ActionScrollLineUp    Action = "scroll:lineUp"
+	ActionScrollLineDown  Action = "scroll:lineDown"
+	ActionScrollTop       Action = "scroll:top"
+	ActionScrollBottom    Action = "scroll:bottom"
+	ActionSelectionCopy   Action = "selection:copy"
+	ActionSelectionAttach Action = "selection:attachContext"
 )
 
 // Attachment actions
@@ -305,6 +306,7 @@ var SupportedActionContexts = map[Action][]Context{
 	ActionScrollTop:             {ContextScroll},
 	ActionScrollBottom:          {ContextScroll},
 	ActionSelectionCopy:         {ContextScroll},
+	ActionSelectionAttach:       {ContextScroll},
 	ActionMessageSelectorUp:     {ContextMessageSelector},
 	ActionMessageSelectorDown:   {ContextMessageSelector},
 	ActionMessageSelectorTop:    {ContextMessageSelector},
