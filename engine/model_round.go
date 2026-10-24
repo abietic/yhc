@@ -593,17 +593,20 @@ func runCanonicalModelRound(
 				DeferExecution: true,
 			},
 		)
+		var pendingToolResults []QueryEvent
 		streamResult, streamErr := execution.ProcessStream(
 			modelCtx,
 			callResult.StreamReader,
 			streamingExecutor,
 			func(event execution.QueryEvent) {
-				input.yield(
-					coordinator.annotate(
-						toEngineQueryEvent(event),
-						activeAttempt,
-					),
-				)
+				projected := coordinator.annotate(toEngineQueryEvent(event), activeAttempt)
+				if projected.Type == EventToolResult {
+					// A deferred collector only yields rejected calls. Classify
+					// their history eligibility before exposing the diagnostic.
+					pendingToolResults = append(pendingToolResults, projected)
+					return
+				}
+				input.yield(projected)
 			},
 		)
 		streamingExecutor.Discard()
@@ -612,6 +615,14 @@ func runCanonicalModelRound(
 				callResult.ProviderUsageCall,
 				streamErr,
 			)
+		}
+		var usageErr error
+		if streamErr == nil {
+			usageErr = execution.CompleteStreamProviderUsage(callResult.ProviderUsageCall, streamResult)
+		}
+		for _, event := range pendingToolResults {
+			event.modelRoundRejected = streamErr != nil || usageErr != nil
+			input.yield(event)
 		}
 		streamFailure := execution.ClassifyModelFailure(streamErr)
 		nextCandidate, canSwitch = coordinator.nextSwitchCandidate(
@@ -668,7 +679,8 @@ func runCanonicalModelRound(
 				},
 			)
 			input.yield(QueryEvent{
-				Type: EventAttachment,
+				modelRoundRejected: true,
+				Type:               EventAttachment,
 				AttachmentMessage: &schema.Message{
 					Role:    schema.User,
 					Content: "Stream error: " + streamErr.Error(),
@@ -684,10 +696,7 @@ func runCanonicalModelRound(
 			result.terminal = &terminal
 			return result
 		}
-		if usageErr := execution.CompleteStreamProviderUsage(
-			callResult.ProviderUsageCall,
-			streamResult,
-		); usageErr != nil {
+		if usageErr != nil {
 			if activeAttempt != nil {
 				coordinator.emit(
 					input.yield,
@@ -707,7 +716,8 @@ func runCanonicalModelRound(
 				return result
 			}
 			input.yield(QueryEvent{
-				Type: EventAttachment,
+				modelRoundRejected: true,
+				Type:               EventAttachment,
 				AttachmentMessage: &schema.Message{
 					Role:    schema.User,
 					Content: "Provider usage error: " + usageErr.Error(),

@@ -89,6 +89,12 @@ type envelope struct {
 	SessionID      string          `json:"session_id"`
 	TerminalReason string          `json:"terminal_reason"`
 	ExitCode       int             `json:"exit_code"`
+	Error          *envelopeError  `json:"error,omitempty"`
+}
+
+type envelopeError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func TestYHCModuleCommandAndArtifactIdentity(t *testing.T) {
@@ -429,9 +435,17 @@ type provider struct {
 }
 
 func newProvider(t *testing.T, p providerScript, tools []string) *provider {
+	return newProviderWithHandler(t, p, tools, nil)
+}
+
+func newProviderWithHandler(t *testing.T, p providerScript, tools []string, wrap func(http.Handler) http.Handler) *provider {
 	x := &provider{t: t, script: p, wantTools: append([]string(nil), tools...), laneN: make(map[string]int), prior: make(map[string]priorObservation), started: make(chan struct{})}
 	sort.Strings(x.wantTools)
-	x.server = httptest.NewServer(http.HandlerFunc(x.serve))
+	var handler http.Handler = http.HandlerFunc(x.serve)
+	if wrap != nil {
+		handler = wrap(handler)
+	}
+	x.server = httptest.NewServer(handler)
 	return x
 }
 
@@ -525,7 +539,12 @@ func (p *provider) serve(w http.ResponseWriter, r *http.Request) {
 		item := map[string]any{"type": "message", "id": fmt.Sprintf("msg-%d", id), "role": "assistant", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": step.Text, "annotations": []any{}}}}
 		p.event(w, "response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
 	}
-	p.event(w, "response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp-%d", id), "object": "response", "status": "completed", "model": q.Model, "output": []any{}, "usage": map[string]int{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}})
+	usage := map[string]any{
+		"input_tokens": 1, "output_tokens": 1, "total_tokens": 2,
+		"input_tokens_details":  map[string]int{"cached_tokens": 0},
+		"output_tokens_details": map[string]int{"reasoning_tokens": 0},
+	}
+	p.event(w, "response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp-%d", id), "object": "response", "status": "completed", "model": q.Model, "output": []any{}, "usage": usage}})
 }
 
 func (p *provider) takeStep(got []string) (string, providerStep, int, bool) {
@@ -1170,13 +1189,20 @@ func runInvocation(ctx context.Context, t *testing.T, binary, root, repo string,
 	var stdout, stderr limitedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	started := time.Now()
-	err := ownedprocess.Run(ctx, cmd)
-	if err != nil {
-		return envelope{}, newInvocationError("process", err, started, &stdout, &stderr)
-	}
+	processErr := ownedprocess.Run(ctx, cmd)
 	var out envelope
-	if err := strictJSON(stdout.Bytes(), &out); err != nil {
-		return envelope{}, newInvocationError("envelope", err, started, &stdout, &stderr)
+	decodeErr := strictJSON(stdout.Bytes(), &out)
+	if processErr != nil {
+		// Failed CLI runs can still publish a complete classified result. Keep
+		// that result without hiding the original process error or trusting a
+		// malformed/partial envelope. Diagnostics still exclude output bodies.
+		if decodeErr != nil {
+			out = envelope{}
+		}
+		return out, newInvocationError("process", processErr, started, &stdout, &stderr)
+	}
+	if decodeErr != nil {
+		return envelope{}, newInvocationError("envelope", decodeErr, started, &stdout, &stderr)
 	}
 	return out, nil
 }
