@@ -26,7 +26,11 @@ func (a *App) resolveKeyAction(msg tea.KeyPressMsg, contexts ...keybindings.Cont
 		a.showToast("Key chord canceled")
 		return true, nil
 	case keybindings.ResolutionMatch:
-		return a.handleKeyAction(resolution.Action, msg)
+		handled, cmd := a.handleKeyAction(resolution.Action, msg)
+		if handled && resolution.Action != keybindings.ActionChatArgumentSuggest {
+			a.dismissComposerSuggestion()
+		}
+		return handled, cmd
 	default:
 		return false, nil
 	}
@@ -106,6 +110,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionChatImagePaste:
 		return true, a.pasteClipboardImage()
 	case keybindings.ActionChatArgumentSuggest:
+		if a.inputMode == InputNormal && a.textarea.Value() == "" {
+			return true, a.requestManualComposerSuggestion()
+		}
 		a.updateArgumentCompletion(true)
 		return true, nil
 	case keybindings.ActionChatExternalEditor:
@@ -416,7 +423,7 @@ func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *App) autocompleteOwnsKey(msg tea.KeyPressMsg) bool {
-	if msg.Code == tea.KeyEscape && a.hasArgumentCompletionActivity() {
+	if msg.Code == tea.KeyEscape && (a.hasArgumentCompletionActivity() || a.hasComposerSuggestionActivity()) {
 		return true
 	}
 	if a.visibleComposerSuggestion() != "" {
@@ -551,6 +558,7 @@ func (a *App) keybindingSummary() string {
 		{keybindings.ContextChat, keybindings.ActionHistorySearch, "reverse history search"},
 		{keybindings.ContextChat, keybindings.ActionChatExternalEditor, "external editor"},
 		{keybindings.ContextChat, keybindings.ActionChatUndo, "undo composer edit"},
+		{keybindings.ContextChat, keybindings.ActionChatArgumentSuggest, "suggest next prompt / command argument"},
 		{keybindings.ContextGlobal, keybindings.ActionAppInterrupt, "interrupt / double-press exit"},
 		{keybindings.ContextGlobal, keybindings.ActionAppExit, "exit"},
 		{keybindings.ContextGlobal, keybindings.ActionAppToggleTranscript, "expanded transcript"},

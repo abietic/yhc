@@ -11,6 +11,7 @@ import (
 
 	"github.com/abietic/yhc/engine"
 	"github.com/abietic/yhc/engine/commands"
+	"github.com/abietic/yhc/engine/services"
 )
 
 func installComposerSuggestion(app *App, text string) {
@@ -108,7 +109,7 @@ func TestComposerSuggestionTypingCancelsAndStaleResultCannotReturn(t *testing.T)
 		ThreadID:   request.ThreadID,
 		Revision:   request.Revision,
 		QueryID:    request.QueryID,
-		Suggestion: "stale text",
+		Result:     services.PromptSuggestionResult{Status: services.PromptSuggestionAvailable, Suggestion: "stale text"},
 	})
 	if got := app.visibleComposerSuggestion(); got != "" {
 		t.Fatalf("stale suggestion became visible = %q", got)

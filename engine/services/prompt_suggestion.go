@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // PromptSuggestionModelFn generates prompt suggestions.
@@ -100,6 +102,9 @@ func containsCJKLetter(value string) bool {
 //
 // Reference: src/services/PromptSuggestion/promptSuggestion.ts shouldFilterSuggestion
 func FilterSuggestion(suggestion string) string {
+	if !utf8.ValidString(suggestion) || strings.ContainsFunc(suggestion, unicode.IsControl) {
+		return "invalid_text"
+	}
 	if suggestion == "" {
 		return "empty"
 	}
@@ -201,6 +206,7 @@ type PromptSuggestionService struct {
 	speculativeResult string
 	speculativeCancel context.CancelFunc
 	minTurns          int
+	generating        bool
 }
 
 // NewPromptSuggestionService creates a prompt suggestion service.
@@ -229,33 +235,66 @@ func (p *PromptSuggestionService) IsEnabled() bool {
 // GenerateSuggestion produces a filtered suggested next prompt.
 // Returns empty string if the suggestion is suppressed or filtered.
 func (p *PromptSuggestionService) GenerateSuggestion(ctx context.Context, conversation []string, assistantTurnCount int) string {
+	result, _ := p.GenerateSuggestionResult(ctx, conversation, assistantTurnCount)
+	return result.Suggestion
+}
+
+// GenerateSuggestionResult keeps suppression, empty output, filtering and
+// provider failure distinct. Cancellation retains the single-flight slot until
+// the provider returns; it never starts a detached generation goroutine.
+func (p *PromptSuggestionService) GenerateSuggestionResult(ctx context.Context, conversation []string, assistantTurnCount int) (PromptSuggestionResult, error) {
+	if ctx == nil {
+		return PromptSuggestionResult{Status: PromptSuggestionSuppressed, Reason: "unavailable"}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return PromptSuggestionErrorResult(err), err
+	}
 	p.mu.Lock()
-	enabled := p.enabled
-	minTurns := p.minTurns
+	reason := ""
+	switch {
+	case !p.enabled:
+		reason = "disabled"
+	case p.modelFn == nil:
+		reason = "unavailable"
+	case len(conversation) == 0:
+		reason = "no_context"
+	case assistantTurnCount < p.minTurns:
+		reason = "early_conversation"
+	case p.generating:
+		reason = "in_flight"
+	}
+	if reason != "" {
+		p.mu.Unlock()
+		return PromptSuggestionResult{Status: PromptSuggestionSuppressed, Reason: reason}, nil
+	}
+	p.generating = true
 	p.mu.Unlock()
-
-	if !enabled || p.modelFn == nil || len(conversation) == 0 {
-		return ""
-	}
-
-	if assistantTurnCount < minTurns {
-		return ""
-	}
+	defer func() {
+		p.mu.Lock()
+		p.generating = false
+		p.mu.Unlock()
+	}()
 
 	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
 	result, err := p.modelFn(callCtx, conversation)
+	if contextErr := callCtx.Err(); contextErr != nil {
+		err = contextErr
+	}
 	if err != nil {
-		return ""
+		return PromptSuggestionErrorResult(err), fmt.Errorf("generate prompt suggestion: %w", err)
 	}
-
+	if !p.IsEnabled() {
+		return PromptSuggestionResult{Status: PromptSuggestionSuppressed, Reason: "disabled"}, nil
+	}
 	suggestion := strings.TrimSpace(result)
-	if reason := FilterSuggestion(suggestion); reason != "" {
-		return ""
+	if suggestion == "" {
+		return PromptSuggestionResult{Status: PromptSuggestionEmpty}, nil
 	}
-
-	return suggestion
+	if reason := FilterSuggestion(suggestion); reason != "" {
+		return PromptSuggestionResult{Status: PromptSuggestionFiltered, Reason: reason}, nil
+	}
+	return PromptSuggestionResult{Suggestion: suggestion, Status: PromptSuggestionAvailable}, nil
 }
 
 // StartSpeculation begins computing a suggestion in the background.

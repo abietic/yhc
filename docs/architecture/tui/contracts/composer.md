@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-10-05
+**Last verified:** 2026-10-24
 
 **Ownership:** `internal/tui` owns one mutable active-draft projection;
 `QueryEngine` owns accepted prompt and queued-input truth.
@@ -127,7 +127,7 @@ and [`argument_completion_pty_unix_test.go`](../../../../internal/tui/argument_c
 
 After an ordinary leader turn completes successfully, the TUI may request one
 model-generated next prompt from
-[`QueryEngine.GeneratePromptSuggestion`](../../../../engine/engine.go). The
+[`QueryEngine.GeneratePromptSuggestionResult`](../../../../engine/prompt_suggestion.go). The
 request reads a bounded snapshot of the current engine conversation. It does
 not use prompt-recall history, mutate the conversation, expose tools, or write
 a transcript record.
@@ -139,6 +139,22 @@ attachment load, or submission admission owning the input. Request and result
 identity include the engine, thread, composer revision, query ID, and
 generation. User input, thread/engine changes, new runtime work, or shutdown
 cancel the request; a late result that misses any fence is discarded.
+
+With an empty ordinary leader draft, the existing `chat:argumentSuggest`
+action (`Ctrl+Space` by default) explicitly requests a next-prompt suggestion.
+With a slash-command argument it retains its argument-completion behavior.
+The manual path displays progress and a bounded explanation when the request
+is suppressed, empty, filtered, timed out, cancelled, failed, or invalidated
+by a route change. Automatic post-turn requests remain quiet when they produce
+no candidate. The shared result and reason-code owner is
+[`Interactive prompt suggestions`](../../platform/runtime-services.md#interactive-prompt-suggestions).
+
+Pressing the shortcut again while a request is pending exposes its progress
+without starting another call. Typing, `Esc`, or `Ctrl+C` dismisses the
+ephemeral feedback and cancels the request; no candidate, reason, or status is
+appended to chat or prompt history. Late results cannot restore dismissed
+feedback. A cancelled provider that has not returned retains the service's
+single-flight slot.
 
 The ghost is rendered through a cloned textarea placeholder. It does not
 change the authoritative textarea value, cursor, structured elements, history,
