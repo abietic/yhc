@@ -303,7 +303,9 @@ func convertImage(image *schema.UserInputImage) (multimodalPart, error) {
 	if image == nil {
 		return multimodalPart{}, fmt.Errorf("image_nil")
 	}
-	if image.Detail != "" {
+	// GLM has no wire detail field. The neutral default needs no lowering;
+	// explicit quality requests cannot be represented and must still fail.
+	if image.Detail != "" && image.Detail != "auto" {
 		return multimodalPart{}, fmt.Errorf("image_detail_unsupported")
 	}
 	urlValue := strings.TrimSpace(image.URL)

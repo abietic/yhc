@@ -375,8 +375,11 @@ historical `reasoning_content`, sends `thinking.type=enabled` with
 `clear_thinking=false` by default, lowers only `low`, `high`, or `max`
 reasoning effort, and enables `tool_stream` for streaming tool calls. It accepts
 ordered text; only Flash and FlashX accept HTTP(S)/base64 images, HTTP(S)
-video, and URL/base64/`file_id` files. The effective per-call model is checked
-before dispatch. Unsupported forced tool choice, multimodal tool results, malformed
+video, and URL/base64/`file_id` files. Images with omitted or `auto` detail
+use GLM's native image representation without a wire detail field; explicit
+quality levels remain unsupported. This preserves the neutral product-input
+default without changing canonical image metadata. The effective per-call model
+is checked before dispatch. Unsupported forced tool choice, multimodal tool results, malformed
 provider envelopes, an SSE stream without `[DONE]`, and a stream without a
 finish reason fail locally or fail the attempt rather than downgrading.
 
