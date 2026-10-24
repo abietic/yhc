@@ -2,6 +2,7 @@ package execution
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -142,5 +143,27 @@ func TestRunUsageCacheWriteDoesNotAddTokensOrCost(t *testing.T) {
 	// Six reads at 1 + four other input tokens at 2 + four output at 4.
 	if s.TotalTokens != 14 || s.Cost.KnownEstimatedAmount != "0.000030000000" || s.CallLedger.Records[0].Tokens.UncachedPromptTokens != 4 {
 		t.Fatalf("cache write was charged twice: %+v", s)
+	}
+}
+
+type cacheWriteOnlyFixtureError struct{}
+
+func (*cacheWriteOnlyFixtureError) Error() string { return "independent cache detail" }
+func (*cacheWriteOnlyFixtureError) ProviderCacheWriteReceipt() (int, bool, string) {
+	return 0, true, "5m"
+}
+
+func TestCacheWriteReceiptMustBelongToFinalUsageError(t *testing.T) {
+	r, _ := NewRunUsage(RunUsageLimits{})
+	call, _ := r.AdmitProviderUsage(t.Context(), ProviderUsageDescriptor{})
+	primary := &finalUsageFixtureError{cause: errors.New("terminal failure"), usage: &schema.TokenUsage{PromptTokens: 2, CompletionTokens: 1, TotalTokens: 3}}
+	cause := errors.Join(primary, &cacheWriteOnlyFixtureError{})
+	if err := MarkProviderUsageAmbiguous(call, cause); !errors.Is(err, primary) {
+		t.Fatal(err)
+	}
+	s := r.Snapshot()
+	record := s.CallLedger.Records[0]
+	if s.KnownCalls != 1 || s.TotalTokens != 3 || s.CacheWriteReportedCalls != 0 || record.Tokens.CacheWritePromptTokens != nil || record.CacheTTL != "" {
+		t.Fatalf("unrelated joined error invented cache-write presence: %+v", s)
 	}
 }

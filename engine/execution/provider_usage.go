@@ -203,8 +203,9 @@ func MarkProviderUsageAmbiguous(call ProviderUsageCall, cause error) error {
 	var receipt providercost.FinalUsageError
 	if errors.As(cause, &receipt) {
 		if usage, responseModel := receipt.FinalProviderUsage(); usage != nil {
-			var cacheReceipt interface{ ProviderCacheWriteReceipt() (int, bool, string) }
-			if errors.As(cause, &cacheReceipt) {
+			// Optional details belong to this authoritative receipt, never a
+			// sibling error in a joined chain.
+			if cacheReceipt, ok := receipt.(interface{ ProviderCacheWriteReceipt() (int, bool, string) }); ok {
 				if tokens, known, ttl := cacheReceipt.ProviderCacheWriteReceipt(); known {
 					if observer, ok := call.(ProviderCacheWriteObserver); ok {
 						observer.ObserveProviderCacheWrite(tokens, ttl)
