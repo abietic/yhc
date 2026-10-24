@@ -85,7 +85,7 @@ func canonicalAssistantMessageBytes(message *schema.Message) ([]byte, error) {
 	if message == nil {
 		return nil, errors.New("assistant origin message is nil")
 	}
-	raw, err := json.Marshal(message)
+	raw, err := json.Marshal((*digestMessage)(message))
 	if err != nil {
 		return nil, fmt.Errorf("encode assistant origin message: %w", err)
 	}

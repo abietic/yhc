@@ -442,12 +442,12 @@ dependencies:
     compatibility: allow
     notice: none
   - module: github.com/cloudwego/eino
-    version: v0.9.13
-    source_url: https://pkg.go.dev/github.com/cloudwego/eino@v0.9.13
+    version: v0.9.21
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino@v0.9.21
     licenses:
       - spdx: Apache-2.0
-        license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/cloudwego/eino@v0.9.13?tab=licenses
+        license_file: LICENSE-APACHE
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino@v0.9.21?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/cloudwego/eino-ext/components/model/agenticark
@@ -478,12 +478,12 @@ dependencies:
     compatibility: allow
     notice: none
   - module: github.com/cloudwego/eino-ext/components/model/agenticopenai
-    version: v0.2.2
-    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticopenai@v0.2.2
+    version: v0.2.4
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticopenai@v0.2.4
     licenses:
       - spdx: Apache-2.0
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticopenai@v0.2.2?tab=licenses
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/components/model/agenticopenai@v0.2.4?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/cloudwego/eino-ext/components/model/agenticqwen
@@ -497,12 +497,12 @@ dependencies:
     notice: none
     detector_override: upstream-module-archive-omits-license
   - module: github.com/cloudwego/eino-ext/libs/acl/openai
-    version: v0.1.18-0.20260527084435-846f52bd97c6
-    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/libs/acl/openai@v0.1.18-0.20260527084435-846f52bd97c6
+    version: v0.1.18-0.20260924031408-10df7cac3f6d
+    source_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/libs/acl/openai@v0.1.18-0.20260924031408-10df7cac3f6d
     licenses:
       - spdx: Apache-2.0
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/libs/acl/openai@v0.1.18-0.20260527084435-846f52bd97c6?tab=licenses
+        license_url: https://pkg.go.dev/github.com/cloudwego/eino-ext/libs/acl/openai@v0.1.18-0.20260924031408-10df7cac3f6d?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/coder/acp-go-sdk
@@ -762,12 +762,12 @@ dependencies:
     compatibility: allow
     notice: none
   - module: github.com/meguminnnnnnnnn/go-openai
-    version: v0.1.2
-    source_url: https://pkg.go.dev/github.com/meguminnnnnnnnn/go-openai@v0.1.2
+    version: v0.1.6
+    source_url: https://pkg.go.dev/github.com/meguminnnnnnnnn/go-openai@v0.1.6
     licenses:
       - spdx: Apache-2.0
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/meguminnnnnnnnn/go-openai@v0.1.2?tab=licenses
+        license_url: https://pkg.go.dev/github.com/meguminnnnnnnnn/go-openai@v0.1.6?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/microcosm-cc/bluemonday
@@ -838,12 +838,12 @@ dependencies:
     compatibility: allow
     notice: retain
   - module: github.com/openai/openai-go/v3
-    version: v3.35.0
-    source_url: https://pkg.go.dev/github.com/openai/openai-go/v3@v3.35.0
+    version: v3.44.0
+    source_url: https://pkg.go.dev/github.com/openai/openai-go/v3@v3.44.0
     licenses:
       - spdx: Apache-2.0
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/openai/openai-go/v3@v3.35.0?tab=licenses
+        license_url: https://pkg.go.dev/github.com/openai/openai-go/v3@v3.44.0?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/pb33f/ordered-map/v2

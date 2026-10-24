@@ -246,10 +246,9 @@ func TestAssistantOriginSurvivesLifecycleReloadAndRewrite(t *testing.T) {
 	}
 }
 
-func TestAssistantOriginCanonicalMessageGolden(t *testing.T) {
-	t.Parallel()
+func goldenAssistantOriginMessage() *schema.Message {
 	index := 2
-	message := &schema.Message{
+	return &schema.Message{
 		Role:    schema.Assistant,
 		Content: "current text",
 		MultiContent: []schema.ChatMessagePart{{ //nolint:staticcheck // Golden covers the readable deprecated field.
@@ -298,6 +297,11 @@ func TestAssistantOriginCanonicalMessageGolden(t *testing.T) {
 			"z":          true,
 		},
 	}
+}
+
+func TestAssistantOriginCanonicalMessageGolden(t *testing.T) {
+	t.Parallel()
+	message := goldenAssistantOriginMessage()
 	digest, err := assistantOriginPayloadDigest(message)
 	if err != nil {
 		t.Fatal(err)
@@ -315,6 +319,42 @@ func TestAssistantOriginCanonicalMessageGolden(t *testing.T) {
 	if _, err := assistantOriginPayloadDigest(&invalid); err == nil {
 		t.Fatal("non-canonical NaN payload was accepted")
 	}
+}
+
+func TestAssistantOriginCacheWriteDigestCompatibility(t *testing.T) {
+	t.Parallel()
+	message := goldenAssistantOriginMessage()
+	identity := EntryIdentity{Version: 1, ID: "entry-cache"}
+	record := assistantOriginRecord{
+		BindingCodec: assistantOriginBindingCodec,
+		EntryVersion: identity.Version, EntryID: identity.ID,
+		LogicalID: "golden-message",
+		// Persisted by Eino v0.9.13, which had no cache_write_tokens field.
+		PayloadDigest: "d58bad884e774a0228ecb45ea8761af56c4ebcf4ccb097de616f433017a44ca7",
+		Origin:        testAssistantOrigin(0),
+	}
+	check := func(want providerorigin.BindingState) {
+		t.Helper()
+		if got := validateAssistantOriginRecord(identity, 0, message, record); got.State != want {
+			t.Fatalf("binding = %v, want %v", got.State, want)
+		}
+	}
+	check(providerorigin.BindingVerified)
+	message.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens = 1
+	check(providerorigin.BindingRecoveryMismatch)
+	digest, err := assistantOriginPayloadDigest(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.PayloadDigest = digest
+	check(providerorigin.BindingVerified)
+	message.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens = 2
+	check(providerorigin.BindingRecoveryMismatch)
+	message.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens = 0
+	check(providerorigin.BindingRecoveryMismatch)
+	record.PayloadDigest = "d58bad884e774a0228ecb45ea8761af56c4ebcf4ccb097de616f433017a44ca7"
+	message.Extra["cache_write_tokens"] = 0
+	check(providerorigin.BindingRecoveryMismatch)
 }
 
 func TestAssistantOriginBindingRejectsPhysicalAndLogicalSwaps(t *testing.T) {
