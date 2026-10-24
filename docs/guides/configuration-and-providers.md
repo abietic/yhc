@@ -240,6 +240,28 @@ Generic variables are `PROV`, `PROV_MODEL`, `PROV_API_KEY`, `PROV_BASE_URL`,
 and `PROV_FALLBACK_MODEL`. When `PROV` is set, generic key/base-URL values apply
 only to that selected provider.
 
+## Kimi K3
+
+Set `MOONSHOT_API_KEY` to a standard Kimi API key, then select the provider
+explicitly:
+
+```bash
+yhc --provider kimi --model kimi-k3
+```
+
+`KIMI_API_KEY` is a secondary key source; `PROV_API_KEY` keeps its usual higher
+priority. `KIMI_BASE_URL` overrides the default API root. Use an endpoint that
+matches the key's platform; YHC does not automatically change regions or select
+a Coding Plan. Optional `--provider-preflight` sends an authenticated GET to the API root's
+`/models` endpoint, with no model generation.
+
+The initial adapter supports text, function tools, plain reasoning replay and
+`low/high/max` effort. It uses a conservative context bound and caps output at
+131,072 tokens; media and other Kimi model IDs are not enabled. The exact
+[provider contract](../architecture/platform/model-providers.md) owns the limits
+and evidence boundary. Kimi pricing remains unknown in the built-in catalog;
+no Kimi price card or strict cost-reservation guarantee is supplied.
+
 ## CLI flags
 
 | Flag | Scope |

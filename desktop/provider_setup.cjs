@@ -2,7 +2,7 @@ const nodeFS = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
 const nodePath = require('node:path');
 
-const PROVIDERS = new Set(['anthropic', 'openai', 'google', 'deepseek', 'glm', 'qwen', 'ark']);
+const PROVIDERS = new Set(['anthropic', 'openai', 'google', 'deepseek', 'glm', 'kimi', 'qwen', 'ark']);
 const CONTROL_CHARACTER = /[\u0000-\u001F\u007F]/;
 const MAX_MODEL_LENGTH = 256;
 const MAX_KEY_LENGTH = 4096;
@@ -19,6 +19,8 @@ const PROVIDER_SPECIFIC_KEY_ENVIRONMENTS = [
   'DEEPSEEK_API_KEY',
   'ZAI_API_KEY',
   'ZHIPUAI_API_KEY',
+  'MOONSHOT_API_KEY',
+  'KIMI_API_KEY',
   'DASHSCOPE_API_KEY',
   'QWEN_API_KEY',
   'ARK_API_KEY',

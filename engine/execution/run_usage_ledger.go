@@ -103,7 +103,7 @@ func runUsageModelLabel(value string) string {
 
 func runUsageProvider(value string) string {
 	switch value {
-	case "agenticdeepseek", "agenticglm", "agenticclaude", "agenticgemini", "agenticopenai", "agenticark", "agenticqwen":
+	case "agenticdeepseek", "agenticglm", "agentickimi", "agenticclaude", "agenticgemini", "agenticopenai", "agenticark", "agenticqwen":
 		return value
 	}
 	return "unknown"

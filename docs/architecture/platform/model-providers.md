@@ -45,7 +45,7 @@ participate in conflict detection rather than forming one universal precedence
 step.
 
 Supported canonical adapters are Agentic Claude, OpenAI, Gemini, DeepSeek,
-GLM, Qwen, and Ark. Public aliases normalize to those IDs.
+GLM, Kimi, Qwen, and Ark. Public aliases normalize to those IDs.
 
 ## Trusted portfolio compilation
 
@@ -406,6 +406,33 @@ document formats. The upload client sends a deterministic MIME type and rejects
 purpose/extension mismatches before dispatch. Remote file IDs are caller
 resources and are not persisted as conversation or Session state.
 
+Kimi uses the project-owned
+[`agentickimi`](../../../engine/provider/agentickimi/model.go) adapter with the
+[Responses contract](https://platform.kimi.ai/docs/api/responses). The initial
+slice admits only exact `kimi-k3` text, function tools and plain reasoning.
+YHC applies a conservative 1,000,000-token context bound and a 131,072-token
+output cap; this cap is the API default, below its documented maximum. K3.1,
+K2.x, media, namespace/custom/server tools and forced tool choice are not part
+of this slice. Missing USD prices remain unknown rather than free.
+
+K3 lowers only `low/high/max`, defaults to `max`, omits fixed sampling fields,
+and explicitly requests implicit `5m` cache writes. Historical reasoning is
+replayed as `reasoning_text`, including across user turns. The current OpenAPI
+states that encrypted reasoning is null; signatures and non-null encrypted
+content are rejected. No opaque continuation authority is inferred.
+
+The SSE parser checks event type, monotonic sequence, response identity and
+terminal consistency. It streams text/reasoning and publishes function calls
+only after a completed terminal snapshot; truncation and conflicting snapshots
+fail the attempt. Redirects and hidden retries are disabled. Missing usage
+stays nil; present usage requires complete valid counts, with cache read/write
+as disjoint input subsets and reasoning as an output subset. Counts reach the
+Eino callback and classic bridge without being added twice. Cache TTL is
+retained in the native response extension only when actually returned.
+Abandoning an idle stream requires context cancellation and reader close.
+Offline HTTP/SSE and QueryEngine tool-loop fixtures establish this wiring;
+real-provider acceptance and a Kimi price/reservation contract remain separate.
+
 `engine/auth` supplies provider-default credentials and exact named
 credentials only at client construction. `engine/model` owns model aliases,
 context-window and deprecation metadata, profile override validation,
@@ -414,7 +441,7 @@ the engine role resolver consume that policy but do not redefine it.
 
 The project-owned `agenticChatModel` bridge also preserves terminal-only Eino
 chunks. It extracts Claude stop reasons, OpenAI and Ark response
-status/incomplete details, Gemini finish reasons, and DeepSeek/Qwen extension
+status/incomplete details, Gemini finish reasons, and DeepSeek/GLM/Kimi/Qwen extension
 finish reasons into the legacy `schema.ResponseMeta.FinishReason`. The query
 execution layer classifies those raw values centrally; the bridge does not
 choose tool disposition or alter provider routes.

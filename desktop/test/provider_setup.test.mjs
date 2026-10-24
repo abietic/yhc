@@ -109,24 +109,26 @@ test('status never decrypts or reveals the secret', async () => {
   assert.equal(JSON.stringify(status).includes(sentinel), false);
 });
 
-test('GLM profile round-trips through encrypted storage and the dedicated fallback tuple', async () => {
-  const path = await profilePath();
-  const safeStorage = fakeSafeStorage();
-  const input = { provider: 'glm', model: 'glm-5.3-flash', apiKey: sentinel };
-  const deps = { profilePath: path, safeStorage, platform: 'darwin' };
-  assert.deepEqual(await writeProviderProfile(deps, input), {
-    configured: true, provider: 'glm', model: 'glm-5.3-flash',
+for (const [provider, model] of [['glm', 'glm-5.3-flash'], ['kimi', 'kimi-k3']]) {
+  test(`${provider} profile round-trips through encrypted storage and the dedicated fallback tuple`, async () => {
+    const path = await profilePath();
+    const safeStorage = fakeSafeStorage();
+    const input = { provider, model, apiKey: sentinel };
+    const deps = { profilePath: path, safeStorage, platform: 'darwin' };
+    assert.deepEqual(await writeProviderProfile(deps, input), {
+      configured: true, provider, model,
+    });
+    const stored = await readFile(path, 'utf8');
+    assert.equal(stored.includes(sentinel), false);
+    assert.deepEqual(await readProviderLaunchProfile(deps), input);
+    const environment = providerLaunchEnvironment({ PROV: 'openai' }, input);
+    assert.equal(environment.PROV, 'openai');
+    assert.equal(environment.YHC_DESKTOP_PROVIDER_FALLBACK, provider);
+    assert.equal(environment.YHC_DESKTOP_MODEL_FALLBACK, model);
+    assert.equal(environment.YHC_DESKTOP_API_KEY, sentinel);
   });
-  const stored = await readFile(path, 'utf8');
-  assert.equal(stored.includes(sentinel), false);
-  assert.deepEqual(await readProviderLaunchProfile(deps), input);
-  const environment = providerLaunchEnvironment({ PROV: 'openai' }, input);
-  assert.equal(environment.PROV, 'openai');
-  assert.equal(environment.YHC_DESKTOP_PROVIDER_FALLBACK, 'glm');
-  assert.equal(environment.YHC_DESKTOP_MODEL_FALLBACK, 'glm-5.3-flash');
-  assert.equal(environment.YHC_DESKTOP_API_KEY, sentinel);
-});
 
+}
 test('malformed and undecryptable profiles fail closed', async () => {
   const path = await profilePath();
   await assert.rejects(
@@ -335,4 +337,11 @@ test('macOS setup admission does not synchronously probe Keychain availability',
     fakeSafeStorage({ available: false }),
     'win32',
   ), false);
+});
+
+test('recognizes Kimi ambient key names without exposing their values', () => {
+  for (const name of ['MOONSHOT_API_KEY', 'KIMI_API_KEY']) {
+    assert.equal(ambientProviderConfigured({ [name]: sentinel }), true);
+    assert.equal(ambientProviderConfigured({ [name]: '' }), false);
+  }
 });

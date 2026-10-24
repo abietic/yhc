@@ -91,6 +91,27 @@ func TestCheckConnectivityUsesAuthenticatedGLMFilesList(t *testing.T) {
 	}
 }
 
+func TestCheckConnectivityKimiUsesAuthenticatedModelsGET(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+			http.Error(w, "invalid", http.StatusBadRequest)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sentinel-provider-credential" {
+			t.Errorf("Authorization = %q", got)
+			http.Error(w, "invalid", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	result := CheckConnectivity(model.ProviderKimi, "sentinel-provider-credential", &ConnectivityCheckOptions{HTTPClient: &http.Client{Transport: &rewriteTransport{baseURL: server.URL}}})
+	if result.Status != StatusReachable {
+		t.Fatalf("status = %q", result.Status)
+	}
+}
+
 func TestCheckConnectivity_AuthFailed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

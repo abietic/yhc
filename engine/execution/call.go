@@ -25,6 +25,7 @@ import (
 	enginemodel "github.com/abietic/yhc/engine/model"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
 	"github.com/abietic/yhc/engine/provider/agenticglm"
+	"github.com/abietic/yhc/engine/provider/agentickimi"
 )
 
 const (
@@ -320,6 +321,8 @@ func buildProviderEffortOption(
 		return agenticdeepseek.WithReasoningEffort(
 			agenticdeepseek.ReasoningEffort(resolved.WireEffort),
 		), true, nil
+	case enginemodel.ReasoningDialectKimi:
+		return agentickimi.WithReasoningEffort(agentickimi.ReasoningEffort(resolved.WireEffort)), true, nil
 	case enginemodel.ReasoningDialectGLM:
 		return agenticglm.WithReasoningEffort(
 			agenticglm.ReasoningEffort(resolved.WireEffort),
