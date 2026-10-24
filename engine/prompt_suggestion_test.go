@@ -14,6 +14,7 @@ import (
 	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/provider"
+	"github.com/abietic/yhc/engine/services"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/transcript"
 )
@@ -276,16 +277,17 @@ func TestGeneratePromptSuggestionFailsClosedOutsideEligibleClient(t *testing.T) 
 		config            QueryEngineConfig
 		pendingPermission bool
 		unfinishedGoal    bool
+		reason            string
 	}{
-		{name: "disabled", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI}},
-		{name: "headless", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointHeadless, EnablePromptSuggestions: true}},
-		{name: "app disabled", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer}},
-		{name: "app plan", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true, PermissionMode: permission.ModePlan}},
-		{name: "app pending permission", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true}, pendingPermission: true},
-		{name: "app unfinished goal", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true}, unfinishedGoal: true},
-		{name: "child", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true, AgentID: "child"}},
-		{name: "plan", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true, PermissionMode: permission.ModePlan}},
-		{name: "pending permission", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true}, pendingPermission: true},
+		{name: "disabled", reason: "disabled", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI}},
+		{name: "headless", reason: "unavailable", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointHeadless, EnablePromptSuggestions: true}},
+		{name: "app disabled", reason: "disabled", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer}},
+		{name: "app plan", reason: "plan_mode", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true, PermissionMode: permission.ModePlan}},
+		{name: "app pending permission", reason: "pending_permission", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true}, pendingPermission: true},
+		{name: "app unfinished goal", reason: "goal_active", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointAppServer, EnablePromptSuggestions: true}, unfinishedGoal: true},
+		{name: "child", reason: "unavailable", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true, AgentID: "child"}},
+		{name: "plan", reason: "plan_mode", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true, PermissionMode: permission.ModePlan}},
+		{name: "pending permission", reason: "pending_permission", config: QueryEngineConfig{CommandEntrypoint: commands.EntrypointTUI, EnablePromptSuggestions: true}, pendingPermission: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -324,6 +326,10 @@ func TestGeneratePromptSuggestionFailsClosedOutsideEligibleClient(t *testing.T) 
 
 			if got := eng.GeneratePromptSuggestion(context.Background()); got != "" {
 				t.Fatalf("ineligible suggestion = %q", got)
+			}
+			result, err := eng.GeneratePromptSuggestionResult(context.Background())
+			if err != nil || result.Status != services.PromptSuggestionSuppressed || result.Reason != test.reason || result.Suggestion != "" {
+				t.Fatalf("ineligible typed result = %#v, %v", result, err)
 			}
 			if calls, _, _, _, _, _ := probe.snapshot(); calls != 0 {
 				t.Fatalf("ineligible provider calls = %d", calls)
@@ -398,7 +404,8 @@ func TestGeneratePromptSuggestionDropsResultAfterModelRouteChange(t *testing.T) 
 		eng.mu.Unlock()
 	}
 
-	if got := eng.GeneratePromptSuggestion(context.Background()); got != "" {
-		t.Fatalf("route-stale suggestion = %q", got)
+	result, err := eng.GeneratePromptSuggestionResult(context.Background())
+	if err != nil || result.Status != services.PromptSuggestionStale || result.Suggestion != "" {
+		t.Fatalf("route-stale suggestion = %#v, %v", result, err)
 	}
 }

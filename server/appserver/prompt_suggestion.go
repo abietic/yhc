@@ -12,7 +12,7 @@ import (
 )
 
 type sessionPromptSuggester interface {
-	GeneratePromptSuggestion(context.Context) string
+	GeneratePromptSuggestionResult(context.Context) (services.PromptSuggestionResult, error)
 }
 
 type promptSuggestionRequest struct {
@@ -40,18 +40,35 @@ func (s *session) promptSuggestionsEnabled() bool {
 // promptSuggestion owns one explicit, ephemeral side query. Admission/close
 // serialize only the snapshot, never wait behind a provider request. New turns
 // cancel it; close cancels and joins it before closing the engine.
-func (s *session) promptSuggestion(ctx context.Context) string {
+func (s *session) promptSuggestion(ctx context.Context) services.PromptSuggestionResult {
+	suppressed := func(reason string) services.PromptSuggestionResult {
+		return services.PromptSuggestionResult{Status: services.PromptSuggestionSuppressed, Reason: reason}
+	}
 	suggester, ok := s.engine.(sessionPromptSuggester)
-	if !ok || ctx == nil || ctx.Err() != nil {
-		return ""
+	if !ok || ctx == nil {
+		return suppressed("unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return services.PromptSuggestionErrorResult(err)
 	}
 	s.turnAdmissionMu.Lock()
 	s.mu.Lock()
-	blocked := s.closed || s.activeTurnID != "" || s.status != "idle" || s.promptSuggestionRequest != nil
+	reason := ""
+	switch {
+	case s.closed:
+		reason = "unavailable"
+	case s.activeTurnID != "" || s.status != "idle":
+		reason = "busy"
+	case s.promptSuggestionRequest != nil:
+		reason = "in_flight"
+	}
 	s.mu.Unlock()
-	if blocked || !s.promptSuggestionsEnabled() {
+	if reason == "" && !s.promptSuggestionsEnabled() {
+		reason = "disabled"
+	}
+	if reason != "" {
 		s.turnAdmissionMu.Unlock()
-		return ""
+		return suppressed(reason)
 	}
 	requestCtx, cancel := context.WithCancel(ctx)
 	stopRootCancellation := context.AfterFunc(s.rootCtx, cancel)
@@ -65,7 +82,10 @@ func (s *session) promptSuggestion(ctx context.Context) string {
 	defer cancel()
 	defer stopRootCancellation()
 
-	text := suggester.GeneratePromptSuggestion(requestCtx)
+	result, err := suggester.GeneratePromptSuggestionResult(requestCtx)
+	if err != nil {
+		result = services.PromptSuggestionErrorResult(err)
+	}
 	enabled := s.promptSuggestionsEnabled()
 	s.turnAdmissionMu.Lock()
 	defer s.turnAdmissionMu.Unlock()
@@ -75,10 +95,24 @@ func (s *session) promptSuggestion(ctx context.Context) string {
 		s.promptSuggestionRequest = nil
 	}
 	s.mu.Unlock()
-	if !valid || !enabled || !utf8.ValidString(text) || len(text) >= 100 || services.FilterSuggestion(text) != "" || containsSuggestionControl(text) {
-		return ""
+	if err := requestCtx.Err(); err != nil {
+		return services.PromptSuggestionErrorResult(err)
 	}
-	return text
+	if !valid {
+		return services.PromptSuggestionResult{Status: services.PromptSuggestionCancelled}
+	}
+	if !enabled {
+		return suppressed("disabled")
+	}
+	if result.Status != services.PromptSuggestionAvailable {
+		result.Suggestion = ""
+		return result
+	}
+	text := result.Suggestion
+	if !utf8.ValidString(text) || len(text) >= 100 || services.FilterSuggestion(text) != "" || containsSuggestionControl(text) {
+		return services.PromptSuggestionResult{Status: services.PromptSuggestionFiltered, Reason: "invalid_text"}
+	}
+	return result
 }
 
 func containsSuggestionControl(text string) bool {
@@ -104,5 +138,9 @@ func (s *Server) handlePromptSuggestion(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid_request", "empty suggestion request required")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"session_id": owned.id, "suggestion": owned.promptSuggestion(r.Context())})
+	result := owned.promptSuggestion(r.Context())
+	writeJSON(w, http.StatusOK, struct {
+		SessionID string `json:"session_id"`
+		services.PromptSuggestionResult
+	}{SessionID: owned.id, PromptSuggestionResult: result})
 }

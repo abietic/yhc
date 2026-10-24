@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-21
+**Last verified:** 2026-10-24
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -48,6 +48,24 @@ reasoning, provider responses, raw noncanonical tool events, or an interactive
 approval channel. Consumers should branch on `schema_version`, `type`, and
 `event.kind`, ignore unknown additive fields, and treat the single `result`
 record as process closure.
+
+### Request a next-step suggestion
+
+In the TUI, leave the leader input empty and press `Ctrl+Space`. YHC shows
+progress, then a suggested next prompt or a short explanation such as an early
+conversation, disabled suggestions, or a timed-out request. Suggestions need
+at least two assistant messages. `Tab` or Right Arrow copies a candidate into
+the draft; press Enter separately to send it. Enter with an unaccepted ghost
+only dismisses it. Typing, Escape, or Ctrl+C cancels the pending request or
+dismisses its feedback.
+
+The same shortcut still requests argument completion inside a supported slash
+command. It follows the configurable `chat:argumentSuggest` binding shown in
+Help and `/keybindings`. Desktop/Web uses the existing **Suggest next step**
+button with the same result categories. These helper requests may incur
+provider usage; they use the current model and do not run tools. See the
+[composer contract](../architecture/tui/contracts/composer.md#next-prompt-ghost)
+and [runtime service boundary](../architecture/platform/runtime-services.md#interactive-prompt-suggestions).
 
 ### Completion and evaluation
 

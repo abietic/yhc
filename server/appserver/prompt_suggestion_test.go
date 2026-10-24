@@ -3,9 +3,12 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,17 +16,22 @@ import (
 	"github.com/abietic/yhc/engine"
 	"github.com/abietic/yhc/engine/config"
 	"github.com/abietic/yhc/engine/permission"
+	"github.com/abietic/yhc/engine/services"
 )
 
 type suggestionEngine struct {
 	*fakeSessionEngine
-	calls    atomic.Int32
-	generate func(context.Context) string
+	calls          atomic.Int32
+	generate       func(context.Context) string
+	generateResult func(context.Context) (services.PromptSuggestionResult, error)
 }
 
-func (e *suggestionEngine) GeneratePromptSuggestion(ctx context.Context) string {
+func (e *suggestionEngine) GeneratePromptSuggestionResult(ctx context.Context) (services.PromptSuggestionResult, error) {
 	e.calls.Add(1)
-	return e.generate(ctx)
+	if e.generateResult != nil {
+		return e.generateResult(ctx)
+	}
+	return services.PromptSuggestionResult{Status: services.PromptSuggestionAvailable, Suggestion: e.generate(ctx)}, nil
 }
 
 func newSuggestionTestServer(t *testing.T, generate func(context.Context) string) (*Server, *httptest.Server, *session, *suggestionEngine) {
@@ -56,12 +64,14 @@ func TestPromptSuggestionRouteRequiresOwnedIdleSessionAndSharedPreference(t *tes
 	endpoint := httpServer.URL + "/v1/sessions/" + owned.id + "/prompt-suggestion"
 	response := doJSON(t, endpoint, "test-token", http.MethodPost, map[string]any{})
 	var result struct {
-		SessionID  string `json:"session_id"`
-		Suggestion string `json:"suggestion"`
+		SessionID  string                          `json:"session_id"`
+		Suggestion string                          `json:"suggestion"`
+		Status     services.PromptSuggestionStatus `json:"status"`
+		Reason     string                          `json:"reason"`
 	}
 	decodeResponse(t, response, &result)
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusOK || result.SessionID != owned.id || result.Suggestion != "run the tests" || runtime.calls.Load() != 1 {
+	if response.StatusCode != http.StatusOK || result.SessionID != owned.id || result.Suggestion != "run the tests" || result.Status != services.PromptSuggestionAvailable || runtime.calls.Load() != 1 {
 		t.Fatalf("suggestion = %d %+v calls=%d", response.StatusCode, result, runtime.calls.Load())
 	}
 	for _, test := range []struct {
@@ -85,8 +95,8 @@ func TestPromptSuggestionRouteRequiresOwnedIdleSessionAndSharedPreference(t *tes
 	response = doJSON(t, endpoint, "test-token", http.MethodPost, map[string]any{})
 	decodeResponse(t, response, &result)
 	_ = response.Body.Close()
-	if result.Suggestion != "" || runtime.calls.Load() != 1 {
-		t.Fatal("busy session dispatched suggestion")
+	if result.Suggestion != "" || result.Status != services.PromptSuggestionSuppressed || result.Reason != "busy" || runtime.calls.Load() != 1 {
+		t.Fatal("busy session dispatched suggestion or lost its reason")
 	}
 	owned.mu.Lock()
 	owned.activeTurnID = ""
@@ -101,8 +111,8 @@ func TestPromptSuggestionRouteRequiresOwnedIdleSessionAndSharedPreference(t *tes
 	response = doJSON(t, endpoint, "test-token", http.MethodPost, map[string]any{})
 	decodeResponse(t, response, &result)
 	_ = response.Body.Close()
-	if result.Suggestion != "" || runtime.calls.Load() != 1 {
-		t.Fatal("disabled preference dispatched suggestion")
+	if result.Suggestion != "" || result.Status != services.PromptSuggestionSuppressed || result.Reason != "disabled" || runtime.calls.Load() != 1 {
+		t.Fatal("disabled preference dispatched suggestion or lost its reason")
 	}
 }
 
@@ -123,13 +133,13 @@ func TestPromptSuggestionRequestCancelsOnNewTurnAndRejectsLateResult(t *testing.
 		}
 	}()
 	result := make(chan string, 1)
-	go func() { result <- owned.promptSuggestion(context.Background()) }()
+	go func() { result <- owned.promptSuggestion(context.Background()).Suggestion }()
 	select {
 	case <-entered:
 	case <-time.After(3 * time.Second):
 		t.Fatal("not started")
 	}
-	if value := owned.promptSuggestion(context.Background()); value != "" || runtime.calls.Load() != 1 {
+	if value := owned.promptSuggestion(context.Background()).Suggestion; value != "" || runtime.calls.Load() != 1 {
 		t.Fatal("duplicate in-flight request dispatched")
 	}
 	if _, err := owned.startTurn(StartTurnRequest{Prompt: "new prompt"}); err != nil {
@@ -170,7 +180,7 @@ func TestPromptSuggestionCloseCancelsAndJoinsBeforeEngineClose(t *testing.T) {
 		}
 	}()
 	result := make(chan string, 1)
-	go func() { result <- owned.promptSuggestion(context.Background()) }()
+	go func() { result <- owned.promptSuggestion(context.Background()).Suggestion }()
 	select {
 	case <-entered:
 	case <-time.After(3 * time.Second):
@@ -222,7 +232,7 @@ func TestPromptSuggestionCallerCancellationAndPreferenceChangeDropResults(t *tes
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			result := make(chan string, 1)
-			go func() { result <- owned.promptSuggestion(ctx) }()
+			go func() { result <- owned.promptSuggestion(ctx).Suggestion }()
 			select {
 			case <-entered:
 			case <-time.After(3 * time.Second):
@@ -257,8 +267,8 @@ type suggestionQueueEngine struct {
 	generate func(context.Context) string
 }
 
-func (e *suggestionQueueEngine) GeneratePromptSuggestion(ctx context.Context) string {
-	return e.generate(ctx)
+func (e *suggestionQueueEngine) GeneratePromptSuggestionResult(ctx context.Context) (services.PromptSuggestionResult, error) {
+	return services.PromptSuggestionResult{Status: services.PromptSuggestionAvailable, Suggestion: e.generate(ctx)}, nil
 }
 
 type suggestionControlEngine struct {
@@ -266,8 +276,8 @@ type suggestionControlEngine struct {
 	generate func(context.Context) string
 }
 
-func (e *suggestionControlEngine) GeneratePromptSuggestion(ctx context.Context) string {
-	return e.generate(ctx)
+func (e *suggestionControlEngine) GeneratePromptSuggestionResult(ctx context.Context) (services.PromptSuggestionResult, error) {
+	return services.PromptSuggestionResult{Status: services.PromptSuggestionAvailable, Suggestion: e.generate(ctx)}, nil
 }
 
 func TestPromptSuggestionQueueAndExecutionControlCancelWithoutWaitingForProvider(t *testing.T) {
@@ -308,7 +318,7 @@ func TestPromptSuggestionQueueAndExecutionControlCancelWithoutWaitingForProvider
 				}
 			})
 			result := make(chan string, 1)
-			go func() { result <- owned.promptSuggestion(context.Background()) }()
+			go func() { result <- owned.promptSuggestion(context.Background()).Suggestion }()
 			select {
 			case <-entered:
 			case <-time.After(3 * time.Second):
@@ -350,6 +360,45 @@ func TestPromptSuggestionQueueAndExecutionControlCancelWithoutWaitingForProvider
 				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("not finished")
+			}
+		})
+	}
+}
+
+func TestPromptSuggestionRouteReturnsClassifiedFailureWithoutPrivateDetails(t *testing.T) {
+	for _, test := range []struct {
+		status services.PromptSuggestionStatus
+		reason string
+	}{
+		{services.PromptSuggestionEmpty, ""},
+		{services.PromptSuggestionFiltered, ""},
+		{services.PromptSuggestionTimedOut, ""},
+		{services.PromptSuggestionFailed, "provider_error"},
+		{services.PromptSuggestionStale, ""},
+		{services.PromptSuggestionCancelled, ""},
+		{services.PromptSuggestionSuppressed, "goal_active"},
+		{services.PromptSuggestionSuppressed, "pending_permission"},
+	} {
+		t.Run(string(test.status)+"/"+test.reason, func(t *testing.T) {
+			_, host, owned, runtime := newSuggestionTestServer(t, func(context.Context) string { return "" })
+			runtime.generateResult = func(context.Context) (services.PromptSuggestionResult, error) {
+				if test.status == services.PromptSuggestionFailed {
+					return services.PromptSuggestionResult{}, errors.New("private provider details")
+				}
+				return services.PromptSuggestionResult{Status: test.status, Reason: test.reason}, nil
+			}
+			response := doJSON(t, host.URL+"/v1/sessions/"+owned.id+"/prompt-suggestion", "test-token", http.MethodPost, map[string]any{})
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result services.PromptSuggestionResult
+			if err := json.Unmarshal(body, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != test.status || result.Reason != test.reason || result.Suggestion != "" || strings.Contains(string(body), "private") {
+				t.Fatalf("unsafe or unclassified response: %s", body)
 			}
 		})
 	}

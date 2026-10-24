@@ -1,7 +1,7 @@
 # Runtime Services
 
 **Status:** current
-**Last verified:** 2026-10-23
+**Last verified:** 2026-10-24
 
 > **Ownership:** entrypoint-specific background-service construction, rebinding, shutdown, and disconnected helpers
 
@@ -145,6 +145,27 @@ dispatch with a 64-token output cap, and is disabled in Plan mode, while
 permission input is pending at dispatch admission, or while an unfinished Goal
 requires exact provider accounting.
 
+[`GeneratePromptSuggestionResult`](../../../engine/prompt_suggestion.go) returns
+one ephemeral [`PromptSuggestionResult`](../../../engine/services/prompt_suggestion_result.go).
+The result separates `available`, `suppressed`, `empty`, `filtered`, `timed_out`,
+`cancelled`, `failed`, and `stale`. Only `available` carries candidate text.
+Suppression codes distinguish disabled or unavailable generation, missing or
+early conversation, Plan mode, pending permission, an active Goal, and a
+request still in flight. AppServer additionally classifies busy sessions.
+Provider errors remain internal errors; clients receive fixed categories and
+render their own allowlisted explanations. Invalid UTF-8 and control-bearing
+suggestions are filtered. Empty/whitespace suggestion text differs from a
+stream rejected by the existing side-query contract, which remains a failed
+request. The compatibility `GeneratePromptSuggestion` API retains its
+best-effort string return.
+
+One service permits one generation at a time. Caller cancellation does not
+release that slot until the provider returns, so repeated manual requests
+cannot accumulate overlapping provider calls. TUI manual requests and the
+existing Workbench button consume this same result. Neither explicit request
+bypasses `prompt_suggestions`, minimum assistant records, permissions, Goal
+admission, or the selected model/effort/output budget.
+
 The service starts no resident goroutine and therefore adds no engine shutdown
 join. App-owned cancellation and generation/thread/revision/query fences reject
 late results. The request and generated text are not appended to the
@@ -163,6 +184,8 @@ action, not an automatic post-turn request. `runServeApp` initializes enablement
 from the merged preference. The authenticated
 `POST /v1/sessions/{session_id}/prompt-suggestion` accepts only an empty object;
 it does not attach saved sessions or accept client conversation, paths or routes.
+The response retains `session_id` and `suggestion`, adding `status` and an
+optional project-owned `reason`; provider error text is never returned.
 
 [`session.promptSuggestion`](../../../server/appserver/prompt_suggestion.go)
 admits one request for an owned idle session and checks the shared effective

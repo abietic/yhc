@@ -1779,6 +1779,9 @@ func (a *App) renderHintSection() string {
 	if hints == "" {
 		hints = a.renderFileHints()
 	}
+	if hints == "" {
+		hints = a.renderComposerSuggestionFeedback()
+	}
 	queued := a.renderQueuedInputRows()
 	if a.layout.mode == layoutModeCompact && hints != "" {
 		// Autocomplete owns the compact hint window while it is active. Keep
@@ -1874,6 +1877,10 @@ func (a *App) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Ctrl+C remains non-rebindable. History search consumes it as local
 	// cancellation before the active-turn interrupt path.
 	if msg.String() == "ctrl+c" {
+		if !a.running && a.hasComposerSuggestionActivity() {
+			a.dismissComposerSuggestion()
+			return nil
+		}
 		if a.historySearch.Active {
 			a.cancelHistorySearch()
 			return nil
@@ -1920,11 +1927,6 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 		a.showNotification("Wait for the current composer submission to finish", NotifyWarning)
 		return nil
 	}
-	if a.composerSuggestionRequest != nil {
-		// Any interaction makes an in-flight prediction stale. A visible result
-		// has its own explicit accept/dismiss path below.
-		a.dismissComposerSuggestion()
-	}
 	if handled, cmd := a.handleVimEditorKey(msg); handled {
 		a.dismissComposerSuggestion()
 		return tea.Batch(cmd, a.ensureMentionIndex())
@@ -1968,20 +1970,19 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	if handled, cmd := a.resolveEditorKeyAction(msg); handled {
-		if a.hasComposerSuggestionActivity() {
-			a.dismissComposerSuggestion()
-		}
 		return cmd
 	}
 
 	switch {
 	case msg.String() == "shift+up":
+		a.dismissComposerSuggestion()
 		if a.selection.HasSelection() {
 			a.selection.ExtendUp(a.chat)
 			return nil
 		}
 
 	case msg.String() == "shift+down":
+		a.dismissComposerSuggestion()
 		if a.selection.HasSelection() {
 			a.selection.ExtendDown(a.chat)
 			return nil

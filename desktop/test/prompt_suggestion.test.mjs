@@ -66,3 +66,29 @@ test('duplicate clicks, malformed responses, unavailable suggestions and request
   assert.equal(query.current().status.includes('private'), false);
   assert.equal(suggestionKey({ ...current, input: ' ' }), '');
 });
+
+test('typed suggestion outcomes explain failures without exposing provider or unknown reason text', async () => {
+  for (const [status, reason, expected] of [
+    ['suppressed', 'early_conversation', 'two assistant messages'],
+    ['suppressed', 'disabled', 'disabled'],
+    ['suppressed', 'goal_active', 'Goal'],
+    ['empty', '', 'No next step'],
+    ['filtered', '', 'No suitable'],
+    ['timed_out', '', 'timed out'],
+    ['cancelled', '', 'cancelled'],
+    ['stale', '', 'model route changed'],
+    ['failed', 'private provider details', 'failed'],
+    ['suppressed', 'private provider details', 'unavailable'],
+  ]) {
+    const current = initial();
+    const query = createPromptSuggestion({
+      snapshot: () => current, publish() {},
+      request: async () => ({ session_id: current.sessionID, status, reason, suggestion: 'must not become a candidate' }),
+    });
+    await query.request();
+    assert.equal(query.current().text, '');
+    assert.ok(query.current().status.includes(expected), query.current().status);
+    assert.equal(query.current().status.includes('private'), false);
+    assert.equal(query.accept(), '');
+  }
+});

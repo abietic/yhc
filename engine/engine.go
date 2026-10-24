@@ -2916,15 +2916,11 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 	e.goalProviderBoundary.RLock()
 	defer e.goalProviderBoundary.RUnlock()
 	if e.goalProviderUsageRequired() {
-		return "", fmt.Errorf(
-			"prompt suggestion is disabled while an unfinished Goal requires exact provider accounting",
-		)
+		return "", errPromptSuggestionGoal
 	}
 	if e.permissionCoordinator != nil &&
 		e.permissionCoordinator.PendingCount() > 0 {
-		return "", fmt.Errorf(
-			"prompt suggestion is disabled while permission input is pending",
-		)
+		return "", errPromptSuggestionPermission
 	}
 	call, err := e.promptSuggestionProviderCall()
 	if err != nil {
@@ -2944,9 +2940,7 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 	// provider request is governed by caller cancellation.
 	if e.permissionCoordinator != nil &&
 		e.permissionCoordinator.PendingCount() > 0 {
-		return "", fmt.Errorf(
-			"prompt suggestion is disabled while permission input is pending",
-		)
+		return "", errPromptSuggestionPermission
 	}
 	call.options.ProviderUsage = e.currentProviderUsageAdmitter()
 	if call.options.ProviderUsage != nil {
@@ -2973,47 +2967,8 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 // failures, cancellation, ineligible modes, and filtered output all return an
 // empty string. The caller owns request cancellation and stale-result fencing.
 func (e *QueryEngine) GeneratePromptSuggestion(ctx context.Context) string {
-	if e == nil || ctx == nil || ctx.Err() != nil {
-		return ""
-	}
-
-	e.mu.Lock()
-	service := e.promptSuggestionService
-	mode := e.config.PermissionMode
-	routeGeneration := e.promptRouteGeneration
-	conversation := backgroundMessageStrings(e.messages)
-	assistantTurnCount := 0
-	for _, message := range e.messages {
-		if message != nil && message.Role == schema.Assistant {
-			assistantTurnCount++
-		}
-	}
-	e.mu.Unlock()
-	if service == nil {
-		return ""
-	}
-
-	hasPendingPermission := e.permissionCoordinator != nil &&
-		e.permissionCoordinator.PendingCount() > 0
-	if reason := services.SuggestionSuppressReason(
-		service.IsEnabled(),
-		mode == permission.ModePlan,
-		hasPendingPermission,
-	); reason != "" {
-		return ""
-	}
-	suggestion := service.GenerateSuggestion(
-		ctx,
-		conversation,
-		assistantTurnCount,
-	)
-	e.mu.Lock()
-	routeUnchanged := e.promptRouteGeneration == routeGeneration
-	e.mu.Unlock()
-	if !routeUnchanged {
-		return ""
-	}
-	return suggestion
+	result, _ := e.GeneratePromptSuggestionResult(ctx)
+	return result.Suggestion
 }
 
 func (e *QueryEngine) callBackgroundProvider(

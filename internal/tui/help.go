@@ -287,6 +287,7 @@ func (h *HelpOverlay) keybindingCategories() []helpCategory {
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatSubmit, "enter"), desc: "Send message"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatNewline, "ctrl+j"), desc: "Insert newline"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatImagePaste, "ctrl+v"), desc: "Paste image"},
+				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatArgumentSuggest, "ctrl+space"), desc: "Suggest next prompt / command argument"},
 				{key: "/", desc: "Enter command mode"},
 				{key: "!", desc: "Enter shell mode"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatCancel, "esc"), desc: "Cancel / clear input"},
