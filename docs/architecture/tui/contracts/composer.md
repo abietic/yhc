@@ -258,6 +258,43 @@ element; undo restores it. History and view sidecars keep visible references,
 while history recall explicitly marks output content as not restored. Selection,
 preview and removal perform no provider call, storage reread or command replay.
 
+### Attached-context manager
+
+The TUI-owned `chat:manageContext` action (`Alt+C` by default) opens one passive
+dialog for the active ordinary draft. It lists file ranges, whole files,
+selected output, Skills, MCP resources, large pastes and images in their exact
+draft order. The list reads existing element identities and captured payloads;
+opening or navigating performs no source reread, provider call or submission.
+An empty draft has an explicit empty state. History-only literal references do
+not become attachments.
+
+[`composer_context_manager.go`](../../../../internal/tui/composer_context_manager.go)
+owns the bounded projection and exact removal. Text previews show byte size,
+source and at most the first 1024 bytes/three lines. Labels and metadata are
+bounded and terminal controls are escaped. Images show captured MIME type,
+name and size without exposing bytes. Clipping affects only the preview.
+Loading references show their status; removal waits for a captured payload so
+undo can restore complete content without initiating a new load.
+
+Up/Down selects, Delete or Backspace removes the selected element, Enter
+returns to its reference, and Esc or Ctrl+C closes without submitting. Undo
+uses the configured chat undo binding. Removal validates stable identity and
+the complete non-overlapping rune ranges, deletes that exact label and at most
+one following space, and directly rebases remaining elements and the cursor.
+This preserves distinct payloads behind identical visible labels. One ordinary
+composer undo record retains the original rich draft; image bytes remain in
+the existing reachability-owned draft-media table.
+
+The dialog accepts ordinary editable live drafts only. Pending admission/image
+loading, external editing, history search, shell/command input and replay-only
+views cannot open it. Modal keys and paste do not reach the composer, and a
+stacked permission dialog retains input ownership. Pending key chords reset
+when the manager opens, closes, or loses modal ownership. Thread switching removes
+the manager before capturing/restoring the next view. Every mutation rechecks
+the active thread, input owner and reference integrity. Navigation state alone
+is retained in the dialog; session view sidecars and history gain no payload
+or restorable dialog state.
+
 ## Ordered Submission
 
 [`captureComposerSubmission`](../../../../internal/tui/composer_submission.go)

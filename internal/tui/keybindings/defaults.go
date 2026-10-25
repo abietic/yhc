@@ -48,6 +48,7 @@ func DefaultBindings() []Block {
 				"ctrl+g":      ActionChatExternalEditor,
 				"ctrl+space":  ActionChatArgumentSuggest,
 				"ctrl+z":      ActionChatUndo,
+				"alt+c":       ActionChatManageContext,
 				"ctrl+b":      ActionTaskBackground,
 				"ctrl+v":      ActionChatImagePaste,
 			},

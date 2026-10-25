@@ -86,6 +86,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionAppQuickOpen:
 		a.openCommandPalette()
 		return true, nil
+	case keybindings.ActionChatManageContext:
+		a.openComposerContextManager()
+		return true, nil
 	case keybindings.ActionChatCancel:
 		a.cancelEditorInput()
 		return true, nil
@@ -561,6 +564,7 @@ func (a *App) keybindingSummary() string {
 		{keybindings.ContextChat, keybindings.ActionHistorySearch, "reverse history search"},
 		{keybindings.ContextChat, keybindings.ActionChatExternalEditor, "external editor"},
 		{keybindings.ContextChat, keybindings.ActionChatUndo, "undo composer edit"},
+		{keybindings.ContextChat, keybindings.ActionChatManageContext, "manage attached context"},
 		{keybindings.ContextChat, keybindings.ActionChatArgumentSuggest, "suggest next prompt / command argument"},
 		{keybindings.ContextScroll, keybindings.ActionSelectionAttach, "attach selected output as context"},
 		{keybindings.ContextGlobal, keybindings.ActionAppInterrupt, "interrupt / double-press exit"},

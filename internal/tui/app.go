@@ -68,6 +68,7 @@ const (
 	StatePlanApproval    // plan approval dialog (ExitPlanMode)
 	StateAskUser         // question picker dialog (AskUserQuestion)
 	StateAgentPicker     // searchable leader/sub-agent thread picker
+	StateContextManager  // attached context for the active draft
 )
 
 type InputMode int
@@ -128,6 +129,7 @@ type App struct {
 	planDialog      *PlanDialog
 	questionDialog  *QuestionDialog
 	agentPicker     *AgentThreadPicker
+	contextManager  composerContextManager
 
 	// Streaming & Progress integration
 	streamingCtx    *ChatStreamingContext
@@ -985,6 +987,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case tea.PasteMsg:
+		// The context manager never routes paste into the underlying draft.
+		if a.hasDialog(StateContextManager) {
+			return a, nil
+		}
 		// Modal editors consume paste through their own update paths below.
 		if _, modalActive := a.activeDialogState(); modalActive {
 			break

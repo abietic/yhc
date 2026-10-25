@@ -298,6 +298,7 @@ func (h *HelpOverlay) keybindingCategories() []helpCategory {
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionHistorySearch, "ctrl+r"), desc: "Reverse history search"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatExternalEditor, "ctrl+g"), desc: "Open external editor"},
 				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatUndo, "ctrl+z"), desc: "Undo composer edit"},
+				{key: h.actionKeys(keybindings.ContextChat, keybindings.ActionChatManageContext, "alt+c"), desc: "Manage attached context"},
 			},
 		},
 		{
