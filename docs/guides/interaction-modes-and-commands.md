@@ -309,7 +309,19 @@ The initial allowance and every additional allowance apply to one invocation;
 the list authorizes additional spending, rather than resetting an overall
 financial cap. At least one limit in each grant must be positive. No grants are
 configured by default. The adapter only continues after an exit-1
-`run_budget_exceeded` result with complete usage and a saved session ID. It runs
+`run_budget_exceeded` result with complete usage and a saved session ID.
+
+For the
+pinned Harbor 0.22 Docker backend it also compares every declared Compose
+service's container ID, image, start time, PID and restart count before the
+first invocation and before each continuation. Missing, stopped, paused,
+unhealthy, replaced or restarted services block the next invocation. An
+unsupported backend or an unavailable inventory also blocks continuation;
+ordinary independent runs do not require this inventory. No configured Docker
+healthcheck is reported as `not_configured`, without claiming application
+health was verified.
+
+It runs
 `exec --resume` in the same environment with existing files and conversation
 history. Unknown usage, cancellation, other errors and exhausted grants stop
 the run. The overall configured execution timeout and Harbor timeout do not
@@ -324,6 +336,57 @@ unknown; it never becomes zero. The continuation list must be supplied before
 the trial starts. Once Harbor has deleted the environment, this adapter cannot
 restore the entire workspace from a session ID alone. A resumed trial also has
 different allowances and must be reported separately from a fresh baseline.
+
+Harbor metadata under `yhc.recovery` separates a live continuation check from
+cold recovery after teardown. The check is a point-in-time observation of the
+declared containers, not a memory snapshot or a future authorization. It cannot
+detect an application restarting inside an unchanged container, discover
+external state owners, or freeze time while the agent is stopped. An unknown
+usage receipt still blocks spending even if the entire environment remains
+alive. No diagnostic or saved file authorizes another request.
+
+| State | What currently survives | Cold recovery boundary |
+|---|---|---|
+| YHC conversation and tool history | Native session files; `exec --resume` loads them in the existing workspace | An archived file or session ID alone does not prove a fresh environment can load it |
+| Workspace and file-backed data | Captured files can be retained; an explicit copy can restore known files | There is no automatic complete-environment restore entrypoint |
+| Sidecar process memory and background processes | Continue only while those processes remain alive | Container stop/restart loses RAM; retained container files do not restore it |
+| Logical clocks and wall time | Live services keep advancing their own clocks | No generic clock checkpoint, pause or rebase is implemented |
+| External side effects | Require their own durable state and reconciliation | Conversation replay cannot roll back or deduplicate arbitrary external actions |
+
+[`recovery`](../../scripts/terminal_bench/recovery.py) can assess an existing
+capture on a POSIX host without starting it or modifying its files. Supply a new host-owned
+output path outside the task's writable mounts:
+
+```bash
+mkdir -m 700 /path/to/private-recovery-reports
+python -m scripts.terminal_bench.recovery /path/to/checkpoint-manifest.json \
+  --inspect-docker --output /path/to/private-recovery-reports/assessment.json
+```
+
+`--inspect-docker` only inspects the manifest's owned container handles; it
+does not establish complete service discovery. Omit it for a file-only check.
+The output parent must be private, owned by the caller, and use a real path
+without symbolic-link traversal. The caller must still keep it outside task
+mounts; file permissions alone do not protect a file inside a writable mount.
+The report verifies the archive digest when available, distinguishes retained
+files from verified restoration, and reports `can_resume: false`. A legacy
+`capture: complete` or `retained_environment_required: false` never overrides
+this boundary.
+
+The offline two-service fixture in
+[`test_recovery_docker`](../../scripts/terminal_bench/test_recovery_docker.py)
+actually reconstructs a file-backed SQLite service and probes its data, RAM
+and clock generation separately. Its successful file copy does not establish
+restoration support for arbitrary benchmark services.
+
+For a new DeepSeek stream failure, inspect the admitted call's `diagnostics`
+in the final native JSONL result or Harbor usage metadata. The fields separate
+HTTP status, request/response ID hashes, transport phase, validated event
+sequence, body bytes, terminal presence and authoritative usage. Cancellation,
+deadline, transport error and clean EOF without a terminal event have distinct
+categories. They describe the configured HTTP hop and do not identify the
+physical cause of a proxy or upstream reset. An absent diagnostic means the
+adapter did not supply it; it never means a successful or zero-cost request.
 
 For offline cost reports, use
 [`report_costs`](../../scripts/terminal_bench/report_costs.py) with existing

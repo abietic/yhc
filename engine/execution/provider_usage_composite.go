@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/abietic/yhc/engine/internal/providerdiag"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -104,6 +105,14 @@ func (c *combinedProviderUsageCall) ObserveProviderResponseModel(model string) {
 	for _, call := range []ProviderUsageCall{c.first, c.second} {
 		if observer, ok := call.(ProviderResponseModelObserver); ok {
 			observer.ObserveProviderResponseModel(model)
+		}
+	}
+}
+
+func (c *combinedProviderUsageCall) ObserveProviderDiagnostics(snapshot providerdiag.Snapshot) {
+	for _, call := range []ProviderUsageCall{c.first, c.second} {
+		if observer, ok := call.(interface{ ObserveProviderDiagnostics(providerdiag.Snapshot) }); ok {
+			observer.ObserveProviderDiagnostics(snapshot)
 		}
 	}
 }

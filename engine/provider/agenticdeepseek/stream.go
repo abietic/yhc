@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/abietic/yhc/engine/internal/providerdiag"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -47,6 +48,15 @@ func parseResponseStream(
 	maxEventBytes int,
 	send func(*schema.AgenticMessage) bool,
 ) error {
+	return parseResponseStreamObserved(reader, maxEventBytes, nil, send)
+}
+
+func parseResponseStreamObserved(
+	reader io.Reader,
+	maxEventBytes int,
+	observer *providerdiag.Observer,
+	send func(*schema.AgenticMessage) bool,
+) error {
 	state := &streamState{functionCalls: make(map[string]*streamedFunctionCall)}
 	err := readSSE(reader, maxEventBytes, func(record sseRecord) error {
 		if record.data == "" {
@@ -68,11 +78,33 @@ func parseResponseStream(
 		if err := state.acceptSequence(event.SequenceNumber); err != nil {
 			return err
 		}
+		if observer != nil {
+			observer.Event(*event.SequenceNumber)
+			if (event.Type == "response.created" || event.Type == "response.in_progress") && event.Response != nil && event.Response.Object == "response" {
+				observer.ResponseID(providerdiag.HashIdentifier(event.Response.ID))
+			}
+		}
 		message, terminal, err := state.convertEvent(&event)
 		if err != nil {
+			if observer != nil && event.Type == "response.failed" && event.Response != nil &&
+				event.Response.Object == "response" && event.Response.ID != "" && event.Response.Status == ResponseStatusFailed {
+				usage, _ := failedResponseError(event.Response).FinalProviderUsage()
+				observer.Terminal(providerdiag.HashIdentifier(event.Response.ID), usage != nil)
+				observer.Terminate("api_error")
+			}
 			return err
 		}
-		if message != nil && send(message) {
+		if terminal {
+			if observer != nil && event.Response != nil {
+				observer.Terminal(providerdiag.HashIdentifier(event.Response.ID), event.Response.Usage != nil && event.Response.Usage.finalReceiptValid)
+				if event.Type == "response.incomplete" {
+					observer.Terminate("incomplete")
+				} else {
+					observer.Terminate("completed")
+				}
+			}
+		}
+		if message != nil && send != nil && send(message) {
 			return io.EOF
 		}
 		if terminal {
@@ -85,6 +117,9 @@ func parseResponseStream(
 		return err
 	}
 	if !state.terminalSeen {
+		if observer != nil {
+			observer.Terminate("eof_missing_terminal")
+		}
 		return &ProtocolError{ReasonCode: "stream_terminal_event_missing"}
 	}
 	return nil

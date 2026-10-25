@@ -931,7 +931,7 @@ privacy:
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
     - path: "docs/architecture/platform/model-providers.md"
-      line: 795
+      line: 817
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
@@ -5172,7 +5172,7 @@ privacy:
       purpose: synthetic-security-fixture
     # Public price-card fixture and non-secret Python configuration identifiers.
     - path: scripts/terminal_bench/test_agent.py
-      line: 543
+      line: 566
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
       purpose: synthetic-security-fixture
@@ -5347,7 +5347,7 @@ privacy:
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/headless_stream_failure_test.go
-      line: 88
+      line: 91
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
@@ -5840,6 +5840,21 @@ privacy:
       line: 39
       rule_id: credential-assignment
       match_sha256: d9e24c02f468d6af70ef89a1fbf126993ca519a890572aa520c912928f6be154
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/stream_diag_test.go
+      line: 106
+      rule_id: credential-assignment
+      match_sha256: 93883450e504b26a6f1f77ed4d957ba588646096e67f7267357a1f056b30d029
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_costs.py
+      line: 360
+      rule_id: private-url
+      match_sha256: 72d2944571b59634ff4ae25dd13efdb204a2dc9abd981df1fee50e213cd787bf
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_recovery.py
+      line: 23
+      rule_id: credential-assignment
+      match_sha256: a59d361234a6764d71d9c0a5aaf533ad0a44620a6daaeedf2b747e5a640667e9
       purpose: synthetic-security-fixture
 
 dependencies:

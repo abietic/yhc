@@ -122,6 +122,46 @@ def _model_label(value: object) -> bool:
             and "://" not in value and re.fullmatch(r"[A-Za-z0-9_.:/\[\]-]+", value) is not None)
 
 
+def validated_diagnostics(value: object) -> dict | None:
+    """Optional transport evidence never changes token or money authority."""
+    if not isinstance(value, dict):
+        return None
+    result = {}
+    for key in ("request_id_hash", "response_id_hash"):
+        if key in value:
+            if not isinstance(value[key], str) or re.fullmatch(r"[0-9a-f]{64}", value[key]) is None:
+                return None
+            result[key] = value[key]
+    enums = {"transport_phase": ("dns", "connect", "tls", "upload", "request_sent", "headers", "body"),
+             "termination_kind": ("completed", "incomplete", "api_error", "protocol_error",
+                                  "transport_error", "canceled", "deadline_exceeded", "eof_missing_terminal")}
+    for key, allowed in enums.items():
+        if key in value:
+            if not isinstance(value[key], str) or value[key] not in allowed:
+                return None
+            result[key] = value[key]
+    if "http_status" in value:
+        if type(value["http_status"]) is not int or not 100 <= value["http_status"] <= 599:
+            return None
+        result["http_status"] = value["http_status"]
+    for key in ("stream_event_count", "body_bytes"):
+        if key in value:
+            if type(value[key]) is not int or not 0 <= value[key] < 1 << 64:
+                return None
+            result[key] = value[key]
+    if "last_validated_sequence" in value:
+        sequence = value["last_validated_sequence"]
+        if type(sequence) is not int or not -(1 << 63) <= sequence < 1 << 63:
+            return None
+        result["last_validated_sequence"] = sequence
+    for key in ("validated_terminal_event", "authoritative_usage"):
+        if key in value:
+            if type(value[key]) is not bool:
+                return None
+            result[key] = value[key]
+    return result or None
+
+
 def validated_ledger(value: object) -> dict | None:
     """Project only numeric fields, model labels and opaque generated identities."""
     if (not isinstance(value, dict) or type(value.get("version")) is not int
@@ -168,6 +208,9 @@ def validated_ledger(value: object) -> dict | None:
             return None
         projected = {key: record[key] for key in (*identities, *numbers, "ordinal", "call_id", "requested_model", "resolved_model", "provider", "source", "role", "effort", "state")}
         records.append({**projected, "tokens": tokens})
+        diagnostic = validated_diagnostics(record.get("diagnostics"))
+        if diagnostic is not None:
+            records[-1]["diagnostics"] = diagnostic
         if "cache_ttl" in record:
             if (record["state"] != "known" or "cache_write_prompt_tokens" not in tokens
                     or record["cache_ttl"] not in ("5m", "1h")):

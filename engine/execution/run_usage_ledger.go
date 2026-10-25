@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/abietic/yhc/engine/internal/providerdiag"
 )
 
 // MaxRunUsageRecords bounds retained admission records independently of totals.
@@ -28,26 +30,27 @@ type RunUsageCallTokens struct {
 // RunUsageRecord contains only bounded routing labels, opaque UUIDs and numbers.
 // State is in_flight, known, unknown, or released; nil Tokens never means zero.
 type RunUsageRecord struct {
-	Ordinal                uint64              `json:"ordinal"`
-	CallID                 string              `json:"call_id"`
-	LogicalRoundID         string              `json:"logical_round_id"`
-	LogicalRequestID       string              `json:"logical_request_id"`
-	ModelAttemptID         string              `json:"model_attempt_id"`
-	AttemptIndex           int                 `json:"attempt_index"`
-	RetryIndex             int                 `json:"retry_index"`
-	Provider               string              `json:"provider"`
-	RequestedModel         string              `json:"requested_model"`
-	ResolvedModel          string              `json:"resolved_model"`
-	Source                 string              `json:"source"`
-	Role                   string              `json:"role"`
-	Effort                 string              `json:"effort"`
-	State                  string              `json:"state"`
-	StartedOffsetMillis    int64               `json:"started_offset_ms"`
-	ProviderDurationMillis uint64              `json:"provider_duration_ms"`
-	Tokens                 *RunUsageCallTokens `json:"tokens"`
-	Cost                   *RunCallCost        `json:"cost,omitempty"`
-	Requests               *uint64             `json:"requests,omitempty"`
-	CacheTTL               string              `json:"cache_ttl,omitempty"`
+	Ordinal                uint64                 `json:"ordinal"`
+	CallID                 string                 `json:"call_id"`
+	LogicalRoundID         string                 `json:"logical_round_id"`
+	LogicalRequestID       string                 `json:"logical_request_id"`
+	ModelAttemptID         string                 `json:"model_attempt_id"`
+	AttemptIndex           int                    `json:"attempt_index"`
+	RetryIndex             int                    `json:"retry_index"`
+	Provider               string                 `json:"provider"`
+	RequestedModel         string                 `json:"requested_model"`
+	ResolvedModel          string                 `json:"resolved_model"`
+	Source                 string                 `json:"source"`
+	Role                   string                 `json:"role"`
+	Effort                 string                 `json:"effort"`
+	State                  string                 `json:"state"`
+	StartedOffsetMillis    int64                  `json:"started_offset_ms"`
+	ProviderDurationMillis uint64                 `json:"provider_duration_ms"`
+	Tokens                 *RunUsageCallTokens    `json:"tokens"`
+	Cost                   *RunCallCost           `json:"cost,omitempty"`
+	Requests               *uint64                `json:"requests,omitempty"`
+	CacheTTL               string                 `json:"cache_ttl,omitempty"`
+	Diagnostics            *providerdiag.Snapshot `json:"diagnostics,omitempty"`
 }
 
 // RunUsageLedger is one process invocation's bounded incremental history. It is
@@ -143,14 +146,20 @@ type (
 	ProviderResponseModelObserver interface{ ObserveProviderResponseModel(string) }
 	// ProviderCacheWriteObserver accepts only validated cumulative terminal receipts.
 	ProviderCacheWriteObserver       interface{ ObserveProviderCacheWrite(int, string) }
+	providerDiagnosticsObserver      interface{ ObserveProviderDiagnostics(providerdiag.Snapshot) }
 	providerUsageResponseObserverKey struct{}
 )
 
 func withProviderUsageResponseObserver(ctx context.Context, call ProviderUsageCall) context.Context {
+	ctx = providerdiag.WithObserver(ctx, nil)
 	if call == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, providerUsageResponseObserverKey{}, call)
+	ctx = context.WithValue(ctx, providerUsageResponseObserverKey{}, call)
+	if observer, ok := call.(providerDiagnosticsObserver); ok {
+		return providerdiag.WithObserver(ctx, providerdiag.New(observer.ObserveProviderDiagnostics))
+	}
+	return ctx
 }
 
 // ObserveProviderResponseModel accepts only model identity from typed response
@@ -213,4 +222,19 @@ func (c *runUsageCall) ObserveProviderCacheWrite(tokens int, ttl string) {
 		c.cacheTTLConflict = true
 	}
 	c.cacheTTL = ttl
+}
+
+func (c *runUsageCall) ObserveProviderDiagnostics(snapshot providerdiag.Snapshot) {
+	r := c.owner
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if c.settled || c.recordIndex < 0 {
+		return
+	}
+	copy := snapshot
+	if copy.LastValidatedSequence != nil {
+		n := *copy.LastValidatedSequence
+		copy.LastValidatedSequence = &n
+	}
+	r.records[c.recordIndex].Diagnostics = &copy
 }

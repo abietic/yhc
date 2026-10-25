@@ -25,6 +25,7 @@ from harbor.models.agent.context import AgentContext
 
 from scripts.terminal_bench.usage import sum_usage, validated_usage
 from scripts.terminal_bench.native_cost import decimal_amount, validate_price_card
+from scripts.terminal_bench.recovery import continuation_report, observe_environment
 
 
 def read_result(path: Path) -> dict:
@@ -200,6 +201,7 @@ class YHCAgent(BaseInstalledAgent):
         self.remote_prompt = f"{self.remote_dir}/instruction.txt"
         self.remote_pid = str(self.environment_logs_dir / "yhc.pid")
         self.state_dir_provisioned = False
+        self._recovery_report = None
         self.execution_env()  # Fail before provisioning when credentials are absent.
 
     @staticmethod
@@ -355,11 +357,23 @@ class YHCAgent(BaseInstalledAgent):
         self._segment_timeout = None
         self._segment_limits = None
         self._total_estimated_spent = Decimal(0)
+        # These observations stay in host memory, outside task-writable mounts.
+        # Inventory is required only for the opt-in continuation path. Ordinary
+        # independent runs do not need Docker access from the adapter process.
+        runtime_before = await observe_environment(environment) if self.continuation_budgets else None
+        self._recovery_report = continuation_report(
+            runtime_before, None, session_identified=False, usage_complete=False,
+            grant_available=bool(self.continuation_budgets))
         await self.upload_instruction(instruction, environment)
         deadline = time.monotonic() + self.execution_timeout_sec if self.execution_timeout_sec else None
         segment = 0
         segment_usages = []
         while True:
+            # A previous admission check is not permission to retry after a
+            # cancelled/unknown next invocation or a later environment restart.
+            self._recovery_report = continuation_report(
+                runtime_before, None, session_identified=bool(self._segment_session),
+                usage_complete=False, grant_available=segment < len(self.continuation_budgets))
             if deadline is not None:
                 remaining_ms = int((deadline - time.monotonic()) * 1000)
                 if remaining_ms <= 0:
@@ -420,6 +434,17 @@ class YHCAgent(BaseInstalledAgent):
                 and (Decimal(self.max_total_estimated_cost) == 0
                      or self._total_estimated_spent < Decimal(self.max_total_estimated_cost))
             )
+            runtime_after = await observe_environment(environment) if can_continue else None
+            self._recovery_report = continuation_report(
+                runtime_before, runtime_after,
+                session_identified=isinstance(session_id, str) and bool(session_id.strip()),
+                usage_complete=usage is not None and usage["complete"] and strict_usage,
+                grant_available=can_continue)
+            if can_continue and not self._recovery_report["live_runtime_continuity"]:
+                self.populate_context_post_run(context)
+                raise NonZeroAgentExitCodeError(
+                    "YHC continuation blocked: complete service runtime continuity is unverified; "
+                    "retaining a session or containers does not establish cold recovery")
             if not can_continue:
                 self.populate_context_post_run(context)
                 if self.reserve_cost_before_dispatch and not strict_usage:
@@ -495,6 +520,8 @@ class YHCAgent(BaseInstalledAgent):
         context.n_output_tokens = None
         context.n_cache_tokens = None
         metadata = {"binary_sha256": self.binary_sha256}
+        if self._recovery_report is not None:
+            metadata["recovery"] = self._recovery_report
         if self.ripgrep_sha256:
             metadata["ripgrep_sha256"] = self.ripgrep_sha256
         if self.ca_bundle_sha256:

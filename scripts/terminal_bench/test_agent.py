@@ -14,6 +14,7 @@ from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.models.agent.context import AgentContext
 
 from scripts.terminal_bench.yhc_agent import YHCAgent, read_result
+from scripts.terminal_bench.test_recovery import live_inventory
 
 
 def budget_terminal(session="test-session", complete=True):
@@ -83,6 +84,9 @@ class AgentFixture:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        observer = patch("scripts.terminal_bench.yhc_agent.observe_environment", AsyncMock(return_value=live_inventory()))
+        observer.start()
+        self.addCleanup(observer.stop)
         self.binary = self.root / "yhc"
         header = bytearray(64)
         header[:6] = b"\x7fELF\x02\x01"
@@ -223,6 +227,25 @@ class RunTests(AgentFixture, unittest.IsolatedAsyncioTestCase):
         self.subject.exec_as_agent = AsyncMock()
         self.environment = SimpleNamespace(upload_file=AsyncMock(), exec=AsyncMock(),
                                            download_file=AsyncMock())
+
+    async def test_restarted_or_unobserved_sidecar_blocks_grant_before_second_dispatch(self):
+        self.subject.continuation_budgets = [{"max_provider_calls": 2}]
+        self.environment.exec.return_value = SimpleNamespace(return_code=1)
+        async def download(_source, target):
+            Path(target).write_text(json.dumps(budget_terminal()) + "\n")
+        self.environment.download_file.side_effect = download
+        before, restarted = live_inventory(), live_inventory()
+        restarted["containers"][0]["restart_count"] = 1
+        for after in (restarted, {"inventory_complete": False}):
+            self.environment.exec.reset_mock()
+            context = AgentContext()
+            with patch("scripts.terminal_bench.yhc_agent.observe_environment",
+                       AsyncMock(side_effect=[before, after])):
+                with self.assertRaisesRegex(NonZeroAgentExitCodeError, "runtime continuity"):
+                    await self.subject.run("task", self.environment, context)
+            self.assertEqual(self.environment.exec.await_count, 1)
+            self.assertFalse(context.metadata["yhc"]["recovery"]["live_runtime_continuity"])
+            self.assertFalse(context.metadata["yhc"]["recovery"]["cold_resume_supported"])
 
     async def test_budget_continues_same_session_with_fresh_finite_allowance_and_total_usage(self):
         self.subject.continuation_budgets = [{"max_provider_calls": 2, "max_total_tokens": 100}]

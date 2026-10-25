@@ -66,6 +66,9 @@ func TestExecStrictBudgetPreservesStreamFailureDiagnostic(t *testing.T) {
 			if calls.Load() != 1 || usage == nil || usage.ProviderCalls != 1 || usage.UnknownCalls != 1 || usage.Complete || usage.Cost.Complete || usage.Cost.Reservation.RetainedAmount != "2.097168000000" {
 				t.Fatalf("failure retried or released uncertain exposure: calls=%d usage=%+v", calls.Load(), usage)
 			}
+			if len(usage.CallLedger.Records) != 1 || usage.CallLedger.Records[0].Diagnostics == nil || usage.CallLedger.Records[0].Diagnostics.HTTPStatus != http.StatusOK || usage.CallLedger.Records[0].Diagnostics.TerminationKind != "transport_error" || usage.CallLedger.Records[0].Diagnostics.StreamEventCount != 1 || usage.CallLedger.Records[0].Diagnostics.LastValidatedSequence == nil || *usage.CallLedger.Records[0].Diagnostics.LastValidatedSequence != 0 || usage.CallLedger.Records[0].Diagnostics.BodyBytes == 0 {
+				t.Fatalf("final ledger lost bounded stream diagnostics: %+v", usage.CallLedger.Records)
+			}
 		})
 	}
 }

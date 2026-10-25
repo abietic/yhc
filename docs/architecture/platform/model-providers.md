@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-10-16
+**Last verified:** 2026-10-25
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -192,6 +192,28 @@ valid receipt on the typed error, and shared execution settles it while
 preserving the original failure. Reserved bounds still apply, interrupted
 streams remain unknown, and a known cost never makes a failed response
 successful.
+
+DeepSeek streaming attempts also publish bounded transport evidence into the
+optional `RunUsageRecord.Diagnostics` field. The adapter reports HTTP status,
+SHA-256 hashes of allowlisted request IDs and typed response IDs, transport
+phase, body bytes read, validated SSE event count/sequence, terminal-event and
+usage presence, and a finite termination category. An early response ID remains
+available when the stream disconnects before its terminal event. A validated
+failed response can carry authoritative usage while remaining a failure.
+
+[`providerdiag.Observer`](../../../engine/internal/providerdiag/providerdiag.go)
+owns the per-call observation; `withProviderUsageResponseObserver` in
+[`run_usage_ledger.go`](../../../engine/execution/run_usage_ledger.go) associates
+it with the admitted call. Observations cannot alter settlement, release a
+reservation, authorize retry, or mutate a settled record. The sink is
+synchronous under the observer mutex and takes only the usage-owner mutex;
+usage snapshots do not acquire the observer mutex. No raw identifiers,
+headers, endpoints, credentials, prompt, reasoning or response text enter this
+diagnostic.
+
+Non-streaming calls and adapters without a bridge omit the field.
+The observation describes the configured HTTP hop; a proxy's disconnect does
+not establish whether its upstream provider or another network hop failed.
 
 TUI attaches assistant, thinking, and uncommitted tool projection to the exact
 attempt, removes only a tombstoned attempt, and shows one bounded warning for a
