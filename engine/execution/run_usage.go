@@ -61,15 +61,16 @@ type RunUsageRoute struct {
 
 type RunUsageSnapshot struct {
 	RunUsageTotals
-	Limits         RunUsageLimits   `json:"limits"`
-	DeniedCalls    uint64           `json:"denied_calls"`
-	UntrackedCalls uint64           `json:"untracked_calls"`
-	Complete       bool             `json:"complete"`
-	StopReason     string           `json:"stop_reason,omitempty"`
-	ElapsedMillis  int64            `json:"elapsed_ms"`
-	Routes         []RunUsageRoute  `json:"routes"`
-	CallLedger     RunUsageLedger   `json:"call_ledger"`
-	Cost           *RunCostSnapshot `json:"cost,omitempty"`
+	Limits         RunUsageLimits            `json:"limits"`
+	DeniedCalls    uint64                    `json:"denied_calls"`
+	UntrackedCalls uint64                    `json:"untracked_calls"`
+	Complete       bool                      `json:"complete"`
+	StopReason     string                    `json:"stop_reason,omitempty"`
+	ElapsedMillis  int64                     `json:"elapsed_ms"`
+	Routes         []RunUsageRoute           `json:"routes"`
+	CallLedger     RunUsageLedger            `json:"call_ledger"`
+	Cost           *RunCostSnapshot          `json:"cost,omitempty"`
+	Checkpoint     *RunUsageCheckpointStatus `json:"checkpoint,omitempty"`
 
 	// BudgetStopCause identifies the rejected limit, not a reached-but-unused limit.
 	BudgetStopCause string `json:"budget_stop_cause,omitempty"`
@@ -92,6 +93,8 @@ type RunUsage struct {
 	records        []RunUsageRecord
 	droppedRecords uint64
 	cost           *runCostState
+	checkpoint     *runUsageCheckpointState
+	checkpointErr  error
 }
 
 type runUsageRouteKey struct{ model, source, role, effort string }
@@ -160,6 +163,9 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.checkpointErr != nil {
+		return nil, &ProviderUsageTerminalError{Err: r.checkpointErr}
+	}
 	if r.sealed {
 		return nil, &ProviderUsageTerminalError{Err: context.Canceled}
 	}
@@ -170,6 +176,8 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		priceIndex = r.cost.route(d)
 	}
 	switch {
+	case r.checkpoint != nil && (r.stopReason == "run_usage_unknown" || r.untracked > 0 || len(r.records) >= MaxRunUsageRecords):
+		cause = ErrRunUsageUnknown
 	case r.cost != nil && priceIndex >= 0 && d.Request != (r.cost.card.Routes[priceIndex].PerRequest != nil):
 		cause = ErrRunUsageUnknown
 	case r.cost != nil && r.cost.limit != nil && (r.cost.unpriced > 0 || r.untracked > 0 || priceIndex < 0):
@@ -198,6 +206,9 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 		r.denied++
 		r.stopReason = runUsageErrorCode(cause)
 		r.budgetCause = budgetCause
+		if err := r.persistCheckpointLocked("denied"); err != nil {
+			cause = err
+		}
 		return nil, &ProviderUsageTerminalError{Err: cause}
 	}
 	key := runUsageRouteKey{d.Model, d.QuerySource, d.ModelRole, d.ReasoningEffort}
@@ -216,12 +227,23 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	route.InFlight++
 	call := &runUsageCall{owner: r, route: route, id: uuid.NewString(), started: time.Now(), priceIndex: priceIndex, reservation: reservation, reserved: reserved, request: d.Request}
 	r.appendCallRecord(d, call)
+	if err := r.persistCheckpointLocked("admitted"); err != nil {
+		// No provider-facing capability was returned. This admission is proven
+		// not dispatched, even when the filesystem commit outcome is uncertain.
+		_ = call.settleRequestLocked(nil, true, nil)
+		r.denied++
+		return nil, &ProviderUsageTerminalError{Err: err}
+	}
 	return call, nil
 }
 
 func (r *RunUsage) Snapshot() RunUsageSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.snapshotLocked()
+}
+
+func (r *RunUsage) snapshotLocked() RunUsageSnapshot {
 	s := RunUsageSnapshot{
 		RunUsageTotals: r.totals, Limits: r.limits,
 		DeniedCalls: r.denied, UntrackedCalls: r.untracked, StopReason: r.stopReason,
@@ -230,6 +252,9 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 		ElapsedMillis:   time.Since(r.started).Milliseconds(),
 		Cost:            r.costSnapshot(),
 		Routes:          make([]RunUsageRoute, 0, len(r.routes)),
+	}
+	if r.checkpoint != nil {
+		s.Checkpoint = &RunUsageCheckpointStatus{Version: 1, Sequence: r.checkpoint.sequence, Failed: r.checkpointErr != nil}
 	}
 	for _, route := range r.routes {
 		s.Routes = append(s.Routes, *route)
@@ -316,7 +341,14 @@ type runUsageCall struct {
 
 func (c *runUsageCall) ProviderCallID() string { return c.id }
 func (c *runUsageCall) FailClosedOnAmbiguousUsage() bool {
-	return c.owner.limits.MaxTotalTokens > 0 || c.owner.cost != nil && c.owner.cost.limit != nil
+	r := c.owner
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failClosedOnAmbiguousUsageLocked()
+}
+
+func (r *RunUsage) failClosedOnAmbiguousUsageLocked() bool {
+	return r.checkpoint != nil || r.limits.MaxTotalTokens > 0 || r.cost != nil && r.cost.limit != nil
 }
 func (c *runUsageCall) CompleteProviderUsage(u *schema.TokenUsage) error { return c.settle(u, false) }
 func (c *runUsageCall) MarkProviderUsageAmbiguous(error) error           { return c.settle(nil, false) }
@@ -334,6 +366,18 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 	r := c.owner
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if c.settled {
+		return c.settlementErr
+	}
+	err := c.settleRequestLocked(u, release, billable)
+	if checkpointErr := r.persistCheckpointLocked("settled"); checkpointErr != nil {
+		c.settlementErr = errors.Join(err, checkpointErr)
+	}
+	return c.settlementErr
+}
+
+func (c *runUsageCall) settleRequestLocked(u *schema.TokenUsage, release bool, billable *bool) error {
+	r := c.owner
 	if c.settled {
 		return c.settlementErr
 	}
@@ -379,7 +423,7 @@ func (c *runUsageCall) settleRequest(u *schema.TokenUsage, release bool, billabl
 		}
 		r.totals.UnknownCalls++
 		c.route.UnknownCalls++
-		if c.FailClosedOnAmbiguousUsage() {
+		if r.failClosedOnAmbiguousUsageLocked() {
 			c.settlementErr = ErrRunUsageUnknown
 			r.stopReason = runUsageErrorCode(c.settlementErr)
 			r.budgetCause = ""
@@ -452,8 +496,35 @@ func (r *RunUsage) LimitsEnabled() bool {
 
 // RecordUntrackedCall flags an opaque embedded extension whose provider calls
 // cannot be observed. Such extensions must be suppressed while limits apply.
-func (r *RunUsage) RecordUntrackedCall() { r.mu.Lock(); defer r.mu.Unlock(); r.untracked++ }
+func (r *RunUsage) RecordUntrackedCall() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.untracked++
+	_ = r.persistCheckpointLocked("untracked")
+}
 
 // Seal prevents late asynchronous work from starting new calls after the owner
 // has closed. Already admitted calls can still settle; Snapshot exposes them.
-func (r *RunUsage) Seal() { r.mu.Lock(); defer r.mu.Unlock(); r.sealed = true }
+func (r *RunUsage) Seal() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.sealed {
+		r.sealed = true
+		_ = r.persistCheckpointLocked("sealed")
+	}
+}
+
+// Close closes admission and checkpoint handles after the caller has stopped
+// its children. An unfinished call remains durably in flight and non-resumable.
+// Existing memory-only collectors retain their late-settlement behavior.
+func (r *RunUsage) Close() error {
+	r.Seal()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.checkpoint != nil && r.checkpoint.store != nil {
+		if err := r.checkpoint.store.Close(); err != nil {
+			_ = r.failCheckpointLocked()
+		}
+	}
+	return r.checkpointErr
+}

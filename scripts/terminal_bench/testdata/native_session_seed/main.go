@@ -23,7 +23,7 @@ func main() {
 
 func seed() error {
 	root, err := os.Getwd()
-	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || os.Args[2] != "--unbound-model")) {
+	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready"))) {
 		return fmt.Errorf("fixture arguments")
 	}
 	write := func(name, text string, mode os.FileMode) error {
@@ -83,12 +83,17 @@ func seed() error {
 		return err
 	}
 	modelName, providerName := "deepseek-v4-flash", "agenticdeepseek"
-	if len(os.Args) == 3 {
+	permissionMode := ""
+	if len(os.Args) == 3 && os.Args[2] == "--unbound-model" {
 		modelName, providerName = "", ""
+	}
+	if len(os.Args) == 3 && os.Args[2] == "--tool-ready" {
+		permissionMode = "acceptEdits"
 	}
 	if err := session.WriteSessionMetadata(recorder, &session.SessionMetadataFull{
 		SessionID: id, ThreadID: id, CWD: root, Status: "idle", QueryKernelVersion: "project_graph/v1",
 		QueryKernelStage: "full", CreatedAt: time.Now().UTC(), Model: modelName, Provider: providerName,
+		PermissionMode: permissionMode,
 	}); err != nil {
 		return err
 	}

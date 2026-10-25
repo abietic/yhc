@@ -288,6 +288,9 @@ are those supplied by the adapter; an omitted detail cannot prove that no
 caching or thinking occurred. `provider_duration_ms` sums call lifetimes and
 may exceed invocation `elapsed_ms` when calls overlap. No price is inferred.
 A forced process kill may prevent the final summary from being written.
+Opt-in [invocation usage checkpoints](invocation-usage-checkpoints.md) retain
+admission and settlement records for inspection from a new process; they do
+not grant automatic continuation or reuse the previous budget.
 
 `usage.call_ledger` adds up to 1,024 individual admission records per invocation:
 model/provider labels, source/role/effort, attempt/retry indices, timing,

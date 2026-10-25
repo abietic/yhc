@@ -102,7 +102,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self, unbound=False):
+    def capture_joint(self, unbound=False, tool_ready=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -110,7 +110,7 @@ class NativeColdDockerTests(unittest.TestCase):
             self.business(source_project, source_definition, name, "mutate")
             observed[name] = self.business(source_project, source_definition, name, "state")
         source, volume = self.provision_workspace()
-        args = ["--unbound-model"] if unbound else []
+        args = ["--unbound-model"] if unbound else ["--tool-ready"] if tool_ready else []
         self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, *args)
         git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
         original_rpc = source.rpc
@@ -192,7 +192,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.assertFalse((self.control / ("activation." + self.service_digest + ".json")).exists())
 
     def check_public_execution_handoff(self, scenario):
-        manifest, observed, git_status = self.capture_joint(unbound=scenario == "unbound")
+        manifest, observed, git_status = self.capture_joint(unbound=scenario == "unbound", tool_ready=scenario == "tool")
         bundle = self.target_bundle()
         receipt = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
         original_history = copy.deepcopy(manifest["usage_history"])
@@ -241,18 +241,19 @@ class NativeColdDockerTests(unittest.TestCase):
                                   capture_output=True, text=True, timeout=10, check=True)
         self.assertEqual(json.loads(readback.stdout), accounting)
         self.assertFalse(accounting["new_spending_authorized"])
-        self.assertEqual(result["observed_provider_requests"], int(scenario in ("known", "unknown")), terminal)
+        self.assertEqual(result["observed_provider_requests"], 2 if scenario == "tool" else int(scenario in ("known", "unknown")), terminal)
         native_after = None
-        if scenario == "known":
+        if scenario in ("known", "tool"):
             self.assertEqual((result["exit_code"], terminal["status"], terminal["output"]), (0, "completed", "offline continuation complete"))
             self.assertTrue(accounting["coverage_complete"])
-            self.assertEqual((new_usage["provider_calls"], new_usage["total_tokens"]), (1, 14))
-            self.assertEqual((accounting["totals"]["provider_calls"], accounting["totals"]["total_tokens"]), (3, 42))
+            calls = 2 if scenario == "tool" else 1
+            self.assertEqual((new_usage["provider_calls"], new_usage["total_tokens"]), (calls, 14 * calls))
+            self.assertEqual((accounting["totals"]["provider_calls"], accounting["totals"]["total_tokens"]), (2 + calls, 28 + 14 * calls))
             after = bundle.workspace.rpc("native_probe", session_id=self.session)
             native_after = after
             self.assertTrue(after["validation_complete"], after["blocking_reasons"])
-            self.assertEqual(after["message_count"], receipt["native_proof"]["message_count"] + 2)
-            self.assertEqual(after["native_usage"]["total_tokens"], receipt["native_proof"]["native_usage"]["total_tokens"] + 14)
+            self.assertEqual(after["message_count"], receipt["native_proof"]["message_count"] + (4 if scenario == "tool" else 2))
+            self.assertEqual(after["native_usage"]["total_tokens"], receipt["native_proof"]["native_usage"]["total_tokens"] + 14 * calls)
             self.assertNotEqual(after["messages_sha256"], receipt["native_proof"]["messages_sha256"])
         else:
             self.assertNotEqual(result["exit_code"], 0)
@@ -266,8 +267,19 @@ class NativeColdDockerTests(unittest.TestCase):
             else:
                 self.assertEqual(new_usage["provider_calls"], 0)
         current_tree = bundle.workspace.rpc("inventory")
-        self.assertEqual(user_files(current_tree), user_files(original_tree))
-        self.assertEqual(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container, "git", "status", "--porcelain=v1"), git_status)
+        current_files = user_files(current_tree)
+        if scenario == "tool":
+            self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/continued.txt"), "continued once")
+            self.assertEqual(len(result["durable_admissions"]), 2)
+            checkpoint = result["durable_checkpoint"]
+            self.assertTrue(checkpoint["accounting_complete"] and checkpoint["admission_closed"])
+            self.assertEqual(checkpoint["snapshot"]["call_ledger"], new_usage["call_ledger"])
+            self.assertEqual(checkpoint["snapshot"]["cost"], new_usage["cost"])
+            self.assertFalse(checkpoint["can_resume_agent"] or checkpoint["new_spending_authorized"])
+            current_files = [row for row in current_files if row["path"] != "continued.txt"]
+        self.assertEqual(current_files, user_files(original_tree))
+        actual_git = self.docker("exec", "--workdir", "/workspace", bundle.workspace.container, "git", "status", "--porcelain=v1")
+        self.assertEqual(actual_git.replace("?? continued.txt\n", "") if scenario == "tool" else actual_git, git_status)
         self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/effects.count"), "1")
         self.assertEqual(bundle.workspace.inventory(), receipt["workspace_runtime"])
         self.assertEqual(original_claim, (self.control / ("bundle-restore." + self.bundle_digest + ".json")).read_bytes())
@@ -291,11 +303,15 @@ class NativeColdDockerTests(unittest.TestCase):
                               history_receipt_sha256=history_digest, history_readback_process_verified=True,
                               history_receipt_scope="offline_fixture_receipt",
                               native_after=native_after,
-                              services_after=services, committed_effect_count=1, user_workspace_unchanged=True,
+                              services_after=services, committed_effect_count=1, original_user_files_preserved=True,
+                              new_tool_effects=1 if scenario == "tool" else 0,
                               verification_complete=True, can_resume_agent=False, real_provider_requests=0))
 
     def test_public_exec_first_turn_preserves_native_service_and_usage_state(self):
         self.check_public_execution_handoff("known")
+
+    def test_public_exec_new_tool_after_restore_has_durable_invocation_accounting(self):
+        self.check_public_execution_handoff("tool")
 
     def test_public_exec_unknown_usage_stops_without_retry_and_retains_reservation(self):
         self.check_public_execution_handoff("unknown")

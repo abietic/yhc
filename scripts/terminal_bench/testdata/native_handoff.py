@@ -50,7 +50,7 @@ def text_parts(content):
     return content
 
 
-def verify_input(body, now=None, platform_name=None):
+def verify_input(body, now=None, platform_name=None, tool_round=0):
     items = body.get("input")
     require(isinstance(items, list), "missing_input")
     projected = []
@@ -68,10 +68,12 @@ def verify_input(body, now=None, platform_name=None):
         else:
             require(kind == "message" and role in ("user", "assistant"), "unexpected_input_item")
             projected.append(["message", role, text_parts(item.get("content"))])
-    require(len(projected) == 8 and all(item[:2] == ["message", "user"] for item in projected[:2]), "unexpected_runtime_prefix")
+    require(len(projected) == (11 if tool_round == 2 else 8)
+            and all(item[:2] == ["message", "user"] for item in projected[:2]), "unexpected_runtime_prefix")
     now = now or datetime.datetime.now(datetime.timezone.utc)
     deadline = re.search(r"\ndeadline_utc=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) ", projected[0][2])
-    require(deadline is not None and projected[0][2] == BUDGET_TEMPLATE.format(deadline=deadline[1]), "unexpected_budget_context")
+    template = BUDGET_TEMPLATE.replace("provider_call_limit=1", "provider_call_limit=2") if tool_round else BUDGET_TEMPLATE
+    require(deadline is not None and projected[0][2] == template.format(deadline=deadline[1]), "unexpected_budget_context")
     parsed = datetime.datetime.strptime(deadline[1][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
     if "." in deadline[1]:
         parsed += datetime.timedelta(microseconds=int((deadline[1][20:-1] + "000000")[:6]))
@@ -87,16 +89,32 @@ def verify_input(body, now=None, platform_name=None):
                 ["call", "fixture-write", "Write", dict(file_path="effects.count", content="1\n")],
                 ["result", "fixture-write", "committed once"],
                 ["message", "assistant", "checkpoint complete"], ["message", "user", PROMPT]]
+    if tool_round == 2:
+        expected.extend([["message", "assistant", " "],
+                         ["call", "continued-write", "Write", dict(file_path="/workspace/continued.txt", content="continued once\n")],
+                         ["result", "continued-write", "Wrote 15 bytes to /workspace/continued.txt"]])
     require(projected == expected, "native_history_or_new_turn_changed")
     return hashlib.sha256(json.dumps(items, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def run(session_id, scenario, card):
     require(str(uuid.UUID(session_id)) == session_id, "invalid_fixture_session")
-    require(scenario in ("known", "unknown", "denied", "unbound"), "invalid_fixture_scenario")
+    require(scenario in ("known", "unknown", "denied", "unbound", "tool"), "invalid_fixture_scenario")
     root = Path.cwd()
     require(str(root) == "/workspace" and Path("/opt/yhc/yhc").is_file(), "container_only_fixture")
-    requests, errors, inputs = [], [], []
+    requests, errors, inputs, admissions = [], [], [], []
+    checkpoint = root / ".yhc/usage-checkpoints" / ("tool-" + uuid.uuid4().hex)
+    if scenario == "tool":
+        checkpoint.parent.mkdir(mode=0o700, exist_ok=True)
+
+    def inspect_checkpoint():
+        owner = json.loads((checkpoint / "owner.json").read_text())
+        inspected = subprocess.run(["/opt/yhc/yhc", "usage", "inspect", "--checkpoint-dir", str(checkpoint),
+                                    "--segment-id", owner["segment_id"]], capture_output=True, timeout=5, check=True)
+        require(len(inspected.stdout) <= 1 << 20, "oversized_accounting_view")
+        value = json.loads(inspected.stdout)
+        require(value["can_resume_agent"] is False and value["new_spending_authorized"] is False, "accounting_granted_authority")
+        return value
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def setup(self):
@@ -114,8 +132,16 @@ def run(session_id, scenario, card):
                 body = json.loads(self.rfile.read(size))
                 requests.append(hashlib.sha256(json.dumps(body.get("input"), sort_keys=True, separators=(",", ":")).encode()).hexdigest())
                 inputs.append(body.get("input"))
-                verify_input(body)
-                require(len(requests) == 1, "unexpected_retry_or_auxiliary_call")
+                verify_input(body, tool_round=len(requests) if scenario == "tool" else 0)
+                require(len(requests) <= (2 if scenario == "tool" else 1), "unexpected_retry_or_auxiliary_call")
+                if scenario == "tool":
+                    view = inspect_checkpoint()
+                    snapshot = view["snapshot"]
+                    require(view["phase"] == "admitted" and not view["admission_closed"]
+                            and snapshot["provider_calls"] == len(requests) and snapshot["in_flight"] == 1
+                            and snapshot["known_calls"] == len(requests) - 1
+                            and snapshot["cost"]["reservation"]["outstanding_amount"] != "0.000000000000", "provider_entered_without_durable_admission")
+                    admissions.append(view)
             except Exception as error:
                 errors.append(str(error)[:180])
                 self.send_error(400)
@@ -137,6 +163,11 @@ def run(session_id, scenario, card):
                            status="completed", model="deepseek-v4-flash", output=[item],
                            usage=dict(input_tokens=10, output_tokens=4, total_tokens=14,
                                       input_tokens_details=dict(cached_tokens=6), output_tokens_details=dict(reasoning_tokens=2))))]
+            if scenario == "tool" and len(requests) == 1:
+                item = dict(type="function_call", id="continued-item", call_id="continued-write", name="Write", status="completed",
+                            arguments=json.dumps(dict(file_path="/workspace/continued.txt", content="continued once\n")))
+                events[0] = dict(type="response.output_item.done", sequence_number=0, output_index=0, item=item)
+                events[1]["response"]["output"] = [item]
             for event in events:
                 self.wfile.write(("event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n").encode())
 
@@ -156,6 +187,10 @@ def run(session_id, scenario, card):
                     "--timeout", "20s", "--max-provider-calls", "1", "--price-card", str(price),
                     "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "16",
                     "--max-estimated-cost", "0.01" if scenario == "denied" else "5"]
+            if scenario == "tool":
+                args[args.index("--max-turns") + 1] = "2"
+                args[args.index("--max-provider-calls") + 1] = "2"
+                args.extend(["--usage-checkpoint-dir", str(checkpoint)])
             completed = subprocess.run(args, cwd=root, env=env, capture_output=True, timeout=25)
             require(len(completed.stdout) <= 1 << 20, "oversized_cli_result")
             result = json.loads(completed.stdout)
@@ -165,6 +200,7 @@ def run(session_id, scenario, card):
         thread.join(timeout=2)
     require(not thread.is_alive(), "fixture_provider_did_not_stop")
     return dict(version=1, scope="offline_public_exec_resume", scenario=scenario, result=result,
+                durable_admissions=admissions, durable_checkpoint=inspect_checkpoint() if scenario == "tool" else None,
                 exit_code=completed.returncode, observed_provider_requests=len(requests), request_input_sha256=requests,
                 provider="synthetic_loopback", provider_protocol_errors=errors,
                 failed_fixture_inputs=inputs if errors else [], real_provider_requests=0, can_resume_agent=False)

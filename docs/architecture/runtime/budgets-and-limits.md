@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-22
+**Last verified:** 2026-10-26
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -14,6 +14,7 @@ The runtime does not have one global budget. It has several independent controls
 | Maximum turns | [`TurnTracker.Advance`](../../../engine/turn_tracker.go) and [canonical after-tool check](../../../engine/round_lifecycle.go) | Stops before the next disallowed turn and returns `TerminalMaxTurns` | One query invocation | active |
 | Per-turn token budget | [`TokenBudget`](../../../engine/budget/token.go) and [`Check`](../../../engine/budget/token.go) | Can emit a continuation nudge or request completion | Tracker instance | partially wired: production does not record input/output usage into it |
 | Invocation call/token limits | [`RunUsage.AdmitProviderUsage`](../../../engine/execution/run_usage.go) | Pre-dispatch call cap; known-token stop at next admission, unknown usage stops a token-limited run | Shared invocation collector, including children and helpers | active in `exec`; opt-in injection elsewhere |
+| Invocation usage persistence | [`RunUsage.EnableCheckpointDir`](../../../engine/execution/run_usage_checkpoint.go) | Sync admission before dispatch and settlement before tools; I/O failure fences the collector | One fresh private namespace per invocation | optional `exec --usage-checkpoint-dir`; off by default |
 | API task budget | [`TaskBudget`](../../../engine/params.go), [`CallModelOptions.TaskBudget`](../../../engine/execution/call.go) | Sends Claude beta header and `output_config.task_budget`; remaining is reduced after compaction | Injected engine configuration / Claude request | partially wired: no default CLI configuration |
 | USD budget | [`USDBudget`](../../../engine/budget/usd.go) | `Exceeded` can compare accumulated cost against a cap | Tracker instance | disconnected from production query enforcement |
 | Context window | [`GetEffectiveContextWindowSize`](../../../engine/compact/auto.go) | Drives warning, auto-compaction, error, and blocking thresholds | Selected model / conversation | active |
@@ -58,7 +59,7 @@ the terminal JSON summary. Other embedding surfaces must inject the collector;
 this does not install a persistent TUI cost ledger. Call and token limits default
 to zero (disabled). A token threshold can be exceeded by already admitted
 concurrent calls. Unknown usage remains unknown; it stops the next admission
-only when the token limit is enabled. Existing durable Goal accounting composes
+when the token limit or usage persistence is enabled. Existing durable Goal accounting composes
 with this observer and retains its stricter settlement policy and wire identity.
 
 The additive `usage.call_ledger` contains version 1, a generated invocation
@@ -78,9 +79,31 @@ Denied admissions have no call record and increment `denied_calls` instead.
 Completion order never reorders admissions. Snapshots copy records and token
 objects under the same root mutex. Repeated settlement cannot refund a completed
 call or charge it twice. The first 1,024 admissions are retained, including
-released reservations; later admissions increment `dropped_records` without
+released reservations; in default memory-only mode later admissions increment `dropped_records` without
 changing accounting or retry behavior. `usage.complete` still describes total
 usage coverage, independently of truncated call history or unknown model names.
+
+### Optional durable invocation accounting
+
+With `exec --usage-checkpoint-dir`, the same root collector claims an empty
+private namespace before engine construction. It synchronously persists
+admissions, settlements, denials, untracked usage and sealing under its mutex.
+The capability is returned only after admitted state is synced; model-round
+settlement succeeds only after its durable write. Any storage failure is sticky
+`run_usage_unknown`. Already confirmed vendor usage remains known in the
+terminal snapshot, independently of `usage.checkpoint.failed`; the previous
+durable in-flight reservation is never inferred to be released. A failed rename
+or sync outcome is uncertain and is not rolled back. This mode refuses new
+admission at the record limit and after unknown usage instead of losing history.
+
+[`ReadRunUsageCheckpointDir`](../../../engine/execution/run_usage_checkpoint.go)
+checks schema, metadata, identities, totals and cost arithmetic without creating
+a live collector. Inspection never authorizes spending or Agent continuation;
+closing with in-flight work and crashing before closure remain incomplete.
+The owner must stop its children before closing storage. The rooted store is
+private local Linux/macOS storage, not a same-user security boundary or a
+distributed transaction with native transcripts. Operator commands and failure
+handling are in [Invocation usage checkpoints](../../guides/invocation-usage-checkpoints.md).
 
 `requested_model` is the configured call label and may be an alias/profile;
 `provider` is the descriptor's configured provider or `unknown`. The project
