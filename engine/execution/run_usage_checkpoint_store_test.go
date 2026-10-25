@@ -220,7 +220,7 @@ func TestRunUsageCheckpointStoreRejectsHardlinkedCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, err := readRunUsageCheckpointFile(path, segmentID); !errors.Is(err, errRunUsageCheckpointStorage) {
-		t.Fatalf("hardlinked checkpoint err=%v", err)
+		t.Fatalf("checkpoint with multiple links err=%v", err)
 	}
 }
 

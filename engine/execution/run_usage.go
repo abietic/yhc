@@ -523,7 +523,7 @@ func (r *RunUsage) Close() error {
 	defer r.mu.Unlock()
 	if r.checkpoint != nil && r.checkpoint.store != nil {
 		if err := r.checkpoint.store.Close(); err != nil {
-			r.failCheckpointLocked()
+			_ = r.failCheckpointLocked()
 		}
 	}
 	return r.checkpointErr
