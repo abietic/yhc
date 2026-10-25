@@ -1,19 +1,30 @@
-"""Real destroyed-runtime recovery using the production provider-free YHC CLI."""
+"""Destroyed-runtime recovery and opt-in public execution with a fake provider."""
 
+import copy
 import json
 import os
 import subprocess
+import sys
 import unittest
 import uuid
 from pathlib import Path
 
 from scripts.terminal_bench.cold_recovery import DockerServices
 from scripts.terminal_bench.recovery import write_report
-from scripts.terminal_bench.recovery_bundle import RecoveryBundle
-from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError
+from scripts.terminal_bench.recovery_bundle import RecoveryBundle, user_files
+from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history
 from scripts.terminal_bench import test_service_snapshot_docker as service_fixture
-from scripts.terminal_bench.workspace_recovery import ATTEMPT, WORKSPACE_COHORT, WORKSPACE_ROLE, DockerWorkspace
+from scripts.terminal_bench.workspace_recovery import ATTEMPT, WORKSPACE_COHORT, WORKSPACE_ROLE, DockerWorkspace, usage_history
+
+
+def validate_proof_directory(value):
+    if not value:
+        return
+    path = Path(value)
+    if not (path.is_absolute() and path.is_dir() and path.resolve() == path
+            and path.stat().st_uid == os.geteuid() and not path.stat().st_mode & 0o077):
+        raise RuntimeError("proof directory must already exist, be private and host-owned")
 
 
 @unittest.skipUnless(os.environ.get("YHC_NATIVE_RECOVERY_DOCKER_TEST") == "1", "explicit native cold Docker opt-in")
@@ -27,6 +38,7 @@ class NativeColdDockerTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        validate_proof_directory(os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR"))
         binary = Path(os.environ["YHC_NATIVE_RECOVERY_BINARY"]).resolve()
         seed = Path(os.environ["YHC_NATIVE_RECOVERY_SEED"]).resolve()
         if not binary.is_file() or not seed.is_file():
@@ -61,6 +73,7 @@ class NativeColdDockerTests(unittest.TestCase):
             cls.docker("cp", str(binary), helper + ":/opt/yhc/yhc")
             cls.docker("cp", str(seed), helper + ":/opt/checkpoint/seed-native")
             cls.docker("cp", str(Path(__file__).parent / "workspace_io.py"), helper + ":/opt/checkpoint/workspace_io.py")
+            cls.docker("cp", str(Path(__file__).parent / "testdata/native_handoff.py"), helper + ":/opt/checkpoint/native_handoff.py")
             cls.docker("commit", helper, cls.image)
         finally:
             cls.docker("rm", "--force", helper)
@@ -89,7 +102,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self):
+    def capture_joint(self, unbound=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -97,7 +110,8 @@ class NativeColdDockerTests(unittest.TestCase):
             self.business(source_project, source_definition, name, "mutate")
             observed[name] = self.business(source_project, source_definition, name, "state")
         source, volume = self.provision_workspace()
-        self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session)
+        args = ["--unbound-model"] if unbound else []
+        self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, *args)
         git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
         original_rpc = source.rpc
         def source_rpc(operation, **body):
@@ -176,6 +190,121 @@ class NativeColdDockerTests(unittest.TestCase):
         rows = json.loads(self.docker("inspect", bundle.workspace.container, *service_ids))
         self.assertTrue(all(not r["State"]["Running"] for r in rows))
         self.assertFalse((self.control / ("activation." + self.service_digest + ".json")).exists())
+
+    def check_public_execution_handoff(self, scenario):
+        manifest, observed, git_status = self.capture_joint(unbound=scenario == "unbound")
+        bundle = self.target_bundle()
+        receipt = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        original_history = copy.deepcopy(manifest["usage_history"])
+        original_claim = (self.control / ("bundle-restore." + self.bundle_digest + ".json")).read_bytes()
+        original_tree = bundle.workspace.rpc("inventory")
+        price = original_history["segments"][0]["usage"]["cost"]["price_card"]
+        try:
+            result = json.loads(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container,
+                                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py",
+                                self.session, scenario, json.dumps(price)))
+        except subprocess.CalledProcessError as error:
+            self.fail("owned offline handoff fixture: " + error.stderr)
+        self.assertEqual(result["scope"], "offline_public_exec_resume")
+        self.assertEqual(result["provider"], "synthetic_loopback")
+        self.assertEqual(result["real_provider_requests"], 0)
+        terminal = result["result"]
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            write_report(Path(evidence) / ("native-handoff-observed-" + self.attempt + ".json"),
+                         dict(scenario=scenario, bundle_sha256=self.bundle_digest, offline_execution=result,
+                              verification_complete=False, can_resume_agent=False))
+        self.assertFalse(result["provider_protocol_errors"], result["provider_protocol_errors"])
+        self.assertEqual(terminal["session_id"], self.session)
+        new_usage = terminal["usage"]
+        extended = history(self.session, [s["usage"] for s in original_history["segments"]] + [new_usage])
+        accounting = usage_history(extended, self.session)
+        self.assertEqual(extended["segments"][:-1], original_history["segments"])
+        self.assertEqual(len(set(extended["segment_ids"])), 3)
+        repeated = history(self.session, [s["usage"] for s in extended["segments"]] + [new_usage])
+        with self.assertRaises(SnapshotError):
+            usage_history(repeated, self.session)
+        # This is an offline fixture receipt, not the production budget pool.
+        # A new trusted process must reconstruct the same totals from disk.
+        history_receipt = dict(version=1, scope="offline_fixture_receipt", session_id=self.session,
+                               bundle_sha256=self.bundle_digest, attempt_id=self.attempt, history=extended)
+        receipt_path = self.control / ("handoff-history." + self.attempt + ".json")
+        write_report(receipt_path, history_receipt)
+        history_digest = digest(history_receipt)
+        code = ("import json,sys; from scripts.terminal_bench.service_snapshot import digest,private_json; "
+                "from scripts.terminal_bench.workspace_recovery import usage_history; "
+                "v=private_json(sys.argv[1]); assert digest(v)==sys.argv[2]; "
+                "assert v['bundle_sha256']==sys.argv[3] and v['attempt_id']==sys.argv[4]; "
+                "print(json.dumps(usage_history(v['history'],v['session_id'])))")
+        readback = subprocess.run([sys.executable, "-c", code, str(receipt_path), history_digest,
+                                   self.bundle_digest, self.attempt], cwd=Path(__file__).resolve().parents[2],
+                                  capture_output=True, text=True, timeout=10, check=True)
+        self.assertEqual(json.loads(readback.stdout), accounting)
+        self.assertFalse(accounting["new_spending_authorized"])
+        self.assertEqual(result["observed_provider_requests"], int(scenario in ("known", "unknown")), terminal)
+        native_after = None
+        if scenario == "known":
+            self.assertEqual((result["exit_code"], terminal["status"], terminal["output"]), (0, "completed", "offline continuation complete"))
+            self.assertTrue(accounting["coverage_complete"])
+            self.assertEqual((new_usage["provider_calls"], new_usage["total_tokens"]), (1, 14))
+            self.assertEqual((accounting["totals"]["provider_calls"], accounting["totals"]["total_tokens"]), (3, 42))
+            after = bundle.workspace.rpc("native_probe", session_id=self.session)
+            native_after = after
+            self.assertTrue(after["validation_complete"], after["blocking_reasons"])
+            self.assertEqual(after["message_count"], receipt["native_proof"]["message_count"] + 2)
+            self.assertEqual(after["native_usage"]["total_tokens"], receipt["native_proof"]["native_usage"]["total_tokens"] + 14)
+            self.assertNotEqual(after["messages_sha256"], receipt["native_proof"]["messages_sha256"])
+        else:
+            self.assertNotEqual(result["exit_code"], 0)
+            expected = "run_budget_exceeded" if scenario == "denied" else "run_usage_unknown"
+            self.assertEqual(terminal["error"]["code"], expected)
+            self.assertEqual(accounting["coverage_complete"], scenario != "unknown")
+            self.assertEqual(accounting["totals"]["total_tokens"], 28)
+            if scenario == "unknown":
+                self.assertEqual(new_usage["unknown_calls"], 1)
+                self.assertNotEqual(new_usage["cost"]["reservation"]["retained_amount"], "0.000000000000")
+            else:
+                self.assertEqual(new_usage["provider_calls"], 0)
+        current_tree = bundle.workspace.rpc("inventory")
+        self.assertEqual(user_files(current_tree), user_files(original_tree))
+        self.assertEqual(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container, "git", "status", "--porcelain=v1"), git_status)
+        self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/effects.count"), "1")
+        self.assertEqual(bundle.workspace.inventory(), receipt["workspace_runtime"])
+        self.assertEqual(original_claim, (self.control / ("bundle-restore." + self.bundle_digest + ".json")).read_bytes())
+        with self.assertRaisesRegex(SnapshotError, "already_claimed"):
+            bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        services = {}
+        for name, original in observed.items():
+            actual = json.loads(self.docker("exec", bundle.services.backend.handles[name], "/usr/local/bin/python3", "-I",
+                                           "/opt/checkpoint/service.py", "business", "state"))
+            self.assertEqual((actual["memory"], actual["durable"], actual["next_random"]),
+                             (original["memory"], original["durable"], original["next_random"]))
+            self.assertNotEqual(actual["instance"], original["instance"])
+            self.assertGreaterEqual(actual["logical_ns"], receipt["services"]["expected_clocks"][name]["logical_ns"])
+            services[name] = actual
+        self.assertFalse(receipt["can_resume_agent"] or result["can_resume_agent"])
+        if evidence:
+            write_report(Path(evidence) / ("native-handoff-" + scenario + ".json"),
+                         dict(bundle_sha256=self.bundle_digest, attempt_id=self.attempt, restored_components=receipt,
+                              source_containers_and_volumes_destroyed=True, offline_execution=result,
+                              original_history_sha256=digest(original_history), extended_history=extended, accounting=accounting,
+                              history_receipt_sha256=history_digest, history_readback_process_verified=True,
+                              history_receipt_scope="offline_fixture_receipt",
+                              native_after=native_after,
+                              services_after=services, committed_effect_count=1, user_workspace_unchanged=True,
+                              verification_complete=True, can_resume_agent=False, real_provider_requests=0))
+
+    def test_public_exec_first_turn_preserves_native_service_and_usage_state(self):
+        self.check_public_execution_handoff("known")
+
+    def test_public_exec_unknown_usage_stops_without_retry_and_retains_reservation(self):
+        self.check_public_execution_handoff("unknown")
+
+    def test_public_exec_reservation_denial_preserves_progress_without_dispatch(self):
+        self.check_public_execution_handoff("denied")
+
+    def test_public_exec_missing_model_identity_cannot_consume_a_spending_allowance(self):
+        self.check_public_execution_handoff("unbound")
 
 
 if __name__ == "__main__":

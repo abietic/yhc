@@ -10,7 +10,7 @@ This workflow restores a supported workspace into fresh storage, loads its
 Session through the production QueryEngine administration path, reconstructs
 historical usage and verifies cooperative services under one capture identity.
 The receipt is `restored_components_verified`. It always keeps
-`can_resume_agent: false`: native execution handoff and a new finite spending
+`can_resume_agent: false`: automatic execution handoff and a new finite spending
 authorization are separate, unimplemented gates here. No Agent or provider
 request is started by capture or restore.
 
@@ -168,3 +168,54 @@ replaying its effect, and independently queries restored service state. A
 damaged native record must quarantine both target groups before service
 activation. These fixtures establish recovery mechanics, not a benchmark
 reward or live-provider reliability claim.
+
+### Exercise the first production turn offline
+
+The same opt-in Docker module also runs the public `yhc exec --resume` command
+after destroying the source and restoring its workspace, native Session,
+services and usage history. Its immutable fixture starts a deterministic
+provider on the target container's loopback interface. The container keeps
+`network_mode: none`; the child CLI receives only an allowlisted environment
+and a literal fake credential. No real provider, host key or workspace program
+is used.
+
+The fake provider compares the exact ordered native history plus one new
+prompt, including message roles and tool arguments/results. The fixture
+separately validates the leading invocation-budget and date/CWD/platform
+reminders, and the Responses bridge's exact blank assistant placeholder.
+Leading system/developer context is outside the transcript projection; extra
+or reordered conversation items are rejected.
+
+The tests independently check unchanged user files and Git state, no repeated tool effect,
+the persisted native usage increment, and assembly of the actual new invocation
+receipt with the original ordered history. That combined test receipt is
+written to a private control file and revalidated in a new trusted process
+against its expected digest, bundle and attempt. This verifies fixture receipt
+readback, not a production cumulative-ledger write transaction.
+
+Service
+memory, durable state, random state and advancing logical clocks are queried
+again after the CLI exits. Appending the same new receipt twice must fail.
+
+Four cases distinguish execution from financial admission:
+
+| Case | Required observation |
+|---|---|
+| Known usage | One synthetic request completes; native and invocation usage each gain their own reported increment. |
+| Unknown usage | One synthetic 503 response stops without a retry; the financial reservation remains retained and coverage stays incomplete. |
+| Reservation denied | No provider request occurs; earlier work and accounting survive the budget stop. |
+| Missing model identity | Component loading alone cannot identify a pricing route; execution stops with zero requests and `run_usage_unknown`. |
+
+Use the binary, seed and Docker opt-in variables above with
+`python3 -m unittest scripts.terminal_bench.test_recovery_bundle_docker`.
+`YHC_NATIVE_RECOVERY_PROOF_DIR` optionally writes separate component and
+offline-execution receipts; it must name an existing private, host-owned
+absolute directory. This is checked before Docker provisioning. The history oracle can also be calibrated without
+Docker using `python3 -m unittest scripts.terminal_bench.test_native_handoff_fixture`.
+
+This proves a controlled first-turn path through the existing production
+entrypoint. It does not integrate an automatic bundle dispatcher, provide
+durable mid-call accounting recovery, authorize real spending or validate
+arbitrary pending runtime state. The bundle and offline receipts continue to
+report `can_resume_agent: false`; their histories and original claims are
+retained. An old stopped benchmark is not automatically resumed.
