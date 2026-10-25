@@ -17,6 +17,11 @@ session loading, cumulative provider usage and a new finite spending allowance
 need separate proofs. Existing benchmark captures without service exports and
 clock state remain unsupported, including captures made before this protocol.
 
+The [workspace and Session cold recovery](workspace-session-cold-recovery.md)
+workflow can bind these service proofs to a restored file tree, a real native
+Session load and historical invocation usage. It still leaves Agent dispatch
+and new spending authorization closed.
+
 ## Qualify the services first
 
 This version supports a closed, quiescent service group with no uncheckpointed

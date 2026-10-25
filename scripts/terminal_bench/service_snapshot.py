@@ -96,6 +96,29 @@ def private_json(path, *, sealed=False):
         return decode(file.read(MAX_BYTES + 1))
 
 
+def seal_capsule(path, filenames):
+    """Persist read-only payload and directory metadata before registering it."""
+    path = Path(path)
+    for filename in filenames:
+        fd = os.open(path / filename, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fchmod(fd, 0o400)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fchmod(directory, 0o500)
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+
+
 def validate_contract(contract):
     require(isinstance(contract, dict) and set(contract) == {
         "version", "consistency", "max_downtime_ns", "clock_skew_ns", "services"}, "invalid_service_contract")
@@ -241,24 +264,7 @@ class ServiceSnapshots:
         write_report(path / "manifest.json", manifest)
         # Seal and persist both the payloads and directory metadata before the
         # trusted registry can advertise this capture as complete.
-        for filename in [r["file"] for r in records.values()] + ["manifest.json"]:
-            fd = os.open(path / filename, os.O_RDONLY | os.O_NOFOLLOW)
-            try:
-                os.fchmod(fd, 0o400)
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            os.fchmod(directory, 0o500)
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-        parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(parent_fd)
-        finally:
-            os.close(parent_fd)
+        seal_capsule(path, [r["file"] for r in records.values()] + ["manifest.json"])
         # The externally held digest/control record is the authority. A capsule
         # cannot certify replacement payloads by rewriting its own manifest.
         root_digest = digest(manifest)
@@ -296,6 +302,15 @@ class ServiceSnapshots:
             self._clock(self.specs[name], blob["clock"], self.wall_ns())
             blobs[name] = blob
         return manifest, blobs
+
+    def verify_quiescent_source(self, path, expected_snapshot_sha256):
+        """Bind another component while every captured service remains frozen."""
+        manifest, blobs = self.load(path, expected_snapshot_sha256)
+        require(same_live_runtime(manifest["source"], self._inventory(manifest["cohort_id"])), "source_runtime_changed")
+        for name, blob in blobs.items():
+            self._quiescent_probe(name, manifest["barrier_id"], manifest["services"][name]["instance_id"],
+                                  blob["state"], blob["clock"])
+        return manifest
 
     def restore(self, path, attempt, *, expected_snapshot_sha256, activate=False, activation_delay_ns=3_000_000_000):
         require(identity(attempt), "invalid_restore_attempt")

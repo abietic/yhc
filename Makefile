@@ -328,7 +328,7 @@ test-glm-live:
 
 .PHONY: test-provider-costs
 test-provider-costs:
-	python3 -m unittest scripts.terminal_bench.test_costs scripts.terminal_bench.test_recovery scripts.terminal_bench.test_service_clock scripts.terminal_bench.test_service_snapshot
+	python3 -m unittest scripts.terminal_bench.test_costs scripts.terminal_bench.test_recovery scripts.terminal_bench.test_service_clock scripts.terminal_bench.test_service_snapshot scripts.terminal_bench.test_recovery_bundle
 
 # ── Debug ───────────────────────────────────────────────
 # Launches the agent under delve in headless mode so any IDE can attach.

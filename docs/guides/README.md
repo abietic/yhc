@@ -20,6 +20,7 @@ and operating YHC; implementation design belongs in the
 | Define safe unattended tool access | [Permissions and safety](permissions-and-safety.md) |
 | Resume or inspect persisted conversations | [Sessions and transcripts](sessions-and-transcripts.md) |
 | Restore explicitly cooperative services and clocks | [Service cold recovery](service-cold-recovery.md) |
+| Verify a restored workspace, native Session and usage history together | [Workspace and Session cold recovery](workspace-session-cold-recovery.md) |
 | Add MCP servers, skills, or plugin commands | [Extensions](extensions-mcp-skills-plugins.md) |
 | Diagnose a failed startup or missing feature | [Troubleshooting](troubleshooting.md) |
 | Synchronize reference snapshots and recover failed summaries | [Reference sync](reference-sync.md) |
