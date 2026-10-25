@@ -95,6 +95,7 @@ func newRootCommand() *cobra.Command {
 	permissionReviewAuditCommand := newPermissionReviewAuditCommand()
 	root.AddCommand(
 		newExecCommand(),
+		newUsageCommand(),
 		newGoalCommand(),
 		newMigrateStateCommand(),
 		newServeCommand(),

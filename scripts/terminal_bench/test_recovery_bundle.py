@@ -88,6 +88,25 @@ class Workspace:
 
 
 class HistoryTests(unittest.TestCase):
+    def test_known_tokens_do_not_hide_checkpoint_failure(self):
+        value = history("session")
+        value["segments"][1]["usage"]["checkpoint"] = dict(version=1, sequence=2, failed=True)
+        original = copy.deepcopy(value)
+        actual = usage_history(value, "session")
+        self.assertEqual(value, original)
+        self.assertEqual(value["segments"][1]["usage"]["checkpoint"], dict(version=1, sequence=2, failed=True))
+        self.assertTrue(actual["totals"]["complete"])
+        self.assertFalse(actual["coverage_complete"])
+        self.assertFalse(actual["totals"]["checkpoint_complete"])
+        self.assertEqual(actual["totals"]["total_tokens"], 28)
+        value["segments"][1]["usage"]["checkpoint"]["failed"] = False
+        self.assertTrue(usage_history(value, "session")["coverage_complete"])
+        for bad in (None, dict(version=True, sequence=2, failed=False), dict(version=1, sequence=0, failed=False),
+                    dict(version=1, sequence=2, failed="false"), dict(version=1, sequence=2, failed=False, path="private")):
+            value["segments"][1]["usage"]["checkpoint"] = bad
+            with self.subTest(bad=bad), self.assertRaises(SnapshotError):
+                usage_history(value, "session")
+
     def test_restored_cumulative_history_preserves_currency_and_cannot_grant_spending(self):
         value = history("session")
         actual = usage_history(json.loads(json.dumps(value)), "session")

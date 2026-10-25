@@ -35,15 +35,16 @@ const (
 )
 
 type headlessOptions struct {
-	Timeout       time.Duration
-	Runtime       runtimeFlags
-	UsageLimits   execution.RunUsageLimits
-	PriceCardFile string
-	Resume        string
-	OutputFormat  string
-	Stdin         io.Reader
-	Stdout        io.Writer
-	Stderr        io.Writer
+	Timeout            time.Duration
+	Runtime            runtimeFlags
+	UsageLimits        execution.RunUsageLimits
+	PriceCardFile      string
+	UsageCheckpointDir string
+	Resume             string
+	OutputFormat       string
+	Stdin              io.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
 }
 
 type headlessResult struct {
@@ -98,6 +99,7 @@ func newExecCommand() *cobra.Command {
 	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
 	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
 	command.Flags().StringVar(&options.PriceCardFile, "price-card", "", "Explicit native currency price card JSON for invocation-fixed cost estimates")
+	command.Flags().StringVar(&options.UsageCheckpointDir, "usage-checkpoint-dir", "", "Fresh private directory for synchronous invocation usage checkpoints (off by default; never reopens history)")
 	command.Flags().StringVar(&options.UsageLimits.MaxEstimatedCost, "max-estimated-cost", "", "Stop new calls after estimated native cost reaches this decimal amount; in-flight calls may overshoot (0 or unset disables; requires --price-card)")
 	command.Flags().BoolVar(&options.UsageLimits.ReserveCostBeforeDispatch, "reserve-cost-before-dispatch", false, "Reserve a proven worst-case native estimate before dispatch (requires positive cost limit and upper_bound price card)")
 	command.Flags().IntVar(&options.UsageLimits.MaxOutputTokensPerCall, "max-output-tokens-per-call", 0, "Enforced maximum response tokens per reserved call, including reasoning (requires reservation mode)")
@@ -143,9 +145,13 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 			err = fmt.Errorf("price card cannot be opened")
 		}
 	}
+	if err == nil && options.UsageCheckpointDir != "" {
+		err = usage.EnableCheckpointDir(options.UsageCheckpointDir)
+	}
 	if err != nil {
 		return renderHeadlessFailure(format, options, err, "usage_error", ExitUsage)
 	}
+	defer func() { _ = usage.Close() }()
 
 	prompt, err := resolveHeadlessPrompt(promptArgument, options.Stdin, readerIsTerminal(options.Stdin))
 	if err != nil {
@@ -179,7 +185,6 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 
 	eng := engine.NewQueryEngine(engineCfg)
 	emitExecutionContainmentStartupDiagnostic(options.Stderr, eng)
-	defer usage.Seal()
 	defer eng.Close()
 	defer printResumeHint(options.Stderr, eng)
 	if err := resumeConfiguredSession(ctx, eng, resumeSource, options.Stderr); err != nil {
@@ -220,7 +225,7 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	}
 	result.SessionID = eng.SessionID()
 	eng.Close()
-	usage.Seal()
+	_ = usage.Close()
 	snapshot := usage.Snapshot()
 	result.Usage = &snapshot
 	if snapshot.StopReason != "" && result.ExitCode != ExitCancelled {

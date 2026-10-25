@@ -926,7 +926,7 @@ privacy:
       match_sha256: '094cdeca85abd50687c2cbead2fc1b2998d71c90f433764d6440bf2a83ab9758'
       purpose: documentation-example
     - path: docs/architecture/platform/entrypoints-and-transports.md
-      line: 63
+      line: 64
       rule_id: bearer-token
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
@@ -5862,7 +5862,7 @@ privacy:
       match_sha256: 0bbea7534b662f8b1ad149a1a6cbe5be759bd0cd7bf7787c6a5d7018a1433bc7
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/testdata/native_handoff.py
-      line: 154
+      line: 185
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
