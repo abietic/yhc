@@ -261,6 +261,14 @@ func (r *RunUsage) Snapshot() RunUsageSnapshot {
 			}
 			s.CallLedger.Records[i].Cost = &copied
 		}
+		if record.Diagnostics != nil {
+			copied := *record.Diagnostics
+			if copied.LastValidatedSequence != nil {
+				n := *copied.LastValidatedSequence
+				copied.LastValidatedSequence = &n
+			}
+			s.CallLedger.Records[i].Diagnostics = &copied
+		}
 	}
 	sort.Slice(s.Routes, func(i, j int) bool {
 		a, b := s.Routes[i], s.Routes[j]

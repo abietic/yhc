@@ -341,6 +341,29 @@ class UsageLedgerTests(unittest.TestCase):
                     call_ledger=dict(version=1, segment_id=segment or str(uuid4()),
                                      records=[record], dropped_records=0))
 
+    def test_transport_diagnostics_survive_projection_without_affecting_usage(self):
+        from scripts.terminal_bench.usage import validated_usage
+        diagnostic = dict(http_status=200, request_id_hash="a" * 64, response_id_hash="b" * 64,
+                          transport_phase="body", termination_kind="completed", stream_event_count=4,
+                          body_bytes=2048, last_validated_sequence=3,
+                          validated_terminal_event=True, authoritative_usage=True)
+        value = self.usage()
+        value["call_ledger"]["records"][0]["diagnostics"] = {**diagnostic, "private_text": "must-not-be-retained"}
+        projected = validated_usage(value)
+        self.assertEqual(projected["call_ledger"]["records"][0]["diagnostics"], diagnostic)
+        self.assertTrue(projected["complete"])
+        total = sum_usage([projected, self.usage()])
+        self.assertEqual(total["call_ledgers"][0]["records"][0]["diagnostics"], diagnostic)
+        self.assertNotIn("must-not-be-retained", json.dumps(total))
+        for extra in (dict(http_status=True), dict(http_status=700), dict(request_id_hash="raw-request-id"),
+                      dict(body_bytes=-1), dict(stream_event_count=1 << 64),
+                      dict(transport_phase="http://private-endpoint"), dict(authoritative_usage=1)):
+            value["call_ledger"]["records"][0]["diagnostics"] = {**diagnostic, **extra}
+            result = validated_usage(value)
+            self.assertTrue(result["complete"])
+            self.assertTrue(result["call_ledger_complete"])
+            self.assertNotIn("diagnostics", result["call_ledger"]["records"][0])
+
     def test_each_invocation_delta_once_and_snapshots_detached(self):
         from scripts.terminal_bench.usage import validated_usage
         first, second = self.usage(), self.usage()

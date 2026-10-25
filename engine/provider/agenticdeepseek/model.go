@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/abietic/yhc/engine/internal/providerdiag"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
@@ -228,16 +229,25 @@ func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessag
 
 	response, err := m.doRequest(ctx, body, true, bounded) //nolint:bodyclose // parser goroutine owns and closes a successful stream body
 	if err != nil {
+		observeDiagnosticError(ctx, err)
 		return nil, err
+	}
+	observeDiagnosticHeaders(ctx, response)
+	if observer := providerdiag.FromContext(ctx); observer != nil {
+		response.Body = &diagnosticBody{ReadCloser: response.Body, observer: observer}
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
-		return nil, m.decodeAPIError(response)
+		err := m.decodeAPIError(response)
+		observeDiagnosticError(ctx, err)
+		return nil, err
 	}
 	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if parseErr != nil || mediaType != "text/event-stream" {
 		response.Body.Close()
-		return nil, &ProtocolError{ReasonCode: "stream_content_type_invalid"}
+		err := &ProtocolError{ReasonCode: "stream_content_type_invalid"}
+		observeDiagnosticError(ctx, err)
+		return nil, err
 	}
 
 	callbackReader, callbackWriter := schema.Pipe[*model.AgenticCallbackOutput](1)
@@ -246,10 +256,12 @@ func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessag
 		defer callbackWriter.Close()
 		defer func() {
 			if recover() != nil {
-				callbackWriter.Send(nil, &ProtocolError{ReasonCode: "stream_parser_panic"})
+				err := &ProtocolError{ReasonCode: "stream_parser_panic"}
+				observeDiagnosticError(ctx, err)
+				callbackWriter.Send(nil, err)
 			}
 		}()
-		parseErr := parseResponseStream(response.Body, m.maxSSEEventBytes, func(message *schema.AgenticMessage) bool {
+		parseErr := parseResponseStreamObserved(response.Body, m.maxSSEEventBytes, providerdiag.FromContext(ctx), func(message *schema.AgenticMessage) bool {
 			return callbackWriter.Send(&model.AgenticCallbackOutput{
 				Message:    message,
 				Config:     config,
@@ -257,6 +269,7 @@ func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessag
 			}, nil)
 		})
 		if parseErr != nil {
+			observeDiagnosticError(ctx, parseErr)
 			callbackWriter.Send(nil, parseErr)
 		}
 	}()
@@ -278,6 +291,74 @@ func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessag
 		},
 	)
 	return out, nil
+}
+
+type diagnosticBody struct {
+	io.ReadCloser
+	observer *providerdiag.Observer
+}
+
+func (r *diagnosticBody) Read(p []byte) (int, error) {
+	r.observer.Transport("body")
+	n, err := r.ReadCloser.Read(p)
+	if r.observer != nil {
+		r.observer.Body(n)
+	}
+	return n, err
+}
+
+func observeDiagnosticHeaders(ctx context.Context, response *http.Response) {
+	if observer := providerdiag.FromContext(ctx); observer != nil && response != nil {
+		observer.Headers(response.StatusCode, providerdiag.HashIdentifier(requestID(response.Header)))
+	}
+}
+
+func observeDiagnosticError(ctx context.Context, err error) {
+	observer := providerdiag.FromContext(ctx)
+	if observer == nil || err == nil {
+		return
+	}
+	var transport *transportError
+	var protocol *ProtocolError
+	var api *APIError
+	if errors.As(err, &transport) {
+		observer.Transport(diagnosticPhase(transport.phase))
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+		observer.Terminate("canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		observer.Terminate("deadline_exceeded")
+	case transport != nil:
+		observer.Terminate("transport_error")
+	case errors.As(err, &protocol):
+		observer.Terminate("protocol_error")
+	case errors.As(err, &api):
+		observer.Terminate("api_error")
+	default:
+		observer.Terminate("protocol_error")
+	}
+}
+
+func diagnosticPhase(phase transportPhase) string {
+	switch phase {
+	case transportPhaseDNS:
+		return "dns"
+	case transportPhaseConnect:
+		return "connect"
+	case transportPhaseTLS:
+		return "tls"
+	case transportPhaseUpload:
+		return "upload"
+	case transportPhaseRequestSent:
+		return "request_sent"
+	case transportPhaseHeaders:
+		return "headers"
+	case transportPhaseBody:
+		return "body"
+	default:
+		return ""
+	}
 }
 
 // GetType identifies the provider transport used by Eino callbacks.
