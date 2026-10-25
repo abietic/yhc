@@ -312,8 +312,45 @@ stacked permission dialog retains input ownership. Pending key chords reset
 when the manager opens, closes, or loses modal ownership. Thread switching removes
 the manager before capturing/restoring the next view. Every mutation rechecks
 the active thread, input owner and reference integrity. Only transient search,
-navigation and selection state is retained in the dialog; session view sidecars
-and history gain no payload or restorable dialog state.
+navigation, selection and derived token counts stay in the dialog; session view
+sidecars and history gain no payload or restorable dialog state.
+
+#### Attachment tokens and capacity
+
+[`composer_context_budget.go`](../../../../internal/tui/composer_context_budget.go)
+projects per-attachment and all-attachment token estimates. Text uses the
+existing `compact.EstimateTokenCount` UTF-8 byte heuristic (roughly bytes/4),
+excluding shared message/transport overhead. File, Skill, MCP and output
+estimates include the visible reference and the complete escaped JSON context
+envelope; paste estimates preserve the full raw text, including boundary
+whitespace. The encoder is shared with
+submission in [`composer_elements.go`](../../../../internal/tui/composer_elements.go).
+Preview clipping never reduces the count. Images use the existing generic
+media weight, marked `*` with a legend; their provider-specific cost remains
+unknown, and no base64 encoding or image decode is performed for estimation.
+
+The total includes every attachment even when search/type filters hide rows.
+Loading or unavailable content is excluded and marks the total partial.
+[`composerContextTokenCache`](../../../../internal/tui/composer_context_budget.go)
+stores only numbers/status by draft revision. Load completion, removal and undo
+refresh it; search, selection and repaint reuse it. A newly opened manager has
+a fresh cache. No payload copy is retained in the cache or sidecar.
+
+[`QueryEngine.GetContextUsageSnapshot`](../../../../engine/context_usage.go)
+reads model capacity and the latest main-loop provider input usage under one
+lock, without provider resolution or transcript I/O. The active validated
+binding's window is authoritative, including missing metadata; an unbound
+legacy model may use only a known capability-table value. The panel shows
+attachment share of that window, retaining values above 100%. Last input is a
+separate measured fact; unknown values are unavailable, while a reported zero
+remains zero. Child views do not reuse the leader's capacity or measured usage.
+
+These are attachment estimates and maximum-window shares, not a tokenizer,
+request total, remaining admission budget, auto-compaction threshold or billing
+quote. Ordinary draft text, history, instructions and tools are excluded from
+the attachment total. Counts do not trim context, block submission or trigger
+compaction. Short viewports keep row estimates and omit the summary/detail
+rows as needed.
 
 ## Ordered Submission
 

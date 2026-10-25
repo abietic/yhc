@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func outputContextApp(t *testing.T, width int) *App {
+func outputContextApp(t testing.TB, width int) *App {
 	t.Helper()
 	dir := t.TempDir()
 	original := resolveHistoryLocations

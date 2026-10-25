@@ -12,8 +12,8 @@ import (
 	"github.com/abietic/yhc/internal/tui/keybindings"
 )
 
-// The manager retains transient search and selection state only. Payloads stay in the live
-// thread draft and draft-media table, never in another restorable snapshot.
+// The manager retains transient search, selection and numeric estimates only.
+// Payloads stay in the live thread draft and draft-media table.
 type composerContextManager struct {
 	threadID   string
 	selectedID string
@@ -22,6 +22,7 @@ type composerContextManager struct {
 	searching  bool
 	filter     int
 	marked     map[string]bool
+	tokens     composerContextTokenCache
 }
 
 var composerContextTypes = [...]string{"All", "Files", "Output", "Skills", "MCP resources", "Pasted text", "Images"}
@@ -460,6 +461,17 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 	items, valid := a.composerContextItems()
 	innerWidth := max(1, min(76, width-6))
 	parts := []string{a.styles.DialogTitle.Render(fmt.Sprintf("Attached context (%d)", len(items)))}
+	var estimates *composerContextTokenCache
+	budget := a.composerContextBudgetSnapshot()
+	extraRows := 0
+	if valid {
+		estimates = a.composerContextTokenEstimates(items)
+		if height >= 18 {
+			lines := composerContextBudgetLines(estimates, budget)
+			parts = append(parts, lines...)
+			extraRows = len(lines)
+		}
+	}
 	query := "Search: " + composerContextLabel(a.contextManager.query.Value())
 	if a.contextManager.searching {
 		a.contextManager.query.SetWidth(max(1, innerWidth-8))
@@ -479,6 +491,9 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 		}
 	} else {
 		visible := max(1, min(6, height-14))
+		if extraRows > 0 {
+			visible = max(1, min(4, height-15-extraRows))
+		}
 		start := max(0, index-visible+1)
 		end := min(len(items), start+visible)
 		for i := start; i < end; i++ {
@@ -486,7 +501,14 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 			if a.contextManager.marked[items[i].ID] {
 				mark = "x"
 			}
-			row := modalEllipsize(profile, fmt.Sprintf("[%s] %d. %s  [%s]", mark, i+1, composerContextLabel(items[i].Label), composerContextKindLabel(items[i])), innerWidth, 0, "...")
+			prefix := fmt.Sprintf("[%s] %d. ", mark, i+1)
+			estimate := estimates.items[items[i].ID]
+			suffix := " " + estimate.label()
+			if height < 18 && estimate.image {
+				suffix += " generic"
+			}
+			label := fmt.Sprintf("%s  [%s]", composerContextLabel(items[i].Label), composerContextKindLabel(items[i]))
+			row := prefix + modalEllipsize(profile, label, max(1, innerWidth-profile.measure(prefix+suffix, 0)), 0, "...") + suffix
 			if i == index {
 				row = a.styles.Selected.Render(row)
 			}
@@ -494,7 +516,8 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 		}
 		parts = append(parts, fmt.Sprintf("%d-%d of %d matches", start+1, end, len(items)))
 		if height >= 15 {
-			parts = append(parts, a.composerContextDetail(items[index], innerWidth, min(3, max(0, height-14-visible)))...)
+			parts = append(parts, composerContextTokenDetail(estimates.items[items[index].ID], budget))
+			parts = append(parts, a.composerContextDetail(items[index], innerWidth, min(3, max(0, height-15-extraRows-visible)))...)
 		}
 	}
 	if a.contextManager.searching {

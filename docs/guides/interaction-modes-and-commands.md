@@ -114,6 +114,22 @@ searching. Closing does not submit the draft. Search, type and marks reset on
 reopening. Send the draft separately when ready. The entry and undo bindings
 are configurable; Help and `/keybindings` show `chat:manageContext`.
 
+Each row shows an approximate token count (`~123t`); selecting a text attachment
+shows its share of the known model context window. The summary counts **all** attached
+content, including items hidden by filters. Loading items show `pending`, and
+the total is marked partial until their content is available. Removal and undo
+refresh the estimate.
+
+Counts use the engine's rough text heuristic over complete captured content,
+including file/output context metadata. Images carry a generic estimate marked
+`*`; their actual provider cost may differ substantially. `Window` is model
+capacity, and `Last input` is the latest provider-reported input use. These are
+separate values, not remaining space or a forecast of the next request. Shared
+message overhead, ordinary draft text, history, instructions and tools are not
+in the attachment total. Unknown capacity/usage shows unavailable; child views
+do not inherit the leader's numbers. Compact terminal views may omit summary
+rows. Inspecting the panel performs no new file reads or provider calls.
+
 The list manages the current draft. Switching Agent threads closes it before
 showing the next draft, and recalled text references have no attachment body
 to list. See the

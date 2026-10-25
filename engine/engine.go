@@ -5564,37 +5564,12 @@ func (e *QueryEngine) syncLegacyTotalUsageLocked() {
 // until the next main-loop response. The method returns 0,0 when either fact
 // is unavailable; callers must not substitute message-size estimates.
 func (e *QueryEngine) GetContextUsage() (percent, tokens int) {
-	e.mu.Lock()
-	model := e.config.Model
-	binding := e.modelBinding.Clone()
-	contextPromptTokens := e.usageSummary.CurrentContextPromptTokens
-	usageKnown := e.usageSummary.CurrentContextUsageKnown
-	e.mu.Unlock()
-
-	if !usageKnown || contextPromptTokens < 0 || model == "" {
+	snapshot := e.GetContextUsageSnapshot()
+	if !snapshot.InputKnown || snapshot.WindowTokens <= 0 {
 		return 0, 0
 	}
-	var window int
-	if binding != nil {
-		if binding.ValidateV1() != nil {
-			return 0, 0
-		}
-		if binding.ContextWindowTokens == nil {
-			return 0, 0
-		}
-		window = *binding.ContextWindowTokens
-	} else {
-		var windowKnown bool
-		window, windowKnown = modelcaps.KnownContextWindow(model)
-		if !windowKnown {
-			return 0, 0
-		}
-	}
-	if window <= 0 {
-		return 0, 0
-	}
-	tokens = contextPromptTokens
-	percent = tokens * 100 / window
+	tokens = snapshot.InputTokens
+	percent = tokens * 100 / snapshot.WindowTokens
 	if percent > 100 {
 		percent = 100
 	}

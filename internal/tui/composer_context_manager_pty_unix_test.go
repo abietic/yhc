@@ -53,7 +53,7 @@ func TestComposerContextManagerPTY(t *testing.T) {
 			return historyLocations{projectRoot: root, compatibilityConfigDir: filepath.Join(root, "history-config")}, nil
 		}
 		probe := &contextManagerPTYModel{}
-		eng := engine.NewQueryEngine(engine.QueryEngineConfig{CWD: root, TranscriptDir: t.TempDir(), ChatModel: probe, Model: "fixture-model", CommandEntrypoint: commands.EntrypointTUI})
+		eng := engine.NewQueryEngine(engine.QueryEngineConfig{CWD: root, TranscriptDir: t.TempDir(), ChatModel: probe, Model: "gpt-4o", CommandEntrypoint: commands.EntrypointTUI})
 		defer eng.Close()
 		caps := terminalcap.Capabilities{Platform: "linux", Terminal: "xterm", Interactive: true, Mouse: true, BracketedPaste: true}
 		app := New(Config{Engine: eng, Resumed: true, Fullscreen: true, MouseEnabled: true, ReducedMotion: true, TerminalCaps: &caps, KeybindingsConfigDir: t.TempDir()})
@@ -116,6 +116,9 @@ func TestComposerContextManagerPTY(t *testing.T) {
 	waitPTYContains(t, command, output, "CM_C n5 c0")
 	writePTY(t, terminal, "\x1bc")
 	waitPTYContains(t, command, output, "Attached context (5)")
+	waitPTYContains(t, command, output, "Attachments: ~")
+	waitPTYContains(t, command, output, "Window: 128.0k")
+	waitPTYContains(t, command, output, "of window")
 	writePTY(t, terminal, "\x1b[H\x1b[B")
 	waitPTYContains(t, command, output, "removed file")
 	writePTY(t, terminal, "\x1b[3~")
