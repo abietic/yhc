@@ -987,9 +987,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case tea.PasteMsg:
-		// The context manager never routes paste into the underlying draft.
+		// Only the top manager's search field may consume paste; the draft stays frozen.
 		if a.hasDialog(StateContextManager) {
-			return a, nil
+			cmd := a.updateComposerContextQuery(msg)
+			return a, cmd
 		}
 		// Modal editors consume paste through their own update paths below.
 		if _, modalActive := a.activeDialogState(); modalActive {
@@ -1607,6 +1608,11 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		cmd := a.planDialog.Update(msg)
 		a.updateLayout()
 		return a, cmd
+	}
+
+	if state, active := a.activeDialogState(); active && state == StateContextManager {
+		cmds = append(cmds, a.updateComposerContextQuery(msg))
+		return a, tea.Batch(cmds...)
 	}
 
 	// Update textarea

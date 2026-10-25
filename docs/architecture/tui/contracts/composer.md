@@ -276,14 +276,34 @@ name and size without exposing bytes. Clipping affects only the preview.
 Loading references show their status; removal waits for a captured payload so
 undo can restore complete content without initiating a new load.
 
-Up/Down selects, Delete or Backspace removes the selected element, Enter
-returns to its reference, and Esc or Ctrl+C closes without submitting. Undo
-uses the configured chat undo binding. Removal validates stable identity and
-the complete non-overlapping rune ranges, deletes that exact label and at most
-one following space, and directly rebases remaining elements and the cursor.
-This preserves distinct payloads behind identical visible labels. One ordinary
-composer undo record retains the original rich draft; image bytes remain in
-the existing reachability-owned draft-media table.
+`/` focuses a separate 128-rune search field. Matching is case-insensitive
+substring search over labels, names, source paths/IDs and human type labels,
+bounded to the first 4096 bytes of each metadata field. It never scans text or
+image payloads, including paste bodies. Enter or Esc leaves search focus while
+retaining the query; Up/Down leaves search focus and moves the selection.
+Tab/Shift+Tab cycles All, Files (whole and ranges), Output, Skills, MCP
+resources, Pasted text and Images. Type and search intersect. Empty matches
+have a distinct empty state. Search input normalizes line breaks/tabs to
+spaces and removes unsafe terminal controls.
+
+Up/Down selects by stable identity. Space toggles a mark; Ctrl+A toggles all
+matching attachments, including those outside the viewport. Changing query or
+type clears marks so hidden items cannot remain deletion targets. Delete or
+Backspace removes the marked set, or the highlighted element when nothing is
+marked. The complete target set is checked before any mutation: stale,
+missing, duplicate, hidden or loading targets reject the whole batch. Invalid
+marked identities never fall back to deleting the highlighted element.
+
+Removal validates stable identity and all non-overlapping rune ranges, deletes
+each exact label and at most one following unowned space, then rebases
+remaining elements and the cursor once. This preserves distinct payloads
+behind identical labels. One ordinary composer undo record retains the entire
+original rich draft for a batch; image bytes remain in the existing
+reachability-owned draft-media table. Undo uses the configured chat binding
+outside search focus and clears marks. Enter outside search returns to the
+highlighted reference; Esc closes the manager and Ctrl+C closes even from
+search, without submitting. Query, filter and marks reset on open and are
+never persisted in history or view sidecars.
 
 The dialog accepts ordinary editable live drafts only. Pending admission/image
 loading, external editing, history search, shell/command input and replay-only
@@ -291,9 +311,9 @@ views cannot open it. Modal keys and paste do not reach the composer, and a
 stacked permission dialog retains input ownership. Pending key chords reset
 when the manager opens, closes, or loses modal ownership. Thread switching removes
 the manager before capturing/restoring the next view. Every mutation rechecks
-the active thread, input owner and reference integrity. Navigation state alone
-is retained in the dialog; session view sidecars and history gain no payload
-or restorable dialog state.
+the active thread, input owner and reference integrity. Only transient search,
+navigation and selection state is retained in the dialog; session view sidecars
+and history gain no payload or restorable dialog state.
 
 ## Ordered Submission
 
