@@ -28,6 +28,23 @@ def request():
 
 
 class HistoryOracleTests(unittest.TestCase):
+    def test_new_tool_round_keeps_old_history_and_exact_new_effect(self):
+        body = request()
+        body["input"][0]["content"] = body["input"][0]["content"].replace("provider_call_limit=1", "provider_call_limit=2")
+        verify_input(body, NOW, "linux/arm64", tool_round=1)
+        body["input"].extend([
+            dict(type="message", role="assistant", content=" "),
+            dict(type="function_call", call_id="continued-write", name="Write",
+                 arguments=json.dumps(dict(file_path="/workspace/continued.txt", content="continued once\n"))),
+            dict(type="function_call_output", call_id="continued-write", output="Wrote 15 bytes to /workspace/continued.txt"),
+        ])
+        verify_input(body, NOW, "linux/arm64", tool_round=2)
+        for index in (4, 9, 10):
+            changed = copy.deepcopy(body)
+            changed["input"].pop(index)
+            with self.assertRaises(ValueError):
+                verify_input(changed, NOW, "linux/arm64", tool_round=2)
+
     def test_evidence_directory_errors_are_rejected_before_docker_work(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary).resolve()

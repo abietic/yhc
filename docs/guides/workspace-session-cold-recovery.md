@@ -1,7 +1,7 @@
 # Verify a Workspace, Native Session and Usage After Cold Restore
 
 **Status:** current
-**Last verified:** 2026-10-25
+**Last verified:** 2026-10-26
 
 > **Ownership:** the operator-only file/native/usage recovery bundle, its
 > binding to cooperative service proofs, and its remaining execution boundary
@@ -197,11 +197,12 @@ Service
 memory, durable state, random state and advancing logical clocks are queried
 again after the CLI exits. Appending the same new receipt twice must fail.
 
-Four cases distinguish execution from financial admission:
+The cases distinguish execution from financial admission:
 
 | Case | Required observation |
 |---|---|
 | Known usage | One synthetic request completes; native and invocation usage each gain their own reported increment. |
+| New tool round | Two synthetic requests create one new file after cold restore; committed old effects stay unchanged and each new admission is read from the production usage checkpoint before HTTP response. |
 | Unknown usage | One synthetic 503 response stops without a retry; the financial reservation remains retained and coverage stays incomplete. |
 | Reservation denied | No provider request occurs; earlier work and accounting survive the budget stop. |
 | Missing model identity | Component loading alone cannot identify a pricing route; execution stops with zero requests and `run_usage_unknown`. |
@@ -213,9 +214,18 @@ offline-execution receipts; it must name an existing private, host-owned
 absolute directory. This is checked before Docker provisioning. The history oracle can also be calibrated without
 Docker using `python3 -m unittest scripts.terminal_bench.test_native_handoff_fixture`.
 
-This proves a controlled first-turn path through the existing production
-entrypoint. It does not integrate an automatic bundle dispatcher, provide
-durable mid-call accounting recovery, authorize real spending or validate
+The new-tool fixture explicitly seeds edit permission in its owned Session;
+it does not broaden restore permissions. It checks the exact new call/result
+suffix in the second request, original files and Git state, the new native
+usage increment, and a closed production invocation checkpoint with the same
+call ledger and cost facts as the terminal receipt. See
+[Invocation usage checkpoints](invocation-usage-checkpoints.md) for the opt-in
+storage contract and failure handling. The earlier cumulative history readback
+remains a fixture receipt, not a production cumulative-ledger transaction.
+
+This proves controlled text and tool turns through the existing production
+entrypoint. It does not integrate an automatic bundle dispatcher, reconcile
+an interrupted provider call, authorize real spending or validate
 arbitrary pending runtime state. The bundle and offline receipts continue to
 report `can_resume_agent: false`; their histories and original claims are
 retained. An old stopped benchmark is not automatically resumed.

@@ -55,6 +55,18 @@ def validated_usage(value: object) -> dict | None:
             if type(value[key]) is not int or value[key] < 0:
                 return None
             result[key] = value[key]
+    if "checkpoint" in value:
+        checkpoint = value["checkpoint"]
+        if (not isinstance(checkpoint, dict) or set(checkpoint) != {"version", "sequence", "failed"}
+                or type(checkpoint["version"]) is not int or checkpoint["version"] != 1
+                or type(checkpoint["sequence"]) is not int or not 0 <= checkpoint["sequence"] < 1 << 64
+                or type(checkpoint["failed"]) is not bool or not checkpoint["sequence"] and not checkpoint["failed"]):
+            return None
+        result["checkpoint"] = dict(checkpoint)
+    if "checkpoint_complete" in value:
+        if type(value["checkpoint_complete"]) is not bool:
+            return None
+        result["checkpoint_complete"] = value["checkpoint_complete"]
     _ledger_projection(value, result)
     cost_projection(value, result)
     return result
@@ -72,6 +84,11 @@ def sum_usage(values: list) -> dict | None:
         return None  # Repeated invocation snapshot is never another increment.
     result = {key: sum(value[key] for value in usages) for key in USAGE_FIELDS}
     result["complete"] = all(value["complete"] for value in usages)
+    if any("checkpoint" in value or "checkpoint_complete" in value for value in usages):
+        result["checkpoint_complete"] = all(not value.get("checkpoint", {}).get("failed", False)
+                                            and value.get("checkpoint_complete", True) for value in usages)
+        if len(usages) == 1 and "checkpoint" in usages[0]:
+            result["checkpoint"] = dict(usages[0]["checkpoint"])
     if any(key in value for value in usages for key in CACHE_WRITE_FIELDS):
         # Older segments contribute no observed detail, not a claim of zero writes.
         result.update({key: sum(value.get(key, 0) for value in usages) for key in CACHE_WRITE_FIELDS})

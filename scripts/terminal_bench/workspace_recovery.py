@@ -44,7 +44,8 @@ def usage_history(value, session_id):
         usages.append(usage)
     total = sum_usage(usages)
     require(total is not None, "usage_invocation_identity_repeated_or_unreconciled")
-    complete = total["complete"] and total.get("call_ledger_complete") is True and total.get("cost_complete") is True
+    complete = (total["complete"] and total.get("call_ledger_complete") is True
+                and total.get("cost_complete") is True and total.get("checkpoint_complete", True))
     costs = [total["cost"]] if "cost" in total else [segment["cost"] for segment in total.get("cost_segments", [])]
     complete = bool(complete and costs and all(
         isinstance(cost.get("reservation"), dict)
