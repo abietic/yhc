@@ -19,6 +19,7 @@ and operating YHC; implementation design belongs in the
 | Choose TUI, plain, headless, ACP, or MCP mode | [Interaction modes and commands](interaction-modes-and-commands.md) |
 | Define safe unattended tool access | [Permissions and safety](permissions-and-safety.md) |
 | Resume or inspect persisted conversations | [Sessions and transcripts](sessions-and-transcripts.md) |
+| Restore explicitly cooperative services and clocks | [Service cold recovery](service-cold-recovery.md) |
 | Add MCP servers, skills, or plugin commands | [Extensions](extensions-mcp-skills-plugins.md) |
 | Diagnose a failed startup or missing feature | [Troubleshooting](troubleshooting.md) |
 | Synchronize reference snapshots and recover failed summaries | [Reference sync](reference-sync.md) |

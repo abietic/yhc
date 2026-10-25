@@ -184,6 +184,13 @@ def write_report(path, report):
     with os.fdopen(fd, "w", encoding="utf-8") as file:
         json.dump(report, file, indent=2, sort_keys=True)
         file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
+    directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def main():
