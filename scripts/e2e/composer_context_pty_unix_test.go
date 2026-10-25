@@ -129,7 +129,8 @@ func TestComposerContextRealCLIWorkflowPTY(t *testing.T) {
 	cliContextWritePTY(t, terminal, "\t")
 	cliContextWaitScreenContains(t, cmd, output, "KEEP_DIFF_HUNK")
 	cliContextWritePTY(t, terminal, "\r")
-	cliContextWait(t, cmd, output, "Captured Git diff attached to draft")
+	// The captured source persists in the manager; a toast can be coalesced away.
+	cliContextWaitScreenContains(t, cmd, output, "git:all:diff.txt#hunk=1")
 	cliContextWritePTY(t, terminal, "\x1b")
 	cliContextWaitScreenAbsent(t, cmd, output, "Search:")
 	if err := os.WriteFile(filepath.Join(repo, "keep.txt"), []byte("DISK_CHANGED\n"), 0o600); err != nil {
