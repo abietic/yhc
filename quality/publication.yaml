@@ -5856,6 +5856,11 @@ privacy:
       rule_id: credential-assignment
       match_sha256: a59d361234a6764d71d9c0a5aaf533ad0a44620a6daaeedf2b747e5a640667e9
       purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_recovery_bundle.py
+      line: 28
+      rule_id: private-url
+      match_sha256: 0bbea7534b662f8b1ad149a1a6cbe5be759bd0cd7bf7787c6a5d7018a1433bc7
+      purpose: synthetic-security-fixture
 
 dependencies:
   license_policy: quality/dependency-licenses.yaml
