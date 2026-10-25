@@ -68,6 +68,13 @@ state, pending inputs/callbacks, child lineage and external workspace state
 that this version cannot completely verify. Passive file retention never
 replaces this load test.
 
+The opt-in proof also requires a closed native conversation turn. A transcript
+ending at a user prompt, an unresolved tool call, or matched tool results without
+a final assistant response reports `native_turn_incomplete`, even when all
+reported usage so far is known. Metadata and API-error diagnostics do not
+substitute for that final response. This stricter proof does not change
+ordinary Session resume.
+
 Native transcript usage and invocation usage have different coverage. Both
 must retain their original facts; their totals are not forced equal. The
 provider-free loader is not appended as another paid invocation.
@@ -206,6 +213,8 @@ The cases distinguish execution from financial admission:
 | Unknown usage | One synthetic 503 response stops without a retry; the financial reservation remains retained and coverage stays incomplete. |
 | Reservation denied | No provider request occurs; earlier work and accounting survive the budget stop. |
 | Missing model identity | Component loading alone cannot identify a pricing route; execution stops with zero requests and `run_usage_unknown`. |
+| Crash before response | The fixture SIGKILLs the CLI after durable admission; the full outstanding reservation and unfinished native user turn survive. |
+| Crash after tool result | A new file and its native tool result commit once; SIGKILL during the following request leaves that request reserved and the native turn incomplete. The old restore claim cannot be reused. |
 
 Use the binary, seed and Docker opt-in variables above with
 `python3 -m unittest scripts.terminal_bench.test_recovery_bundle_docker`.
@@ -229,3 +238,10 @@ an interrupted provider call, authorize real spending or validate
 arbitrary pending runtime state. The bundle and offline receipts continue to
 report `can_resume_agent: false`; their histories and original claims are
 retained. An old stopped benchmark is not automatically resumed.
+
+The crash cases use a real killed CLI process, not a fabricated error receipt.
+They inspect production accounting and reload the native Session in a fresh
+process. Their deliberately incomplete history remains blocked; knowing an
+earlier response's token count never proves that a later request or the current
+turn finished. They do not establish reconciliation of unknown provider charges
+or interruption in the middle of an arbitrary tool's external side effect.

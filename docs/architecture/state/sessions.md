@@ -1,7 +1,7 @@
 # Sessions
 
 **Status:** current
-**Last verified:** 2026-08-10
+**Last verified:** 2026-10-26
 
 > **Ownership:** This file owns session discovery, inspection, resume, branch,
 > export, immutable replay selection, restore staging, metadata including the
@@ -42,6 +42,16 @@ Portable replay validation is a separate read boundary.
 `MessageEntryIdentity`, caller-visible messages are deep clones, and corrupt,
 duplicate, orphaned, ambiguous, unknown-outcome, or unsettled tool history
 fails as one value. It does not activate an engine or open an append writer.
+
+The opt-in provider-free `SessionService.ResumeInfoWithRecoveryProof` is a
+separate cold-recovery check after canonical administration restore. Besides
+native usage coverage and unsupported runtime state, it requires a completed
+conversation turn: pending user input, unresolved tool calls and a tool-result
+tail without the final assistant response remain `native_turn_incomplete`.
+Metadata and API-error diagnostics do not close the turn. The proof grants no
+Agent activation or spending, and ordinary resume semantics are unchanged.
+See the [cold-recovery guide](../../guides/workspace-session-cold-recovery.md)
+and its real-process crash fixtures for the supported subset.
 
 ```mermaid
 flowchart LR
