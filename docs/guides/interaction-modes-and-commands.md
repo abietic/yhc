@@ -373,7 +373,10 @@ files from verified restoration, and reports `can_resume: false`. A legacy
 `capture: complete` or `retained_environment_required: false` never overrides
 this boundary.
 
-The offline two-service fixture in
+The [cooperative service cold recovery](service-cold-recovery.md) operator
+entrypoint supports explicit service exports, independent probes and logical
+clock restoration. It does not upgrade these legacy captures or authorize an
+agent continuation. The original file-only two-service fixture in
 [`test_recovery_docker`](../../scripts/terminal_bench/test_recovery_docker.py)
 actually reconstructs a file-backed SQLite service and probes its data, RAM
 and clock generation separately. Its successful file copy does not establish
