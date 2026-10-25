@@ -101,6 +101,12 @@ Press **/** to search names, paths and sources (case-insensitive). **Enter** or
 types; **Shift+Tab** cycles backwards. Search and type filters combine, and
 search does not inspect attachment bodies.
 
+Outside the search field, press **s** to cycle draft order, highest token use
+first, and lowest token use first. Ties retain draft order; loading or
+unavailable estimates stay at the end. Sorting preserves the highlighted
+attachment and marks, and changes only the list. Reopening resets to draft
+order.
+
 Press **Space** to mark individual attachments or **Ctrl+A** to toggle all
 current matches, including offscreen rows. Changing the search or type clears
 marks. **Delete** or **Backspace** removes the marked set; with no marks, it
@@ -120,14 +126,22 @@ content, including items hidden by filters. Loading items show `pending`, and
 the total is marked partial until their content is available. Removal and undo
 refresh the estimate.
 
+When attachment estimates reach **80%** of the known model window, the panel
+shows a warning; at **100%** it shows an alert. Partial totals are identified,
+and hidden attachments still count. These thresholds use unrounded estimates.
+Remove large items to reduce the total; undo restores their estimate and any
+warning. Compact views prioritize the warning and list controls.
+
 Counts use the engine's rough text heuristic over complete captured content,
 including file/output context metadata. Images carry a generic estimate marked
 `*`; their actual provider cost may differ substantially. `Window` is model
 capacity, and `Last input` is the latest provider-reported input use. These are
 separate values, not remaining space or a forecast of the next request. Shared
 message overhead, ordinary draft text, history, instructions and tools are not
-in the attachment total. Unknown capacity/usage shows unavailable; child views
-do not inherit the leader's numbers. Compact terminal views may omit summary
+in the attachment total. A warning concerns attachment estimates alone, and
+does not block sending or trigger compaction. No warning does not guarantee
+that the full request fits. Unknown capacity/usage shows unavailable; child
+views do not inherit the leader's numbers. Compact terminal views may omit summary
 rows. Inspecting the panel performs no new file reads or provider calls.
 
 The list manages the current draft. Switching Agent threads closes it before

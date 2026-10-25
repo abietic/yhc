@@ -6,6 +6,7 @@
    Last input: unavailable
    Search:
    Type: All | 0 marked
+   Sort: Draft | s cycle
    [ ] 1. @main.go#20-22  [Fi... ~54t
    [ ] 2. [Output #1]  [Output] ~316t
    1-2 of 2 matches
@@ -25,6 +26,7 @@
    Last input: unavailable
    Search:
    Type: All | 0 marked
+   Sort: Draft | s cycle
    [ ] 1. @main.go#20-22  [File lines] ~54t
    [ ] 2. [Output #1]  [Output] ~316t
    1-2 of 2 matches
@@ -44,6 +46,7 @@
                       Last input: unavailable
                       Search:
                       Type: All | 0 marked
+                      Sort: Draft | s cycle
                       [ ] 1. @main.go#20-22  [File lines] ~54t
                       [ ] 2. [Output #1]  [Output] ~316t
                       1-2 of 2 matches
@@ -63,6 +66,7 @@
                                                     Last input: unavailable
                                                     Search:
                                                     Type: All | 0 marked
+                                                    Sort: Draft | s cycle
                                                     [ ] 1. @main.go#20-22  [File lines] ~54t
                                                     [ ] 2. [Output #1]  [Output] ~316t
                                                     1-2 of 2 matches
