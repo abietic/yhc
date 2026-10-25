@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
 	"github.com/abietic/yhc/engine/session"
@@ -98,6 +99,9 @@ func recoveryProofBlockers(
 	if len(resumed.Warnings) > 0 {
 		blockers = append(blockers, "resume_warnings")
 	}
+	if !recoveryProofHasClosedTurn(resumed.Messages) {
+		blockers = append(blockers, "native_turn_incomplete")
+	}
 	metadata := resumed.Metadata
 	if metadata.GoalState != nil {
 		blockers = append(blockers, "goal_state")
@@ -158,4 +162,36 @@ func recoveryProofBlockers(
 		blockers = append(blockers, "native_usage_invalid")
 	}
 	return blockers
+}
+
+// A well-formed transcript can end at an unfinished user/tool boundary. Known
+// usage belongs to completed responses, not necessarily the latest user turn.
+// This stricter cold-proof condition does not change ordinary Session resume.
+func recoveryProofHasClosedTurn(messages []*schema.Message) bool {
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message == nil {
+			continue
+		}
+		switch message.Role {
+		case schema.System, schema.RoleType("developer"):
+			continue
+		case schema.User, schema.Tool, schema.Assistant:
+		default:
+			return false
+		}
+		if meta, _ := message.Extra["is_meta"].(bool); meta {
+			continue
+		}
+		if apiError, _ := message.Extra["api_error"].(bool); message.Role == schema.Assistant && apiError {
+			continue
+		}
+		switch message.Role {
+		case schema.User, schema.Tool:
+			return false
+		case schema.Assistant:
+			return len(message.ToolCalls) == 0
+		}
+	}
+	return false
 }

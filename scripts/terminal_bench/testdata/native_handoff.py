@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -99,12 +100,16 @@ def verify_input(body, now=None, platform_name=None, tool_round=0):
 
 def run(session_id, scenario, card):
     require(str(uuid.UUID(session_id)) == session_id, "invalid_fixture_session")
-    require(scenario in ("known", "unknown", "denied", "unbound", "tool"), "invalid_fixture_scenario")
+    require(scenario in ("known", "unknown", "denied", "unbound", "tool", "crash_before_response", "crash_after_tool"), "invalid_fixture_scenario")
     root = Path.cwd()
     require(str(root) == "/workspace" and Path("/opt/yhc/yhc").is_file(), "container_only_fixture")
     requests, errors, inputs, admissions = [], [], [], []
+    crash = scenario.startswith("crash_")
+    two_rounds = scenario in ("tool", "crash_after_tool")
+    persist_usage = scenario == "tool" or crash
+    process_ready = threading.Event()
     checkpoint = root / ".yhc/usage-checkpoints" / ("tool-" + uuid.uuid4().hex)
-    if scenario == "tool":
+    if persist_usage:
         checkpoint.parent.mkdir(mode=0o700, exist_ok=True)
 
     def inspect_checkpoint():
@@ -132,9 +137,9 @@ def run(session_id, scenario, card):
                 body = json.loads(self.rfile.read(size))
                 requests.append(hashlib.sha256(json.dumps(body.get("input"), sort_keys=True, separators=(",", ":")).encode()).hexdigest())
                 inputs.append(body.get("input"))
-                verify_input(body, tool_round=len(requests) if scenario == "tool" else 0)
-                require(len(requests) <= (2 if scenario == "tool" else 1), "unexpected_retry_or_auxiliary_call")
-                if scenario == "tool":
+                verify_input(body, tool_round=len(requests) if two_rounds else 0)
+                require(len(requests) <= (2 if two_rounds else 1), "unexpected_retry_or_auxiliary_call")
+                if persist_usage:
                     view = inspect_checkpoint()
                     snapshot = view["snapshot"]
                     require(view["phase"] == "admitted" and not view["admission_closed"]
@@ -142,6 +147,10 @@ def run(session_id, scenario, card):
                             and snapshot["known_calls"] == len(requests) - 1
                             and snapshot["cost"]["reservation"]["outstanding_amount"] != "0.000000000000", "provider_entered_without_durable_admission")
                     admissions.append(view)
+                if scenario == "crash_before_response" or scenario == "crash_after_tool" and len(requests) == 2:
+                    require(process_ready.wait(5), "fixture_process_not_ready")
+                    process.kill()
+                    return
             except Exception as error:
                 errors.append(str(error)[:180])
                 self.send_error(400)
@@ -163,7 +172,7 @@ def run(session_id, scenario, card):
                            status="completed", model="deepseek-v4-flash", output=[item],
                            usage=dict(input_tokens=10, output_tokens=4, total_tokens=14,
                                       input_tokens_details=dict(cached_tokens=6), output_tokens_details=dict(reasoning_tokens=2))))]
-            if scenario == "tool" and len(requests) == 1:
+            if two_rounds and len(requests) == 1:
                 item = dict(type="function_call", id="continued-item", call_id="continued-write", name="Write", status="completed",
                             arguments=json.dumps(dict(file_path="/workspace/continued.txt", content="continued once\n")))
                 events[0] = dict(type="response.output_item.done", sequence_number=0, output_index=0, item=item)
@@ -187,21 +196,37 @@ def run(session_id, scenario, card):
                     "--timeout", "20s", "--max-provider-calls", "1", "--price-card", str(price),
                     "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "16",
                     "--max-estimated-cost", "0.01" if scenario == "denied" else "5"]
-            if scenario == "tool":
+            if two_rounds:
                 args[args.index("--max-turns") + 1] = "2"
                 args[args.index("--max-provider-calls") + 1] = "2"
+            if persist_usage:
                 args.extend(["--usage-checkpoint-dir", str(checkpoint)])
-            completed = subprocess.run(args, cwd=root, env=env, capture_output=True, timeout=25)
-            require(len(completed.stdout) <= 1 << 20, "oversized_cli_result")
-            result = json.loads(completed.stdout)
+            process = subprocess.Popen(args, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process_ready.set()
+            try:
+                stdout, unused_stderr = process.communicate(timeout=25)
+            except BaseException:
+                process.kill()
+                process.communicate(timeout=5)
+                raise
+            require(len(stdout) <= 1 << 20, "oversized_cli_result")
+            result = None if crash else json.loads(stdout)
+            require(not crash or process.returncode == -signal.SIGKILL, "fixture_did_not_kill_cli")
+            native = None
+            if crash:
+                probe = subprocess.run(["/opt/yhc/yhc", "sessions", "resume", session_id, "--recovery-proof", "--output-format", "json"],
+                                       cwd=root, env=env, capture_output=True, timeout=20, check=True)
+                require(len(probe.stdout) <= 1 << 20, "oversized_native_proof")
+                native = json.loads(probe.stdout)["result"]["recovery_proof"]
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
     require(not thread.is_alive(), "fixture_provider_did_not_stop")
     return dict(version=1, scope="offline_public_exec_resume", scenario=scenario, result=result,
-                durable_admissions=admissions, durable_checkpoint=inspect_checkpoint() if scenario == "tool" else None,
-                exit_code=completed.returncode, observed_provider_requests=len(requests), request_input_sha256=requests,
+                durable_admissions=admissions, durable_checkpoint=inspect_checkpoint() if persist_usage else None,
+                native_after_crash=native, killed_by_fixture=crash,
+                exit_code=process.returncode, observed_provider_requests=len(requests), request_input_sha256=requests,
                 provider="synthetic_loopback", provider_protocol_errors=errors,
                 failed_fixture_inputs=inputs if errors else [], real_provider_requests=0, can_resume_agent=False)
 

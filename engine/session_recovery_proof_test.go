@@ -61,6 +61,74 @@ func TestResumeInfoWithRecoveryProofRejectsNonAdministrationEngine(t *testing.T)
 	}
 }
 
+func TestResumeInfoWithRecoveryProofRejectsInterruptedTurnWithKnownUsage(t *testing.T) {
+	for _, stage := range []string{"new_prompt", "tool_results_without_final_response"} {
+		t.Run(stage, func(t *testing.T) {
+			root := t.TempDir()
+			dir := root + "/transcripts"
+			messages := []*schema.Message{
+				{Role: schema.User, Content: "earlier completed request"},
+				{Role: schema.Assistant, Content: "earlier answer", ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 7, CompletionTokens: 3, TotalTokens: 10}}},
+				{Role: schema.User, Content: "interrupted request"},
+			}
+			if stage == "tool_results_without_final_response" {
+				messages = append(messages,
+					&schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "completed-effect", Type: "function", Function: schema.FunctionCall{Name: "Write", Arguments: `{"file_path":"effect.txt","content":"once"}`}}}, ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 5, CompletionTokens: 2, TotalTokens: 7}}},
+					&schema.Message{Role: schema.Tool, ToolCallID: "completed-effect", Content: "effect completed"},
+				)
+			}
+			if warnings := session.ValidateMessageHistory(messages); len(warnings) != 0 {
+				t.Fatalf("valid but unfinished history rejected by ordinary validator: %v", warnings)
+			}
+			recorder := transcript.NewRecorder("interrupted", dir)
+			if err := recorder.RecordMessages(messages); err != nil {
+				t.Fatal(err)
+			}
+			if err := session.WriteSessionMetadata(recorder, &session.SessionMetadataFull{SessionID: "interrupted", ThreadID: "interrupted", CWD: root, QueryKernelVersion: queryKernelVersionProjectGraph, QueryKernelStage: string(queryKernelStageFull)}); err != nil {
+				t.Fatal(err)
+			}
+			if err := recorder.Close(); err != nil {
+				t.Fatal(err)
+			}
+			eng := NewSessionAdministrationEngine(SessionAdministrationConfig{CWD: root, TranscriptDir: dir})
+			t.Cleanup(eng.Close)
+			resumed, proof, err := eng.SessionService().ResumeInfoWithRecoveryProof(t.Context(), session.SessionInfo{SessionID: "interrupted", CWD: root, TranscriptDir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(resumed.Warnings) != 0 || !proof.NativeUsage.CurrentContextUsageKnown || !proof.NativeUsage.LastResponseHadUsageMetadata {
+				t.Fatalf("fixture has a different blocker: warnings=%v usage=%+v", resumed.Warnings, proof.NativeUsage)
+			}
+			if proof.ValidationComplete || !slices.Contains(proof.BlockingReasons, "native_turn_incomplete") || proof.CanResumeAgent {
+				t.Fatalf("unfinished turn accepted as a complete cold boundary: %+v", proof)
+			}
+		})
+	}
+}
+
+func TestRecoveryProofClosedTurnIgnoresMetadataButNotPendingWork(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		messages []*schema.Message
+		closed   bool
+	}{
+		{name: "empty"},
+		{name: "final", messages: []*schema.Message{{Role: schema.User}, {Role: schema.Assistant}}, closed: true},
+		{name: "trailing metadata", messages: []*schema.Message{{Role: schema.User}, {Role: schema.Assistant}, nil, {Role: schema.System}, {Role: schema.RoleType("developer")}, {Role: schema.User, Extra: map[string]any{"is_meta": true}}}, closed: true},
+		{name: "pending tool", messages: []*schema.Message{{Role: schema.User}, {Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "pending"}}}}},
+		{name: "diagnostic after user", messages: []*schema.Message{{Role: schema.User}, {Role: schema.Assistant, Extra: map[string]any{"api_error": true}}}},
+		{name: "metadata after tool", messages: []*schema.Message{{Role: schema.Tool}, {Role: schema.Assistant, Extra: map[string]any{"is_meta": true}}}},
+		{name: "user error marker", messages: []*schema.Message{{Role: schema.Assistant}, {Role: schema.User, Extra: map[string]any{"api_error": true}}}},
+		{name: "unknown role", messages: []*schema.Message{{Role: schema.Assistant}, {Role: schema.RoleType("future")}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := recoveryProofHasClosedTurn(tc.messages); got != tc.closed {
+				t.Fatalf("closed=%v want=%v", got, tc.closed)
+			}
+		})
+	}
+}
+
 func TestRecoveryProofBlockersRejectIncompleteUsage(t *testing.T) {
 	resumed := &session.ResumedSession{Metadata: session.SessionMetadata{GoalState: &session.PersistedGoalState{}}}
 	blockers := recoveryProofBlockers(resumed, []RuntimeItem{{}}, transcript.UsageSummary{Version: transcript.UsageSummaryVersion, UnsupportedSnapshotVersion: 99, ResponsesWithoutMetadata: 1, LegacyBoundariesWithoutUsage: 1})
