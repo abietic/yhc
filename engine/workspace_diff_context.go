@@ -23,7 +23,7 @@ type workspaceContextBuffer struct {
 	truncated bool
 }
 
-var errDiffContextCaptureLimit = errors.New("Git diff context exceeds the 5 MiB capture limit")
+var errDiffContextCaptureLimit = errors.New("git diff context exceeds the 5 MiB capture limit")
 
 func (b *workspaceContextBuffer) Write(p []byte) (int, error) {
 	count := len(p)

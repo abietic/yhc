@@ -331,12 +331,6 @@ func (p *cliContextProvider) validation() error {
 	return p.err
 }
 
-func (p *cliContextProvider) requestKinds() []bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]bool(nil), p.kinds...)
-}
-
 func cliContextLatestUser(input json.RawMessage) json.RawMessage {
 	var items []json.RawMessage
 	if json.Unmarshal(input, &items) != nil {
