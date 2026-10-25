@@ -363,6 +363,8 @@ func ApplyCompletion(input string, result CompletionResult, candidate ArgumentCa
 func builtinArgumentCompletion(name string) []ArgumentCompletion {
 	options := func(values ...string) []ArgumentCompletion { return []ArgumentCompletion{{Choices: values}} }
 	switch name {
+	case "attach-diff":
+		return options("all", "staged", "unstaged")
 	case "diff":
 		return options("full", "staged", "stat")
 	case "theme":

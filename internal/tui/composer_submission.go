@@ -42,6 +42,7 @@ func (a *App) markComposerChanged() {
 	if a == nil {
 		return
 	}
+	a.removeDialog(StateDiffContext)
 	a.dismissComposerSuggestion()
 	a.cancelArgumentCompletion()
 	a.argumentCompletion.Dismissed = nil

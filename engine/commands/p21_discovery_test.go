@@ -41,6 +41,7 @@ func TestP21DiscoveryMetadataSnapshot(t *testing.T) {
 		"config=Runtime/secondary/2070/idle-only",
 		"settings=Runtime/secondary/2075/idle-only",
 		"diff=Workspace/primary/80/idle-only",
+		"attach-diff=Workspace/secondary/4040/idle-only",
 		"copy=UI/secondary/7020/idle-only",
 		"init=Workspace/secondary/4010/idle-only",
 		"permissions=Safety/primary/60/idle-only",

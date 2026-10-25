@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-10-25
+**Last verified:** 2026-10-26
 
 **Ownership:** `internal/tui` owns one mutable active-draft projection;
 `QueryEngine` owns accepted prompt and queued-input truth.
@@ -41,7 +41,7 @@ Paste:  range -> visible label; Value -> retained source text
    draft.
 6. Submission rejects the whole snapshot on a missing, duplicate, edited,
    overlapping, unsupported, or inconsistent element.
-7. Paste, image, file, MCP-resource, and selected-output payloads are individually bounded by
+7. Paste, image, file, MCP-resource, selected-output, and Git-diff payloads are individually bounded by
    5 MiB. The App retains at most 10 MiB of image bytes and at most 32
    elements across active thread drafts.
 8. Durable history, chat, rewrite, search, selection, queue preview, and
@@ -258,11 +258,51 @@ element; undo restores it. History and view sidecars keep visible references,
 while history recall explicitly marks output content as not restored. Selection,
 preview and removal perform no provider call, storage reread or command replay.
 
+### Git file and hunk context
+
+The TUI-only `/attach-diff [all|staged|unstaged]` command returns a typed local
+intent. It opens the same selector as `d` outside search focus in the context
+manager, preserving an existing ordinary draft. `/diff` keeps its engine-owned
+display behavior and 200-line display limit; its formatted output is never
+used as the attachment source.
+
+[`CaptureWorkspaceDiff`](../../../../engine/workspace_diff_context.go) owns
+the cancellable read-only Git boundary and fixes the engine CWD for capture.
+It requires a bounded runner, caps stdout at 5 MiB and stderr at 64 KiB, disables
+external diff/textconv, and discards the whole result on truncation. `all`
+compares HEAD to worktree, `staged` compares HEAD to index, and `unstaged`
+compares index to worktree. An unborn repository must select staged or
+unstaged explicitly; untracked files are not included.
+
+[`ParseDiffContext`](../../../../engine/commands/diff_context.go) parses only
+the captured text. It preserves raw file and hunk bytes, quoted/renamed paths,
+add/delete ranges and no-final-newline markers. A hunk attachment retains the
+file metadata plus exactly one hunk. Binary entries are visible but unavailable;
+malformed, combined, invalid-text and oversized patches fail closed. Parsing
+is bounded to 512 files, 4096 hunks and 10 MiB of retained patch projections.
+
+[`composer_diff_context.go`](../../../../internal/tui/composer_diff_context.go)
+owns the transient selector. Left/Right changes source, Tab toggles file/hunks,
+Up/Down navigates, Enter attaches one selection, and Esc/Ctrl+C cancels. The
+selector requires an idle editable leader draft. Requests bind serial, engine,
+thread, draft revision, source and CWD; source changes, edits, thread/engine
+changes, cancellation and program shutdown cancel or invalidate pending work.
+A permission dialog stacked above the selector retains input ownership.
+
+An explicit selection inserts one undoable `git_diff` element with MIME
+`text/x-diff`. The generic `composer_context` envelope contains the exact
+captured patch plus source/file/hunk metadata. Preview, budget estimates,
+submission, undo and thread snapshots never reread Git. Manager search,
+the Diffs filter, token sorting, batch removal and budget warnings use the
+existing attachment path. History and view sidecars retain references only;
+history recall marks diff content as not restored. The selector cannot stage,
+apply or revert changes, submit a turn or dispatch a model call.
+
 ### Attached-context manager
 
 The TUI-owned `chat:manageContext` action (`Alt+C` by default) opens one passive
 dialog for the active ordinary draft. It lists file ranges, whole files,
-selected output, Skills, MCP resources, large pastes and images, initially in
+selected output, Skills, MCP resources, large pastes, images and Git diffs, initially in
 draft order. The list reads existing element identities and captured payloads;
 opening or navigating performs no source reread, provider call or submission.
 An empty draft has an explicit empty state. History-only literal references do
@@ -282,7 +322,7 @@ bounded to the first 4096 bytes of each metadata field. It never scans text or
 image payloads, including paste bodies. Enter or Esc leaves search focus while
 retaining the query; Up/Down leaves search focus and moves the selection.
 Tab/Shift+Tab cycles All, Files (whole and ranges), Output, Skills, MCP
-resources, Pasted text and Images. Type and search intersect. Empty matches
+resources, Pasted text, Images and Diffs. Type and search intersect. Empty matches
 have a distinct empty state. Search input normalizes line breaks/tabs to
 spaces and removes unsafe terminal controls.
 
@@ -448,6 +488,12 @@ rich preview exists.
   [`engine/p30_4_queued_prompt_test.go`](../../../../engine/p30_4_queued_prompt_test.go)
 - ghost render/accept/cancellation/stale-result fencing:
   [`composer_suggestion_test.go`](../../../../internal/tui/composer_suggestion_test.go)
+- Git capture, hunk isolation, selection fencing and attachment lifecycle:
+  [`workspace_diff_context_test.go`](../../../../engine/workspace_diff_context_test.go),
+  [`diff_context_test.go`](../../../../engine/commands/diff_context_test.go),
+  [`composer_diff_context_test.go`](../../../../internal/tui/composer_diff_context_test.go)
+- real CLI file/output context, manager removal and provider-payload boundary:
+  [`composer_context_pty_unix_test.go`](../../../../scripts/e2e/composer_context_pty_unix_test.go)
 
 The cross-entrypoint program and remaining ACP work are owned by
 [`P30 Cross-Entrypoint Multimodal Input`](../../../migration/plans/p30-cross-entrypoint-multimodal-input.md).

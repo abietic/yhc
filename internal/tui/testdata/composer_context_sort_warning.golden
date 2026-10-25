@@ -8,7 +8,7 @@
    [x] 1. [large]  [Paste... ~110000t
    [ ] 2. [Output #1]  [Output] ~41t
    1-2 of 4 matches
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Esc close
 == 40x12 over ==
@@ -21,7 +21,7 @@
    [x] 1. [large]  [Paste... ~128001t
    [ ] 2. [Output #1]  [Output] ~41t
    1-2 of 4 matches
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Esc close
 == 40x24 partial-near ==
@@ -44,7 +44,7 @@
    440000 B | pasted text
    1 | xxxxxxxxxxxxxxxxxxxxxxxxxxx...
    Preview clipped; full text kept
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -68,7 +68,7 @@
    512004 B | pasted text
    1 | xxxxxxxxxxxxxxxxxxxxxxxxxxx...
    Preview clipped; full text kept
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -92,7 +92,7 @@
    440000 B | pasted text
    1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
    Preview clipped; full text kept
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -116,7 +116,7 @@
    512004 B | pasted text
    1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
    Preview clipped; full text kept
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -140,7 +140,7 @@
                       440000 B | pasted text
                       1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
                       Preview clipped; full text kept
-                      / search | Tab type
+                      / search | Tab type | d diff
                       Space mark | Ctrl+A matches
                       Del remove | Enter locate
                       Esc close | ctrl+z undo
@@ -164,7 +164,7 @@
                       512004 B | pasted text
                       1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
                       Preview clipped; full text kept
-                      / search | Tab type
+                      / search | Tab type | d diff
                       Space mark | Ctrl+A matches
                       Del remove | Enter locate
                       Esc close | ctrl+z undo
@@ -188,7 +188,7 @@
                                                     440000 B | pasted text
                                                     1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
                                                     Preview clipped; full text kept
-                                                    / search | Tab type
+                                                    / search | Tab type | d diff
                                                     Space mark | Ctrl+A matches
                                                     Del remove | Enter locate
                                                     Esc close | ctrl+z undo
@@ -212,7 +212,7 @@
                                                     512004 B | pasted text
                                                     1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
                                                     Preview clipped; full text kept
-                                                    / search | Tab type
+                                                    / search | Tab type | d diff
                                                     Space mark | Ctrl+A matches
                                                     Del remove | Enter locate
                                                     Esc close | ctrl+z undo

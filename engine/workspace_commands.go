@@ -16,8 +16,9 @@ import (
 const workspaceCommandTimeout = 10 * time.Second
 
 type WorkspaceCommandResult struct {
-	Stdout string
-	Stderr string
+	Stdout    string
+	Stderr    string
+	Truncated bool
 }
 
 // WorkspaceCommandRunner is the engine-owned, cancellable read-only process

@@ -15,7 +15,7 @@
    ~32 tokens* (generic image)
    capture.png | image/png | 13 B
    Image preview: metadata only
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -36,7 +36,7 @@
    ~32 tokens* (generic image)
    capture.png | image/png | 13 B
    Image preview: metadata only
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -57,7 +57,7 @@
                       ~32 tokens* (generic image)
                       capture.png | image/png | 13 B
                       Image preview: metadata only
-                      / search | Tab type
+                      / search | Tab type | d diff
                       Space mark | Ctrl+A matches
                       Del remove | Enter locate
                       Esc close | ctrl+z undo
@@ -78,7 +78,7 @@
                                                     ~32 tokens* (generic image)
                                                     capture.png | image/png | 13 B
                                                     Image preview: metadata only
-                                                    / search | Tab type
+                                                    / search | Tab type | d diff
                                                     Space mark | Ctrl+A matches
                                                     Del remove | Enter locate
                                                     Esc close | ctrl+z undo

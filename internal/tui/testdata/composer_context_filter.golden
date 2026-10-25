@@ -35,7 +35,7 @@
    1 | first line
    2 | second
    Full text attached
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -49,7 +49,7 @@
    Type: Files | 0 marked
    Sort: Draft | s cycle
    No matching context
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -90,7 +90,7 @@
    1 | first line
    2 | second
    Full text attached
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -104,7 +104,7 @@
    Type: Files | 0 marked
    Sort: Draft | s cycle
    No matching context
-   / search | Tab type
+   / search | Tab type | d diff
    Space mark | Ctrl+A matches
    Del remove | Enter locate
    Esc close | ctrl+z undo
@@ -145,7 +145,7 @@
                       1 | first line
                       2 | second
                       Full text attached
-                      / search | Tab type
+                      / search | Tab type | d diff
                       Space mark | Ctrl+A matches
                       Del remove | Enter locate
                       Esc close | ctrl+z undo
@@ -159,7 +159,7 @@
                       Type: Files | 0 marked
                       Sort: Draft | s cycle
                       No matching context
-                      / search | Tab type
+                      / search | Tab type | d diff
                       Space mark | Ctrl+A matches
                       Del remove | Enter locate
                       Esc close | ctrl+z undo
@@ -200,7 +200,7 @@
                                                     1 | first line
                                                     2 | second
                                                     Full text attached
-                                                    / search | Tab type
+                                                    / search | Tab type | d diff
                                                     Space mark | Ctrl+A matches
                                                     Del remove | Enter locate
                                                     Esc close | ctrl+z undo
@@ -214,7 +214,7 @@
                                                     Type: Files | 0 marked
                                                     Sort: Draft | s cycle
                                                     No matching context
-                                                    / search | Tab type
+                                                    / search | Tab type | d diff
                                                     Space mark | Ctrl+A matches
                                                     Del remove | Enter locate
                                                     Esc close | ctrl+z undo

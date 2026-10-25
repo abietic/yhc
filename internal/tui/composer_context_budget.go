@@ -70,7 +70,7 @@ func (a *App) estimateComposerContextTokens(item threadComposerElement) composer
 		// part. Do not encode or tokenize base64, or infer provider image cost.
 		message.UserInputMultiContent = []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL}}
 		estimate.image = true
-	case composerElementKindFile, composerElementKindSkill, composerElementKindMCPResource, composerElementKindTerminalOutput:
+	case composerElementKindFile, composerElementKindSkill, composerElementKindMCPResource, composerElementKindTerminalOutput, composerElementKindGitDiff:
 		if item.Data == "" {
 			return composerContextTokenEstimate{status: "pending"}
 		}

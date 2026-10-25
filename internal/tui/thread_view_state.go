@@ -332,6 +332,7 @@ func (a *App) switchThreadView(threadID string, mode engine.ThreadAttachmentMode
 	}
 	previousThreadID := a.activeThreadViewID()
 	if previousThreadID != normalizeThreadViewID(threadID) {
+		a.removeDialog(StateDiffContext)
 		a.removeDialog(StateContextManager)
 	}
 	if previousThreadID != normalizeThreadViewID(threadID) && a.state == StateExpand && a.expandConversation {
