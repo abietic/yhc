@@ -168,7 +168,7 @@ func isDialogState(state AppState) bool {
 	case StatePermission, StateResume, StateHelp,
 		StateBypassConfirm, StateMCPApproval, StateModelPicker,
 		StateBackgroundTasks, StateMCPSettings, StateAgentWizard, StateTeams,
-		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker:
+		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager:
 		return true
 	default:
 		return false
@@ -178,6 +178,9 @@ func isDialogState(state AppState) bool {
 func (a *App) pushDialog(state AppState) {
 	if a == nil || !isDialogState(state) {
 		return
+	}
+	if state == StateContextManager || a.hasDialog(StateContextManager) {
+		a.keybindResolver.ResetPending()
 	}
 	if a.dialogs == nil {
 		a.dialogs = &appDialogStack{}
@@ -200,6 +203,9 @@ func (a *App) popDialog(expected AppState) bool {
 	if a == nil {
 		return false
 	}
+	if expected == StateContextManager {
+		a.keybindResolver.ResetPending()
+	}
 	if a.dialogs != nil {
 		if top, ok := a.dialogs.topFrame(); ok {
 			if expected != top.state {
@@ -218,6 +224,9 @@ func (a *App) popDialog(expected AppState) bool {
 }
 
 func (a *App) removeDialog(expected AppState) bool {
+	if a != nil && expected == StateContextManager {
+		a.keybindResolver.ResetPending()
+	}
 	if a == nil || a.dialogs == nil {
 		return a.popDialog(expected)
 	}
@@ -316,6 +325,8 @@ func (a *App) renderDialogState(state AppState, base string) string {
 		return a.planDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateAskUser:
 		return a.questionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateContextManager:
+		return a.composerContextManagerOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateAgentPicker:
 		return a.agentPicker.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	default:
@@ -416,6 +427,9 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 				a.saveAgentFromWizard(result)
 			}
 		}
+		return true, nil
+	case StateContextManager:
+		a.handleComposerContextManagerKey(msg)
 		return true, nil
 	case StateAgentPicker:
 		threadID, selected, dismissed, cmd := a.agentPicker.HandleKey(msg)

@@ -97,6 +97,7 @@ const (
 	ActionChatUndo            Action = "chat:undo"
 	ActionChatExternalEditor  Action = "chat:externalEditor"
 	ActionChatArgumentSuggest Action = "chat:argumentSuggest"
+	ActionChatManageContext   Action = "chat:manageContext"
 	ActionChatStash           Action = "chat:stash"
 	ActionChatImagePaste      Action = "chat:imagePaste"
 	ActionChatMessageActions  Action = "chat:messageActions"
@@ -280,6 +281,7 @@ var SupportedActionContexts = map[Action][]Context{
 	ActionChatSubmit:            {ContextChat},
 	ActionChatNewline:           {ContextChat},
 	ActionChatUndo:              {ContextChat},
+	ActionChatManageContext:     {ContextChat},
 	ActionChatExternalEditor:    {ContextChat},
 	ActionChatArgumentSuggest:   {ContextChat},
 	ActionChatImagePaste:        {ContextChat},

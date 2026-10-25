@@ -87,6 +87,27 @@ expanded projection. History recall restores a visible reference and marks
 its output body as not restored. See the
 [composer contract](../architecture/tui/contracts/composer.md#selected-terminal-output).
 
+### Manage attached context in the TUI
+
+Press **Alt+C** in an ordinary prompt draft to view all its attached context.
+The list includes file ranges, whole files, terminal-output snippets, Skills,
+MCP resources, large pasted text and images. Up/Down selects an item and shows
+its captured preview and size. Long previews are clipped while the full
+captured content remains attached; images show metadata. Loading items update
+when their existing read finishes.
+
+Press **Delete** or **Backspace** to remove the selected loaded item. **Ctrl+Z**
+undoes the removal in the standard editor, including its captured content.
+**Enter** closes the list and positions the cursor at the selected reference;
+**Esc** or **Ctrl+C** returns without moving the cursor or submitting. Send the
+draft separately when ready. The entry and undo bindings are configurable;
+Help and `/keybindings` show `chat:manageContext`.
+
+The list manages the current draft. Switching Agent threads closes it before
+showing the next draft, and recalled text references have no attachment body
+to list. See the
+[composer contract](../architecture/tui/contracts/composer.md#attached-context-manager).
+
 ### Request a next-step suggestion
 
 In the TUI, leave the leader input empty and press `Ctrl+Space`. YHC shows
