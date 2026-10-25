@@ -546,23 +546,11 @@ func (a *App) captureComposerSubmission() (composerSubmissionSnapshot, error) {
 				return composerSubmissionSnapshot{}, fmt.Errorf("%s is still loading", element.Label)
 			}
 			appendText(element.Label)
-			metadata := map[string]any{
-				"kind": element.Kind, "name": element.Name, "source": element.Value,
-				"mime_type": element.MIMEType, "content": element.Data,
-			}
-			if element.StartLine != 0 || element.EndLine != 0 {
-				lines := attachments.LineRange{Start: element.StartLine, End: element.EndLine}
-				if element.Kind != composerElementKindFile || !lines.Valid() || element.EndLine > element.TotalLines {
-					return composerSubmissionSnapshot{}, fmt.Errorf("%s has inconsistent file line metadata", element.Label)
-				}
-				metadata["start_line"] = element.StartLine
-				metadata["end_line"] = element.EndLine
-			}
-			encoded, err := json.Marshal(metadata)
+			encoded, err := encodeComposerContext(element)
 			if err != nil {
-				return composerSubmissionSnapshot{}, fmt.Errorf("encode %s: %w", element.Label, err)
+				return composerSubmissionSnapshot{}, err
 			}
-			contexts = append(contexts, "<composer_context>\n"+string(encoded)+"\n</composer_context>")
+			contexts = append(contexts, encoded)
 		default:
 			return composerSubmissionSnapshot{}, fmt.Errorf("composer element %s has unsupported kind %q", element.Label, element.Kind)
 		}
@@ -606,6 +594,26 @@ func (a *App) captureComposerSubmission() (composerSubmissionSnapshot, error) {
 		HasImages:  imageCount > 0,
 		HasContext: len(contexts) > 0,
 	}, nil
+}
+
+func encodeComposerContext(element threadComposerElement) (string, error) {
+	metadata := map[string]any{
+		"kind": element.Kind, "name": element.Name, "source": element.Value,
+		"mime_type": element.MIMEType, "content": element.Data,
+	}
+	if element.StartLine != 0 || element.EndLine != 0 {
+		lines := attachments.LineRange{Start: element.StartLine, End: element.EndLine}
+		if element.Kind != composerElementKindFile || !lines.Valid() || element.EndLine > element.TotalLines {
+			return "", fmt.Errorf("%s has inconsistent file line metadata", element.Label)
+		}
+		metadata["start_line"] = element.StartLine
+		metadata["end_line"] = element.EndLine
+	}
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return "", fmt.Errorf("encode %s: %w", element.Label, err)
+	}
+	return "<composer_context>\n" + string(encoded) + "\n</composer_context>", nil
 }
 
 func trimComposerOrderedParts(parts []composerOrderedPart) []composerOrderedPart {
