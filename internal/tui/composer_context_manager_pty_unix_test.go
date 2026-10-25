@@ -40,7 +40,7 @@ func (m *contextManagerPTYModel) Stream(_ context.Context, messages []*schema.Me
 		}
 	}
 	value := input.String()
-	m.valid.Store(strings.Count(value, `"kind":"file"`) == 1 && strings.Count(value, `"kind":"terminal_output"`) == 1 && strings.Contains(value, `"content":"kept file"`) && strings.Contains(value, `"content":"retained output"`) && !strings.Contains(value, "removed file"))
+	m.valid.Store(strings.Count(value, `"kind":"file"`) == 1 && strings.Count(value, `"kind":"terminal_output"`) == 1 && strings.Contains(value, `"content":"kept file"`) && strings.Contains(value, `"content":"retained output"`) && !strings.Contains(value, "removed file") && !strings.Contains(value, "batch removed"))
 	m.calls.Add(1)
 	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.Assistant, Content: "Managed contexts received."}}), nil
 }
@@ -57,7 +57,7 @@ func TestComposerContextManagerPTY(t *testing.T) {
 		defer eng.Close()
 		caps := terminalcap.Capabilities{Platform: "linux", Terminal: "xterm", Interactive: true, Mouse: true, BracketedPaste: true}
 		app := New(Config{Engine: eng, Resumed: true, Fullscreen: true, MouseEnabled: true, ReducedMotion: true, TerminalCaps: &caps, KeybindingsConfigDir: t.TempDir()})
-		contextManagerFixture(app, []string{"@same", "@same", "[Output #1]"}, []string{"file", "file", "terminal_output"}, []string{"kept file", "removed file", "retained output"})
+		contextManagerFixture(app, []string{"@same", "@same", "[Output #1]", "@batch-one", "@batch-two"}, []string{"file", "file", "terminal_output", "file", "file"}, []string{"kept file", "removed file", "retained output", "batch removed one", "batch removed two"})
 		app.statusLineHook = func(_, _ string) (string, string) {
 			state := "C"
 			if app.hasDialog(StateContextManager) {
@@ -113,17 +113,34 @@ func TestComposerContextManagerPTY(t *testing.T) {
 			t.Error("PTY reader did not exit")
 		}
 	})
-	waitPTYContains(t, command, output, "CM_C n3 c0")
+	waitPTYContains(t, command, output, "CM_C n5 c0")
 	writePTY(t, terminal, "\x1bc")
-	waitPTYContains(t, command, output, "Attached context (3)")
+	waitPTYContains(t, command, output, "Attached context (5)")
 	writePTY(t, terminal, "\x1b[H\x1b[B")
 	waitPTYContains(t, command, output, "removed file")
 	writePTY(t, terminal, "\x1b[3~")
-	waitPTYContains(t, command, output, "CM_M n2 c0")
+	waitPTYContains(t, command, output, "CM_M n4 c0")
+	undoOffset := output.size()
 	writePTY(t, terminal, "\x1a")
-	waitPTYContains(t, command, output, "CM_M n3 c0")
+	waitPTYContainsAfter(t, command, output, undoOffset, "CM_M n5 c0")
 	writePTY(t, terminal, "\x1b[H\x1b[B\x1b[3~")
+	waitPTYContains(t, command, output, "CM_M n4 c0")
+	// Search is a separate input owner. Filter ANDs the query; Ctrl+A marks
+	// every match, and one undo restores both removed payloads together.
+	writePTY(t, terminal, "/batch\r\t\x01")
+	waitPTYContains(t, command, output, "Type: Files | 2 marked")
+	writePTY(t, terminal, "\x1b[3~")
 	waitPTYContains(t, command, output, "CM_M n2 c0")
+	waitPTYContains(t, command, output, "No matching context")
+	undoOffset = output.size()
+	writePTY(t, terminal, "\x1a")
+	waitPTYContainsAfter(t, command, output, undoOffset, "CM_M n4 c0")
+	writePTY(t, terminal, "\x01\x1b[3~")
+	waitPTYContains(t, command, output, "CM_M n2 c0")
+	// Clear the query and select Output without altering the remaining file.
+	writePTY(t, terminal, "/\x15\r\t")
+	waitPTYContains(t, command, output, "Type: Output | 0 marked")
+	waitPTYContains(t, command, output, "retained output")
 	if err := pty.Setsize(terminal, &pty.Winsize{Cols: 40, Rows: 24}); err != nil {
 		t.Fatal(err)
 	}

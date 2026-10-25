@@ -96,12 +96,23 @@ its captured preview and size. Long previews are clipped while the full
 captured content remains attached; images show metadata. Loading items update
 when their existing read finishes.
 
-Press **Delete** or **Backspace** to remove the selected loaded item. **Ctrl+Z**
-undoes the removal in the standard editor, including its captured content.
-**Enter** closes the list and positions the cursor at the selected reference;
-**Esc** or **Ctrl+C** returns without moving the cursor or submitting. Send the
-draft separately when ready. The entry and undo bindings are configurable;
-Help and `/keybindings` show `chat:manageContext`.
+Press **/** to search names, paths and sources (case-insensitive). **Enter** or
+**Esc** leaves the search field and keeps the query. **Tab** cycles attachment
+types; **Shift+Tab** cycles backwards. Search and type filters combine, and
+search does not inspect attachment bodies.
+
+Press **Space** to mark individual attachments or **Ctrl+A** to toggle all
+current matches, including offscreen rows. Changing the search or type clears
+marks. **Delete** or **Backspace** removes the marked set; with no marks, it
+removes the highlighted item. If any target is still loading, the whole batch
+waits. Outside the search field, **Ctrl+Z** restores the entire batch with its
+captured content in one step.
+
+**Enter** outside search closes the list and positions the cursor at the
+highlighted reference; **Esc** closes the list, and **Ctrl+C** closes even while
+searching. Closing does not submit the draft. Search, type and marks reset on
+reopening. Send the draft separately when ready. The entry and undo bindings
+are configurable; Help and `/keybindings` show `chat:manageContext`.
 
 The list manages the current draft. Switching Agent threads closes it before
 showing the next draft, and recalled text references have no attachment body

@@ -429,8 +429,7 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		}
 		return true, nil
 	case StateContextManager:
-		a.handleComposerContextManagerKey(msg)
-		return true, nil
+		return true, a.handleComposerContextManagerKey(msg)
 	case StateAgentPicker:
 		threadID, selected, dismissed, cmd := a.agentPicker.HandleKey(msg)
 		if dismissed {
