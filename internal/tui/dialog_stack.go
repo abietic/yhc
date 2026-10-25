@@ -168,7 +168,7 @@ func isDialogState(state AppState) bool {
 	case StatePermission, StateResume, StateHelp,
 		StateBypassConfirm, StateMCPApproval, StateModelPicker,
 		StateBackgroundTasks, StateMCPSettings, StateAgentWizard, StateTeams,
-		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager:
+		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext:
 		return true
 	default:
 		return false
@@ -179,7 +179,7 @@ func (a *App) pushDialog(state AppState) {
 	if a == nil || !isDialogState(state) {
 		return
 	}
-	if state == StateContextManager || a.hasDialog(StateContextManager) {
+	if state == StateContextManager || state == StateDiffContext || a.hasDialog(StateContextManager) || a.hasDialog(StateDiffContext) {
 		a.keybindResolver.ResetPending()
 	}
 	if a.dialogs == nil {
@@ -211,12 +211,18 @@ func (a *App) popDialog(expected AppState) bool {
 			if expected != top.state {
 				return false
 			}
+			if expected == StateDiffContext {
+				a.closeComposerDiffContext()
+			}
 			frame, _ := a.dialogs.popFrame()
 			a.state = frame.returnState
 			return true
 		}
 	}
 	if a.state == expected && isDialogState(expected) {
+		if expected == StateDiffContext {
+			a.closeComposerDiffContext()
+		}
 		a.state = StateChat
 		return true
 	}
@@ -234,6 +240,9 @@ func (a *App) removeDialog(expected AppState) bool {
 		frame := a.dialogs.frames[i]
 		if frame.state != expected {
 			continue
+		}
+		if expected == StateDiffContext {
+			a.closeComposerDiffContext()
 		}
 		wasTop := i == len(a.dialogs.frames)-1
 		if i+1 < len(a.dialogs.frames) {
@@ -327,6 +336,8 @@ func (a *App) renderDialogState(state AppState, base string) string {
 		return a.questionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateContextManager:
 		return a.composerContextManagerOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateDiffContext:
+		return a.composerDiffContextOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateAgentPicker:
 		return a.agentPicker.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	default:
@@ -430,6 +441,8 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, nil
 	case StateContextManager:
 		return true, a.handleComposerContextManagerKey(msg)
+	case StateDiffContext:
+		return true, a.handleComposerDiffContextKey(msg)
 	case StateAgentPicker:
 		threadID, selected, dismissed, cmd := a.agentPicker.HandleKey(msg)
 		if dismissed {

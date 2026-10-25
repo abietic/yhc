@@ -12,7 +12,7 @@ func (a *App) composerContextAtCursor() (threadComposerElement, int, bool) {
 	cursor := textareaCursorRuneOffset(value, a.textarea.Line(), info.StartColumn+info.ColumnOffset)
 	runes := []rune(value)
 	for _, element := range a.composerElements {
-		if (element.Kind != composerElementKindTerminalOutput && (element.Kind != composerElementKindFile || element.StartLine == 0)) || !composerElementMatches(runes, element) {
+		if (element.Kind != composerElementKindGitDiff && element.Kind != composerElementKindTerminalOutput && (element.Kind != composerElementKindFile || element.StartLine == 0)) || !composerElementMatches(runes, element) {
 			continue
 		}
 		if cursor >= element.Start && cursor <= element.End ||
@@ -58,6 +58,9 @@ func (a *App) renderComposerContextPreview() string {
 	if element.Kind == composerElementKindTerminalOutput {
 		header = fmt.Sprintf("Selected output | %d B", len(element.Data))
 	}
+	if element.Kind == composerElementKindGitDiff {
+		header = fmt.Sprintf("Git diff | %s | %d B", composerContextLabel(element.Name), len(element.Data))
+	}
 	if element.Data == "" {
 		header = fmt.Sprintf("Loading lines %d-%d...", element.StartLine, element.EndLine)
 	}
@@ -71,7 +74,7 @@ func (a *App) renderComposerContextPreview() string {
 		clipped := end < len(element.Data) || len(preview) > 3
 		for index, line := range preview[:min(len(preview), 3)] {
 			lineNumber := element.StartLine + index
-			if element.Kind == composerElementKindTerminalOutput {
+			if element.Kind == composerElementKindTerminalOutput || element.Kind == composerElementKindGitDiff {
 				lineNumber = index + 1
 			}
 			line = fmt.Sprintf("%d | %s", lineNumber, composerContextPreviewLiteral(strings.TrimSuffix(line, "\r")))
@@ -82,7 +85,7 @@ func (a *App) renderComposerContextPreview() string {
 		if clipped {
 			status = "Preview clipped; full range attached"
 		}
-		if element.Kind == composerElementKindTerminalOutput {
+		if element.Kind == composerElementKindTerminalOutput || element.Kind == composerElementKindGitDiff {
 			status = "Full selected text attached"
 			if clipped {
 				status = "Preview clipped; full text attached"

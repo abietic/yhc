@@ -10,8 +10,8 @@ import (
 func TestP21CatalogSnapshotAndTombstones(t *testing.T) {
 	r := NewRegistry()
 	RegisterDefaults(r)
-	if got := len(r.List()); got != 41 {
-		t.Fatalf("active commands = %d, want 41", got)
+	if got := len(r.List()); got != 42 {
+		t.Fatalf("active commands = %d, want 42", got)
 	}
 	removed := r.ListRemoved()
 	if got := len(removed); got != 26 {

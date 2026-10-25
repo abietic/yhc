@@ -69,6 +69,7 @@ const (
 	StateAskUser         // question picker dialog (AskUserQuestion)
 	StateAgentPicker     // searchable leader/sub-agent thread picker
 	StateContextManager  // attached context for the active draft
+	StateDiffContext     // captured Git file/hunk context selector
 )
 
 type InputMode int
@@ -111,25 +112,27 @@ type App struct {
 	renderEnvironment RenderEnvironment
 
 	// Components
-	textarea        textarea.Model
-	chat            *ChatView
-	dialog          *PermissionDialog
-	resume          *ResumeDialog
-	help            *HelpOverlay
-	search          *SearchOverlay
-	msgSelector     *MessageSelector
-	mcpApproval     *MCPApprovalDialog
-	modelPicker     *ModelPicker
-	backgroundTasks *BackgroundTasksPanel
-	agentWizard     *AgentWizard
-	mcpSettings     *MCPSettingsPanel
-	teamsPanel      *TeamsPanel
-	taskExplorer    *TaskExplorerPanel
-	commandPalette  *CommandPalette
-	planDialog      *PlanDialog
-	questionDialog  *QuestionDialog
-	agentPicker     *AgentThreadPicker
-	contextManager  composerContextManager
+	textarea          textarea.Model
+	chat              *ChatView
+	dialog            *PermissionDialog
+	resume            *ResumeDialog
+	help              *HelpOverlay
+	search            *SearchOverlay
+	msgSelector       *MessageSelector
+	mcpApproval       *MCPApprovalDialog
+	modelPicker       *ModelPicker
+	backgroundTasks   *BackgroundTasksPanel
+	agentWizard       *AgentWizard
+	mcpSettings       *MCPSettingsPanel
+	teamsPanel        *TeamsPanel
+	taskExplorer      *TaskExplorerPanel
+	commandPalette    *CommandPalette
+	planDialog        *PlanDialog
+	questionDialog    *QuestionDialog
+	agentPicker       *AgentThreadPicker
+	contextManager    composerContextManager
+	diffContext       composerDiffContext
+	diffContextSerial uint64
 
 	// Streaming & Progress integration
 	streamingCtx    *ChatStreamingContext
@@ -508,6 +511,7 @@ func (a *App) SetProgram(p *tea.Program) {
 
 // SetEngine sets the query engine after creation.
 func (a *App) SetEngine(eng *engine.QueryEngine) {
+	a.removeDialog(StateDiffContext)
 	a.dismissComposerSuggestion()
 	a.engine = eng
 	if eng != nil {
@@ -971,6 +975,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if a.quitting {
+			a.removeDialog(StateDiffContext)
 			a.dismissComposerSuggestion()
 			a.stopMascotIdle()
 			a.invalidateSessionViewSave()
@@ -1480,6 +1485,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		a.handleMentionPayload(msg)
 		a.updateLayout()
 		return a, nil
+	case composerDiffContextMsg:
+		a.handleComposerDiffContext(msg)
+		a.updateLayout()
+		return a, nil
 
 	case startQueuedInputMsg:
 		start := a.startNextQueuedInput()
@@ -1610,8 +1619,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, cmd
 	}
 
-	if state, active := a.activeDialogState(); active && state == StateContextManager {
-		cmds = append(cmds, a.updateComposerContextQuery(msg))
+	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext) {
+		if state == StateContextManager {
+			cmds = append(cmds, a.updateComposerContextQuery(msg))
+		}
 		return a, tea.Batch(cmds...)
 	}
 
@@ -4701,6 +4712,14 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 			)
 		}
 		if err == nil && result != nil {
+			if result.Action == commands.ActionAttachDiff {
+				source, _ := result.Data["source"].(commands.DiffContextSource)
+				cmd := a.openComposerDiffContext(source)
+				if cmd != nil {
+					a.commitCommandPaletteLocalSubmission(paletteSubmission)
+				}
+				return cmd
+			}
 			if result.Action == commands.ActionCopy {
 				text, _ := result.Data["text"].(string)
 				cmd := a.requestClipboardCopy(ClipboardCallerActionCopy, text)

@@ -102,7 +102,7 @@ func TestComposerContextManagerSearchMetadataAndTypes(t *testing.T) {
 		}
 	}
 	contextManagerSearch(app, "")
-	for i, count := range []int{7, 2, 1, 1, 1, 1, 1, 7} {
+	for i, count := range []int{7, 2, 1, 1, 1, 1, 1, 0, 7} {
 		if matches := app.contextManager.filtered(items); len(matches) != count {
 			t.Fatalf("type %d matched %d items, want %d", i, len(matches), count)
 		}

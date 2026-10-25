@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/abietic/yhc/engine"
+	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/internal/tui/keybindings"
 )
 
@@ -26,7 +27,7 @@ type composerContextManager struct {
 	tokens     composerContextTokenCache
 }
 
-var composerContextTypes = [...]string{"All", "Files", "Output", "Skills", "MCP resources", "Pasted text", "Images"}
+var composerContextTypes = [...]string{"All", "Files", "Output", "Skills", "MCP resources", "Pasted text", "Images", "Diffs"}
 
 var composerContextOrders = [...]string{"Draft", "Tokens high", "Tokens low"}
 
@@ -72,6 +73,8 @@ func (m *composerContextManager) filtered(items []threadComposerElement) []threa
 			kind = 5
 		case composerElementKindImage:
 			kind = 6
+		case composerElementKindGitDiff:
+			kind = 7
 		}
 		if m.filter != 0 && m.filter != kind {
 			continue
@@ -275,6 +278,8 @@ func (a *App) handleComposerContextManagerKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	index := a.contextManager.selection(items)
 	switch msg.String() {
+	case "d":
+		return a.openComposerDiffContext(commands.DiffContextAll)
 	case "s":
 		a.keybindResolver.ResetPending()
 		a.contextManager.order = (a.contextManager.order + 1) % len(composerContextOrders)
@@ -433,6 +438,8 @@ func composerContextKindLabel(item threadComposerElement) string {
 		return "File"
 	case composerElementKindTerminalOutput:
 		return "Output"
+	case composerElementKindGitDiff:
+		return "Git diff"
 	case composerElementKindSkill:
 		return "Skill"
 	case composerElementKindMCPResource:
@@ -519,9 +526,9 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 	if a.contextManager.searching {
 		help = []string{"Tab type | Ctrl+A matches", "Enter/Esc list | Up/Down select", "Ctrl+C close"}
 	} else if height < 18 {
-		help = []string{"/ search | Tab type", "Space mark | Ctrl+A matches", "Del remove | Esc close"}
+		help = []string{"/ search | Tab type | d diff", "Space mark | Ctrl+A matches", "Del remove | Esc close"}
 	} else {
-		help = []string{"/ search | Tab type", "Space mark | Ctrl+A matches", "Del remove | Enter locate", "Esc close | " + keyHint(a.shortcut(keybindings.ContextChat, keybindings.ActionChatUndo, "ctrl+z"), "undo")}
+		help = []string{"/ search | Tab type | d diff", "Space mark | Ctrl+A matches", "Del remove | Enter locate", "Esc close | " + keyHint(a.shortcut(keybindings.ContextChat, keybindings.ActionChatUndo, "ctrl+z"), "undo")}
 	}
 	total := len(items)
 	items = a.composerContextVisibleItems(items)

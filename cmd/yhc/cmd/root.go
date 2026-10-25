@@ -289,6 +289,7 @@ func runTUI(
 		TerminalCaps:  &terminalCaps,
 		FocusState:    focusState,
 	})
+	defer app.CancelContextCapture()
 
 	engineCfg.PermissionPrompt = app.MakePermissionPromptFn()
 	engineCfg.RepeatedToolCallPrompt = app.MakeRepeatedToolCallPromptFn()

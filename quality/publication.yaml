@@ -2421,37 +2421,37 @@ privacy:
       match_sha256: 5196a402c779530650b64ecef9c78250332462d2c9c47daac8e40e48101c6a56
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
-      line: 45
+      line: 46
       rule_id: high-entropy-token
       match_sha256: 194bfa0cc97697b030e3bc37a7cf8a66e76591f36e218f8c18920baef7b37092
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
-      line: 47
+      line: 48
       rule_id: high-entropy-token
       match_sha256: 18fd8e8b2934d48dccea41760c7f9e1221becf9ed7d80a33adf9b30ab0a18891
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
-      line: 54
+      line: 55
       rule_id: high-entropy-token
       match_sha256: 42270a29b0c001e79155fe513e8806f7e37c072b5fc92650807cce9e55bf8ca7
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
-      line: 58
+      line: 59
       rule_id: high-entropy-token
       match_sha256: 7e2c9dbd9aa004ab6b22a6e4ac28214e2083e0cbe4e7dadb3db40e5b8cebb446
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
-      line: 63
+      line: 64
       rule_id: high-entropy-token
       match_sha256: b9c53b25c7bc200b94cdde1b605a0ede4b4f9dea179b10c5e232d68bfc892303
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
-      line: 67
+      line: 68
       rule_id: high-entropy-token
       match_sha256: ac76767037a950d94b148509cbf489349f6012fd29dc622947cac657d15274aa
       purpose: synthetic-security-fixture
     - path: engine/commands/registry.go
-      line: 2117
+      line: 2132
       rule_id: credential-assignment
       match_sha256: 4690f6483df28ae664680214d84ababf73f7c2619fcbac001f00a2b25eb2c2fa
       purpose: documentation-example
@@ -5865,6 +5865,16 @@ privacy:
       line: 194
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: engine/commands/p21_discovery_test.go
+      line: 44
+      rule_id: high-entropy-token
+      match_sha256: c048ad089de0ab9a5fcbd7515c231f3448eaa55676765cf93368e85aa0ac6c68
+      purpose: synthetic-security-fixture
+    - path: engine/workspace_diff_context_test.go
+      line: 38
+      rule_id: private-email
+      match_sha256: cc6d96611cffa9f02c3626f0b9ee897dc171e2d540a5cae349d4ec316104997b
       purpose: synthetic-security-fixture
 
 dependencies:

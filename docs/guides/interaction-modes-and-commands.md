@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-10-25
+**Last verified:** 2026-10-26
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -87,11 +87,30 @@ expanded projection. History recall restores a visible reference and marks
 its output body as not restored. See the
 [composer contract](../architecture/tui/contracts/composer.md#selected-terminal-output).
 
+### Attach a Git file or hunk in the TUI
+
+Run **`/attach-diff`** from an empty leader draft, or press **d** outside the
+search field in **Alt+C** to keep the current draft. Left/Right cycles **all**
+(HEAD to worktree), **staged** (HEAD to index) and **unstaged** (index to
+worktree). `/attach-diff staged` opens a specific source directly.
+
+Up/Down selects a file; **Tab** switches between that file and its individual
+hunks. **Enter** attaches the highlighted file patch or one hunk, including
+its file headers, as `[Diff #N]`. **Esc** cancels without editing the draft.
+The selector shows a short preview; the attachment keeps the complete captured
+patch even if Git or the file changes later. Send the draft separately.
+
+Capture is read-only and bounded to 5 MiB; binary, malformed and oversized
+diffs cannot be attached. Untracked files use `@file` instead. Without a HEAD,
+choose staged or unstaged explicitly. Selection is available in an idle,
+editable leader draft and performs no model call. It does not stage, apply or
+revert changes. The existing `/diff` remains a display command.
+
 ### Manage attached context in the TUI
 
 Press **Alt+C** in an ordinary prompt draft to view all its attached context.
 The list includes file ranges, whole files, terminal-output snippets, Skills,
-MCP resources, large pasted text and images. Up/Down selects an item and shows
+MCP resources, large pasted text, images and Git diffs. Up/Down selects an item and shows
 its captured preview and size. Long previews are clipped while the full
 captured content remains attached; images show metadata. Loading items update
 when their existing read finishes.
