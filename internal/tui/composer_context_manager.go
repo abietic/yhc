@@ -21,11 +21,38 @@ type composerContextManager struct {
 	query      textinput.Model
 	searching  bool
 	filter     int
+	order      int
 	marked     map[string]bool
 	tokens     composerContextTokenCache
 }
 
 var composerContextTypes = [...]string{"All", "Files", "Output", "Skills", "MCP resources", "Pasted text", "Images"}
+
+var composerContextOrders = [...]string{"Draft", "Tokens high", "Tokens low"}
+
+func (a *App) composerContextVisibleItems(items []threadComposerElement) []threadComposerElement {
+	visible := a.contextManager.filtered(items)
+	if a.contextManager.order == 0 {
+		return visible
+	}
+	estimates := a.composerContextTokenEstimates(items)
+	// Sort the projection only. Equal estimates and unknown rows retain draft
+	// order; unknowns always follow known estimates in either direction.
+	sort.SliceStable(visible, func(i, j int) bool {
+		left, right := estimates.items[visible[i].ID], estimates.items[visible[j].ID]
+		if (left.status == "") != (right.status == "") {
+			return left.status == ""
+		}
+		if left.status != "" {
+			return false
+		}
+		if a.contextManager.order == 1 {
+			return left.tokens > right.tokens
+		}
+		return left.tokens < right.tokens
+	})
+	return visible
+}
 
 func (m *composerContextManager) filtered(items []threadComposerElement) []threadComposerElement {
 	query := strings.ToLower(strings.TrimSpace(m.query.Value()))
@@ -197,7 +224,7 @@ func (a *App) handleComposerContextManagerKey(msg tea.KeyPressMsg) tea.Cmd {
 		a.showNotification("Context draft changed; reopen the context manager", NotifyWarning)
 		return nil
 	}
-	items = a.contextManager.filtered(items)
+	items = a.composerContextVisibleItems(items)
 	switch msg.String() {
 	case "tab", "shift+tab":
 		delta := 1
@@ -248,6 +275,10 @@ func (a *App) handleComposerContextManagerKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	index := a.contextManager.selection(items)
 	switch msg.String() {
+	case "s":
+		a.keybindResolver.ResetPending()
+		a.contextManager.order = (a.contextManager.order + 1) % len(composerContextOrders)
+		return nil
 	case "up", "k", "ctrl+p":
 		index = max(0, index-1)
 	case "down", "j", "ctrl+n":
@@ -463,13 +494,18 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 	parts := []string{a.styles.DialogTitle.Render(fmt.Sprintf("Attached context (%d)", len(items)))}
 	var estimates *composerContextTokenCache
 	budget := a.composerContextBudgetSnapshot()
-	extraRows := 0
 	if valid {
 		estimates = a.composerContextTokenEstimates(items)
 		if height >= 18 {
 			lines := composerContextBudgetLines(estimates, budget)
 			parts = append(parts, lines...)
-			extraRows = len(lines)
+		}
+		if warning, over := composerContextBudgetWarning(estimates, budget); warning != "" {
+			style := a.styles.Warning
+			if over {
+				style = a.styles.Error
+			}
+			parts = append(parts, style.Render(warning))
 		}
 	}
 	query := "Search: " + composerContextLabel(a.contextManager.query.Value())
@@ -478,8 +514,17 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 		query = a.contextManager.query.View()
 	}
 	parts = append(parts, query, fmt.Sprintf("Type: %s | %d marked", composerContextTypes[a.contextManager.filter], len(a.contextManager.marked)))
+	parts = append(parts, "Sort: "+composerContextOrders[a.contextManager.order]+" | s cycle")
+	var help []string
+	if a.contextManager.searching {
+		help = []string{"Tab type | Ctrl+A matches", "Enter/Esc list | Up/Down select", "Ctrl+C close"}
+	} else if height < 18 {
+		help = []string{"/ search | Tab type", "Space mark | Ctrl+A matches", "Del remove | Esc close"}
+	} else {
+		help = []string{"/ search | Tab type", "Space mark | Ctrl+A matches", "Del remove | Enter locate", "Esc close | " + keyHint(a.shortcut(keybindings.ContextChat, keybindings.ActionChatUndo, "ctrl+z"), "undo")}
+	}
 	total := len(items)
-	items = a.contextManager.filtered(items)
+	items = a.composerContextVisibleItems(items)
 	index := a.contextManager.selection(items)
 	if !valid {
 		parts = append(parts, "Draft changed; close and reopen")
@@ -490,9 +535,16 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 			parts = append(parts, "No matching context")
 		}
 	} else {
-		visible := max(1, min(6, height-14))
-		if extraRows > 0 {
-			visible = max(1, min(4, height-15-extraRows))
+		// Reserve the top border and footer before allocating list/detail rows.
+		// Compact views retain warnings and controls ahead of optional previews.
+		available := height - len(parts) - len(help) - 1
+		detailRows := 0
+		if height >= 15 && available >= 5 {
+			detailRows = 3 // token detail, metadata and preview status
+		}
+		visible := max(1, min(6, available-1-detailRows))
+		if height >= 18 {
+			visible = min(4, visible)
 		}
 		start := max(0, index-visible+1)
 		end := min(len(items), start+visible)
@@ -515,16 +567,12 @@ func (a *App) composerContextManagerOverlay(base string, width, height int) stri
 			parts = append(parts, row)
 		}
 		parts = append(parts, fmt.Sprintf("%d-%d of %d matches", start+1, end, len(items)))
-		if height >= 15 {
+		if detailRows > 0 {
 			parts = append(parts, composerContextTokenDetail(estimates.items[items[index].ID], budget))
-			parts = append(parts, a.composerContextDetail(items[index], innerWidth, min(3, max(0, height-15-extraRows-visible)))...)
+			parts = append(parts, a.composerContextDetail(items[index], innerWidth, min(3, max(0, available-visible-1-detailRows)))...)
 		}
 	}
-	if a.contextManager.searching {
-		parts = append(parts, "Tab type | Ctrl+A matches", "Enter/Esc list | Up/Down select", "Ctrl+C close")
-	} else {
-		parts = append(parts, "/ search | Tab type", "Space mark | Ctrl+A matches", "Del remove | Enter locate", "Esc close | "+keyHint(a.shortcut(keybindings.ContextChat, keybindings.ActionChatUndo, "ctrl+z"), "undo"))
-	}
+	parts = append(parts, help...)
 	for i, line := range parts {
 		parts[i] = modalProjectLine(profile, line, innerWidth, 0)
 	}

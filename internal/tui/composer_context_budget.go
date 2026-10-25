@@ -142,6 +142,24 @@ func composerContextBudgetLines(cache *composerContextTokenCache, budget engine.
 	return lines
 }
 
+// Warn only about attachment estimates against the known maximum window.
+// Last input can already contain some of these attachments and is not a
+// remaining-budget measurement, so it must not be added to this total.
+func composerContextBudgetWarning(cache *composerContextTokenCache, budget engine.ContextUsageSnapshot) (string, bool) {
+	window := budget.WindowTokens
+	if window <= 0 || cache.total < window-window/5 { // ceil(80%); no rounding/overflow
+		return "", false
+	}
+	subject := "attached est."
+	if cache.partial {
+		subject = "partial est."
+	}
+	if cache.total >= window {
+		return "Alert: " + subject + " >=100% window", true
+	}
+	return "Warn: " + subject + " >=80% window", false
+}
+
 func composerContextTokenDetail(estimate composerContextTokenEstimate, budget engine.ContextUsageSnapshot) string {
 	if estimate.status != "" {
 		return "Tokens: " + estimate.status

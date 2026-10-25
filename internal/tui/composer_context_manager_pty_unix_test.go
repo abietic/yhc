@@ -57,7 +57,7 @@ func TestComposerContextManagerPTY(t *testing.T) {
 		defer eng.Close()
 		caps := terminalcap.Capabilities{Platform: "linux", Terminal: "xterm", Interactive: true, Mouse: true, BracketedPaste: true}
 		app := New(Config{Engine: eng, Resumed: true, Fullscreen: true, MouseEnabled: true, ReducedMotion: true, TerminalCaps: &caps, KeybindingsConfigDir: t.TempDir()})
-		contextManagerFixture(app, []string{"@same", "@same", "[Output #1]", "@batch-one", "@batch-two"}, []string{"file", "file", "terminal_output", "file", "file"}, []string{"kept file", "removed file", "retained output", "batch removed one", "batch removed two"})
+		contextManagerFixture(app, []string{"@same", "@same", "[Output #1]", "@batch-one", "@batch-two"}, []string{"file", "file", "terminal_output", "file", "file"}, []string{"kept file", "removed file", "retained output", "batch removed one", "batch removed two" + strings.Repeat("x", 128000*4)})
 		app.statusLineHook = func(_, _ string) (string, string) {
 			state := "C"
 			if app.hasDialog(StateContextManager) {
@@ -119,6 +119,14 @@ func TestComposerContextManagerPTY(t *testing.T) {
 	waitPTYContains(t, command, output, "Attachments: ~")
 	waitPTYContains(t, command, output, "Window: 128.0k")
 	waitPTYContains(t, command, output, "of window")
+	waitPTYContains(t, command, output, "Alert: attached est. >=100% window")
+	writePTY(t, terminal, "s\x1b[H")
+	waitPTYContains(t, command, output, "Sort: Tokens high")
+	waitPTYContains(t, command, output, "1. @batch-two")
+	writePTY(t, terminal, "s")
+	waitPTYContains(t, command, output, "Sort: Tokens low")
+	writePTY(t, terminal, "s")
+	waitPTYContains(t, command, output, "Sort: Draft")
 	writePTY(t, terminal, "\x1b[H\x1b[B")
 	waitPTYContains(t, command, output, "removed file")
 	writePTY(t, terminal, "\x1b[3~")
@@ -130,14 +138,18 @@ func TestComposerContextManagerPTY(t *testing.T) {
 	waitPTYContains(t, command, output, "CM_M n4 c0")
 	// Search is a separate input owner. Filter ANDs the query; Ctrl+A marks
 	// every match, and one undo restores both removed payloads together.
-	writePTY(t, terminal, "/batch\r\t\x01")
+	writePTY(t, terminal, "s/batch\r\t\x01")
 	waitPTYContains(t, command, output, "Type: Files | 2 marked")
 	writePTY(t, terminal, "\x1b[3~")
 	waitPTYContains(t, command, output, "CM_M n2 c0")
 	waitPTYContains(t, command, output, "No matching context")
+	if strings.Contains(output.screenPlain(), "Alert:") {
+		t.Fatal("removed sorted batch left a stale budget warning")
+	}
 	undoOffset = output.size()
 	writePTY(t, terminal, "\x1a")
 	waitPTYContainsAfter(t, command, output, undoOffset, "CM_M n4 c0")
+	waitPTYContainsAfter(t, command, output, undoOffset, "Alert: attached est. >=100% window")
 	writePTY(t, terminal, "\x01\x1b[3~")
 	waitPTYContains(t, command, output, "CM_M n2 c0")
 	// Clear the query and select Output without altering the remaining file.

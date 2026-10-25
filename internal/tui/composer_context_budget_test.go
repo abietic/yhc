@@ -249,6 +249,7 @@ func BenchmarkComposerContextBudgetCachedRepaint(b *testing.B) {
 	app := outputContextApp(b, 80)
 	contextManagerFixture(app, []string{"@large-one", "@large-two"}, []string{"file", "file"}, []string{strings.Repeat("x", 5<<20), strings.Repeat("y", 5<<20)})
 	app.openComposerContextManager()
+	contextManagerKey(app, 's', 0)
 	app.composerContextManagerOverlay("", 80, 24)
 	b.ReportAllocs()
 	b.ResetTimer()

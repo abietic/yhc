@@ -262,7 +262,7 @@ preview and removal perform no provider call, storage reread or command replay.
 
 The TUI-owned `chat:manageContext` action (`Alt+C` by default) opens one passive
 dialog for the active ordinary draft. It lists file ranges, whole files,
-selected output, Skills, MCP resources, large pastes and images in their exact
+selected output, Skills, MCP resources, large pastes and images, initially in
 draft order. The list reads existing element identities and captured payloads;
 opening or navigating performs no source reread, provider call or submission.
 An empty draft has an explicit empty state. History-only literal references do
@@ -286,6 +286,16 @@ resources, Pasted text and Images. Type and search intersect. Empty matches
 have a distinct empty state. Search input normalizes line breaks/tabs to
 spaces and removes unsafe terminal controls.
 
+Outside search focus, `s` cycles Draft, Tokens high (descending), and Tokens
+low (ascending). Sorting applies only to the filtered projection, reusing the
+draft-wide numeric cache. Equal estimates retain draft order; pending and
+unavailable estimates stay last in either direction. Images participate with
+their explicitly generic estimate. Selection and marks keep stable element
+identity across sorting and load-driven reordering. The draft, submission
+order, original rune ranges and undo history do not change. Configured undo
+bindings/chords retain precedence over `s`; inside search it remains ordinary
+query text.
+
 Up/Down selects by stable identity. Space toggles a mark; Ctrl+A toggles all
 matching attachments, including those outside the viewport. Changing query or
 type clears marks so hidden items cannot remain deletion targets. Delete or
@@ -302,7 +312,7 @@ original rich draft for a batch; image bytes remain in the existing
 reachability-owned draft-media table. Undo uses the configured chat binding
 outside search focus and clears marks. Enter outside search returns to the
 highlighted reference; Esc closes the manager and Ctrl+C closes even from
-search, without submitting. Query, filter and marks reset on open and are
+search, without submitting. Query, filter, sort and marks reset on open and are
 never persisted in history or view sidecars.
 
 The dialog accepts ordinary editable live drafts only. Pending admission/image
@@ -345,12 +355,22 @@ attachment share of that window, retaining values above 100%. Last input is a
 separate measured fact; unknown values are unavailable, while a reported zero
 remains zero. Child views do not reuse the leader's capacity or measured usage.
 
+At 80% of a known window, the panel warns that attachment estimates alone are
+near capacity. At 100% it shows an at/over-capacity alert. Thresholds use
+unrounded counts; rounded display percentages do not select the warning tier.
+Partial totals retain that qualification in the warning and may warn when
+their known estimates already reach a threshold. Generic image weights remain
+estimates. Filtering cannot hide a draft-wide warning; load, removal and undo
+refresh it. An unknown window produces no threshold assertion, and absence of
+a warning does not establish that the next request fits. Last input is never
+added to the draft total, since it can already include the same attachments.
+
 These are attachment estimates and maximum-window shares, not a tokenizer,
 request total, remaining admission budget, auto-compaction threshold or billing
 quote. Ordinary draft text, history, instructions and tools are excluded from
 the attachment total. Counts do not trim context, block submission or trigger
-compaction. Short viewports keep row estimates and omit the summary/detail
-rows as needed.
+compaction. Short viewports keep warnings, sort state, row estimates and close
+controls ahead of optional summary/detail rows.
 
 ## Ordered Submission
 
