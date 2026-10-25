@@ -15,7 +15,7 @@ from scripts.terminal_bench.recovery_bundle import RecoveryBundle, user_files
 from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history
 from scripts.terminal_bench import test_service_snapshot_docker as service_fixture
-from scripts.terminal_bench.workspace_recovery import ATTEMPT, WORKSPACE_COHORT, WORKSPACE_ROLE, DockerWorkspace, usage_history
+from scripts.terminal_bench.workspace_recovery import ATTEMPT, WORKSPACE_COHORT, WORKSPACE_ROLE, DockerWorkspace, native_proof, usage_history
 
 
 def validate_proof_directory(value):
@@ -312,6 +312,79 @@ class NativeColdDockerTests(unittest.TestCase):
 
     def test_public_exec_new_tool_after_restore_has_durable_invocation_accounting(self):
         self.check_public_execution_handoff("tool")
+
+    def check_interrupted_handoff(self, scenario):
+        after_tool = scenario == "crash_after_tool"
+        manifest, observed, unused_git_status = self.capture_joint(tool_ready=after_tool)
+        bundle = self.target_bundle()
+        receipt = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        claim = self.control / ("bundle-restore." + self.bundle_digest + ".json")
+        original_claim = claim.read_bytes()
+        original_tree = user_files(bundle.workspace.rpc("inventory"))
+        price = manifest["usage_history"]["segments"][0]["usage"]["cost"]["price_card"]
+        try:
+            result = json.loads(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container,
+                                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py",
+                                self.session, scenario, json.dumps(price)))
+        except subprocess.CalledProcessError as error:
+            self.fail("owned crash fixture: " + error.stderr)
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            write_report(Path(evidence) / ("native-interrupted-observed-" + self.attempt + ".json"),
+                         dict(scenario=scenario, offline_execution=result, verification_complete=False, can_resume_agent=False))
+        self.assertTrue(result["killed_by_fixture"])
+        self.assertEqual(result["exit_code"], -9)
+        self.assertIsNone(result["result"])
+        self.assertEqual(result["real_provider_requests"], 0)
+        self.assertFalse(result["provider_protocol_errors"], result["provider_protocol_errors"])
+        self.assertEqual(result["observed_provider_requests"], 2 if after_tool else 1)
+        checkpoint = result["durable_checkpoint"]
+        self.assertFalse(checkpoint["admission_closed"] or checkpoint["accounting_complete"]
+                         or checkpoint["can_resume_agent"] or checkpoint["new_spending_authorized"])
+        usage = checkpoint["snapshot"]
+        self.assertEqual((usage["in_flight"], usage["known_calls"], usage["total_tokens"]), (1, int(after_tool), 14 if after_tool else 0))
+        self.assertNotEqual(usage["cost"]["reservation"]["outstanding_amount"], "0.000000000000")
+        extended = history(self.session, [s["usage"] for s in manifest["usage_history"]["segments"]] + [usage])
+        accounting = usage_history(extended, self.session)
+        self.assertFalse(accounting["coverage_complete"] or accounting["new_spending_authorized"])
+        native = result["native_after_crash"]
+        self.assertFalse(native["validation_complete"] or native["can_resume_agent"])
+        self.assertIn("native_turn_incomplete", native["blocking_reasons"])
+        # Older valid receipts and the completed first tool response cannot
+        # substitute for the interrupted latest turn or its outstanding call.
+        self.assertTrue(native["native_usage"]["current_context_usage_known"])
+        self.assertTrue(native["native_usage"]["last_response_had_usage_metadata"])
+        self.assertEqual(native["native_usage"]["total_tokens"], 32 if after_tool else 18)
+        self.assertEqual(native["message_count"], 7 if after_tool else 5)
+        with self.assertRaisesRegex(SnapshotError, "native_restore_state_or_usage_incomplete"):
+            native_proof(native, self.session, "/workspace")
+        current_tree = user_files(bundle.workspace.rpc("inventory"))
+        if after_tool:
+            self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/continued.txt"), "continued once")
+            current_tree = [row for row in current_tree if row["path"] != "continued.txt"]
+        self.assertEqual(current_tree, original_tree)
+        self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/effects.count"), "1")
+        self.assertEqual(claim.read_bytes(), original_claim)
+        with self.assertRaisesRegex(SnapshotError, "already_claimed"):
+            bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        self.assertEqual(bundle.workspace.inventory(), receipt["workspace_runtime"])
+        for name, old in observed.items():
+            actual = json.loads(self.docker("exec", bundle.services.backend.handles[name], "/usr/local/bin/python3", "-I",
+                                           "/opt/checkpoint/service.py", "business", "state"))
+            self.assertEqual((actual["memory"], actual["durable"], actual["next_random"]), (old["memory"], old["durable"], old["next_random"]))
+        if evidence:
+            write_report(Path(evidence) / ("native-handoff-" + scenario + ".json"),
+                         dict(scenario=scenario, bundle_sha256=self.bundle_digest, restored_components=receipt,
+                              offline_execution=result, extended_history=extended, accounting=accounting,
+                              source_containers_and_volumes_destroyed=True, original_user_files_preserved=True,
+                              new_tool_effects=int(after_tool), original_effect_count=1, claim_unchanged=True,
+                              verification_complete=True, can_resume_agent=False, new_spending_authorized=False))
+
+    def test_interrupted_first_request_retains_reservation_and_incomplete_native_turn(self):
+        self.check_interrupted_handoff("crash_before_response")
+
+    def test_interrupted_request_after_committed_tool_cannot_replay_or_reopen_claim(self):
+        self.check_interrupted_handoff("crash_after_tool")
 
     def test_public_exec_unknown_usage_stops_without_retry_and_retains_reservation(self):
         self.check_public_execution_handoff("unknown")
