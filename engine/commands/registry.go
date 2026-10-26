@@ -2318,6 +2318,7 @@ Use quoted rule arguments so parsing is deterministic:
 	})
 
 	registerAdditionalCommands(r)
+	registerSideQuestionCommand(r)
 	registerRemovedDefaults(r)
 }
 

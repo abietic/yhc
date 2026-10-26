@@ -193,7 +193,7 @@ func TestQueryEngineLoadsBundledWorkflowsIntoProductionSurface(t *testing.T) {
 	t.Cleanup(eng.Close)
 	registry := eng.GetCommandRegistry()
 	wantCounts := map[commands.Entrypoint]int{
-		commands.EntrypointTUI:            44,
+		commands.EntrypointTUI:            45,
 		commands.EntrypointPlain:          32,
 		commands.EntrypointHeadless:       18,
 		commands.EntrypointACP:            14,

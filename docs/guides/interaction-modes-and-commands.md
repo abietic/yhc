@@ -190,6 +190,22 @@ removal. Unknown or unavailable means delivery evidence is incomplete.
 available. Pending input and its chosen mode survive restart; recent completed
 receipts are view-local. See the [runtime input contract](../architecture/tui/contracts/busy-queue.md).
 
+### Ask a side question
+
+Use `/btw <question>` to ask about the conversation and current tool progress
+while the leader task continues. `/btw` without arguments opens a question
+editor. The command palette supports the same form and preserves the current
+draft. Asking makes one tool-free call to the current model and may incur
+provider usage. Pending permissions, Plan approval, unfinished Goals, and
+unavailable models explain why a question cannot run.
+
+The answer uses the bounded snapshot captured when you ask; it does not track
+later changes. Esc cancels or closes the answer. Enter on an answer explicitly
+adds its question and answer to your normal message draft; sending that draft
+is a separate action. Side questions are ephemeral and are not restored with
+a session. Closing the panel or changing engine/thread discards their local
+presentation. See the [side question contract](../architecture/tui/contracts/composer.md#side-questions).
+
 ### Request a next-step suggestion
 
 In the TUI, leave the leader input empty and press `Ctrl+Space`. YHC shows

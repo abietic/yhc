@@ -82,6 +82,9 @@ func (a *App) handleCommandPaletteKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	a.beginCommandPaletteSubmission(operation.Command.Name)
+	if operation.Command.Name == "btw" {
+		return a.dispatchSideQuestion(input, cmdCtx, a.claimCommandPaletteSubmission("btw"), true)
+	}
 	a.textarea.SetValue(input)
 	a.composerElements = nil
 	a.inputMode = InputCommand
