@@ -134,6 +134,7 @@ type App struct {
 	sideQuestionDialog   *SideQuestionDialog
 	changeReviewPanel    *ChangeReviewPanel
 	changeReviewTarget   changeReviewTarget
+	workspaceRestoreUI   *workspaceRestoreUIState
 	sideQuestionRequest  *sideQuestionRequest
 	sideQuestionPalette  *commandPaletteSubmission
 	sideQuestionAnswerID string
@@ -917,6 +918,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			a.reconcileNotificationExpiry(),
 		)
 	}()
+
+	if a.handleWorkspaceRestoreMessage(msg) {
+		return a, nil
+	}
 
 	var cmds []tea.Cmd
 
@@ -4896,6 +4901,13 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 }
 
 func (a *App) sendShellCommand(command string) tea.Cmd {
+	owner := a.engine
+	release, leaseErr := owner.BeginExternalWorkspaceWrite()
+	if leaseErr != nil {
+		a.showNotification(leaseErr.Error(), NotifyWarning)
+		return nil
+	}
+
 	if a.state == StateWelcome {
 		a.state = StateChat
 	}
@@ -4910,8 +4922,12 @@ func (a *App) sendShellCommand(command string) tea.Cmd {
 	inputJSON, _ := jsonPkg.Marshal(input)
 	a.chat.AppendToolStart(toolID, "Bash", string(inputJSON))
 	return func() tea.Msg {
+		defer release()
 		bash := tools.BashTool()
-		ctx := contextPkg.Background()
+		ctx, contextErr := owner.ExternalWorkspaceShellContext(contextPkg.Background())
+		if contextErr != nil {
+			return shellResultMsg{toolID: toolID, command: command, result: contextErr.Error(), isError: true}
+		}
 		var result string
 		var err error
 		if bash.ExecuteCtx != nil {

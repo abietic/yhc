@@ -491,3 +491,11 @@ captured content to a draft. The removed `/summary` workflow remains a P21.2
 tombstone; `/recap` is a factual projection with no summarization request.
 The [session contract](../tui/contracts/sessions.md#captured-changes-and-execution-facts)
 owns capture, persistence, coverage and replay semantics.
+
+
+The history panel's **r** action is a separate engine-owned filesystem
+transition, not a side effect of dispatching `/changes`. Its preview confirms
+the bounded path set before a fresh native allow-once permission is requested;
+**t** and **b** prepare interrupted recovery with the same fences. These actions
+make no model request. The [guarded restore contract](../tui/contracts/sessions.md#guarded-file-restore)
+owns their eligibility, durability, cancellation and read-guard behavior.

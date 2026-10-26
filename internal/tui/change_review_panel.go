@@ -447,9 +447,12 @@ func (p *ChangeReviewPanel) renderLines(width, height int) []string {
 	if p.feedback != "" {
 		lines = append(lines, p.styles.Error.Render(changeReviewDisplay(p.feedback)))
 	}
-	footer := "↑↓ navigate  Enter open  Esc close"
+	footer := "↑↓ move Enter view r restore Esc close"
 	if p.preview != nil {
-		footer = "Tab hunk  Space mark  a add  Esc list"
+		footer = "Tab hunk a add r restore Esc list"
+	}
+	if p.snapshot.Restore != nil && (p.snapshot.Restore.State == "applying" || p.snapshot.Restore.State == "partial") {
+		footer = "t retry b rollback Esc close"
 	}
 	lines = append(lines, p.styles.DialogHelp.Render(footer))
 	if len(lines) > height {

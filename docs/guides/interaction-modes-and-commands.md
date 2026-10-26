@@ -197,7 +197,7 @@ turn. Up/Down selects a row; Enter collapses a turn or opens a file. In a file
 preview, Tab moves between hunks, Space marks a hunk, and **a** adds the marked
 hunks to the ordinary draft. With no marks, **a** adds the complete capture.
 Esc returns to the list, then closes it. Submit the draft separately when ready.
-Opening from the command palette preserves an existing draft and attachments.
+Opening from the command palette preserves an existing draft and attachments. See [guarded file restore](#guarded-file-restore) for an explicitly authorized disk change.
 
 The view uses recorded before/after text, including failed tools that changed
 a file. It does not read a new Git diff. Unsupported, pending and uncaptured
@@ -738,3 +738,24 @@ workflows plus `/cpr` return P21.2 migration guidance.
 | Workspace command service | [`workspace_commands.go`](../../engine/workspace_commands.go), [`execution_controls.go`](../../engine/execution_controls.go) |
 | Entrypoint projections | [`app.go`](../../internal/tui/app.go), [`root.go`](../../cmd/yhc/cmd/root.go), [`agent.go`](../../server/acp/agent.go) |
 | Architecture | [Runtime](../architecture/runtime/README.md) |
+
+
+### Guarded file restore
+
+In `/changes`, select a completed turn or captured file and press **r**. Review
+the exact paths, current/target existence, permissions and diff. Tab cycles
+files; arrows scroll. Enter confirms the preview, then a separate allow-once
+permission decides whether the engine may apply it. Esc discards the preview.
+No model call is made, and conversation messages and your draft stay intact.
+
+This is available for complete new Write/Edit captures on macOS and Linux.
+Legacy history, Bash/hooks/MCP/child effects, unsupported content, active work,
+queued input and conflicting external changes explain why a restore cannot be
+prepared. Stop active work and withdraw queued input before trying again.
+
+If interrupted, open `/changes` and press **t** to preview retry or **b** to
+preview rollback to the pre-restore states. Every attempt asks again; restart
+does not apply files automatically. Unknown bytes are preserved. After a file
+changes, the next model turn must Read it again before Write/Edit. See the
+[restore contract](../architecture/tui/contracts/sessions.md#guarded-file-restore)
+for capture limits and recovery boundaries.

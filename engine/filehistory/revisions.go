@@ -44,6 +44,7 @@ type RevisionFileState struct {
 type RevisionRecord struct {
 	ID, SessionID, TurnID, ToolUseID, ToolName, Path, Outcome, Reason string
 	Sequence                                                          uint64
+	ParentExisted                                                     bool
 	Timestamp                                                         time.Time
 	Before, After                                                     RevisionFileState
 }
@@ -78,20 +79,26 @@ type journalFrame struct {
 type RevisionJournal struct {
 	mu sync.Mutex
 
-	rootPath, dir, sessionID string
-	rootIdentity             string
-	root, dirRoot            *os.Root
-	records                  map[string]RevisionRecord
-	order                    []string
-	turns                    map[string]TurnRecord
-	turnOrder                []string
-	frameSequence            uint64
-	bytes                    int64
-	warning                  string
-	sealed                   bool
-	closed                   bool
-	syncDirectory            func(*os.Root) error
-	captureOpened            func(string)
+	rootPath, dir, sessionID  string
+	rootIdentity              string
+	root, dirRoot             *os.Root
+	records                   map[string]RevisionRecord
+	order                     []string
+	turns                     map[string]TurnRecord
+	turnOrder                 []string
+	frameSequence             uint64
+	bytes                     int64
+	warning                   string
+	sealed                    bool
+	closed                    bool
+	restoreBeforeStorePublish func()
+	restoreBeforeInstall      func()
+	restoreAfterPath          func(int) error
+	restorePreview            *restorePreviewAdmission
+	restoreLeaseHeld          bool
+	restoreSyncFile           func(*os.File) error
+	syncDirectory             func(*os.Root) error
+	captureOpened             func(string)
 }
 
 func OpenRevisionJournal(root, dir, sessionID string) (*RevisionJournal, error) {
@@ -276,8 +283,11 @@ func (j *RevisionJournal) replay() error {
 }
 
 func (j *RevisionJournal) applyFrame(f journalFrame) error {
-	if f.Version != 1 || f.Root != j.rootPath || f.RootIdentity != j.rootIdentity || f.SessionID != j.sessionID || f.FrameSequence != j.frameSequence+1 {
+	if (f.Version != 1 && f.Version != 2) || f.Root != j.rootPath || f.RootIdentity != j.rootIdentity || f.SessionID != j.sessionID || f.FrameSequence != j.frameSequence+1 {
 		return fmt.Errorf("revision journal identity or sequence mismatch")
+	}
+	if f.Version == 1 && (f.Record.ParentExisted || f.Turn != nil && (f.Turn.RestoreBoundaryKnown || f.Turn.RestoreEligible || f.Turn.RestoreReason != "" || f.Turn.FileBoundarySequence != 0)) {
+		return fmt.Errorf("legacy revision journal frame contains restore proof")
 	}
 	switch f.Type {
 	case "before":
@@ -301,6 +311,15 @@ func (j *RevisionJournal) applyFrame(f journalFrame) error {
 			return fmt.Errorf("invalid revision journal after frame")
 		}
 		j.records[f.Record.ID] = cloneRecord(f.Record)
+	case "restore_result":
+		if f.Version != 2 || f.Turn != nil || validRecord(f.Record, j.sessionID) != nil || len(j.order) >= maxLogicalRecords || f.Record.Sequence != uint64(len(j.order)+1) || !f.Record.ParentExisted || !validStoredPath(f.Record.Path) || !f.Record.Before.Captured || !f.Record.After.Captured || f.Record.Outcome != "succeeded" || (f.Record.ToolName != "WorkspaceRestore" && f.Record.ToolName != "WorkspaceRestoreRollback") {
+			return fmt.Errorf("invalid restore receipt")
+		}
+		if _, exists := j.records[f.Record.ID]; exists {
+			return fmt.Errorf("duplicate restore receipt")
+		}
+		j.records[f.Record.ID] = cloneRecord(f.Record)
+		j.order = append(j.order, f.Record.ID)
 	case "gap":
 		if f.Turn != nil || validRecord(f.Record, j.sessionID) != nil {
 			return fmt.Errorf("invalid revision journal record")
@@ -346,7 +365,7 @@ func validRecord(r RevisionRecord, sessionID string) error {
 }
 
 func emptyRevisionRecord(r RevisionRecord) bool {
-	return r.ID == "" && r.SessionID == "" && r.TurnID == "" && r.ToolUseID == "" && r.ToolName == "" && r.Path == "" && r.Outcome == "" && r.Reason == "" && r.Sequence == 0 && r.Timestamp.IsZero() && !r.Before.Captured && !r.Before.Exists && r.Before.Mode == 0 && len(r.Before.Data) == 0 && r.Before.Digest == "" && r.Before.Reason == "" && !r.After.Captured && !r.After.Exists && r.After.Mode == 0 && len(r.After.Data) == 0 && r.After.Digest == "" && r.After.Reason == ""
+	return r.ID == "" && r.SessionID == "" && r.TurnID == "" && r.ToolUseID == "" && r.ToolName == "" && r.Path == "" && r.Outcome == "" && r.Reason == "" && r.Sequence == 0 && !r.ParentExisted && r.Timestamp.IsZero() && !r.Before.Captured && !r.Before.Exists && r.Before.Mode == 0 && len(r.Before.Data) == 0 && r.Before.Digest == "" && r.Before.Reason == "" && !r.After.Captured && !r.After.Exists && r.After.Mode == 0 && len(r.After.Data) == 0 && r.After.Digest == "" && r.After.Reason == ""
 }
 
 func validState(s RevisionFileState) bool {
@@ -364,7 +383,7 @@ func validState(s RevisionFileState) bool {
 }
 
 func sameIntent(a, b RevisionRecord) bool {
-	return a.ID == b.ID && a.SessionID == b.SessionID && a.TurnID == b.TurnID && a.ToolUseID == b.ToolUseID && a.ToolName == b.ToolName && a.Path == b.Path && a.Reason == b.Reason && a.Sequence == b.Sequence && a.Timestamp.Equal(b.Timestamp)
+	return a.ID == b.ID && a.SessionID == b.SessionID && a.TurnID == b.TurnID && a.ToolUseID == b.ToolUseID && a.ToolName == b.ToolName && a.Path == b.Path && a.Reason == b.Reason && a.Sequence == b.Sequence && a.ParentExisted == b.ParentExisted && a.Timestamp.Equal(b.Timestamp)
 }
 
 func validOutcome(outcome string) bool {
@@ -405,6 +424,10 @@ func (j *RevisionJournal) Begin(turnID, toolUseID, toolName, path string) (strin
 		j.warning = ErrJournalCapacity.Error()
 		return "", ErrJournalCapacity
 	}
+	parentExisted, err := j.parentExisted(rel)
+	if err != nil {
+		return "", err
+	}
 	before, err := j.capture(rel)
 	if err != nil {
 		return "", err
@@ -413,13 +436,27 @@ func (j *RevisionJournal) Begin(turnID, toolUseID, toolName, path string) (strin
 	if err != nil {
 		return "", err
 	}
-	r := RevisionRecord{ID: id, SessionID: j.sessionID, TurnID: turnID, ToolUseID: toolUseID, ToolName: toolName, Path: rel, Sequence: uint64(len(j.order) + 1), Timestamp: time.Now().UTC(), Before: before, After: RevisionFileState{Captured: false, Reason: "pending"}}
+	r := RevisionRecord{ID: id, SessionID: j.sessionID, TurnID: turnID, ToolUseID: toolUseID, ToolName: toolName, Path: rel, Sequence: uint64(len(j.order) + 1), ParentExisted: parentExisted, Timestamp: time.Now().UTC(), Before: before, After: RevisionFileState{Captured: false, Reason: "pending"}}
 	if err := j.append("before", r); err != nil {
 		return "", err
 	}
 	j.records[id] = cloneRecord(r)
 	j.order = append(j.order, id)
 	return id, nil
+}
+
+func (j *RevisionJournal) parentExisted(rel string) (bool, error) {
+	info, err := j.root.Stat(filepath.Dir(rel))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat revision parent: %w", err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("revision parent is not a directory")
+	}
+	return true, nil
 }
 
 func (j *RevisionJournal) Finish(id, outcome string) error {
@@ -561,14 +598,19 @@ func sameCaptureMeta(a, b os.FileInfo) bool {
 }
 
 func (j *RevisionJournal) append(kind string, r RevisionRecord) error {
-	return j.appendFrame(journalFrame{Version: 1, Type: kind, Root: j.rootPath, SessionID: j.sessionID, Record: r})
+	return j.appendFrame(journalFrame{Version: 2, Type: kind, Root: j.rootPath, SessionID: j.sessionID, Record: r})
 }
 
 func (j *RevisionJournal) appendTurn(kind string, turn TurnRecord) error {
-	return j.appendFrame(journalFrame{Version: 1, Type: kind, Root: j.rootPath, SessionID: j.sessionID, Turn: &turn})
+	return j.appendFrame(journalFrame{Version: 2, Type: kind, Root: j.rootPath, SessionID: j.sessionID, Turn: &turn})
 }
 
 func (j *RevisionJournal) appendFrame(f journalFrame) error {
+	unlock, err := j.lockStoreLocked()
+	if err != nil {
+		return j.seal(err)
+	}
+	defer unlock()
 	if err := j.checkRootIdentity(); err != nil {
 		return j.seal(err)
 	}
@@ -663,6 +705,7 @@ func (j *RevisionJournal) Close() error {
 	}
 	j.sealed = true
 	j.closed = true
+	j.restorePreview = nil
 	var errs []error
 	if j.dirRoot != nil {
 		errs = append(errs, j.dirRoot.Close())

@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/abietic/yhc/engine/filehistory"
 )
 
 const (
@@ -14,15 +16,17 @@ const (
 )
 
 // workspaceHistoryDeletePlan is deliberately narrow: a session owns exactly
-// one private journal, never an arbitrary directory tree.
+// a fixed private sidecar set, never an arbitrary directory tree.
 type workspaceHistoryDeletePlan struct {
-	path        string
-	name        string
-	present     bool
-	parent      *os.Root
-	root        *os.Root
-	dirInfo     os.FileInfo
-	journalInfo os.FileInfo
+	path      string
+	name      string
+	present   bool
+	parent    *os.Root
+	root      *os.Root
+	dirInfo   os.FileInfo
+	files     map[string]os.FileInfo
+	unlock    func()
+	sessionID string
 }
 
 func preflightWorkspaceHistoryDelete(dir, sessionID string) (*workspaceHistoryDeletePlan, error) {
@@ -32,7 +36,7 @@ func preflightWorkspaceHistoryDelete(dir, sessionID string) (*workspaceHistoryDe
 	if err != nil {
 		return nil, fmt.Errorf("open workspace history parent: %w", err)
 	}
-	plan := &workspaceHistoryDeletePlan{path: path, name: name, parent: parent}
+	plan := &workspaceHistoryDeletePlan{path: path, name: name, parent: parent, sessionID: sessionID}
 	info, err := parent.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return plan, nil
@@ -59,6 +63,11 @@ func preflightWorkspaceHistoryDelete(dir, sessionID string) (*workspaceHistoryDe
 	plan.present = true
 	plan.root = root
 	plan.dirInfo = info
+	plan.unlock, err = filehistory.LockWorkspaceHistoryDirectory(root)
+	if err != nil {
+		plan.close()
+		return nil, err
+	}
 	if err := plan.scan(); err != nil {
 		plan.close()
 		return nil, err
@@ -78,27 +87,32 @@ func (p *workspaceHistoryDeletePlan) scan() error {
 	if err != nil {
 		return fmt.Errorf("open workspace history directory: %w", err)
 	}
-	entries, readErr := file.ReadDir(2)
+	entries, readErr := file.ReadDir(4)
 	closeErr := file.Close()
 	if (readErr != nil && !errors.Is(readErr, io.EOF)) || closeErr != nil {
 		return errors.New("list workspace history failed")
 	}
-
-	if len(entries) == 0 {
-		p.journalInfo = nil
-		return nil
-	}
-	if len(entries) != 1 || entries[0].Name() != workspaceHistoryJournal {
+	if len(entries) > 3 {
 		return errors.New("workspace history contains an unexpected entry")
 	}
-	info, err := p.root.Lstat(workspaceHistoryJournal)
-	if err != nil {
-		return fmt.Errorf("stat workspace history journal: %w", err)
+	files := make(map[string]os.FileInfo, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if name != workspaceHistoryJournal && name != "restore.json" && name != "restore.json.tmp" {
+			return errors.New("workspace history contains an unexpected entry")
+		}
+		info, err := p.root.Lstat(name)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+			return errors.New("workspace history sidecar must be a non-symlink mode-0600 regular file")
+		}
+		files[name] = info
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-		return errors.New("workspace history journal must be a non-symlink mode-0600 regular file")
+	if _, found := files["restore.json"]; found {
+		if err := filehistory.RestoreStoreDeletionReady(p.path, p.sessionID); err != nil {
+			return err
+		}
 	}
-	p.journalInfo = info
+	p.files = files
 	return nil
 }
 
@@ -123,12 +137,17 @@ func (p *workspaceHistoryDeletePlan) revalidate() error {
 	if err != nil || validateWorkspaceHistoryDirectory(current) != nil || !os.SameFile(p.dirInfo, current) {
 		return errors.New("workspace history changed before deletion")
 	}
-	expectedJournal := p.journalInfo
-	if err := p.scan(); err != nil ||
-		(expectedJournal == nil) != (p.journalInfo == nil) ||
-		(expectedJournal != nil && !os.SameFile(expectedJournal, p.journalInfo)) {
+	expected := p.files
+	if err := p.scan(); err != nil || len(expected) != len(p.files) {
 		return errors.New("workspace history changed before deletion")
 	}
+	for name, prior := range expected {
+		current := p.files[name]
+		if current == nil || !os.SameFile(prior, current) || prior.Mode() != current.Mode() || prior.Size() != current.Size() || !prior.ModTime().Equal(current.ModTime()) {
+			return errors.New("workspace history changed before deletion")
+		}
+	}
+
 	return nil
 }
 
@@ -139,11 +158,25 @@ func (p *workspaceHistoryDeletePlan) remove() error {
 	if err := p.revalidate(); err != nil {
 		return err
 	}
-	if p.journalInfo != nil {
-		if err := p.root.Remove(workspaceHistoryJournal); err != nil {
-			return fmt.Errorf("remove workspace history journal: %w", err)
+	// Delete the recovery record before the journal, so an interrupted
+	// cleanup can be retried without needing a journal already removed.
+	for _, name := range []string{"restore.json.tmp", "restore.json", workspaceHistoryJournal} {
+		prior := p.files[name]
+		if prior == nil {
+			continue
+		}
+		current, err := p.root.Lstat(name)
+		if err != nil || !os.SameFile(prior, current) || prior.Mode() != current.Mode() || prior.Size() != current.Size() || !prior.ModTime().Equal(current.ModTime()) {
+			return errors.New("workspace history changed during deletion")
+		}
+		if err := p.root.Remove(name); err != nil {
+			return fmt.Errorf("remove workspace history sidecar: %w", err)
 		}
 	}
+	if err := filehistory.SyncWorkspaceHistoryDirectory(p.root); err != nil {
+		return errors.New("sync workspace history deletion failed")
+	}
+
 	// Keep the now-empty private directory. Portable path-based rmdir cannot
 	// atomically bind the verified inode: removing its name could delete a newly
 	// substituted directory. Retaining empty namespace metadata removes all
@@ -157,6 +190,10 @@ func (p *workspaceHistoryDeletePlan) remove() error {
 }
 
 func (p *workspaceHistoryDeletePlan) close() {
+	if p != nil && p.unlock != nil {
+		p.unlock()
+		p.unlock = nil
+	}
 	if p != nil && p.root != nil {
 		_ = p.root.Close()
 		p.root = nil

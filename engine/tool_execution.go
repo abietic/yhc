@@ -426,7 +426,7 @@ func executeToolCall(
 	}
 	var finishWorkspaceRevision func(string)
 	if params.Deps != nil && params.Deps.RecordWorkspaceTool != nil {
-		finishWorkspaceRevision = params.Deps.RecordWorkspaceTool(canonicalToolName, toolUseID, cloneInputMap(currentInput))
+		finishWorkspaceRevision = params.Deps.RecordWorkspaceTool(canonicalToolName, toolUseID, cloneInputMap(currentInput), settledPermissionAction)
 	}
 	result, execErr := params.ToolExecutor(ctx, toolName, jsonInput)
 	if finishWorkspaceRevision != nil {

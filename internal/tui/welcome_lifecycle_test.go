@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/abietic/yhc/engine"
 )
 
 func prepareViewSizedApp(app *App) *App {
@@ -153,7 +154,9 @@ func TestWelcomeFirstSlashSubmitTransitionsToChat(t *testing.T) {
 }
 
 func TestWelcomeFirstShellSubmitTransitionsToChat(t *testing.T) {
-	app := New(Config{})
+	eng := engine.NewQueryEngine(engine.QueryEngineConfig{SessionID: "welcome-shell", CWD: t.TempDir(), TranscriptDir: t.TempDir()})
+	t.Cleanup(eng.Close)
+	app := New(Config{Engine: eng})
 	app.inputMode = InputShell
 	app.textarea.SetValue("pwd")
 
@@ -339,5 +342,20 @@ func TestResumedConfigStartsInChat(t *testing.T) {
 	}
 	if got := app.textarea.Value(); got != "h" {
 		t.Fatalf("textarea after resumed typing = %q", got)
+	}
+}
+
+func TestWelcomeShellWithoutEnginePreservesUnsubmittedDraft(t *testing.T) {
+	app := New(Config{})
+	app.inputMode = InputShell
+	app.textarea.SetValue("pwd")
+	if cmd := app.sendMessage(); cmd != nil {
+		t.Fatal("unowned shell execution was scheduled")
+	}
+	if app.textarea.Value() != "pwd" {
+		t.Fatal("rejected shell request lost its draft")
+	}
+	if len(app.chat.items) != 0 {
+		t.Fatal("rejected shell request appeared started")
 	}
 }

@@ -338,7 +338,7 @@ func (a *App) renderDialogState(state AppState, base string) string {
 	case StateInputDelivery:
 		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, false)
 	case StateChangeReview:
-		return a.changeReviewPanel.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+		return a.renderWorkspaceRestoreOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateSideQuestion:
 		return a.sideQuestionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateInputQueue:
@@ -451,6 +451,9 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	case StateInputDelivery:
 		return true, a.handleInputDeliveryKey(msg)
 	case StateChangeReview:
+		if handled, cmd := a.handleWorkspaceRestoreKey(msg); handled {
+			return true, cmd
+		}
 		a.handleChangeReviewKey(msg)
 		return true, nil
 	case StateSideQuestion:

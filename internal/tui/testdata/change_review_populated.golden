@@ -4,27 +4,27 @@ Write/Edit captures only
   12:34:56Z turn turn-review completed
   cannot review Bash : Non-file tool ef…
 ❯ 12:34:56Z Edit [succeeded] note.txt
-↑↓ navigate  Enter open  Esc close
+↑↓ move Enter view r restore Esc close
 == preview 40 ==
 Captured changes
- Write/Edit captures only
- Edit "note.txt"
- turn-review succeeded 12:34:56Z
- [x] hunk 1/1
- -old
- -last
- \ No newline at end of file
- +new
- +LAST
- \ No newline at end of file
- Tab hunk  Space mark  a add  Esc list
+   Write/Edit captures only
+   Edit "note.txt"
+   turn-review succeeded 12:34:56Z
+   [x] hunk 1/1
+   -old
+   -last
+   \ No newline at end of file
+   +new
+   +LAST
+   \ No newline at end of file
+   Tab hunk a add r restore Esc list
 == list 80 ==
 Captured changes
          Captured Write/Edit only; external effects excluded
            12:34:56Z turn turn-review completed
            cannot review Bash : Non-file tool effects are not captured.
          ❯ 12:34:56Z Edit [succeeded] note.txt
-         ↑↓ navigate  Enter open  Esc close
+         ↑↓ move Enter view r restore Esc close
 == preview 80 ==
 Captured changes
               Captured Write/Edit only; external effects excluded
@@ -37,14 +37,14 @@ Captured changes
               +new
               +LAST
               \ No newline at end of file
-              Tab hunk  Space mark  a add  Esc list
+              Tab hunk a add r restore Esc list
 == list 120 ==
 Captured changes
                              Captured Write/Edit only; external effects excluded
                                12:34:56Z turn turn-review completed
                                cannot review Bash : Non-file tool effects are not captured.
                              ❯ 12:34:56Z Edit [succeeded] note.txt
-                             ↑↓ navigate  Enter open  Esc close
+                             ↑↓ move Enter view r restore Esc close
 == preview 120 ==
 Captured changes
                                   Captured Write/Edit only; external effects excluded
@@ -57,14 +57,14 @@ Captured changes
                                   +new
                                   +LAST
                                   \ No newline at end of file
-                                  Tab hunk  Space mark  a add  Esc list
+                                  Tab hunk a add r restore Esc list
 == list 180 ==
 Captured changes
                                                            Captured Write/Edit only; external effects excluded
                                                              12:34:56Z turn turn-review completed
                                                              cannot review Bash : Non-file tool effects are not captured.
                                                            ❯ 12:34:56Z Edit [succeeded] note.txt
-                                                           ↑↓ navigate  Enter open  Esc close
+                                                           ↑↓ move Enter view r restore Esc close
 == preview 180 ==
 Captured changes
                                                                 Captured Write/Edit only; external effects excluded
@@ -77,4 +77,4 @@ Captured changes
                                                                 +new
                                                                 +LAST
                                                                 \ No newline at end of file
-                                                                Tab hunk  Space mark  a add  Esc list
+                                                                Tab hunk a add r restore Esc list

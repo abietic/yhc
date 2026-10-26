@@ -1238,6 +1238,19 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		}()
 		return events, terminal
 	}
+	var restoreNotice string
+	var restoreContextErr error
+	ctx, restoreNotice, restoreContextErr = e.workspaceRestoreQueryContext(ctx)
+	if restoreContextErr == nil {
+		restoreContextErr = e.workspaceCaptureBoundary(ctx, turnID)
+	}
+	if restoreContextErr != nil {
+		e.releaseRuntimeItem(initialRuntimeItemID)
+		e.endPlanTurn(turnID)
+		terminal := Terminal{Reason: TerminalPersistenceError, Err: restoreContextErr}
+		go func() { defer close(events); events <- QueryEvent{Type: EventTerminal, TerminalInfo: &terminal} }()
+		return events, terminal
+	}
 	if admittedPrompt != nil {
 		if err := e.activateAdmittedPrompt(
 			admittedPrompt,
@@ -1646,6 +1659,9 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 			basePrompt = basePrompt + "\n\n" + claudeMdContent
 		}
 
+		if restoreNotice != "" {
+			basePrompt += "\n\n" + restoreNotice
+		}
 		systemPrompt := &schema.Message{
 			Role:    schema.System,
 			Content: basePrompt,
@@ -4895,6 +4911,9 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 			e.planMu.Unlock()
 		}
 	}()
+	if e.hasExternalWorkspaceWriters() {
+		return nil, fmt.Errorf("wait for terminal work before switching sessions")
+	}
 	if e.planActiveTurnID != "" && e.planActiveTurnID != turnID {
 		return nil, fmt.Errorf(
 			"%w: turn %s owns the boundary",

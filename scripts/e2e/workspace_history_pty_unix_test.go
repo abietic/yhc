@@ -101,9 +101,11 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// This workflow exercises explicitly authorized local file recovery. Pin
+	// its execution policy rather than depending on the host sandbox probe.
 	cmd := exec.CommandContext(ctx, e2eBinary(t),
 		"--provider", "openai", "--model", "gpt-4o", "--api-key", "e2e-key", "--base-url", provider.URL,
-		"--tools", "Write", "--permission-mode", "acceptEdits")
+		"--tools", "Read,Write,Edit", "--permission-mode", "acceptEdits", "--sandbox", "danger-full-access")
 	cmd.Dir = repo
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(root, "home"), "XDG_CONFIG_HOME=" + filepath.Join(root, "cfg"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "TMPDIR=" + filepath.Join(root, "tmp"), "CLAUDE_TRANSCRIPT_DIR=" + filepath.Join(root, "transcripts"), "NO_PROXY=127.0.0.1,localhost", "GOTOOLCHAIN=local", "TERM=xterm-256color"}
 	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 100, Rows: 28})
@@ -171,11 +173,11 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	output.emulator.Resize(40, 12)
 	output.width, output.height = 40, 12
 	output.mu.Unlock()
-	cliContextWaitScreenContains(t, cmd, output, "Tab hunk  Space mark  a add  Esc list")
+	cliContextWaitScreenContains(t, cmd, output, "Tab hunk a add r restore Esc list")
 	cliContextWritePTY(t, terminal, "\t ")
 	cliContextWaitScreenContains(t, cmd, output, "[x] hunk")
 	cliContextWritePTY(t, terminal, "\x1b")
-	cliContextWaitScreenContains(t, cmd, output, "Enter open")
+	cliContextWaitScreenContains(t, cmd, output, "Enter view")
 	// Reopen after Esc, then add the literal captured hunk. Adding only mutates
 	// the draft, so the primary request count must remain at the completed turn.
 	cliContextWritePTY(t, terminal, "\x1b[B\r\t a")
@@ -196,6 +198,44 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 
 	cliContextWritePTY(t, terminal, "\r")
 	cliContextWait(t, cmd, output, "HISTORY_CONTEXT_ACCEPTED")
+	// Recovery is a separate local action: preview, explicit confirmation,
+	// then a fresh allow-once permission. Neither UI step dispatches the model.
+	cliContextWritePTY(t, terminal, "/changes\r")
+	cliContextWaitScreenContains(t, cmd, output, "Captured changes")
+	cliContextWritePTY(t, terminal, "\x1b[Fr") // last captured file -> restore preview
+	cliContextWaitScreenContains(t, cmd, output, "Enter confirm")
+	if got, err := os.ReadFile(path); err != nil || string(got) != content {
+		t.Fatal("restore preview wrote the workspace")
+	}
+	cliContextWritePTY(t, terminal, "\r")
+	cliContextWaitScreenContains(t, cmd, output, "WorkspaceRestore")
+	cliContextWaitScreenContains(t, cmd, output, "Tool use")
+	if primary.Load() != 3 {
+		t.Fatal("restore confirmation dispatched a model")
+	}
+	cliContextWritePTY(t, terminal, "n")
+	cliContextWaitScreenContains(t, cmd, output, "not authorized")
+	if got, err := os.ReadFile(path); err != nil || string(got) != content {
+		t.Fatal("denied restore changed file")
+	}
+	cliContextWritePTY(t, terminal, "\x1b")
+	cliContextWaitScreenContains(t, cmd, output, "Captured changes")
+	cliContextWritePTY(t, terminal, "\x1b[Fr")
+	cliContextWaitScreenContains(t, cmd, output, "Enter confirm")
+	cliContextWritePTY(t, terminal, "\r")
+	cliContextWaitScreenContains(t, cmd, output, "Tool use")
+	cliContextWritePTY(t, terminal, "y")
+	cliContextWaitScreenContains(t, cmd, output, "completed 1/1")
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("created file was not removed by confirmed restore: %v", err)
+	}
+	if primary.Load() != 3 {
+		t.Fatal("applying restore called the provider")
+	}
+	cliContextWritePTY(t, terminal, "\x1b")
+	cliContextWaitScreenContains(t, cmd, output, "Captured changes")
+	cliContextWritePTY(t, terminal, "\x1b")
+	cliContextWaitScreenAbsent(t, cmd, output, "Captured changes")
 	cliContextWritePTY(t, terminal, "/quit\r")
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
