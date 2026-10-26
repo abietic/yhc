@@ -67,6 +67,8 @@ func TestP21DiscoveryMetadataSnapshot(t *testing.T) {
 		"search=UI/secondary/7060/idle-only",
 		"reload-plugins=Extensions/secondary/6030/idle-only",
 		"btw=Session/secondary/1040/any",
+		"changes=Workspace/secondary/4050/any",
+		"recap=Session/secondary/1050/any",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("discovery metadata:\n got %v\nwant %v", got, want)

@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-10
+**Last verified:** 2026-10-26
 
 **Ownership:** `engine/session` owns durable discovery and transcript loading;
 `QueryEngine` owns execution-context restore; `ResumeDialog` owns picker state;
@@ -181,6 +181,50 @@ CLI/plain, TUI picker, SDK/headless, ACP Resume, and ACP Load all enter this
 engine restore path. ACP reports the restored Plan phase through its status
 extension; external ACP mode changes still use `SetPermissionMode` and lose an
 active-turn race without mutation.
+
+## Captured changes and execution facts
+
+[`WorkspaceChanges`](../../../../engine/workspace_revisions.go) owns a separate,
+private `<session-id>.workspace-history/revisions.jsonl` journal under the active
+transcript directory. The leader records Write/Edit before admission to the
+actual executor and immediately observes the result, including a failed tool
+that partially changed a file. Permission denial never captures a revision.
+Other mutating tools are explicit coverage gaps; Git, Bash, child tools and
+external edits are not reconstructed from conversation text.
+
+Content capture accepts regular, non-symlink UTF-8 text up to 1 MiB per file;
+`.git` and paths outside the exact workspace are rejected. The append-only log
+is bounded to 32 MiB, 200 file records and 200 turn records, with private file
+permissions, durable root identity and synced intents. Missing results, unsupported content, capacity
+limits and persistence failures remain visible as incomplete coverage. They do
+not change the executed tool's result. File data stays in this private journal,
+not skill telemetry. Session deletion preflights this exact private directory,
+rejects links or unknown entries before deleting the transcript, and retries
+partial cleanup without requiring the transcript to remain. It removes private
+records and content while retaining an empty 0700 directory: path-based removal
+cannot atomically prove that another process has not substituted its name.
+Fork and export
+do not copy or expose these private bytes.
+
+The canonical runtime emitter also records minimal start and terminal facts,
+including retained tool counts. A successful Goal terminal pair uses the same
+observer after canonical reduction. No model output or reasoning is stored in
+these facts. A restart without a terminal leaves the turn incomplete; bounded
+runtime tool rings cannot establish a complete action count.
+
+The TUI-only `/changes` panel groups this history by turn, previews captured
+content and selected hunks, and can add literal content to the draft. Its
+snapshot is independent of current Git or workspace contents. `/recap` joins
+these durable facts with current retained task and accepted-input projections.
+Execution completion, cancelled/completed tasks and verification remain
+separate: no independent verification receipt is currently recorded here.
+Opening either view and replaying this journal dispatches no model or tool.
+Session changes invalidate stale panels and callbacks by owner generation.
+
+Source and regression boundaries: [`revisions.go`](../../../../engine/filehistory/revisions.go),
+[`execution_summary.go`](../../../../engine/execution_summary.go),
+[`workspace_revisions_test.go`](../../../../engine/workspace_revisions_test.go),
+and [`workspace_history_pty_unix_test.go`](../../../../scripts/e2e/workspace_history_pty_unix_test.go).
 
 ## View Sidecar
 

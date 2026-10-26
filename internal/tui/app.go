@@ -73,6 +73,7 @@ const (
 	StateInputDelivery   // busy composer delivery choice
 	StateInputQueue      // pending input controls and delivery receipts
 	StateSideQuestion    // independent tool-free question
+	StateChangeReview    // captured changes and turn timeline
 )
 
 type InputMode int
@@ -131,6 +132,8 @@ type App struct {
 	taskExplorer         *TaskExplorerPanel
 	commandPalette       *CommandPalette
 	sideQuestionDialog   *SideQuestionDialog
+	changeReviewPanel    *ChangeReviewPanel
+	changeReviewTarget   changeReviewTarget
 	sideQuestionRequest  *sideQuestionRequest
 	sideQuestionPalette  *commandPaletteSubmission
 	sideQuestionAnswerID string
@@ -421,6 +424,7 @@ func New(cfg Config) *App {
 		taskExplorer:       NewTaskExplorerPanel(styles),
 		commandPalette:     NewCommandPalette(styles),
 		sideQuestionDialog: NewSideQuestionDialog(styles),
+		changeReviewPanel:  NewChangeReviewPanel(styles),
 		planDialog: newPlanDialog(
 			styles,
 			resolver,
@@ -524,6 +528,7 @@ func (a *App) SetProgram(p *tea.Program) {
 
 // SetEngine sets the query engine after creation.
 func (a *App) SetEngine(eng *engine.QueryEngine) {
+	a.dismissChangeReview()
 	a.dismissSideQuestion()
 	a.removeDialog(StateDiffContext)
 	a.removeDialog(StateCommandPalette)
@@ -991,6 +996,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if a.quitting {
+			a.dismissChangeReview()
 			a.dismissSideQuestion()
 			a.removeDialog(StateDiffContext)
 			a.dismissComposerSuggestion()
@@ -1479,12 +1485,17 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			}
 			return a, nil
 		}
+		a.dismissChangeReview()
 		if a.engine != nil {
 			if err := a.resetAndRestoreSessionViews(); err != nil {
 				a.showNotification("Session view state was not restored: "+err.Error(), NotifyWarning)
 			}
 			a.hydrateQueuedInputPreview()
 			a.chat.AppendCompactSummary(msg.count)
+			summary := a.engine.ExecutionSummary()
+			if summary.LatestTurn != nil {
+				a.chat.AppendSystem("Resumed execution facts:\n" + renderExecutionRecap(summary))
+			}
 		}
 		if len(msg.warnings) > 0 {
 			a.showNotification(fmt.Sprintf("Session restored with %d warning(s)", len(msg.warnings)), NotifyWarning)
@@ -1654,7 +1665,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, cmd
 	}
 
-	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue || state == StateCommandPalette || state == StateSideQuestion) {
+	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue || state == StateCommandPalette || state == StateSideQuestion || state == StateChangeReview) {
 		if state == StateContextManager {
 			cmds = append(cmds, a.updateComposerContextQuery(msg))
 		}
@@ -2129,6 +2140,9 @@ func (a *App) sendMessage() tea.Cmd {
 }
 
 func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unparam
+	if evt.Type == engine.EventToolResult || evt.Type == engine.EventTerminal {
+		defer a.refreshChangeReview()
+	}
 	attemptID := ""
 	if evt.ModelAttempt != nil {
 		attemptID = evt.ModelAttempt.AttemptID
@@ -2522,6 +2536,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 		}
 
 	case engine.EventTerminal:
+		a.appendExecutionCompletionRecap(evt)
 		a.refreshInputDeliveryReceipts()
 		assistantSeen := a.composerSuggestionTurnSeen
 		a.composerSuggestionTurnSeen = false
@@ -4651,6 +4666,9 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 			return nil
 		}
 	}
+	if canonicalName == "changes" || canonicalName == "recap" {
+		return a.dispatchHistoryView(value, cmdCtx, paletteSubmission, false)
+	}
 	if canonicalName == "btw" {
 		return a.dispatchSideQuestion(value, cmdCtx, paletteSubmission, false)
 	}
@@ -5196,6 +5214,7 @@ func (a *App) propagateStyles() {
 	a.teamsPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.commandPalette.SetRenderEnvironment(a.renderEnvironment)
 	a.sideQuestionDialog.SetRenderEnvironment(a.renderEnvironment)
+	a.changeReviewPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.planDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.questionDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.agentPicker.SetRenderEnvironment(a.renderEnvironment)
@@ -5218,6 +5237,7 @@ func (a *App) projectModalRenderEnvironment() {
 	a.modelPicker.SetRenderEnvironment(a.renderEnvironment)
 	a.commandPalette.SetRenderEnvironment(a.renderEnvironment)
 	a.sideQuestionDialog.SetRenderEnvironment(a.renderEnvironment)
+	a.changeReviewPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.agentPicker.SetRenderEnvironment(a.renderEnvironment)
 	a.expandSearch.SetRenderEnvironment(a.renderEnvironment)
 	a.help.SetRenderEnvironment(a.renderEnvironment)

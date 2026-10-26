@@ -102,6 +102,9 @@ func (e *turnEventEmitter) Emit(evt QueryEvent) bool {
 			})
 			return delivered
 		}
+		// The Goal commit already reduced this pair. Observe its accepted
+		// terminal without applying the canonical reducer a second time.
+		e.engine.recordExecutionTurnEvent(terminalEvent)
 		e.events <- goalEvent
 		e.events <- terminalEvent
 		return true
@@ -142,6 +145,7 @@ func (e *turnEventEmitter) emitOneLocked(evt QueryEvent) (QueryEvent, bool, bool
 	if !reducerAccepted {
 		return evt, false, false
 	}
+	e.engine.recordExecutionTurnEvent(evt)
 	if evt.Type == EventTerminal && evt.TerminalInfo != nil {
 		_ = e.engine.persistSessionCheckpoint(string(evt.TerminalInfo.Reason))
 	}

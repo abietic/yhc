@@ -82,6 +82,9 @@ func (a *App) handleCommandPaletteKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	a.beginCommandPaletteSubmission(operation.Command.Name)
+	if operation.Command.Name == "changes" || operation.Command.Name == "recap" {
+		return a.dispatchHistoryView(input, cmdCtx, a.claimCommandPaletteSubmission(operation.Command.Name), true)
+	}
 	if operation.Command.Name == "btw" {
 		return a.dispatchSideQuestion(input, cmdCtx, a.claimCommandPaletteSubmission("btw"), true)
 	}

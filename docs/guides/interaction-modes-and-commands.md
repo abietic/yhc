@@ -190,6 +190,28 @@ removal. Unknown or unavailable means delivery evidence is incomplete.
 available. Pending input and its chosen mode survive restart; recent completed
 receipts are view-local. See the [runtime input contract](../architecture/tui/contracts/busy-queue.md).
 
+### Review captured changes and execution facts
+
+Use **`/changes`** to browse this session's captured Write/Edit operations by
+turn. Up/Down selects a row; Enter collapses a turn or opens a file. In a file
+preview, Tab moves between hunks, Space marks a hunk, and **a** adds the marked
+hunks to the ordinary draft. With no marks, **a** adds the complete capture.
+Esc returns to the list, then closes it. Submit the draft separately when ready.
+Opening from the command palette preserves an existing draft and attachments.
+
+The view uses recorded before/after text, including failed tools that changed
+a file. It does not read a new Git diff. Unsupported, pending and uncaptured
+operations show their limitations; Bash, child and external effects are outside
+this capture. Each file is limited to 1 MiB of UTF-8 text. Adding captured
+context preserves its original bytes and can be undone with Ctrl+Z.
+
+Use **`/recap`** for a factual execution summary: last observed turn outcome,
+retained tool counts, current tasks, accepted input and file coverage. Task
+completion, cancellation and execution termination remain separate. A missing
+verification receipt is shown explicitly. Completion and resume display a
+compact version when facts are available. Inspection makes no model call.
+See the [session contract](../architecture/tui/contracts/sessions.md#captured-changes-and-execution-facts).
+
 ### Ask a side question
 
 Use `/btw <question>` to ask about the conversation and current tool progress
@@ -670,7 +692,7 @@ empty session and preserves the source transcript.
   declared its model policy. Browsing and editing a form do not call the model.
   Reopen a form after changing session, draft, or loaded command definitions.
 - While a TUI request is running, executable discovery exposes only `/agent`, `/team`,
-  `/keybindings`, and `/queue`. Direct dispatch rechecks the live phase, so a
+  `/keybindings`, `/queue`, `/btw`, `/changes`, and `/recap`. Direct dispatch rechecks the live phase, so a
   command selected from an idle snapshot cannot execute after the turn starts.
 - Headless `exec` and compatibility `-p` pass through the same `QueryEngine`,
   registry, and typed result projection, but discovery intentionally exposes

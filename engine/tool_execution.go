@@ -424,7 +424,21 @@ func executeToolCall(
 		}
 		yieldFn(inputEvent)
 	}
+	var finishWorkspaceRevision func(string)
+	if params.Deps != nil && params.Deps.RecordWorkspaceTool != nil {
+		finishWorkspaceRevision = params.Deps.RecordWorkspaceTool(canonicalToolName, toolUseID, cloneInputMap(currentInput))
+	}
 	result, execErr := params.ToolExecutor(ctx, toolName, jsonInput)
+	if finishWorkspaceRevision != nil {
+		outcome := "succeeded"
+		if execErr != nil {
+			outcome = "failed"
+			if ctx.Err() != nil {
+				outcome = "cancelled"
+			}
+		}
+		finishWorkspaceRevision(outcome)
+	}
 	attachmentMu.Lock()
 	attachmentOpen = false
 	collectedAttachments := append([]*schema.Message(nil), toolAttachments...)
