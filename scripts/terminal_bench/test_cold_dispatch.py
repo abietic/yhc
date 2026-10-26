@@ -88,6 +88,8 @@ class GrantTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "private process locks require POSIX")
     def test_transport_failure_retains_claim_exposure_and_checkpoint_without_receipt(self):
+        from scripts.terminal_bench.cohort_admission import CohortAdmission
+        from scripts.terminal_bench.test_cohort_admission import cohort_plan
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             checkpoint = root / "owned-checkpoint"
@@ -103,7 +105,10 @@ class GrantTests(unittest.TestCase):
             bundle = SimpleNamespace(control=root, workspace=workspace,
                 load=lambda *args: (self.body, None, None),
                 prepare_dispatch=lambda *args: (self.body, {}, dict(workspace=dict(attempt_id=self.grant["attempt_id"]), tree_sha256="e" * 64)))
-            launcher = ColdBenchmarkLauncher(bundle, wall=lambda: 1000)
+            plan = cohort_plan([self.body["usage_history"]])
+            self.body["cohort_id"] = plan["cohort_id"]
+            cohort = CohortAdmission.create(root / "cohort", plan, digest(plan))
+            launcher = ColdBenchmarkLauncher(bundle, cohort=cohort, wall=lambda: 1000)
             for attempt in range(2):
                 with self.assertRaisesRegex(SnapshotError, "transport_failed" if attempt == 0 else "already_claimed"):
                     launcher.dispatch(None, "d" * 64, None, self.grant, digest(self.grant), "fixture")
@@ -115,6 +120,61 @@ class GrantTests(unittest.TestCase):
             self.assertEqual(claim["usage_history"], self.body["usage_history"])
             self.assertEqual(claim["budget"]["new_reserved_limit"], "5")
             self.assertFalse((root / ("dispatch-receipt." + segment + ".json")).exists())
+            self.assertEqual(cohort.inspect()["retained_amount"], "5.000000000000")
+            self.assertTrue(cohort.inspect()["blocked"])
+
+    def test_missing_cohort_authority_blocks_before_loading_or_probing(self):
+        bundle = mock.Mock()
+        with self.assertRaisesRegex(SnapshotError, "shared_cohort_admission_required"):
+            ColdBenchmarkLauncher(bundle).dispatch(None, None, None, None, None, "fixture")
+        bundle.load.assert_not_called()
+
+    def test_failed_host_receipt_cannot_release_funds_or_remove_completed_progress(self):
+        from scripts.terminal_bench.cohort_admission import CohortAdmission
+        from scripts.terminal_bench.test_cohort_admission import cohort_plan, execution_for
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            plan = cohort_plan([self.body["usage_history"]])
+            self.body["cohort_id"] = plan["cohort_id"]
+            cohort = CohortAdmission.create(root / "cohort", plan, digest(plan))
+            def launch(*args):
+                (root / "progress.txt").write_text("finished work survives receipt failure")
+                return execution_for(self.body, self.grant)
+            workspace = SimpleNamespace(attempt=self.grant["attempt_id"], launch_cold=mock.Mock(side_effect=launch),
+                                        rpc=lambda op: dict(binary_sha256=self.grant["binary_sha256"]))
+            bundle = SimpleNamespace(control=root, workspace=workspace, load=lambda *args: (self.body, None, None),
+                prepare_dispatch=lambda *args: (self.body, {}, dict(workspace=dict(attempt_id=self.grant["attempt_id"]), tree_sha256="e" * 64)))
+            def report(path, value):
+                if path.name.startswith("dispatch-receipt."): raise OSError("synthetic host receipt failure")
+                return write_report(path, value)
+            with mock.patch("scripts.terminal_bench.cold_dispatch.write_report", side_effect=report):
+                with self.assertRaisesRegex(OSError, "receipt failure"):
+                    ColdBenchmarkLauncher(bundle, cohort=cohort, wall=lambda: 1000).dispatch(
+                        None, "d" * 64, None, self.grant, digest(self.grant), "fixture")
+            self.assertEqual(workspace.launch_cold.call_count, 1)
+            self.assertEqual((root / "progress.txt").read_text(), "finished work survives receipt failure")
+            self.assertTrue(cohort.inspect()["blocked"])
+            self.assertEqual(cohort.inspect()["retained_amount"], "5.000000000000")
+
+    def test_exhausted_shared_cohort_blocks_before_native_probe_and_keeps_progress(self):
+        from scripts.terminal_bench.cohort_admission import CohortAdmission
+        from scripts.terminal_bench.test_cohort_admission import cohort_plan
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            plan = cohort_plan([self.body["usage_history"]], cap="0.1")
+            self.body["cohort_id"] = plan["cohort_id"]
+            cohort = CohortAdmission.create(root / "cohort", plan, digest(plan))
+            bundle = mock.Mock(control=root, workspace=SimpleNamespace(attempt=self.grant["attempt_id"]))
+            bundle.load.return_value = (self.body, None, None)
+            original = copy.deepcopy(self.body)
+            before = cohort.inspect()
+            with self.assertRaisesRegex(SnapshotError, "cohort_budget_insufficient"):
+                ColdBenchmarkLauncher(bundle, cohort=cohort, wall=lambda: 1000).dispatch(
+                    None, "d" * 64, None, self.grant, digest(self.grant), "fixture")
+            bundle.prepare_dispatch.assert_not_called()
+            self.assertEqual(self.body, original)
+            self.assertEqual(cohort.inspect(), before)
+            self.assertFalse(any(root.glob("dispatch.*.json")))
 
     def test_missing_or_automatic_restart_policy_is_rejected_at_inventory(self):
         workspace = object.__new__(DockerWorkspace)

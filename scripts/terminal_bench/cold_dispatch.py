@@ -98,90 +98,103 @@ def dispatch_lock(control, segment):
 
 
 class ColdBenchmarkLauncher:
-    def __init__(self, bundle, *, wall=time.time):
-        self.bundle, self.wall = bundle, wall
+    def __init__(self, bundle, *, cohort=None, wall=time.time):
+        self.bundle, self.cohort, self.wall = bundle, cohort, wall
 
     def dispatch(self, path, bundle_digest, service_path, grant, grant_digest, gateway_token):
+        require(self.cohort is not None, "dispatch_shared_cohort_admission_required")
         body, _, _ = self.bundle.load(path, bundle_digest, service_path)
         require("paused_invocation" in body, "dispatch_requires_verified_paused_bundle")
         segment = body["paused_invocation"]["record"]["segment_id"]
         with dispatch_lock(self.bundle.control, segment) as claim:
             # The consumed check precedes every native probe. A losing launch
             # cannot change a winner's canonical session while it is running.
-            budget = validate_grant(grant, grant_digest, body, bundle_digest, self.bundle.workspace.attempt, self.wall())
-            require(isinstance(gateway_token, str) and 0 < len(gateway_token) <= 512
-                    and gateway_token.isascii() and not any(c.isspace() for c in gateway_token), "dispatch_gateway_token_missing")
-            body, handoff, joint = self.bundle.prepare_dispatch(path, bundle_digest, service_path)
-            validate_grant(grant, grant_digest, body, bundle_digest, joint["workspace"]["attempt_id"], self.wall())
-            actual = self.bundle.workspace.rpc("control_probe")
-            require(actual == dict(binary_sha256=grant["binary_sha256"]), "dispatch_binary_changed")
-            checkpoint = ".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]
-            launch = dict(version=1, handoff=handoff, grant=grant, checkpoint_path=checkpoint,
-                          expected_tree_sha256=joint["tree_sha256"], expected_workspace=joint["workspace"])
-            write_report(claim, dict(version=1, scope="benchmark-cold-dispatch-claim", source_segment_id=segment,
-                         bundle_sha256=bundle_digest, grant_sha256=grant_digest, joint=joint, budget=budget,
-                         checkpoint_path=checkpoint, usage_history=body["usage_history"], status="claimed"))
-            # Any exception, crash or ambiguous transport leaves this claim and
-            # its full newly allocated exposure retained. No automatic retry.
-            try:
-                execution = self.bundle.workspace.launch_cold(launch, gateway_token)
-            except BaseException:
+            with self.cohort.admit(body, grant, grant_digest, now=self.wall()) as allocation:
+                budget = validate_grant(grant, grant_digest, body, bundle_digest, self.bundle.workspace.attempt, self.wall())
+                require(isinstance(gateway_token, str) and 0 < len(gateway_token) <= 512
+                        and gateway_token.isascii() and not any(c.isspace() for c in gateway_token), "dispatch_gateway_token_missing")
+                body, handoff, joint = self.bundle.prepare_dispatch(path, bundle_digest, service_path)
+                validate_grant(grant, grant_digest, body, bundle_digest, joint["workspace"]["attempt_id"], self.wall())
+                actual = self.bundle.workspace.rpc("control_probe")
+                require(actual == dict(binary_sha256=grant["binary_sha256"]), "dispatch_binary_changed")
+                admission = allocation.reserve(body, grant, grant_digest, now=self.wall())
+                checkpoint = ".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]
+                launch = dict(version=1, handoff=handoff, grant=grant, checkpoint_path=checkpoint,
+                              expected_tree_sha256=joint["tree_sha256"], expected_workspace=joint["workspace"])
+                write_report(claim, dict(version=1, scope="benchmark-cold-dispatch-claim", source_segment_id=segment,
+                             bundle_sha256=bundle_digest, grant_sha256=grant_digest, joint=joint, budget=budget,
+                             checkpoint_path=checkpoint, usage_history=body["usage_history"], cohort_admission=admission, status="claimed"))
+                # Any exception, crash or ambiguous transport leaves this claim and
+                # its full newly allocated exposure retained. No automatic retry.
                 try:
-                    self.bundle.workspace.quarantine(joint["workspace"])
+                    execution = self.bundle.workspace.launch_cold(launch, gateway_token)
                 except BaseException:
-                    raise SnapshotError("dispatch_failed_quarantine_unconfirmed") from None
-                raise
-            require(isinstance(execution, dict) and type(execution.get("exit_code")) is int,
-                    "dispatch_execution_unverified")
-            write_report(self.bundle.control / ("dispatch-observation." + segment + ".json"), execution)
-            history = copy.deepcopy(body["usage_history"])
-            terminal, checkpoint_view = execution.get("terminal"), execution.get("checkpoint")
-            require(isinstance(checkpoint_view, dict), "dispatch_checkpoint_missing_claim_retained")
-            usage = copy.deepcopy(checkpoint_view["snapshot"])
-            usage["checkpoint"] = dict(version=1, sequence=checkpoint_view["sequence"], failed=False)
-            if terminal is not None:
-                require(isinstance(terminal, dict) and terminal.get("session_id") == history["session_id"]
-                        and terminal.get("exit_code") == execution["exit_code"], "dispatch_terminal_mismatch")
-                receipt = copy.deepcopy(terminal.get("usage"))
-                require(isinstance(receipt, dict), "dispatch_terminal_usage_missing")
-                expected = copy.deepcopy(usage)
-                require(type(receipt.get("elapsed_ms")) is int and type(expected.get("elapsed_ms")) is int
-                        and receipt["elapsed_ms"] >= expected["elapsed_ms"], "dispatch_elapsed_unverified")
-                for item in (receipt, expected):
-                    item.pop("elapsed_ms", None)
-                    for route in item.get("routes", []):
-                        if route.get("effort") == "": route["effort"] = "unknown"
-                require(receipt == expected, "dispatch_terminal_checkpoint_mismatch")
-            new_segment = usage["call_ledger"]["segment_id"]
-            require(new_segment == checkpoint_view["segment_id"] and new_segment not in history["segment_ids"],
-                    "dispatch_usage_segment_replayed")
-            history["segment_ids"].append(new_segment)
-            history["segments"].append(dict(ordinal=len(history["segments"]) + 1, session_id=history["session_id"], usage=usage))
-            accounting = usage_history(history, history["session_id"])
-            cost = usage["cost"]
-            require(cost["price_card"] == grant["price_card"] and cost["limit_mode"] == "pre_dispatch_reservation",
-                    "dispatch_cost_binding_changed")
-            actual_limits = usage.get("limits") or {}
-            wanted = grant["limits"]
-            require(all(actual_limits.get(k, 0) == wanted[k] for k in
-                        ("max_provider_calls", "max_total_tokens", "max_output_tokens_per_call"))
-                    and actual_limits.get("reserve_cost_before_dispatch") is True
-                    and Decimal(actual_limits.get("max_estimated_cost", "0")) == Decimal(wanted["max_estimated_cost"]),
-                    "dispatch_limits_changed")
-            with localcontext() as ctx:
-                ctx.prec = 90
-                reservation = cost["reservation"]
-                exposure = sum(Decimal(v) for v in (cost["known_estimated_amount"], reservation["retained_amount"], reservation["outstanding_amount"]))
-                require(exposure <= Decimal(grant["limits"]["max_estimated_cost"])
-                        and Decimal(reservation["peak_exposure_amount"]) <= Decimal(grant["limits"]["max_estimated_cost"]),
-                        "dispatch_cost_exceeds_grant")
-            complete = bool(terminal is not None and accounting["coverage_complete"] and checkpoint_view.get("admission_closed") is True
-                            and checkpoint_view.get("phase") == "sealed" and checkpoint_view.get("accounting_complete") is True)
-            if terminal is None: accounting["coverage_complete"] = False
-            result = dict(version=1, scope="benchmark-cold-dispatch", bundle_sha256=bundle_digest,
-                          source_segment_id=segment, grant_sha256=grant_digest, execution=execution,
-                          usage_history=history, accounting=accounting, accounting_complete=complete,
-                          automatic_paid_resume=False, status="completed" if complete and execution["exit_code"] == 0
-                          and terminal and terminal.get("status") == "completed" else "stopped")
-            write_report(self.bundle.control / ("dispatch-receipt." + segment + ".json"), result)
-            return result
+                    try:
+                        self.bundle.workspace.quarantine(joint["workspace"])
+                    except BaseException:
+                        raise SnapshotError("dispatch_failed_quarantine_unconfirmed") from None
+                    raise
+                require(isinstance(execution, dict) and type(execution.get("exit_code")) is int,
+                        "dispatch_execution_unverified")
+                write_report(self.bundle.control / ("dispatch-observation." + segment + ".json"), execution)
+                result = reconcile_execution(body, bundle_digest, grant, grant_digest, execution)
+                result["cohort_admission"] = admission
+                write_report(self.bundle.control / ("dispatch-receipt." + segment + ".json"), result)
+                allocation.reconcile(result)
+                return result
+
+
+def reconcile_execution(body, bundle_digest, grant, grant_digest, execution):
+    """Reconcile actual terminal/checkpoint evidence; shared by launch and ledger replay."""
+    require(isinstance(execution, dict) and type(execution.get("exit_code")) is int, "dispatch_execution_unverified")
+    segment = body["paused_invocation"]["record"]["segment_id"]
+    history = copy.deepcopy(body["usage_history"])
+    terminal, checkpoint_view = execution.get("terminal"), execution.get("checkpoint")
+    require(isinstance(checkpoint_view, dict), "dispatch_checkpoint_missing_claim_retained")
+    usage = copy.deepcopy(checkpoint_view["snapshot"])
+    usage["checkpoint"] = dict(version=1, sequence=checkpoint_view["sequence"], failed=False)
+    if terminal is not None:
+        require(isinstance(terminal, dict) and terminal.get("session_id") == history["session_id"]
+                and terminal.get("exit_code") == execution["exit_code"], "dispatch_terminal_mismatch")
+        receipt = copy.deepcopy(terminal.get("usage"))
+        require(isinstance(receipt, dict), "dispatch_terminal_usage_missing")
+        expected = copy.deepcopy(usage)
+        require(type(receipt.get("elapsed_ms")) is int and type(expected.get("elapsed_ms")) is int
+                and receipt["elapsed_ms"] >= expected["elapsed_ms"], "dispatch_elapsed_unverified")
+        for item in (receipt, expected):
+            item.pop("elapsed_ms", None)
+            for route in item.get("routes", []):
+                if route.get("effort") == "": route["effort"] = "unknown"
+        require(receipt == expected, "dispatch_terminal_checkpoint_mismatch")
+    new_segment = usage["call_ledger"]["segment_id"]
+    require(new_segment == checkpoint_view["segment_id"] and new_segment not in history["segment_ids"],
+            "dispatch_usage_segment_replayed")
+    history["segment_ids"].append(new_segment)
+    history["segments"].append(dict(ordinal=len(history["segments"]) + 1, session_id=history["session_id"], usage=usage))
+    accounting = usage_history(history, history["session_id"])
+    cost = usage["cost"]
+    require(cost["price_card"] == grant["price_card"] and cost["limit_mode"] == "pre_dispatch_reservation",
+            "dispatch_cost_binding_changed")
+    actual_limits = usage.get("limits") or {}
+    wanted = grant["limits"]
+    require(all(actual_limits.get(k, 0) == wanted[k] for k in
+                ("max_provider_calls", "max_total_tokens", "max_output_tokens_per_call"))
+            and actual_limits.get("reserve_cost_before_dispatch") is True
+            and Decimal(actual_limits.get("max_estimated_cost", "0")) == Decimal(wanted["max_estimated_cost"]),
+            "dispatch_limits_changed")
+    with localcontext() as ctx:
+        ctx.prec = 90
+        reservation = cost["reservation"]
+        exposure = sum(Decimal(v) for v in (cost["known_estimated_amount"], reservation["retained_amount"], reservation["outstanding_amount"]))
+        require(exposure <= Decimal(grant["limits"]["max_estimated_cost"])
+                and Decimal(reservation["peak_exposure_amount"]) <= Decimal(grant["limits"]["max_estimated_cost"]),
+                "dispatch_cost_exceeds_grant")
+    complete = bool(terminal is not None and accounting["coverage_complete"] and checkpoint_view.get("admission_closed") is True
+                    and checkpoint_view.get("phase") == "sealed" and checkpoint_view.get("accounting_complete") is True)
+    if terminal is None: accounting["coverage_complete"] = False
+    result = dict(version=1, scope="benchmark-cold-dispatch", bundle_sha256=bundle_digest,
+                  source_segment_id=segment, grant_sha256=grant_digest, execution=execution,
+                  usage_history=history, accounting=accounting, accounting_complete=complete,
+                  automatic_paid_resume=False, status="completed" if complete and execution["exit_code"] == 0
+                  and terminal and terminal.get("status") == "completed" else "stopped")
+    return result

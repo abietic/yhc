@@ -14,12 +14,14 @@ from pathlib import Path
 
 from scripts.terminal_bench.cold_recovery import DockerServices
 from scripts.terminal_bench.cold_dispatch import ColdBenchmarkLauncher
+from scripts.terminal_bench.cohort_admission import CohortAdmission
 from scripts.terminal_bench.recovery import write_report
 from scripts.terminal_bench.recovery_bundle import RecoveryBundle, user_files
 from scripts.terminal_bench.paused_recovery import SCOPE, cold_tool_handoff
 from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
-from scripts.terminal_bench.test_recovery_bundle import history
 from scripts.terminal_bench.test_cold_dispatch import grant_for
+from scripts.terminal_bench.test_cohort_admission import cohort_plan
+from scripts.terminal_bench.test_recovery_bundle import history
 from scripts.terminal_bench import test_service_snapshot_docker as service_fixture
 from scripts.terminal_bench.workspace_recovery import ATTEMPT, WORKSPACE_COHORT, WORKSPACE_ROLE, DockerWorkspace, native_proof, usage_history
 
@@ -409,7 +411,12 @@ else: raise AssertionError('uncapped child')
                 if process.poll() is None:
                     process.kill(); process.communicate(timeout=5)
         bundle.workspace.rpc = rpc
-        launcher = ColdBenchmarkLauncher(bundle)
+        plan = cohort_plan([manifest["usage_history"], history(str(uuid.uuid4()))], cohort=manifest["cohort_id"],
+                           cap="0.1" if scenario == "cohort_budget" else "6")
+        plan["expires_unix"] = int(time.time()) + 2000
+        cohort = CohortAdmission.create(self.control / "cohort", plan, digest(plan))
+        before_cohort = cohort.inspect()
+        launcher = ColdBenchmarkLauncher(bundle, cohort=cohort)
         anchor = digest(grant)
         if scenario == "detached":
             with self.assertRaisesRegex(SnapshotError, "fixture_output_limit"):
@@ -421,6 +428,8 @@ else: raise AssertionError('uncapped child')
             self.assertTrue((self.control / ("dispatch." + segment + ".json")).is_file())
             self.assertFalse((self.control / ("dispatch-receipt." + segment + ".json")).exists())
             self.assertEqual(calls.count("cold_dispatch"), 1)
+            self.assertTrue(cohort.inspect()["blocked"])
+            self.assertEqual(cohort.inspect()["retained_amount"], "5.000000000000")
             volume = restored["workspace_runtime"]["volume"]
             self.docker("volume", "inspect", volume)
             retained = self.docker("run", "--rm", "--pull", "never", "--read-only", "--network", "none", "--cap-drop", "ALL",
@@ -439,6 +448,12 @@ else: raise AssertionError('uncapped child')
                 launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
             self.assertNotIn("cold_dispatch", calls)
             self.assertFalse((self.control / ("dispatch." + manifest["paused_invocation"]["record"]["segment_id"] + ".json")).exists())
+            self.assertEqual(cohort.inspect(), before_cohort)
+            if scenario == "cohort_budget":
+                self.assertEqual(calls, [])
+                retained = self.docker("exec", bundle.workspace.container, "/usr/local/bin/python3", "-I", "-c",
+                                       "from pathlib import Path; print(Path('/workspace/continued.txt').read_bytes().hex())")
+                self.assertEqual(bytes.fromhex(retained), b"continued once\n")
             return
         result = launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
         self.assertFalse(provider["provider_protocol_errors"], provider)
@@ -448,6 +463,14 @@ else: raise AssertionError('uncapped child')
         self.assertEqual(result["accounting_complete"], scenario != "unknown")
         self.assertEqual(result["status"], "completed" if scenario == "known" else "stopped")
         self.assertFalse(result["automatic_paid_resume"])
+        accounting = cohort.inspect()
+        self.assertEqual(accounting["usage_histories"][plan["sessions"][1]["session_id"]], plan["sessions"][1]["usage_history"])
+        self.assertEqual(accounting["blocked"], scenario == "unknown")
+        if scenario == "unknown":
+            self.assertNotEqual(accounting["retained_amount"], "0.000000000000")
+        else:
+            self.assertEqual(accounting["retained_amount"], "0.000000000000")
+            self.assertEqual(accounting["usage_histories"][self.session], result["usage_history"])
         with self.assertRaisesRegex(SnapshotError, "already_claimed"):
             launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
         self.assertEqual(calls.count("cold_dispatch"), 1)
@@ -460,7 +483,10 @@ else: raise AssertionError('uncapped child')
         evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
         if evidence:
             write_report(Path(evidence) / ("launcher-" + scenario + ".json"), dict(verification_complete=True,
-                         dispatch=result, provider=provider, original_restore_receipt=restored))
+                         dispatch=result, cohort_accounting=accounting, provider=provider, original_restore_receipt=restored))
+
+    def test_benchmark_launcher_shared_budget_exhaustion_preserves_real_restored_progress(self):
+        self.check_benchmark_launcher("cohort_budget")
 
     def test_benchmark_launcher_joins_real_recovery_and_cumulative_usage_before_dispatch(self):
         self.check_benchmark_launcher("known")

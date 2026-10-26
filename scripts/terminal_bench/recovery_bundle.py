@@ -281,6 +281,8 @@ def main():
     parser.add_argument("--control-dir", type=Path, required=True)
     parser.add_argument("--dispatch-grant", type=Path)
     parser.add_argument("--dispatch-grant-sha256")
+    parser.add_argument("--cohort-ledger", type=Path)
+    parser.add_argument("--cohort-plan-sha256")
     args = parser.parse_args()
     try:
         contract = private_json(args.service_contract)
@@ -295,8 +297,11 @@ def main():
             result = bundle.restore(args.snapshot, args.bundle_sha256, args.service_snapshot, args.attempt_id)
         else:
             from scripts.terminal_bench.cold_dispatch import ColdBenchmarkLauncher
+            from scripts.terminal_bench.cohort_admission import CohortAdmission
             require(args.dispatch_grant is not None and args.dispatch_grant_sha256, "explicit_dispatch_grant_required")
-            result = ColdBenchmarkLauncher(bundle).dispatch(args.snapshot, args.bundle_sha256, args.service_snapshot,
+            require(args.cohort_ledger is not None and args.cohort_plan_sha256, "explicit_shared_cohort_ledger_required")
+            cohort = CohortAdmission(args.cohort_ledger, args.cohort_plan_sha256)
+            result = ColdBenchmarkLauncher(bundle, cohort=cohort).dispatch(args.snapshot, args.bundle_sha256, args.service_snapshot,
                 private_json(args.dispatch_grant), args.dispatch_grant_sha256, os.environ.get("YHC_BENCH_GATEWAY_TOKEN"))
             print(json.dumps({k: result[k] for k in ("status", "source_segment_id", "accounting_complete", "automatic_paid_resume")}))
             if result["status"] != "completed": parser.exit(1)

@@ -5867,7 +5867,7 @@ privacy:
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_recovery_bundle_docker.py
-      line: 348
+      line: 350
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
