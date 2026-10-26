@@ -70,6 +70,8 @@ const (
 	StateAgentPicker     // searchable leader/sub-agent thread picker
 	StateContextManager  // attached context for the active draft
 	StateDiffContext     // captured Git file/hunk context selector
+	StateInputDelivery   // busy composer delivery choice
+	StateInputQueue      // pending input controls and delivery receipts
 )
 
 type InputMode int
@@ -206,6 +208,10 @@ type App struct {
 	composerSuggestionSerial   uint64
 	composerSuggestionTurnSeen bool
 	queuedInputPreview         []threadQueuedInput
+	inputDeliveryChoice        inputDeliveryChoice
+	inputDeliveryReceipts      []inputDeliveryReceipt
+	inputDeliveryStarts        []inputDeliveryStart
+	inputQueueSelection        int
 	threadDetailTab            agentDetailTab
 	threadAttentionResponses   sync.Map
 	sessionViewSaveGeneration  uint64
@@ -1241,6 +1247,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		if err := a.engine.SyncRuntimeItems(contextPkg.Background()); err != nil {
 			a.showNotification("Runtime input synchronization failed: "+err.Error(), NotifyError)
 		}
+		if a.isLeaderThreadView() {
+			a.hydrateQueuedInputPreview()
+			a.refreshInputDeliveryReceipts()
+		}
 		if !a.running {
 			if next := a.scheduleNextQueuedInput(); next != nil {
 				cmds = append(cmds, next)
@@ -1619,7 +1629,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, cmd
 	}
 
-	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext) {
+	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue) {
 		if state == StateContextManager {
 			cmds = append(cmds, a.updateComposerContextQuery(msg))
 		}
@@ -2085,9 +2095,10 @@ func (a *App) sendMessage() tea.Cmd {
 		return a.sendActiveAgentThreadMessage(value)
 	}
 
-	// Busy Enter queues/steers. Ctrl+C remains the explicit cancellation path.
+	// Busy input requires an explicit, durable delivery choice.
 	if a.running {
-		return a.beginComposerAdmission(snapshot, true)
+		a.openInputDeliveryChoice()
+		return nil
 	}
 	return a.beginComposerAdmission(snapshot, false)
 }
@@ -2486,6 +2497,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 		}
 
 	case engine.EventTerminal:
+		a.refreshInputDeliveryReceipts()
 		assistantSeen := a.composerSuggestionTurnSeen
 		a.composerSuggestionTurnSeen = false
 		a.chat.FinishAssistant()
@@ -2546,6 +2558,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 
 	case engine.EventCommandLifecycle:
 		if evt.CommandLifecycle != nil {
+			a.refreshInputDeliveryReceipts()
 			if evt.CommandLifecycle.Phase == "started" {
 				a.hookStatus = "Processing queued command..."
 				threadID := evt.ThreadID
@@ -3223,7 +3236,7 @@ func (a *App) renderStatus() string {
 
 	// Key hints
 	if a.running {
-		submitLabel := "queue"
+		submitLabel := "steer/queue"
 		if !a.isLeaderThreadView() {
 			submitLabel = "send"
 		}
@@ -4650,7 +4663,11 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 		return nil
 	}
 	if tuiCommandAvailable && commandName == "queue" {
-		a.handleQueueSlashCommand(value)
+		if len(commandArgs) == 0 {
+			a.openInputQueue()
+		} else {
+			a.handleQueueSlashCommand(value)
+		}
 		a.commitCommandPaletteLocalSubmission(paletteSubmission)
 		return nil
 	}

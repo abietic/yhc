@@ -14,13 +14,15 @@ const maxQueuedUserInputs = 32
 // UserTurnInput is an immutable TUI/headless input snapshot suitable for
 // queueing while a turn is running.
 type UserTurnInput struct {
-	Display string
-	Prompt  string
-	Images  []UserImage
+	Delivery PromptDeliveryMode
+	Display  string
+	Prompt   string
+	Images   []UserImage
 }
 
 // QueuedUserInput is the public projection of a pending user queue command.
 type QueuedUserInput struct {
+	Delivery   PromptDeliveryMode
 	ID         string
 	Display    string
 	Prompt     string
@@ -63,6 +65,7 @@ type QueuedPromptPart struct {
 // pending prompt. Parts retain their exact logical order without exposing
 // private media identity or embedded payload content.
 type QueuedPromptSnapshot struct {
+	Delivery    PromptDeliveryMode
 	ID          string
 	Display     string
 	Parts       []QueuedPromptPart
@@ -122,6 +125,20 @@ func (e *QueryEngine) EnqueuePromptInput(
 	display string,
 	input UntrustedPromptInput,
 ) (QueuedPromptSnapshot, error) {
+	return e.EnqueuePromptInputWithDelivery(ctx, display, input, "")
+}
+
+// EnqueuePromptInputWithDelivery durably records an explicit delivery policy.
+// Steering takes effect at the next safe point; next-turn input is idle-only.
+func (e *QueryEngine) EnqueuePromptInputWithDelivery(
+	ctx context.Context,
+	display string,
+	input UntrustedPromptInput,
+	delivery PromptDeliveryMode,
+) (QueuedPromptSnapshot, error) {
+	if !validPromptDelivery(delivery) {
+		return QueuedPromptSnapshot{}, fmt.Errorf("invalid prompt delivery mode")
+	}
 	e.goalProviderBoundary.RLock()
 	defer e.goalProviderBoundary.RUnlock()
 	coordinator, scope, err := e.runtimeInputOwner()
@@ -140,7 +157,7 @@ func (e *QueryEngine) EnqueuePromptInput(
 			coordinator,
 			scope,
 			generateUUID(),
-			UserTurnInput{Display: display, Prompt: prompt},
+			UserTurnInput{Display: display, Prompt: prompt, Delivery: delivery},
 			false,
 		)
 		if enqueueErr != nil {
@@ -187,6 +204,7 @@ func (e *QueryEngine) EnqueuePromptInput(
 		ID:         itemID,
 		Kind:       RuntimeItemUserPrompt,
 		Priority:   RuntimePriorityNext,
+		Delivery:   delivery,
 		Scope:      scope,
 		IsMeta:     false,
 		Origin:     "user",
@@ -225,10 +243,11 @@ func (e *QueryEngine) EnqueueUserInput(input UserTurnInput) (QueuedUserInput, er
 				PromptImageDetailAuto,
 			))
 		}
-		snapshot, err := e.EnqueuePromptInput(
+		snapshot, err := e.EnqueuePromptInputWithDelivery(
 			context.Background(),
 			input.Display,
 			NewUntrustedPromptInput(parts...),
+			input.Delivery,
 		)
 		if err != nil {
 			return QueuedUserInput{}, err
@@ -240,6 +259,7 @@ func (e *QueryEngine) EnqueueUserInput(input UserTurnInput) (QueuedUserInput, er
 		}
 		return QueuedUserInput{
 			ID:         snapshot.ID,
+			Delivery:   snapshot.Delivery,
 			Display:    snapshot.Display,
 			Prompt:     input.Prompt,
 			Images:     images,
@@ -358,6 +378,7 @@ func queuedUserRuntimeItem(
 		ID:         itemID,
 		Kind:       RuntimeItemUserPrompt,
 		Priority:   RuntimePriorityNext,
+		Delivery:   input.Delivery,
 		Scope:      scope,
 		IsMeta:     false,
 		Origin:     "user",
@@ -396,6 +417,7 @@ func (e *QueryEngine) QueuedPromptState() (QueuedPromptState, error) {
 				EnqueuedAt:  item.EnqueuedAt,
 				State:       item.State,
 				Unavailable: true,
+				Delivery:    item.Delivery,
 			}
 		}
 		result = append(result, snapshot)
@@ -625,6 +647,7 @@ func queuedUserInput(item RuntimeItem) QueuedUserInput {
 	return QueuedUserInput{
 		ID: item.ID, Display: item.UserPrompt.Display, Prompt: runtimeItemPrompt(item),
 		Images:     runtimeItemUserImages(item),
+		Delivery:   item.Delivery,
 		EnqueuedAt: item.EnqueuedAt, State: item.State,
 	}
 }
@@ -635,6 +658,7 @@ func queuedPromptSnapshot(item RuntimeItem) (QueuedPromptSnapshot, error) {
 	}
 	snapshot := QueuedPromptSnapshot{
 		ID:         item.ID,
+		Delivery:   item.Delivery,
 		Display:    item.UserPrompt.Display,
 		EnqueuedAt: item.EnqueuedAt,
 		State:      item.State,
@@ -698,6 +722,7 @@ func queuedPromptSnapshot(item RuntimeItem) (QueuedPromptSnapshot, error) {
 func queuedPromptSnapshotFromLegacy(input QueuedUserInput) QueuedPromptSnapshot {
 	snapshot := QueuedPromptSnapshot{
 		ID:         input.ID,
+		Delivery:   input.Delivery,
 		Display:    input.Display,
 		EnqueuedAt: input.EnqueuedAt,
 		State:      input.State,

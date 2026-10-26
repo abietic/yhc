@@ -168,6 +168,28 @@ showing the next draft, and recalled text references have no attachment body
 to list. See the
 [composer contract](../architecture/tui/contracts/composer.md#attached-context-manager).
 
+### Steer a running task or queue the next turn
+
+While the leader task is running, type a follow-up and press Enter. Select
+**Steer now** to apply it at the next safe point, or **Next turn** to wait for
+the active task to end. Tab or arrow keys switch the choice; Enter submits and
+Esc keeps the draft. Running tools finish before steering takes effect. If the
+task ends first, the input starts a fresh invocation.
+
+Pending rows show the input ID, delivery mode and state. Open `/queue` for
+recent delivery receipts: use Up/Down to select, `e` to restore a pending input
+for editing, and `d` to withdraw it. Editing requires an empty composer and
+completed attachment loading. Submit the edited draft again to choose its
+new delivery mode. Once the engine claims an input, editing and withdrawal are
+unavailable. A stale panel refreshes ownership before applying either action.
+
+The panel distinguishes pending, claimed and transcript-confirmed delivered
+input. Editing and withdrawal appear only after the engine acknowledges the
+removal. Unknown or unavailable means delivery evidence is incomplete.
+`/queue list`, `/queue edit <id|last>` and `/queue remove <id|last|all>` remain
+available. Pending input and its chosen mode survive restart; recent completed
+receipts are view-local. See the [runtime input contract](../architecture/tui/contracts/busy-queue.md).
+
 ### Request a next-step suggestion
 
 In the TUI, leave the leader input empty and press `Ctrl+Space`. YHC shows

@@ -541,11 +541,11 @@ provider/tool dialect.
 - [`handleBackendExit` and `bootstrapApp`](../../internal/webui/assets/app.mjs)
   register the crash listener before asynchronous bootstrap and apply global
   control admission.
-- [`QueryEngine.EnqueueUserInputWithID`](../../engine/queued_input.go#L263)
+- [`QueryEngine.EnqueueUserInputWithID`](../../engine/queued_input.go)
   owns retry-stable text admission; the admission receipt in
   [`RuntimeInputCoordinator`](../../engine/input_coordinator.go) preserves
   exact acknowledgement across settlement and restart, while
-  [`RuntimeInputConflictError`](../../engine/input_coordinator.go#L74) keeps
+  [`RuntimeInputConflictError`](../../engine/input_coordinator.go) keeps
   identity reuse fail closed.
 - [`session.enqueuePrompt`](../../server/appserver/runtime_queue.go#L114) and
   [`session.startNextRuntimeItemLocked`](../../server/appserver/runtime_queue.go#L295)

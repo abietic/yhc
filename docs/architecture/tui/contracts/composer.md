@@ -435,7 +435,7 @@ element remains ordinary text.
 | Target or mode | Text/paste/context | Image |
 |---|---|---|
 | Idle leader | `QueryEngine.SubmitPromptInput` | Submit under exact selected-route admission |
-| Busy leader | `QueryEngine.EnqueuePromptInput` | Persist ref-backed ordered queue input |
+| Busy leader | Explicit steer/next-turn choice via `EnqueuePromptInputWithDelivery` | Persist ref-backed ordered queue input |
 | Agent thread | Send through Agent control | Reject and retain draft |
 | Slash or shell mode | Typed command path only | Reject attachments and retain draft |
 
