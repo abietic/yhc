@@ -450,7 +450,8 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	case StateInputDelivery:
 		return true, a.handleInputDeliveryKey(msg)
 	case StateInputQueue:
-		return true, a.handleInputQueueKey(msg)
+		a.handleInputQueueKey(msg)
+		return true, nil
 	case StateAgentPicker:
 		threadID, selected, dismissed, cmd := a.agentPicker.HandleKey(msg)
 		if dismissed {

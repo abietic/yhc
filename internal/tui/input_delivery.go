@@ -213,14 +213,14 @@ func (a *App) openInputQueue() {
 	a.pushDialog(StateInputQueue)
 }
 
-func (a *App) handleInputQueueKey(msg tea.KeyPressMsg) tea.Cmd {
+func (a *App) handleInputQueueKey(msg tea.KeyPressMsg) {
 	if msg.String() == "esc" || msg.String() == "ctrl+c" {
 		a.popDialog(StateInputQueue)
-		return nil
+		return
 	}
 	if !a.isLeaderThreadView() {
 		a.removeDialog(StateInputQueue)
-		return nil
+		return
 	}
 	// Keep the selected identity stable while refreshing authoritative ownership.
 	rows := a.currentInputDeliveryReceipts()
@@ -244,12 +244,12 @@ func (a *App) handleInputQueueKey(msg tea.KeyPressMsg) tea.Cmd {
 		a.inputQueueSelection = min(max(0, len(rows)-1), a.inputQueueSelection+1)
 	case "e", "d", "delete", "backspace":
 		if len(rows) == 0 {
-			return nil
+			return
 		}
 		r := rows[a.inputQueueSelection]
 		if r.status != string(engine.PromptDeliveryPending) {
 			a.showNotification("Only pending input can be edited or withdrawn", NotifyWarning)
-			return nil
+			return
 		}
 		action := "remove"
 		if msg.String() == "e" {
@@ -261,7 +261,6 @@ func (a *App) handleInputQueueKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		a.refreshInputDeliveryReceipts()
 	}
-	return nil
 }
 
 func (a *App) inputDeliveryOverlay(base string, width, height int, queue bool) string {
