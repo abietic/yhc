@@ -1,20 +1,25 @@
 """Destroyed-runtime recovery and opt-in public execution with a fake provider."""
 
 import copy
+import hashlib
 import json
 import os
+import select
 import subprocess
 import sys
+import time
 import unittest
 import uuid
 from pathlib import Path
 
 from scripts.terminal_bench.cold_recovery import DockerServices
+from scripts.terminal_bench.cold_dispatch import ColdBenchmarkLauncher
 from scripts.terminal_bench.recovery import write_report
 from scripts.terminal_bench.recovery_bundle import RecoveryBundle, user_files
 from scripts.terminal_bench.paused_recovery import SCOPE, cold_tool_handoff
 from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history
+from scripts.terminal_bench.test_cold_dispatch import grant_for
 from scripts.terminal_bench import test_service_snapshot_docker as service_fixture
 from scripts.terminal_bench.workspace_recovery import ATTEMPT, WORKSPACE_COHORT, WORKSPACE_ROLE, DockerWorkspace, native_proof, usage_history
 
@@ -103,7 +108,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self, unbound=False, tool_ready=False, paused=False):
+    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -119,7 +124,8 @@ class NativeColdDockerTests(unittest.TestCase):
         if paused:
             price = supplied_history["segments"][0]["usage"]["cost"]["price_card"]
             self.paused_execution = json.loads(self.docker("exec", "--workdir", "/workspace", source.container,
-                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py", self.session, "pause_tool", json.dumps(price)))
+                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py", self.session,
+                "pause_tool_env" if environment_key else "pause_tool", json.dumps(price)))
             execution = self.paused_execution
             self.assertFalse(execution["provider_protocol_errors"], execution)
             self.assertEqual(execution["observed_provider_requests"], 1)
@@ -332,6 +338,179 @@ class NativeColdDockerTests(unittest.TestCase):
 
     def test_cold_dispatch_crash_retains_claim_and_inflight_reservation(self):
         self.check_cold_tool_dispatch("cold_crash")
+
+    def check_benchmark_launcher(self, scenario):
+        manifest, observed, unused = self.capture_joint(paused=True, environment_key=scenario != "auth")
+        bundle = self.target_bundle()
+        restored = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        grant = grant_for(manifest, self.bundle_digest, self.attempt, int(time.time()))
+        grant["binary_sha256"] = hashlib.sha256(Path(os.environ["YHC_NATIVE_RECOVERY_BINARY"]).read_bytes()).hexdigest()
+        grant["route"]["base_url"] = "http://127.0.0.1:" + str(self.paused_execution["provider_port"])
+        if scenario == "expired": grant["expires_unix"] = int(time.time())
+        if scenario == "history": grant["usage_history_sha256"] = "f" * 64
+        if scenario == "budget": grant["max_cumulative_estimated_cost"] = "5"
+        if scenario == "binary": grant["binary_sha256"] = "f" * 64
+        if scenario == "workspace":
+            self.docker("exec", bundle.workspace.container, "/usr/local/bin/python3", "-I", "-c",
+                        "from pathlib import Path; Path('/workspace/continued.txt').write_text('changed')")
+        if scenario == "service":
+            self.docker("exec", bundle.services.backend.handles["main"], "/usr/local/bin/python3", "-I",
+                        "/opt/checkpoint/service.py", "business", "mutate")
+        calls, provider = [], {}
+        original_rpc = bundle.workspace.rpc
+        def rpc(operation, **body):
+            calls.append(operation)
+            if operation != "cold_dispatch": return original_rpc(operation, **body)
+            if scenario == "detached":
+                program = """import importlib.util,json,os,sys
+from pathlib import Path
+s=importlib.util.spec_from_file_location('owned_io','/opt/checkpoint/workspace_io.py')
+m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+child='import os,time\\nif os.fork(): os._exit(0)\\nos.setsid()\\nopen(\"/tmp/escaped-owned.pid\",\"w\").write(str(os.getpid()))\\ntry:\\n while True: os.write(2,b\"x\"*65536)\\nexcept OSError:\\n while True: time.sleep(1)\\n'
+try: m.bounded_exec([sys.executable,'-c',child],Path.cwd(),{},b'',5)
+except ValueError:
+    pid=int(Path('/tmp/escaped-owned.pid').read_text());os.kill(pid,0)
+    print(json.dumps(dict(escaped_pid=pid,output_capped=True)))
+else: raise AssertionError('uncapped child')
+"""
+                state = json.loads(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container,
+                                   "/usr/local/bin/python3", "-I", "-c", program))
+                self.assertTrue(state["output_capped"])
+                self.assertGreater(state["escaped_pid"], 1)
+                raise SnapshotError("fixture_output_limit")
+            # Test-only loopback transport starts after all host admission checks.
+            # Production code executes only the immutable helper and YHC binary.
+            carrier = dict(handoff=body["launch"]["handoff"], fixture_port=self.paused_execution["provider_port"],
+                           checkpoint_path=body["launch"]["checkpoint_path"])
+            process = subprocess.Popen(["docker", "exec", "--workdir", "/workspace", bundle.workspace.container,
+                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py", self.session,
+                "launcher_unknown" if scenario == "unknown" else "launcher_edit", json.dumps(grant["price_card"]),
+                json.dumps(carrier)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                self.assertTrue(select.select([process.stdout], [], [], 5)[0], "fixture provider did not become ready")
+                ready = json.loads(process.stdout.readline())
+                self.assertTrue(ready["ready"])
+                result = original_rpc(operation, **body)
+                evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+                if evidence:
+                    write_report(Path(evidence) / ("launcher-" + scenario + "-observed.json"), result)
+                if result.get("checkpoint", {}).get("snapshot", {}).get("provider_calls") == 0:
+                    self.docker("exec", bundle.workspace.container, "/bin/kill", "-TERM", str(ready["pid"]))
+                try:
+                    stdout, stderr = process.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    raise AssertionError("fixture received no expected request: " + json.dumps(dict(exit_code=result.get("exit_code"),
+                              error=(result.get("terminal") or {}).get("error"),
+                              provider_calls=result.get("checkpoint", {}).get("snapshot", {}).get("provider_calls")))) from None
+                self.assertEqual(process.returncode, 0, stderr[:1024])
+                provider.update(json.loads(stdout))
+                return result
+            finally:
+                if process.poll() is None:
+                    process.kill(); process.communicate(timeout=5)
+        bundle.workspace.rpc = rpc
+        launcher = ColdBenchmarkLauncher(bundle)
+        anchor = digest(grant)
+        if scenario == "detached":
+            with self.assertRaisesRegex(SnapshotError, "fixture_output_limit"):
+                launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
+            stopped = json.loads(self.docker("inspect", bundle.workspace.container))[0]["State"]
+            self.assertFalse(stopped["Running"] or stopped["Restarting"])
+            self.assertEqual(stopped["Pid"], 0)
+            segment = manifest["paused_invocation"]["record"]["segment_id"]
+            self.assertTrue((self.control / ("dispatch." + segment + ".json")).is_file())
+            self.assertFalse((self.control / ("dispatch-receipt." + segment + ".json")).exists())
+            self.assertEqual(calls.count("cold_dispatch"), 1)
+            volume = restored["workspace_runtime"]["volume"]
+            self.docker("volume", "inspect", volume)
+            retained = self.docker("run", "--rm", "--pull", "never", "--read-only", "--network", "none", "--cap-drop", "ALL",
+                                  "--mount", "type=volume,src=" + volume + ",dst=/proof,readonly", "--entrypoint",
+                                  "/usr/local/bin/python3", self.image, "-I", "-c",
+                                  "from pathlib import Path; print(Path('/proof/continued.txt').read_bytes().hex())")
+            self.assertEqual(bytes.fromhex(retained), b"continued once\n")
+            evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+            if evidence:
+                write_report(Path(evidence) / "launcher-detached.json", dict(verification_complete=True,
+                             workspace_stopped=True, source_claim_retained=True, volume_retained=True,
+                             source_progress_retained=True, real_provider_requests=0))
+            return
+        if scenario not in ("known", "unknown", "auth"):
+            with self.assertRaises(SnapshotError):
+                launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
+            self.assertNotIn("cold_dispatch", calls)
+            self.assertFalse((self.control / ("dispatch." + manifest["paused_invocation"]["record"]["segment_id"] + ".json")).exists())
+            return
+        result = launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
+        self.assertFalse(provider["provider_protocol_errors"], provider)
+        self.assertEqual(provider["real_provider_requests"], 0)
+        self.assertEqual(provider["observed_provider_requests"], 1 if scenario == "unknown" else 0 if scenario == "auth" else 2)
+        self.assertEqual(result["usage_history"]["segments"][:-1], manifest["usage_history"]["segments"])
+        self.assertEqual(result["accounting_complete"], scenario != "unknown")
+        self.assertEqual(result["status"], "completed" if scenario == "known" else "stopped")
+        self.assertFalse(result["automatic_paid_resume"])
+        with self.assertRaisesRegex(SnapshotError, "already_claimed"):
+            launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
+        self.assertEqual(calls.count("cold_dispatch"), 1)
+        if scenario == "known":
+            self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/continued.txt"), "edited after cold restore")
+        elif scenario == "unknown":
+            self.assertNotEqual(result["execution"]["checkpoint"]["snapshot"]["cost"]["reservation"]["retained_amount"], "0.000000000000")
+        else:
+            self.assertIn("model_binding_route_revision_changed", result["execution"]["terminal"]["error"]["message"])
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            write_report(Path(evidence) / ("launcher-" + scenario + ".json"), dict(verification_complete=True,
+                         dispatch=result, provider=provider, original_restore_receipt=restored))
+
+    def test_benchmark_launcher_joins_real_recovery_and_cumulative_usage_before_dispatch(self):
+        self.check_benchmark_launcher("known")
+
+    def test_benchmark_launcher_unknown_usage_retains_claim_and_cumulative_history(self):
+        self.check_benchmark_launcher("unknown")
+
+    def test_benchmark_launcher_rejects_changed_service_before_dispatch(self):
+        self.check_benchmark_launcher("service")
+
+    def test_benchmark_launcher_rejects_changed_workspace_before_dispatch(self):
+        self.check_benchmark_launcher("workspace")
+
+    def test_benchmark_launcher_rejects_expired_grant_before_dispatch(self):
+        self.check_benchmark_launcher("expired")
+
+    def test_benchmark_launcher_rejects_rebound_history_before_dispatch(self):
+        self.check_benchmark_launcher("history")
+
+    def test_benchmark_launcher_rejects_insufficient_cumulative_budget_before_dispatch(self):
+        self.check_benchmark_launcher("budget")
+
+    def test_benchmark_launcher_blocks_changed_credential_reference_without_provider_calls(self):
+        self.check_benchmark_launcher("auth")
+
+    def test_benchmark_launcher_rejects_changed_binary_before_dispatch(self):
+        self.check_benchmark_launcher("binary")
+
+    def test_benchmark_launcher_quarantines_detached_descendant_before_return(self):
+        self.check_benchmark_launcher("detached")
+
+    def test_container_dispatch_transport_bounds_both_output_pipes(self):
+        workspace, unused_volume = self.provision_workspace()
+        program = """import importlib.util, json, os, sys
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('owned_workspace_io','/opt/checkpoint/workspace_io.py')
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+checks=[]
+for fd in (1,2):
+    child='import os\\nwhile True: os.write('+str(fd)+',b\"x\"*65536)\\n'
+    try: m.bounded_exec([sys.executable,'-c',child],Path.cwd(),{},b'',5)
+    except ValueError as error:
+        assert str(error)=='unsupported_workspace_state'
+        checks.append(fd)
+    else: raise AssertionError('uncapped child output')
+print(json.dumps(dict(capped_streams=checks,real_provider_requests=0)))
+"""
+        result = json.loads(self.docker("exec", "--workdir", "/workspace", workspace.container,
+                            "/usr/local/bin/python3", "-I", "-c", program))
+        self.assertEqual(result, dict(capped_streams=[1, 2], real_provider_requests=0))
 
     def target_bundle(self):
         project, definition, unused_attempt = self.provision(target=True)

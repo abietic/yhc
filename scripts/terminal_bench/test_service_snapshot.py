@@ -184,6 +184,27 @@ class SnapshotTests(unittest.TestCase):
             self.coordinator(another).restore(copied, str(uuid.uuid4()), expected_snapshot_sha256=self.anchor, activate=True)
         self.assertEqual(another.calls, [])
 
+    def test_dispatch_reprobes_active_state_clocks_and_process_identity(self):
+        target = FakeBackend(self.plan, self.timer, target=True)
+        target.source_removed = True
+        owner = self.coordinator(target)
+        receipt = owner.restore(self.path, self.attempt, expected_snapshot_sha256=self.anchor, activate=True)
+        self.timer.advance(5_000_000_000)
+        owner.verify_active_restore(self.path, self.anchor, receipt)
+        for fault in ("memory", "clock", "generation", "legacy"):
+            with self.subTest(fault=fault):
+                saved = copy.deepcopy(receipt)
+                app = target.apps["main"]
+                if fault == "memory": app.memory += 1
+                if fault == "clock": target.fault = "active_rate"
+                if fault == "generation": app.instance = str(uuid.uuid4())
+                if fault == "legacy": saved.pop("activation_wall_ns")
+                with self.assertRaises(SnapshotError):
+                    owner.verify_active_restore(self.path, self.anchor, saved)
+                if fault == "memory": app.memory -= 1
+                target.fault = None
+                app.instance = receipt["instances"]["main"]
+
     def test_omitted_ram_rng_or_clock_and_process_restart_block_all_release(self):
         for fault in ("memory", "rng", "clock", "process", "restart"):
             with self.subTest(fault=fault):

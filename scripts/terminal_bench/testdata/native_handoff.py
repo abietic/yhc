@@ -52,7 +52,7 @@ def text_parts(content):
     return content
 
 
-def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None, cold_round=0):
+def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None, cold_round=0, cold_prompt=COLD_PROMPT):
     items = body.get("input")
     require(isinstance(items, list), "missing_input")
     projected = []
@@ -106,7 +106,7 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
                          ["result", "continued-write", "Wrote 15 bytes to /workspace/continued.txt"]])
     if cold_round:
         expected.extend([["message", "assistant", "Model error: provider usage accounting failed closed: run usage budget exceeded"],
-                         ["message", "user", COLD_PROMPT]])
+                         ["message", "user", cold_prompt]])
         if cold_round == 2:
             expected.extend([["message", "assistant", " "],
                              ["call", "cold-edit", "Edit", dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore")],
@@ -118,17 +118,22 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
 def run(session_id, scenario, card, handoff=None):
     require(str(uuid.UUID(session_id)) == session_id, "invalid_fixture_session")
     require(scenario in ("known", "unknown", "denied", "unbound", "tool", "pause_tool", "crash_before_response", "crash_after_tool",
-                        "cold_edit", "cold_race", "cold_unknown", "cold_denied", "cold_changed", "cold_checkpoint_open", "cold_repeated", "cold_crash", "cold_route_changed"), "invalid_fixture_scenario")
+                        "cold_edit", "cold_race", "cold_unknown", "cold_denied", "cold_changed", "cold_checkpoint_open", "cold_repeated", "cold_crash", "cold_route_changed",
+                        "launcher_edit", "launcher_unknown", "pause_tool_env"), "invalid_fixture_scenario")
+    environment_key = scenario == "pause_tool_env"
+    if environment_key: scenario = "pause_tool"
     root = Path.cwd()
     require(str(root) == "/workspace" and Path("/opt/yhc/yhc").is_file(), "container_only_fixture")
     requests, errors, inputs, admissions = [], [], [], []
     race_probes = []
-    cold = scenario.startswith("cold_")
+    external = scenario.startswith("launcher_")
+    cold = scenario.startswith("cold_") or external
     require(not cold or isinstance(handoff, dict), "cold_handoff_required")
     fixture_port = 0
     if cold:
-        require(set(handoff) == {"handoff", "fixture_port"} and type(handoff["fixture_port"]) is int
+        require(set(handoff) == ({"handoff", "fixture_port", "checkpoint_path"} if external else {"handoff", "fixture_port"}) and type(handoff["fixture_port"]) is int
                 and 0 < handoff["fixture_port"] < 65536, "cold_fixture_route_required")
+        external_checkpoint = handoff.get("checkpoint_path")
         fixture_port, handoff = handoff["fixture_port"], handoff["handoff"]
         if scenario == "cold_route_changed":
             fixture_port = fixture_port + 1 if fixture_port < 65535 else fixture_port - 1
@@ -137,6 +142,10 @@ def run(session_id, scenario, card, handoff=None):
     persist_usage = scenario in ("tool", "pause_tool") or crash or cold
     process_ready = threading.Event()
     checkpoint = root / ".yhc/usage-checkpoints" / ("tool-" + uuid.uuid4().hex)
+    if external:
+        require(isinstance(external_checkpoint, str) and external_checkpoint.startswith(".yhc/usage-checkpoints/cold-")
+                and ".." not in Path(external_checkpoint).parts, "external_checkpoint_invalid")
+        checkpoint = root / external_checkpoint
     if persist_usage:
         checkpoint.parent.mkdir(mode=0o700, exist_ok=True)
 
@@ -167,7 +176,8 @@ def run(session_id, scenario, card, handoff=None):
                 inputs.append(body.get("input"))
                 verify_input(body, tool_round=len(requests) if two_rounds and not cold else 0,
                              provider_call_limit=1 if scenario == "pause_tool" else 2 if cold else None,
-                             cold_round=len(requests) if cold else 0)
+                             cold_round=len(requests) if cold else 0,
+                             cold_prompt="Continue the saved task using the verified restored state. Do not repeat completed side effects." if external else COLD_PROMPT)
                 require(len(requests) <= (2 if two_rounds else 1), "unexpected_retry_or_auxiliary_call")
                 if persist_usage:
                     view = inspect_checkpoint()
@@ -199,11 +209,12 @@ def run(session_id, scenario, card, handoff=None):
                 errors.append(str(error)[:180])
                 self.send_error(400)
                 return
-            if scenario in ("unknown", "cold_unknown"):
+            if scenario in ("unknown", "cold_unknown", "launcher_unknown"):
                 self.send_response(503)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b'{"error":{"type":"overloaded","message":"owned unknown-usage fixture"}}')
+                if external: threading.Thread(target=server.shutdown, daemon=True).start()
                 return
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -228,11 +239,20 @@ def run(session_id, scenario, card, handoff=None):
                     events[1]["response"]["output"] = [item]
             for event in events:
                 self.wfile.write(("event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n").encode())
+            if external and len(requests) == 2:
+                threading.Thread(target=server.shutdown, daemon=True).start()
 
     server = http.server.HTTPServer(("127.0.0.1", fixture_port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
+        if external:
+            signal.signal(signal.SIGTERM, lambda *_args: threading.Thread(target=server.shutdown, daemon=True).start())
+            print(json.dumps(dict(ready=True, provider_port=server.server_port, pid=os.getpid())), flush=True)
+            thread.join(timeout=30)
+            require(not thread.is_alive(), "external_fixture_timed_out")
+            return dict(observed_provider_requests=len(requests), provider_protocol_errors=errors,
+                        durable_admissions=admissions, real_provider_requests=0)
         with tempfile.TemporaryDirectory(prefix="yhc-offline-handoff-") as temporary:
             price = Path(temporary) / "prices.json"
             price.write_text(json.dumps(card))
@@ -248,6 +268,10 @@ def run(session_id, scenario, card, handoff=None):
             if two_rounds:
                 args[args.index("--max-turns") + 1] = "2"
                 args[args.index("--max-provider-calls") + 1] = "1" if scenario == "pause_tool" else "2"
+            if environment_key:
+                index = args.index("--api-key")
+                del args[index:index + 2]
+                env["PROV_API_KEY"] = "fixture"
             if persist_usage:
                 args.extend(["--usage-checkpoint-dir", str(checkpoint)])
             if scenario == "pause_tool" or cold:

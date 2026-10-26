@@ -111,6 +111,7 @@ class DockerWorkspace:
         require(row["Config"].get("Entrypoint") == ["/bin/sleep"] and row["Config"].get("Cmd") == ["infinity"]
                 and profile.get("ReadonlyRootfs") is True and not profile.get("Privileged")
                 and "ALL" in (profile.get("CapDrop") or []) and profile.get("NetworkMode") == "none"
+                and (profile.get("RestartPolicy") or {}).get("Name") == "no"
                 and not profile.get("PortBindings") and profile.get("PidMode", "") == ""
                 and profile.get("IpcMode", "") in ("", "private"), "workspace_not_isolated_passive_keeper")
         require(state.get("Running") is True and not state.get("Paused") and not state.get("Restarting")
@@ -141,7 +142,8 @@ class DockerWorkspace:
     def rpc(self, operation, **body):
         request = dict(protocol=PROTOCOL, request_id=str(uuid.uuid4()), root=self.cwd, operation=operation, **body)
         reply = decode(bounded_command(["docker", "--context", self.context, "exec", "--interactive", "--", self.container,
-                                        "/usr/local/bin/python3", "-I", "/opt/checkpoint/workspace_io.py"], encode(request)))
+                                        "/usr/local/bin/python3", "-I", "/opt/checkpoint/workspace_io.py"], encode(request),
+                                       timeout=body["launch"]["grant"]["limits"]["timeout_sec"] + 15 if operation == "cold_dispatch" else 20))
         require(isinstance(reply, dict) and reply.get("ok") is True and reply.get("protocol") == PROTOCOL
                 and reply.get("request_id") == request["request_id"], "workspace_transport_failed")
         return reply["body"]
@@ -150,10 +152,23 @@ class DockerWorkspace:
         ids = self.docker("ps", "--all", "--quiet", "--no-trunc").decode().split()
         require(source["container_id"] not in ids, "workspace_source_container_still_exists")
 
+    def launch_cold(self, launch, gateway_token):
+        require(self.inventory() == launch["expected_workspace"], "dispatch_workspace_generation_changed")
+        payload = {"launch": launch, "gateway_token": gateway_token}
+        result = self.rpc("cold_dispatch", **payload)
+        require(self.inventory() == launch["expected_workspace"], "dispatch_uncheckpointed_processes_remain")
+        return result
+
     def quarantine(self, expected):
         row = decode(self.docker("inspect", self.container))[0]
         labels = row["Config"].get("Labels") or {}
         require(self.attempt is not None and expected["container_id"] == self.container
                 and labels.get(WORKSPACE_COHORT) == self.cohort and labels.get(ATTEMPT) == self.attempt,
                 "workspace_quarantine_scope_unverified")
+        require((row["HostConfig"].get("RestartPolicy") or {}).get("Name") == "no", "workspace_quarantine_restart_unverified")
         self.docker("stop", "--time", "1", "--", self.container)
+        after = decode(self.docker("inspect", self.container))[0]
+        stopped = after["State"]
+        require(stopped.get("Running") is False and stopped.get("Restarting") is False and stopped.get("Pid") == 0
+                and (after["HostConfig"].get("RestartPolicy") or {}).get("Name") == "no",
+                "workspace_quarantine_unconfirmed")

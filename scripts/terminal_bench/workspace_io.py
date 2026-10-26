@@ -8,9 +8,13 @@ import base64
 import hashlib
 import json
 import os
+import selectors
+import signal
 import stat
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path, PurePosixPath
 
 PROTOCOL = "yhc-workspace-files-v1"
@@ -105,10 +109,113 @@ def validate_entries(entries):
     return entries
 
 
+def control_identity():
+    digest = hashlib.sha256()
+    with open("/opt/yhc/yhc", "rb") as binary:
+        for block in iter(lambda: binary.read(65536), b""):
+            digest.update(block)
+    return dict(binary_sha256=digest.hexdigest())
+
+
+def bounded_exec(args, root, env, payload, timeout):
+    """Cap both pipes while running, including after the leader exits."""
+    require(len(payload) <= MAX_JSON and 0 < timeout <= 905)
+    process = subprocess.Popen(args, cwd=root, env=env, stdin=subprocess.PIPE,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    output = {"stdout": bytearray(), "stderr": bytearray()}
+    deadline, succeeded = time.monotonic() + timeout, False
+    try:
+        with selectors.DefaultSelector() as selector:
+            for stream, kind in ((process.stdout, "stdout"), (process.stderr, "stderr")):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, kind)
+            if payload:
+                os.set_blocking(process.stdin.fileno(), False)
+                selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+            else:
+                process.stdin.close()
+            offset = 0
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                require(remaining > 0)
+                for event, _mask in selector.select(min(remaining, 0.1)):
+                    stream, kind = event.fileobj, event.data
+                    if kind == "stdin":
+                        offset += os.write(stream.fileno(), payload[offset:offset + 65536])
+                        if offset == len(payload):
+                            selector.unregister(stream); stream.close()
+                        continue
+                    block = os.read(stream.fileno(), 65536)
+                    if not block:
+                        selector.unregister(stream); stream.close()
+                    else:
+                        output[kind].extend(block)
+                        require(len(output[kind]) <= (MAX_JSON if kind == "stdout" else 8192))
+        code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+        succeeded = True
+        return code, bytes(output["stdout"])
+    finally:
+        if not succeeded:
+            try: os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+        if process.poll() is None: process.wait(timeout=5)
+        for stream in (process.stdin, process.stdout, process.stderr): stream.close()
+
+
+def cold_dispatch(root, launch, token):
+    """Only the immutable YHC binary runs; task paths never select an executable."""
+    require(isinstance(launch, dict) and set(launch) == {"version", "handoff", "grant", "checkpoint_path", "expected_tree_sha256", "expected_workspace"}
+            and launch["version"] == 1 and type(launch["version"]) is int)
+    grant, handoff = launch["grant"], launch["handoff"]
+    require(control_identity()["binary_sha256"] == grant["binary_sha256"]
+            and hashlib.sha256(json.dumps(inventory(root), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+            == launch["expected_tree_sha256"])
+    require(isinstance(token, str) and 0 < len(token) <= 512 and token.isascii() and not any(c.isspace() for c in token))
+    require(launch["checkpoint_path"] == ".yhc/usage-checkpoints/cold-" + grant["dispatch_id"])
+    checkpoint = child(root, launch["checkpoint_path"])
+    require(not checkpoint.exists() and not checkpoint.is_symlink())
+    limits, route = grant["limits"], grant["route"]
+    require(type(limits["timeout_sec"]) is int and 0 < limits["timeout_sec"] <= 900
+            and type(grant["expires_unix"]) is int and grant["expires_unix"] >= time.time() + limits["timeout_sec"])
+    with tempfile.TemporaryDirectory(prefix="yhc-cold-control-") as temporary:
+        private = Path(temporary)
+        handoff_bytes = json.dumps(handoff, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        for name, raw in (("handoff.json", handoff_bytes), ("price.json", json.dumps(grant["price_card"]).encode())):
+            fd = os.open(private / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(raw); f.flush(); os.fsync(f.fileno())
+        args = ["/opt/yhc/yhc", "exec", "-", "--resume", handoff["native_proof"]["session_id"],
+                "--output-format", "json", "--capture-read-guards", "--cold-tool-handoff", str(private / "handoff.json"),
+                "--cold-tool-handoff-sha256", hashlib.sha256(handoff_bytes).hexdigest(),
+                "--usage-checkpoint-dir", str(checkpoint), "--price-card", str(private / "price.json"),
+                "--reserve-cost-before-dispatch", "--timeout", str(limits["timeout_sec"]) + "s",
+                "--provider", route["provider"], "--model", route["model"], "--base-url", route["base_url"],
+                "--permission-mode", "acceptEdits"]
+        for key in ("max_provider_calls", "max_total_tokens", "max_estimated_cost", "max_output_tokens_per_call"):
+            args.extend(["--" + key.replace("_", "-"), str(limits[key])])
+        if grant["tools"]:
+            args.extend(["--tools", ",".join(grant["tools"])])
+        env = dict(PATH="/usr/local/bin:/usr/bin:/bin", HOME=temporary, TZ="UTC", PROV_API_KEY=token,
+                   XDG_CONFIG_HOME=temporary + "/config", XDG_DATA_HOME=temporary + "/data",
+                   XDG_CACHE_HOME=temporary + "/cache", YHC_SESSION_CATALOG=str(root / ".yhc/session-roots.json"))
+        code, raw = bounded_exec(args, root, env,
+            b"Continue the saved task using the verified restored state. Do not repeat completed side effects.", limits["timeout_sec"] + 5)
+        try: terminal = json.loads(raw)
+        except (ValueError, UnicodeError): terminal = None
+        owner = json.loads((checkpoint / "owner.json").read_bytes())
+        inspected = operate(dict(protocol=PROTOCOL, root=str(root), operation="usage_probe",
+                                 checkpoint_path=launch["checkpoint_path"], segment_id=owner["segment_id"]))
+        return dict(exit_code=code, terminal=terminal, checkpoint=inspected)
+
+
 def operate(request):
     require(isinstance(request, dict) and request.get("protocol") == PROTOCOL)
     root = root_path(request["root"])
     op = request["operation"]
+    if op == "control_probe":
+        return control_identity()
+    if op == "cold_dispatch":
+        return cold_dispatch(root, request["launch"], request["gateway_token"])
     if op == "inventory":
         return inventory(root)
     if op == "read":
