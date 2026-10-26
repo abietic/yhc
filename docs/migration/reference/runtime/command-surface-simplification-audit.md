@@ -219,7 +219,7 @@ remain unchanged.
 | Single engine action owner | [`QueryEngine.executeCommand`](../../../../engine/command_executor.go#L28) |
 | TUI running-turn admission | [`App.sendSlashCommand`](../../../../internal/tui/app.go#L4520) |
 | TUI discovery environment | [`App.commandCapabilityContext`](../../../../internal/tui/app.go#L4956) |
-| Alphabetical empty-query palette | [`sortPaletteItems`](../../../../internal/tui/command_palette.go#L424) |
+| Alphabetical empty-query palette | [`sortPaletteItems`](../../../../internal/tui/command_palette.go) |
 | Default workflow data | [`workflows.json`](../../../../engine/plugins/bundled/workflows.json) |
 | Atomic bundled generation | [`buildBundledWorkflowPack`](../../../../engine/plugins/bundled_workflows.go#L46) |
 

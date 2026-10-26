@@ -281,7 +281,9 @@ type Command struct {
 	// Usage shows the command syntax.
 	Usage string
 	// Source, SourceVersion, and Trust identify where command content came from.
-	Source        string
+	Source string
+	// SourcePath is the optional concrete source location for extension commands.
+	SourcePath    string
 	SourceVersion string
 	Trust         CommandTrustClass
 	// Category, DiscoveryTier and DisplayOrder own layered command discovery.
@@ -301,6 +303,7 @@ type Command struct {
 	AvailabilityReason string
 	Dependency         string
 	SideEffect         SideEffectKind
+	ModelInvocation    ModelInvocationKind
 	ResultKind         ResultKind
 	ExecutionOwner     ExecutionOwner
 	Compatibility      CommandCompatibility
@@ -312,6 +315,9 @@ type Command struct {
 	// legacyExecute is adapted and cleared before a built-in enters the
 	// registry. It is not observable through registry snapshots.
 	legacyExecute legacyCommandExecutor
+	// definitionToken is an in-memory source snapshot used only by operation tokens.
+	definitionToken string
+	operationArgs   []ArgDef // presentation schema; Skill.Render retains dispatch validation
 }
 
 // ArgDef defines a single command argument for validation.
@@ -857,6 +863,7 @@ func cloneCommand(cmd *Command) *Command {
 	cloned := *cmd
 	cloned.Aliases = append([]string(nil), cmd.Aliases...)
 	cloned.Args = append([]ArgDef(nil), cmd.Args...)
+	cloned.operationArgs = append([]ArgDef(nil), cmd.operationArgs...)
 	cloned.Completion = cloneArgumentCompletions(cmd.Completion)
 	cloned.Compatibility.DeprecatedAliases = append(
 		[]string(nil),
@@ -948,7 +955,7 @@ func applyCommandContractDefaults(cmd *Command) error {
 			cmd.ExecutionOwner = ExecutionOwnerEngine
 		}
 	}
-	return nil
+	return applyOperationDefaults(cmd)
 }
 
 type commandDiscoveryMetadata struct {

@@ -1,13 +1,10 @@
 package tui
 
 import (
-	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/abietic/yhc/engine/commands"
 )
 
 // DialogAction is the result of a stackable dialog handling a key event.
@@ -476,38 +473,7 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		}
 		return true, nil
 	case StateCommandPalette:
-		selected, dismissed := a.commandPalette.HandleKey(msg)
-		if dismissed {
-			a.popDialog(state)
-			if selected != "" {
-				if a.commandRegistry != nil {
-					command := a.commandRegistry.GetForContext(context.Background(), commands.EntrypointTUI, a.commandCapabilityContext(), selected)
-					if command != nil && strings.HasPrefix(command.Source, "skill:") {
-						before := a.captureComposerUndoEntry()
-						a.textarea.SetValue("/" + command.Name + " ")
-						a.reconcileComposerElements(before.Text, a.textarea.Value())
-						a.markComposerChanged()
-						a.recordComposerUndo(before)
-						a.textarea.CursorEnd()
-						a.syncInputModeFromText()
-						return true, nil
-					}
-				}
-				// Re-admit after a possibly stale palette snapshot before
-				// creating presentation provenance. Recent commits only after
-				// the matching local or engine-owned result succeeds.
-				if a.commandRegistry != nil {
-					if cmd := a.commandRegistry.GetForContext(context.Background(), commands.EntrypointTUI, a.commandCapabilityContext(), selected); cmd != nil && cmd.ValidateArgs(nil) == nil {
-						a.beginCommandPaletteSubmission(cmd.Name)
-					}
-				}
-				a.textarea.SetValue("/" + selected)
-				a.composerElements = nil
-				a.inputMode = InputCommand
-				return true, a.sendMessage()
-			}
-		}
-		return true, nil
+		return true, a.handleCommandPaletteKey(msg)
 	case StateBypassConfirm:
 		return true, a.handleBypassConfirmKey(msg)
 	default:

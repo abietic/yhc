@@ -160,6 +160,7 @@ type App struct {
 	// settles. Durable command events and non-TUI entrypoints remain unchanged.
 	commandPaletteSubmission       *commandPaletteSubmission
 	commandPaletteSubmissionSerial uint64
+	commandPaletteTarget           commandPaletteTarget
 	// pendingCommandPrompt is a presentation-level continuation requested by a
 	// completed engine-owned command (for example /plan <description>).
 	pendingCommandPrompt string
@@ -518,6 +519,8 @@ func (a *App) SetProgram(p *tea.Program) {
 // SetEngine sets the query engine after creation.
 func (a *App) SetEngine(eng *engine.QueryEngine) {
 	a.removeDialog(StateDiffContext)
+	a.removeDialog(StateCommandPalette)
+	a.commandPalette.Close()
 	a.dismissComposerSuggestion()
 	a.engine = eng
 	if eng != nil {
@@ -998,6 +1001,12 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case tea.PasteMsg:
+		if state, active := a.activeDialogState(); active && state == StateCommandPalette {
+			if a.commandPaletteTargetMatches() {
+				a.commandPalette.HandlePaste(msg.Content)
+			}
+			return a, nil
+		}
 		// Only the top manager's search field may consume paste; the draft stays frozen.
 		if a.hasDialog(StateContextManager) {
 			cmd := a.updateComposerContextQuery(msg)
@@ -1629,7 +1638,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, cmd
 	}
 
-	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue) {
+	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue || state == StateCommandPalette) {
 		if state == StateContextManager {
 			cmds = append(cmds, a.updateComposerContextQuery(msg))
 		}
@@ -5041,6 +5050,10 @@ func (a *App) openHelpOverlay() {
 // openCommandPalette opens the searchable command palette overlay (Ctrl+K).
 func (a *App) openCommandPalette() {
 	a.commandPalette.ShowFor(a.commandRegistry, a.commandCapabilityContext())
+	a.commandPaletteTarget = commandPaletteTarget{engine: a.engine, registry: a.commandRegistry, view: a.activeThreadViewID(), revision: a.composerRevision}
+	if a.engine != nil {
+		a.commandPaletteTarget.thread = a.engine.ThreadID()
+	}
 	a.pushDialog(StateCommandPalette)
 }
 
