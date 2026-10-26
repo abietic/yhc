@@ -110,7 +110,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False):
+    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False, generated_session=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -119,7 +119,11 @@ class NativeColdDockerTests(unittest.TestCase):
             observed[name] = self.business(source_project, source_definition, name, "state")
         source, volume = self.provision_workspace()
         args = ["--unbound-model"] if unbound else ["--tool-ready"] if tool_ready or paused else []
-        self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, *args)
+        seeded = self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native",
+                             "--generated-session-id" if generated_session else self.session, *args)
+        if generated_session:
+            self.session = seeded.strip()
+            self.assertRegex(self.session, r"^session-[0-9]+$")
         git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
         supplied_history = history(self.session)
         pause_record = None
@@ -341,8 +345,9 @@ class NativeColdDockerTests(unittest.TestCase):
     def test_cold_dispatch_crash_retains_claim_and_inflight_reservation(self):
         self.check_cold_tool_dispatch("cold_crash")
 
-    def check_benchmark_launcher(self, scenario):
-        manifest, observed, unused = self.capture_joint(paused=True, environment_key=scenario != "auth")
+    def check_benchmark_launcher(self, scenario, *, generated_session=False):
+        manifest, observed, unused = self.capture_joint(paused=True, environment_key=scenario != "auth", generated_session=generated_session)
+        self.assertEqual(manifest["usage_history"]["session_id"], self.session)
         bundle = self.target_bundle()
         restored = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
         grant = grant_for(manifest, self.bundle_digest, self.attempt, int(time.time()))
@@ -396,7 +401,8 @@ else: raise AssertionError('uncapped child')
                 result = original_rpc(operation, **body)
                 evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
                 if evidence:
-                    write_report(Path(evidence) / ("launcher-" + scenario + "-observed.json"), result)
+                    suffix = "-native-session" if generated_session else ""
+                    write_report(Path(evidence) / ("launcher-" + scenario + suffix + "-observed.json"), result)
                 if result.get("checkpoint", {}).get("snapshot", {}).get("provider_calls") == 0:
                     self.docker("exec", bundle.workspace.container, "/bin/kill", "-TERM", str(ready["pid"]))
                 try:
@@ -439,7 +445,7 @@ else: raise AssertionError('uncapped child')
                                   "from pathlib import Path; print(Path('/proof/continued.txt').read_bytes().hex())")
             self.assertEqual(bytes.fromhex(retained), b"continued once\n")
             evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
-            if evidence:
+            if evidence and scenario in ("cohort_budget", "external_gateway"):
                 write_report(Path(evidence) / "launcher-detached.json", dict(verification_complete=True,
                              workspace_stopped=True, source_claim_retained=True, volume_retained=True,
                              source_progress_retained=True, real_provider_requests=0))
@@ -455,6 +461,13 @@ else: raise AssertionError('uncapped child')
                 retained = self.docker("exec", bundle.workspace.container, "/usr/local/bin/python3", "-I", "-c",
                                        "from pathlib import Path; print(Path('/workspace/continued.txt').read_bytes().hex())")
                 self.assertEqual(bytes.fromhex(retained), b"continued once\n")
+            evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+            if evidence:
+                suffix = "-native-session" if generated_session else ""
+                write_report(Path(evidence) / ("launcher-" + scenario + suffix + ".json"),
+                             dict(verification_complete=True, session_id=self.session, generated_session=generated_session,
+                                  dispatched=False, claim_consumed=False, progress_retained=True,
+                                  cohort_accounting=cohort.inspect(), real_provider_requests=0))
             return
         result = launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, anchor, "fixture")
         self.assertFalse(provider["provider_protocol_errors"], provider)
@@ -465,10 +478,12 @@ else: raise AssertionError('uncapped child')
         self.assertEqual(result["status"], "completed" if scenario == "known" else "stopped")
         self.assertFalse(result["automatic_paid_resume"])
         accounting = cohort.inspect()
+        self.assertEqual(accounting, CohortAdmission(cohort.root, digest(plan)).inspect())
         self.assertEqual(accounting["usage_histories"][plan["sessions"][1]["session_id"]], plan["sessions"][1]["usage_history"])
         self.assertEqual(accounting["blocked"], scenario == "unknown")
         if scenario == "unknown":
             self.assertNotEqual(accounting["retained_amount"], "0.000000000000")
+            self.assertEqual(accounting["usage_histories"][self.session], manifest["usage_history"])
         else:
             self.assertEqual(accounting["retained_amount"], "0.000000000000")
             self.assertEqual(accounting["usage_histories"][self.session], result["usage_history"])
@@ -483,8 +498,19 @@ else: raise AssertionError('uncapped child')
             self.assertIn("model_binding_route_revision_changed", result["execution"]["terminal"]["error"]["message"])
         evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
         if evidence:
-            write_report(Path(evidence) / ("launcher-" + scenario + ".json"), dict(verification_complete=True,
+            suffix = "-native-session" if generated_session else ""
+            write_report(Path(evidence) / ("launcher-" + scenario + suffix + ".json"), dict(verification_complete=True,
+                         session_id=self.session, generated_session=generated_session,
                          dispatch=result, cohort_accounting=accounting, provider=provider, original_restore_receipt=restored))
+
+    def test_benchmark_launcher_native_generated_session_completes_with_closed_cumulative_usage(self):
+        self.check_benchmark_launcher("known", generated_session=True)
+
+    def test_benchmark_launcher_native_generated_session_unknown_usage_still_retains_full_allocation(self):
+        self.check_benchmark_launcher("unknown", generated_session=True)
+
+    def test_benchmark_launcher_native_generated_session_exhaustion_still_preserves_progress(self):
+        self.check_benchmark_launcher("cohort_budget", generated_session=True)
 
     def test_benchmark_launcher_shared_budget_exhaustion_preserves_real_restored_progress(self):
         self.check_benchmark_launcher("cohort_budget")

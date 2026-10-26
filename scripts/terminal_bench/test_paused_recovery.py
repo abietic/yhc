@@ -9,8 +9,8 @@ from scripts.terminal_bench.service_snapshot import SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history, invocation, proof
 
 
-def inputs():
-    session = str(uuid.uuid4())
+def inputs(session_id=None):
+    session = session_id if session_id is not None else str(uuid.uuid4())
     native = proof(session, "a" * 64)
     native.update(validation_complete=False, blocking_reasons=["native_turn_incomplete"],
                   tool_boundary=dict(version=1, kind="committed_tool_results", call_count=2,
@@ -29,6 +29,26 @@ def inputs():
 
 
 class PausedProofTests(unittest.TestCase):
+    def test_native_generated_session_name_preserves_exact_joint_binding(self):
+        session = "session-1700000000000000001"
+        record, native, checkpoint, cumulative = inputs(session)
+        result = verify_paused_joint(record, digest(record), native, checkpoint, cumulative, "/workspace")
+        self.assertEqual(result["session_id"], session)
+        self.assertTrue(result["accounting_complete"])
+        self.assertFalse(result["can_resume_agent"] or result["new_spending_authorized"])
+
+    def test_native_session_name_never_relaxes_checkpoint_segment_identity(self):
+        record, native, checkpoint, cumulative = inputs("session-1700000000000000001")
+        record["segment_id"] = record["session_id"]
+        with self.assertRaisesRegex(SnapshotError, "identity_mismatch"):
+            verify_paused_joint(record, digest(record), native, checkpoint, cumulative, "/workspace")
+
+    def test_unsafe_session_names_still_fail_operator_record_admission(self):
+        for session in ("../session", "a/b", "-session", "a b", "aé", "a" * 129):
+            record, native, checkpoint, cumulative = inputs(session)
+            with self.subTest(session=session), self.assertRaisesRegex(SnapshotError, "identity_mismatch"):
+                verify_paused_joint(record, digest(record), native, checkpoint, cumulative, "/workspace")
+
     def test_cold_tool_handoff_requires_complete_explicit_guard_capture(self):
         record, native, checkpoint, cumulative = inputs()
         with self.assertRaisesRegex(SnapshotError, "not_captured"):

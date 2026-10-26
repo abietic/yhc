@@ -22,6 +22,7 @@ except ImportError:
 
 from scripts.terminal_bench.native_cost import decimal_amount
 from scripts.terminal_bench.service_snapshot import MAX_BYTES, SnapshotError, decode, digest, encode, identity, private_json, require
+from scripts.terminal_bench.workspace_io import session_identity
 from scripts.terminal_bench.workspace_recovery import usage_history
 
 MAX_EVENTS = 256
@@ -46,7 +47,7 @@ def history_totals(histories, currency):
     known = outstanding = retained = Decimal(0)
     complete, segments, calls = True, set(), set()
     for session_id, hist in histories.items():
-        require(identity(session_id), "cohort_session_invalid")
+        require(session_identity(session_id), "cohort_session_invalid")
         complete = bool(usage_history(hist, session_id)["coverage_complete"] and complete)
         for row in hist["segments"]:
             usage = row["usage"]
@@ -78,7 +79,7 @@ def validate_plan(plan, anchor):
     histories, ceilings, holds = {}, {}, set()
     for row in plan["sessions"]:
         require(isinstance(row, dict) and set(row) == {"session_id", "max_estimated_cost", "usage_history"}
-                and identity(row["session_id"]) and row["session_id"] not in histories, "cohort_session_invalid")
+                and session_identity(row["session_id"]) and row["session_id"] not in histories, "cohort_session_invalid")
         ceilings[row["session_id"]] = amount(row["max_estimated_cost"], positive=True)
         histories[row["session_id"]] = copy.deepcopy(row["usage_history"])
     history_totals(histories, plan["currency"])

@@ -9,11 +9,12 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 from scripts.terminal_bench.recovery_bundle import RecoveryBundle
 from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
 from scripts.terminal_bench.test_service_snapshot import FakeBackend, Time, contract
-from scripts.terminal_bench.workspace_io import inventory, operate, PROTOCOL, validate_entries
+from scripts.terminal_bench.workspace_io import inventory, operate, PROTOCOL, session_identity, validate_entries
 from scripts.terminal_bench.workspace_recovery import native_proof, usage_history
 
 
@@ -85,6 +86,32 @@ class Workspace:
             raise SnapshotError("workspace_source_container_still_exists")
     def quarantine(self, target):
         self.stopped = True
+
+
+class SessionIdentityTests(unittest.TestCase):
+    def test_native_names_and_legacy_uuids_bind_without_normalization(self):
+        for session in ("session-1700000000000000001", str(uuid.uuid4()), "0", "A._-", "a" * 128):
+            with self.subTest(session=session):
+                self.assertTrue(session_identity(session))
+                self.assertTrue(usage_history(history(session), session)["coverage_complete"])
+                self.assertEqual(native_proof(proof(session, "a" * 64), session, "/workspace")["session_id"], session)
+                with self.assertRaisesRegex(SnapshotError, "invalid_native_restore_proof"):
+                    native_proof(proof(session, "a" * 64), session + "-other", "/workspace")
+
+    def test_unsafe_names_are_rejected_before_any_native_process(self):
+        invalid = (None, True, 1, [], {}, "", ".", "..", "-session", "../session", "session/child", "session\\child",
+                   "a b", "a\n", "a\0", "é", "aé", "a" * 129)
+        with tempfile.TemporaryDirectory() as directory, mock.patch("scripts.terminal_bench.workspace_io.subprocess.run") as run:
+            for session in invalid:
+                with self.subTest(session=session):
+                    self.assertFalse(session_identity(session))
+                    with self.assertRaisesRegex(SnapshotError, "identity_mismatch"):
+                        usage_history(history(session), session)
+                    with self.assertRaisesRegex(SnapshotError, "invalid_native_restore_proof"):
+                        native_proof(proof(session, "a" * 64), session, "/workspace")
+                    with self.assertRaisesRegex(ValueError, "unsupported_workspace_state"):
+                        operate(dict(protocol=PROTOCOL, root=str(Path(directory).resolve()), operation="native_probe", session_id=session))
+            run.assert_not_called()
 
 
 class HistoryTests(unittest.TestCase):

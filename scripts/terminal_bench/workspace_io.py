@@ -24,6 +24,12 @@ MAX_ENTRIES = 4096
 MAX_JSON = 8 << 20
 
 
+def session_identity(value):
+    """Portable native Session name, distinct from UUID invocation identities."""
+    return (isinstance(value, str) and 0 < len(value) <= 128 and value[0].isalnum()
+            and all(c.isascii() and (c.isalnum() or c in "_.-") for c in value))
+
+
 def require(value):
     if not value:
         raise ValueError("unsupported_workspace_state")
@@ -259,8 +265,7 @@ def operate(request):
         return inventory(root)
     if op == "native_probe":
         session = request["session_id"]
-        require(isinstance(session, str) and 0 < len(session) <= 128 and session[0].isalnum()
-                and all(c.isascii() and (c.isalnum() or c in "_.-") for c in session))
+        require(session_identity(session))
         # The audited binary is in the immutable image, never in the restored
         # workspace. This administration entrypoint constructs no provider.
         env = dict(PATH="/usr/local/bin:/usr/bin:/bin", HOME="/tmp/yhc-proof-home",

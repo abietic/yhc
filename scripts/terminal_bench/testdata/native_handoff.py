@@ -116,7 +116,8 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
 
 
 def run(session_id, scenario, card, handoff=None):
-    require(str(uuid.UUID(session_id)) == session_id, "invalid_fixture_session")
+    require(isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", session_id) is not None,
+            "invalid_fixture_session")
     require(scenario in ("known", "unknown", "denied", "unbound", "tool", "pause_tool", "crash_before_response", "crash_after_tool",
                         "cold_edit", "cold_race", "cold_unknown", "cold_denied", "cold_changed", "cold_checkpoint_open", "cold_repeated", "cold_crash", "cold_route_changed",
                         "launcher_edit", "launcher_unknown", "pause_tool_env"), "invalid_fixture_scenario")
