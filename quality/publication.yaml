@@ -5940,7 +5940,7 @@ privacy:
       match_sha256: ff11ed26497552231fa3974aca874f81299eb449dccd2491cf6f3296929199fb
       purpose: runtime-loopback
     - path: scripts/terminal_bench/host_gateway_transport.py
-      line: 336
+      line: 338
       rule_id: credential-assignment
       match_sha256: d86a2d5bba5e946d3ee2834dfc0c62b8f96ed54d8c7c4acefe59f0ca04fdb140
       purpose: runtime-loopback

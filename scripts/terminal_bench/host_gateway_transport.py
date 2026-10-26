@@ -317,10 +317,12 @@ class HostGatewayTransport:
             return result
         finally:
             try:
-                if not success:
-                    try: os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError: pass
-                if process.poll() is None: process.wait(timeout=5)
+                try:
+                    if not success:
+                        try: os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError: pass
+                finally:
+                    if process.poll() is None: process.wait(timeout=5)
             finally:
                 try: process.stdin.close()
                 finally: process.stdout.close()

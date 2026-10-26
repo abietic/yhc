@@ -169,8 +169,23 @@ os.kill(found[0],signal.SIGKILL)
             self.assertFalse(any(self.control.glob("dispatch.*.json")))
             result = None
         elif scenario == "helper_eof":
-            with self.assertRaises((PipeFailure, OSError)):
+            import subprocess
+            owned = []
+            original_popen = subprocess.Popen
+            def observe_popen(*args, **kwargs):
+                process = original_popen(*args, **kwargs)
+                if args and isinstance(args[0], list) and "--host-gateway-pipe" in args[0]:
+                    owned.append(process)
+                    self.addCleanup(lambda: process.wait(timeout=5) if process.returncode is None else None)
+                return process
+            with mock.patch.object(subprocess, "Popen", observe_popen), self.assertRaises((PipeFailure, OSError)) as failure:
                 launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, digest(grant), "fixture")
+            self.assertEqual(len(owned), 1)
+            process = owned[0]
+            self.assertIsNotNone(process.returncode)
+            self.assertTrue(process.stdin.closed and process.stdout.closed)
+            state["host_client"] = dict(reaped=True, returncode=process.returncode, stdin_closed=True, stdout_closed=True,
+                                        failure_type=type(failure.exception).__name__, errno=getattr(failure.exception, "errno", None))
             self.assertEqual(state["errors"], [])
             self.assertEqual(state["requests"], 1)
             self.assertTrue(cohort.inspect()["blocked"])
