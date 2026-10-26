@@ -342,7 +342,7 @@ The current keeper protocol requires Docker `network_mode: none`. Before any
 native probe, source claim or cohort allocation, `validate_gateway_transport`
 therefore requires a literal loopback IP in `route.base_url`, HTTP(S), and a
 valid port (1–65535 when explicit). Host/external addresses, DNS names including
-`localhost`, scoped IPv6 and ambiguous shorthand addresses are blocked without
+`localhost`, scoped or IPv4-mapped IPv6 and ambiguous shorthand addresses are blocked without
 DNS lookup or a connection attempt. A host gateway cannot be reached through
 this profile; a verified relay or a separately verified network profile is
 still required before using it for real provider traffic. The launcher does

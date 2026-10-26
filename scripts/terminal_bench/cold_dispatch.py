@@ -42,8 +42,9 @@ def validate_gateway_transport(grant):
     require(isinstance(base, str) and 0 < len(base) <= 256, "dispatch_gateway_transport_unverified")
     try:
         url = urlsplit(base)
+        address = ipaddress.ip_address(url.hostname)
         require(url.scheme in ("http", "https") and url.hostname and "%" not in url.hostname
-                and ipaddress.ip_address(url.hostname).is_loopback
+                and address.is_loopback and getattr(address, "ipv4_mapped", None) is None
                 and (url.port is None or 0 < url.port <= 65535), "dispatch_gateway_transport_unverified")
     except ValueError:
         raise SnapshotError("dispatch_gateway_transport_unverified") from None

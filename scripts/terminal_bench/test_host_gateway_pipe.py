@@ -207,7 +207,7 @@ class ForwardTests(unittest.TestCase):
         self.assertEqual(len(requests), 1)
 
     def test_nonliteral_or_nonloopback_endpoint_fails_before_reading_pipe(self):
-        for host in ("localhost", "example.invalid", "0.0.0.0", "192.0.2.1", "127.1", "::1%lo0"):
+        for host in ("localhost", "example.invalid", "0.0.0.0", "192.0.2.1", "127.1", "::1%lo0", "::ffff:127.0.0.1", "::ffff:7f00:1"):
             channel = mock.Mock()
             with self.subTest(host=host), self.assertRaises(PipeFailure): forward(channel, host, 12345, 12345, 1)
             channel.receive.assert_not_called()

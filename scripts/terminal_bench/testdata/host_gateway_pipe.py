@@ -118,7 +118,9 @@ class LiteralConnection(http.client.HTTPConnection):
 
 
 def forward(channel, host, port, container_port, calls):
-    try: literal = isinstance(host, str) and "%" not in host and ipaddress.ip_address(host).is_loopback
+    try:
+        address = ipaddress.ip_address(host)
+        literal = isinstance(host, str) and "%" not in host and address.is_loopback and getattr(address, "ipv4_mapped", None) is None
     except ValueError: literal = False
     require(literal and type(port) is int and 0 < port <= 65535
             and type(container_port) is int and 0 < container_port <= 65535
