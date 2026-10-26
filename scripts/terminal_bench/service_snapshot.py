@@ -312,6 +312,55 @@ class ServiceSnapshots:
                                   blob["state"], blob["clock"])
         return manifest
 
+    def _active_probe(self, name, barrier, instance_id, state, frozen, reference, at):
+        started = self.wall_ns()
+        instance, body = self._call(name, "probe", barrier)
+        ended = self.wall_ns()
+        require(started >= at and ended >= started, "active_clock_wall_reversed")
+        require(instance == instance_id and body.get("phase") == "running"
+                and body.get("barrier_id") == barrier and type(body.get("in_flight")) is int and body["in_flight"] == 0
+                and body.get("digests") == {k: digest(v) for k, v in state.items()}, "active_state_probe_mismatch")
+        clock, spec = body.get("clock"), self.specs[name]
+        require(isinstance(clock, dict) and set(clock) == {"policy", "rate_num", "rate_den", "logical_ns"}
+                and type(clock["rate_num"]) is int and type(clock["rate_den"]) is int
+                and clock.get("policy") == spec["clock_policy"]
+                and all(clock.get(key) == spec[key] for key in ("rate_num", "rate_den")), "active_clock_configuration_mismatch")
+        base = frozen["logical_ns"]
+        if spec["clock_policy"] == "logical_elapsed":
+            base += (at - reference) * spec["rate_num"] // spec["rate_den"]
+        low = base + max(0, started - at - self.contract["clock_skew_ns"]) * spec["rate_num"] // spec["rate_den"]
+        high = base + (ended - at + self.contract["clock_skew_ns"]) * spec["rate_num"] // spec["rate_den"] + 2
+        require(type(clock.get("logical_ns")) is int and low <= clock["logical_ns"] <= high, "active_clock_probe_mismatch")
+
+    def verify_active_restore(self, path, expected_snapshot_sha256, receipt):
+        """Fresh state and clock observations; a saved receipt alone cannot dispatch."""
+        manifest, blobs = self.load(path, expected_snapshot_sha256)
+        require(isinstance(receipt, dict) and receipt.get("status") == "services_active_verified"
+                and receipt.get("snapshot_sha256") == expected_snapshot_sha256
+                and receipt.get("cohort_id") == manifest["cohort_id"] and identity(receipt.get("attempt_id"))
+                and receipt.get("service_state_verified") is True and receipt.get("service_clocks_verified") is True
+                and type(receipt.get("activation_wall_ns")) is int and type(receipt.get("reference_wall_ns")) is int
+                and receipt["activation_wall_ns"] >= receipt["reference_wall_ns"]
+                and isinstance(receipt.get("instances"), dict) and set(receipt["instances"]) == set(self.specs)
+                and isinstance(receipt.get("expected_clocks"), dict) and set(receipt["expected_clocks"]) == set(self.specs),
+                "active_restore_receipt_unverified")
+        target = receipt["target"]
+        expected_claim = dict(attempt_id=receipt["attempt_id"], target=target, snapshot_sha256=expected_snapshot_sha256,
+                              status="claimed", activation_wall_ns=receipt["activation_wall_ns"],
+                              reference_wall_ns=receipt["reference_wall_ns"], instances=receipt["instances"])
+        require(private_json(self.activation_claim(expected_snapshot_sha256)) == expected_claim, "active_restore_claim_mismatch")
+        before = self._inventory(manifest["cohort_id"], receipt["attempt_id"])
+        require(same_live_runtime(target, before) and all(target.get(k) == before.get(k)
+                for k in ("daemon_id", "owned_volumes", "cohort_id", "restore_attempt_id")), "dispatch_service_runtime_changed")
+        self.backend.assert_source_absent(manifest, before)
+        for name, blob in blobs.items():
+            frozen = self._clock(self.specs[name], blob["clock"], receipt["reference_wall_ns"])
+            require(frozen == receipt["expected_clocks"][name] and identity(receipt["instances"][name]), "active_restore_clock_binding_mismatch")
+            self._active_probe(name, manifest["barrier_id"], receipt["instances"][name], blob["state"], frozen,
+                               receipt["reference_wall_ns"], receipt["activation_wall_ns"])
+        require(same_live_runtime(before, self._inventory(manifest["cohort_id"], receipt["attempt_id"])), "dispatch_service_runtime_changed")
+        return before
+
     def restore(self, path, attempt, *, expected_snapshot_sha256, activate=False, activation_delay_ns=3_000_000_000):
         require(identity(attempt), "invalid_restore_attempt")
         manifest, blobs = self.load(path, expected_snapshot_sha256)
@@ -348,7 +397,8 @@ class ServiceSnapshots:
                 self.backend.assert_source_absent(manifest, target)
                 last_wall, wait_start = self.wall_ns(), self.monotonic_ns()
                 at = last_wall + activation_delay_ns
-                claim = dict(attempt_id=attempt, target=target, snapshot_sha256=digest(manifest), status="claimed")
+                claim = dict(attempt_id=attempt, target=target, snapshot_sha256=digest(manifest), status="claimed",
+                             activation_wall_ns=at, reference_wall_ns=reference, instances=instances)
                 write_report(claim_path, claim)
                 for name in sorted(self.specs):
                     instance, body = self._call(name, "activate", barrier, at_wall_ns=at)
@@ -363,24 +413,7 @@ class ServiceSnapshots:
                     require(0 <= elapsed <= activation_delay_ns + self.contract["clock_skew_ns"], "activation_wait_timeout")
                     self.sleep(max(0, min(0.05, (at + self.contract["clock_skew_ns"] - now_wall) / 1e9)))
                 for name in sorted(self.specs):
-                    started = self.wall_ns()
-                    instance, body = self._call(name, "probe", barrier)
-                    ended = self.wall_ns()
-                    require(instance == instances[name] and body.get("phase") == "running"
-                            and body.get("barrier_id") == barrier and type(body.get("in_flight")) is int and body["in_flight"] == 0
-                            and body.get("digests") == {k: digest(v) for k, v in blobs[name]["state"].items()}, "active_state_probe_mismatch")
-                    clock = body.get("clock") or {}
-                    spec, frozen = self.specs[name], expected_clocks[name]
-                    require(isinstance(clock, dict) and set(clock) == {"policy", "rate_num", "rate_den", "logical_ns"}
-                            and type(clock["rate_num"]) is int and type(clock["rate_den"]) is int
-                            and clock.get("policy") == spec["clock_policy"]
-                            and all(clock.get(key) == spec[key] for key in ("rate_num", "rate_den")), "active_clock_configuration_mismatch")
-                    base = frozen["logical_ns"]
-                    if spec["clock_policy"] == "logical_elapsed":
-                        base += (at - reference) * spec["rate_num"] // spec["rate_den"]
-                    low = base + max(0, started - at - self.contract["clock_skew_ns"]) * spec["rate_num"] // spec["rate_den"]
-                    high = base + (ended - at + self.contract["clock_skew_ns"]) * spec["rate_num"] // spec["rate_den"] + 2
-                    require(type(clock.get("logical_ns")) is int and low <= clock["logical_ns"] <= high, "active_clock_probe_mismatch")
+                    self._active_probe(name, barrier, instances[name], blobs[name]["state"], expected_clocks[name], reference, at)
                 require(same_live_runtime(target, self._inventory(cohort, attempt)), "target_runtime_changed_after_activation")
         except BaseException:
             # Partial import/release is not rollback. Discard/fence only this
@@ -395,4 +428,5 @@ class ServiceSnapshots:
                     agent_blockers=["workspace_restore_unverified", "native_session_load_unverified",
                                     "provider_usage_and_new_authorization_require_separate_checks"],
                     snapshot_sha256=digest(manifest), cohort_id=cohort, attempt_id=attempt,
-                    target=target, reference_wall_ns=reference, expected_clocks=expected_clocks)
+                    target=target, reference_wall_ns=reference, expected_clocks=expected_clocks,
+                    activation_wall_ns=at if activate else None, instances=instances)

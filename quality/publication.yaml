@@ -5862,9 +5862,29 @@ privacy:
       match_sha256: 0bbea7534b662f8b1ad149a1a6cbe5be759bd0cd7bf7787c6a5d7018a1433bc7
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/testdata/native_handoff.py
-      line: 243
+      line: 263
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_recovery_bundle_docker.py
+      line: 348
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_cold_dispatch.py
+      line: 29
+      rule_id: private-url
+      match_sha256: b5644f5a272a9faf267b8f2a690457d38d21ba73f0f922920a42cc4a5c1800d2
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_cold_dispatch.py
+      line: 59
+      rule_id: private-email
+      match_sha256: 77fddc979a2dd5c601fb5dd769cbf6ee390b80ce44c4ca72804372e97caa991c
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_cold_dispatch.py
+      line: 59
+      rule_id: private-url
+      match_sha256: b10b38c09188520fcf2f0d5e67ea64bc96d7a53160aa181ace1ee993befbef73
       purpose: synthetic-security-fixture
     - path: engine/commands/p21_discovery_test.go
       line: 44

@@ -4,14 +4,14 @@
 **Last verified:** 2026-10-26
 
 > **Ownership:** the operator-only file/native/usage recovery bundle, its
-> binding to cooperative service proofs, and its remaining execution boundary
+> binding to cooperative service proofs, and explicit benchmark dispatch
 
 This workflow restores a supported workspace into fresh storage, loads its
 Session through the production QueryEngine administration path, reconstructs
 historical usage and verifies cooperative services under one capture identity.
 The receipt is `restored_components_verified`. It always keeps
-`can_resume_agent: false`: automatic execution handoff and a new finite spending
-authorization are separate, unimplemented gates here. No Agent or provider
+`can_resume_agent: false`: the explicit dispatch operation below needs a separate
+finite grant and fresh joined checks. No Agent or provider
 request is started by capture or restore.
 
 ## Qualify the capture
@@ -266,7 +266,8 @@ yhc exec "Continue the saved task." --resume SESSION_ID \
 ```
 
 Capture and cold handoff currently require JSON output; JSONL/TUI and automatic
-benchmark dispatch are not integrated. These options are off by default. Normal
+benchmark dispatch are not integrated. The operator launcher below is a separate
+explicit operation. These options are off by default. Normal
 resume and default budget behavior are unchanged. The cold path requires an
 explicit resume, a fresh checkpoint namespace, finite timeout/call limits and
 cost reservation; it never imports old limits or reopens the old writer.
@@ -287,6 +288,102 @@ state restoration for an **explicit new user turn**, not resumption of an old
 Graph frame or tool replay. New usage is counted in the new invocation. The
 source checkpoint and earlier history remain unchanged, and original component
 receipts continue to report `can_resume_agent: false`.
+
+## Dispatch through the benchmark recovery launcher
+
+[`ColdBenchmarkLauncher.dispatch`](../../scripts/terminal_bench/cold_dispatch.py)
+connects a restored v2 bundle to the same production JSON CLI handoff. Capture
+and restore still start no Agent. The launcher starts at most one explicit new
+turn per source invocation; it neither loops through grants nor changes the
+solver. The ordinary Harbor adapter continues to require same-live-runtime
+continuity. Historical sealed batches and legacy retained containers do not
+gain this capability.
+
+Before dispatch, the launcher reloads the anchored bundle and private restore
+claim/receipt. It checks the current workspace generation and complete file
+tree, performs a fresh native load and closed-checkpoint inspection, and
+re-probes every cooperative service's state, process identity and advancing
+clock. The activation epoch and service instances must match the original
+host claim. Older receipts without those observations are blocked. Observation
+timestamps may change; container/process/image/storage identity may not.
+
+The operator must provide a private, independently anchored JSON grant with
+exactly the fields accepted by `validate_grant`:
+
+| Fields | Required meaning |
+|---|---|
+| `version`, `scope` | `1`, `benchmark-cold-dispatch-v1` |
+| `dispatch_id` | Fresh canonical UUID; also names the fresh checkpoint namespace |
+| `bundle_sha256`, `attempt_id` | The original bundle digest and exact completed restore attempt |
+| `usage_history_sha256` | Canonical digest of the complete original ordered history |
+| `expires_unix` | Integer UTC epoch seconds; enough validity for the entire new timeout |
+| `currency`, `max_cumulative_estimated_cost` | Native currency and cumulative Session envelope, including historical estimates |
+| `binary_sha256` | Independently verified immutable `/opt/yhc/yhc` artifact |
+| `price_card` | Full current upper-bound card, with explicit API models and the same native currency |
+| `route` | Exactly `provider`, `model`, `base_url`; the existing native route guard also applies |
+| `tools` | Explicit list of tool names; an empty list keeps CLI defaults |
+| `limits` | Exactly `max_provider_calls`, `max_total_tokens`, `max_output_tokens_per_call`, `max_estimated_cost`, `timeout_sec` |
+
+The grant digest uses the same canonical encoding as the bundle digest,
+not a SHA of arbitrary JSON whitespace. Obtain it from the trusted authorizer;
+hashing task-authored JSON does not turn it into permission. Calls must be
+1–200, output tokens 1–65536, and timeout 1–900 seconds. A zero total-token
+threshold disables only that threshold. The new cost cap must be positive.
+
+All historical usage must be complete, uniquely identified and free of retained
+or outstanding reservations. The launcher adds its known native estimates
+without rewriting earlier rows, then reserves the full new cap inside the
+cumulative envelope. Different currencies are blocked; no exchange rate is
+guessed. This is an estimate envelope for the captured Session, not an account
+balance or a shared-cohort ledger. A funding controller must separately reserve
+shared-cohort exposure and provide an opaque gateway token. The launcher reads
+only `YHC_BENCH_GATEWAY_TOKEN`; it does not fall back to host provider keys.
+
+With a checked grant and token in the operator environment, use the target's
+service project/definition and the original capture identity:
+
+```bash
+python3 -m scripts.terminal_bench.recovery_bundle dispatch \
+  --service-contract /absolute/private-dir/service-contract.json \
+  --service-definition /absolute/private-dir/target-services.json \
+  --service-project target-project \
+  --service-snapshot /absolute/private-dir/service-snapshot \
+  --workspace-container TARGET_CONTAINER_ID --cwd /workspace \
+  --cohort-id COHORT_UUID --attempt-id ATTEMPT_UUID \
+  --snapshot /absolute/private-dir/bundle --bundle-sha256 BUNDLE_SHA256 \
+  --dispatch-grant /absolute/private-control-dir/grant.json \
+  --dispatch-grant-sha256 GRANT_CANONICAL_SHA256 \
+  --control-dir /absolute/private-control-dir
+```
+
+A host source-invocation lock precedes native probes. The launcher syncs its
+single-use claim, complete original history and new exposure before dispatch.
+The immutable container helper rechecks the tree and binary, passes the opaque
+token through process memory, and starts the existing CLI with a new checkpoint
+namespace. The Go handoff independently revalidates native/accounting/file
+guards and consumes its own source claim. No task executable runs on the host.
+
+The host retains an observation and reconciles the actual new checkpoint with
+the terminal result before appending its invocation to cumulative history.
+The container reader caps stdout at 8 MiB and stderr at 8 KiB while the child
+runs. Output overflow, deadline or pipe failure kills the owned process group,
+including pipe-holding descendants after the leader exits. A transport failure
+or leftover process also quarantines the exact owned workspace and confirms it
+stopped before returning. This container boundary covers descendants that leave
+the original process group. Admission and quarantine require the explicit
+Docker restart policy `no`; missing policy evidence is blocked. These
+failures cannot produce a completion receipt; the data volume and claim remain.
+Unknown usage, an open checkpoint, a transport failure, changed route or denied
+reservation cannot reopen a consumed claim. Preserve the journal and new
+checkpoint for explicit reconciliation. A successful receipt authorizes no
+later retry; `automatic_paid_resume` remains false.
+
+This remains the explicitly cooperative, isolated keeper protocol above.
+Service/workspace observations are point-in-time checks within that closed
+world, not transactions against arbitrary external host actors. Network or
+environment transitions, unsupported tool/process state and ordinary Harbor
+cold recovery remain blocked. Offline fixtures install a synthetic loopback
+provider after host admission; they prove no paid gateway or model capability.
 
 ## Reproduce without a paid provider
 

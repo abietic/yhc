@@ -1,6 +1,6 @@
 """Bind service, workspace, actual native-load and cumulative-usage evidence.
 
-This operator-only workflow never dispatches an Agent or grants spending.
+Capture/restore never dispatch. Explicit dispatch needs a separate finite grant.
 Old file captures are not upgraded into this versioned cooperative protocol.
 """
 
@@ -13,13 +13,13 @@ import stat
 from pathlib import Path
 
 from scripts.terminal_bench.cold_recovery import DockerServices
-from scripts.terminal_bench.recovery import write_report
+from scripts.terminal_bench.recovery import same_live_runtime, write_report
 from scripts.terminal_bench.service_snapshot import (
     MAX_BYTES, ServiceSnapshots, SnapshotError, digest, identity, private_json, require, seal_capsule,
 )
 from scripts.terminal_bench.workspace_io import MAX_FILE, validate_entries
 from scripts.terminal_bench.workspace_recovery import DockerWorkspace, native_proof, usage_history
-from scripts.terminal_bench.paused_recovery import verify_paused_joint
+from scripts.terminal_bench.paused_recovery import cold_tool_handoff, verify_paused_joint
 
 PROTOCOL = "yhc-cold-recovery-bundle-v1"
 PAUSED_PROTOCOL = "yhc-cold-recovery-bundle-v2"
@@ -218,10 +218,51 @@ class RecoveryBundle:
             require(not errors, "bundle_restore_failed_quarantine_unconfirmed")
             raise
 
+    def prepare_dispatch(self, path, expected_digest, service_path):
+        """Reobserve all joined components before a separately authorized launch."""
+        body, _, accounting = self.load(path, expected_digest, service_path)
+        require(body["protocol"] == PAUSED_PROTOCOL and accounting["coverage_complete"] is True,
+                "dispatch_requires_verified_paused_bundle")
+        receipt = private_json(self._record("bundle-receipt", expected_digest))
+        claim = private_json(self._record("bundle-restore", expected_digest))
+        require(receipt.get("status") == "restored_components_verified" and receipt.get("version") == 2
+                and receipt.get("bundle_sha256") == expected_digest
+                and receipt.get("service_snapshot_sha256") == body["service_snapshot_sha256"]
+                and receipt.get("cohort_id") == body["cohort_id"] and receipt.get("barrier_id") == body["barrier_id"]
+                and receipt.get("accounting") == accounting and receipt.get("cumulative_usage_restored") is True
+                and receipt.get("workspace_restored") is True and receipt.get("native_session_loaded") is True,
+                "dispatch_restore_receipt_mismatch")
+        target = self.workspace.inventory()
+        claimed_services, active_services = claim.get("services"), receipt["services"]["target"]
+        require(target == receipt["workspace_runtime"] and target["attempt_id"] == receipt["attempt_id"]
+                and target["cohort_id"] == body["cohort_id"]
+                and claim == dict(version=1, bundle_sha256=expected_digest, attempt_id=receipt["attempt_id"],
+                                  workspace=target, services=claimed_services)
+                and same_live_runtime(claimed_services, active_services)
+                and all(claimed_services.get(k) == active_services.get(k)
+                        for k in ("daemon_id", "owned_volumes", "cohort_id", "restore_attempt_id")),
+                "dispatch_workspace_generation_changed")
+        self.workspace.assert_source_absent(body["source_workspace"])
+        self.services.verify_active_restore(service_path, body["service_snapshot_sha256"], receipt["services"])
+        before = validate_entries(self.workspace.rpc("inventory"))
+        require(digest(before) == receipt["post_native_tree_sha256"], "dispatch_workspace_changed")
+        pause = body["paused_invocation"]
+        native = self.workspace.rpc("native_probe", session_id=pause["record"]["session_id"])
+        checkpoint = self.workspace.rpc("usage_probe", checkpoint_path=pause["record"]["checkpoint_path"],
+                                        segment_id=pause["record"]["segment_id"])
+        handoff = cold_tool_handoff(pause["record"], pause["record_sha256"], native, checkpoint, body["usage_history"], target["cwd"])
+        require(verify_paused_joint(pause["record"], pause["record_sha256"], native, checkpoint, body["usage_history"], target["cwd"])
+                == receipt["paused_joint_proof"], "dispatch_joint_proof_mismatch")
+        after = validate_entries(self.workspace.rpc("inventory"))
+        require(user_files(before) == user_files(after) and self.workspace.inventory() == target, "dispatch_workspace_changed_during_probe")
+        self.services.verify_active_restore(service_path, body["service_snapshot_sha256"], receipt["services"])
+        require(self.workspace.rpc("inventory") == after, "dispatch_workspace_changed_during_probe")
+        return body, handoff, dict(workspace=target, tree_sha256=digest(after), restore_receipt_sha256=digest(receipt))
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Operator-only cold component restore; never dispatches an Agent")
-    parser.add_argument("operation", choices=("capture", "restore"))
+    parser = argparse.ArgumentParser(description="Operator-only cold restore and explicitly granted one-shot dispatch")
+    parser.add_argument("operation", choices=("capture", "restore", "dispatch"))
     parser.add_argument("--service-contract", type=Path, required=True)
     parser.add_argument("--service-definition", type=Path, required=True)
     parser.add_argument("--service-project", required=True)
@@ -238,6 +279,8 @@ def main():
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--bundle-sha256")
     parser.add_argument("--control-dir", type=Path, required=True)
+    parser.add_argument("--dispatch-grant", type=Path)
+    parser.add_argument("--dispatch-grant-sha256")
     args = parser.parse_args()
     try:
         contract = private_json(args.service_contract)
@@ -248,8 +291,16 @@ def main():
             require(args.usage_history is not None and args.session_id is not None, "capture_native_inputs_required")
             result = bundle.capture(args.snapshot, args.service_snapshot, args.service_sha256, args.session_id, private_json(args.usage_history),
                                     pause_record=private_json(args.pause_record) if args.pause_record else None, pause_sha256=args.pause_sha256)
-        else:
+        elif args.operation == "restore":
             result = bundle.restore(args.snapshot, args.bundle_sha256, args.service_snapshot, args.attempt_id)
+        else:
+            from scripts.terminal_bench.cold_dispatch import ColdBenchmarkLauncher
+            require(args.dispatch_grant is not None and args.dispatch_grant_sha256, "explicit_dispatch_grant_required")
+            result = ColdBenchmarkLauncher(bundle).dispatch(args.snapshot, args.bundle_sha256, args.service_snapshot,
+                private_json(args.dispatch_grant), args.dispatch_grant_sha256, os.environ.get("YHC_BENCH_GATEWAY_TOKEN"))
+            print(json.dumps({k: result[k] for k in ("status", "source_segment_id", "accounting_complete", "automatic_paid_resume")}))
+            if result["status"] != "completed": parser.exit(1)
+            return
         print(json.dumps({k: result[k] for k in ("cohort_id", "can_resume_agent", "bundle_sha256")}
                          | {"status": result.get("status", "bundle_captured")}))
     except SnapshotError as exc:
