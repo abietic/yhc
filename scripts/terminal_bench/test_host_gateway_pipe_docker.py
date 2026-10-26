@@ -61,6 +61,13 @@ class HostPipeColdDockerTests(native_fixture.NativeColdDockerTests):
         before = cohort.inspect()
         state = dict(requests=0, errors=[], admissions=[], bridge_results=[], bridge_errors=[], launches=0, cleanup=[])
         fixture = self
+        def observe_failure_or_completion():
+            evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+            if evidence:
+                write_report(Path(evidence) / ("host-pipe-observed-" + scenario + "-" + self.session + ".json"),
+                    dict(verification_complete=False, scope="diagnostic_not_authority", observed=state,
+                         cohort=cohort.inspect(), real_provider_requests=0))
+        self.addCleanup(observe_failure_or_completion)
 
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -82,7 +89,7 @@ class HostPipeColdDockerTests(native_fixture.NativeColdDockerTests):
                     checkpoint = state["launch"]["checkpoint_path"]
                     stage = "durable_admission"
                     program = ("import json,os,sys;from pathlib import Path;"
-                               "p=Path(sys.argv[1]);s=json.loads((p/'owner.json').read_bytes())['segment_id'];"
+                               "p=Path('/workspace')/sys.argv[1];s=json.loads((p/'owner.json').read_bytes())['segment_id'];"
                                "os.execv('/opt/yhc/yhc',['yhc','usage','inspect','--checkpoint-dir',str(p),'--segment-id',s])")
                     view = json.loads(fixture.docker("exec", "--workdir", "/workspace", bundle.workspace.container,
                                       "/usr/local/bin/python3", "-I", "-c", program, checkpoint))
@@ -167,6 +174,7 @@ class HostPipeColdDockerTests(native_fixture.NativeColdDockerTests):
                 thread = threading.Thread(target=pump, daemon=True); thread.start()
                 self.assertTrue(ready.wait(5) and ready_ok, "owned bridge did not become ready")
                 result = original(operation, **body)
+                state["execution_observed"] = result
                 process.wait(timeout=5); thread.join(3)
                 self.assertFalse(thread.is_alive(), "pipe exchange did not terminate")
                 self.assertEqual(process.returncode, 0 if scenario == "known" else 1)
