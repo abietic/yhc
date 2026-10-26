@@ -322,6 +322,22 @@ class CleanupSignalTests(unittest.TestCase):
             child.wait.assert_called_once()
             self.assertTrue(incoming.closed and outgoing.closed)
 
+    def test_reap_timeout_takes_precedence_and_retains_signal_error_context(self):
+        record, native, checkpoint, hist = inputs()
+        grant = grant_for(dict(usage_history=hist)); grant["expires_unix"] = int(time.time()) + 120
+        config = binding(grant); config["expires_unix"] = int(time.time()) + 120
+        value = transport.HostGatewayTransport(config, digest(config))
+        with tempfile.TemporaryFile() as incoming, tempfile.TemporaryFile() as outgoing:
+            child = SimpleNamespace(pid=424242, stdout=incoming, stdin=outgoing, poll=lambda:None,
+                                    wait=mock.Mock(side_effect=subprocess.TimeoutExpired("owned-fixture", 5)))
+            workspace = SimpleNamespace(container="c" * 64, context="offline-fixture", cwd="/workspace")
+            with mock.patch("subprocess.Popen", return_value=child), \
+                 mock.patch("os.killpg", side_effect=PermissionError(1, "synthetic signal denial")), \
+                 self.assertRaises(subprocess.TimeoutExpired) as failure:
+                value.rpc(workspace, dict(grant=grant), "fixture")
+            self.assertIsInstance(failure.exception.__context__, PermissionError)
+            self.assertTrue(incoming.closed and outgoing.closed)
+
 
 if __name__ == "__main__":
     unittest.main()

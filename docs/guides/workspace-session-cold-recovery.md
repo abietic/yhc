@@ -571,6 +571,15 @@ unclosed server or leftover process retains the claim and allocation and
 quarantines the owned workspace. Neither that failure nor a successful receipt
 allows automatic paid retry or reopens the old source.
 
+Captured change-review journals are a separate observability component. The
+[revision journal](../../engine/filehistory/revisions.go) binds its frames to
+the original filesystem root identity; copying its bytes to a new volume does
+not make it replayable. The current
+[review owner](../../engine/workspace_revisions.go) preserves an incompatible
+journal and reports history unavailable. This file-tool dispatch proof does
+not rebind that history or certify its restoration. Do not weaken that owner
+check or describe copied review files as recovered review capability.
+
 ## Reproduce without a paid provider
 
 ```bash
