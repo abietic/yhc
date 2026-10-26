@@ -238,6 +238,13 @@ class GrantTests(unittest.TestCase):
                           {"route": {"base_url": "http://127.0.0.1:bad"}}):
                 with self.assertRaises(SnapshotError): validate_gateway_transport(value)
 
+    def test_mapped_loopback_is_rejected_even_when_runtime_classifies_it_as_loopback(self):
+        from scripts.terminal_bench.cold_dispatch import validate_gateway_transport
+        runtime_address = SimpleNamespace(is_loopback=True, ipv4_mapped=object())
+        with mock.patch("scripts.terminal_bench.cold_dispatch.ipaddress.ip_address", return_value=runtime_address):
+            with self.assertRaisesRegex(SnapshotError, "dispatch_gateway_transport_unverified"):
+                validate_gateway_transport(self.grant)
+
 
 @unittest.skipUnless(os.name == "posix", "process groups and pipe selectors require POSIX")
 class OutputBoundaryTests(unittest.TestCase):

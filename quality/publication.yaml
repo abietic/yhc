@@ -5923,6 +5923,12 @@ privacy:
       match_sha256: bda8e6ef76541ee9914daa1425214b440e00893a739990187f25d4dc2b7b80ca
       purpose: synthetic-security-fixture
 
+    - path: scripts/terminal_bench/test_host_gateway_pipe_docker.py
+      line: 55
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+
 dependencies:
   license_policy: quality/dependency-licenses.yaml
 rules:
