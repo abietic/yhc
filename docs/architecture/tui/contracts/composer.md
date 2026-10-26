@@ -527,3 +527,47 @@ rich preview exists.
 
 The cross-entrypoint program and remaining ACP work are owned by
 [`P30 Cross-Entrypoint Multimodal Input`](../../../migration/plans/p30-cross-entrypoint-multimodal-input.md).
+
+## Side questions
+
+`/btw [question]` is TUI-only, available during ordinary leader turns as well
+as idle input. The registry owns availability metadata and a typed UI action;
+[`side_question.go`](../../../../engine/side_question.go) owns immutable capture,
+one pending/running slot, bounded snapshots, and monotonic reducer transitions.
+Opening the editor and replaying presentation dispatch nothing. A confirmed
+question captures at most 32 KiB of recent textual conversation/runtime data;
+media, reasoning, full tool schemas, and uncaptured file contents are excluded.
+The panel identifies clipping and the capture time.
+
+A request uses one streaming auxiliary call, no tools, at most 2048 output
+tokens, and a 30-second deadline. It rejects tool calls, empty answers, invalid
+UTF-8, and unsafe control text. Input is limited to 4096 bytes and retained
+answers to 64 KiB. Auxiliary usage is accounted separately. No question or
+answer body is written to the main conversation/transcript. Eight ephemeral
+snapshots are retained at most; session replay does not recreate requests.
+
+Identity fences include engine, session, thread, model-route generation, and
+request ID. Main-turn progress does not invalidate the captured snapshot.
+Cancellation is terminal, and the slot remains occupied until a dispatched
+provider returns, including uncooperative providers. Engine close cancels work;
+session restoration cancels auxiliary work before changing the provider-usage
+owner. Unfinished Goals, unresolved permission/Plan approval, child engines,
+and blocked/missing models fail before dispatch.
+
+[`internal/tui/side_question.go`](../../../../internal/tui/side_question.go)
+projects engine snapshots and drops stale delivery after engine/thread changes.
+Escape closes only this modal and cancels its auxiliary request. Answer Enter
+re-reads the current engine snapshot and adds literal context to a normal
+message draft through the existing undoable paste path. It preserves existing
+text and attachments; it does not submit, steer, interrupt, or enqueue main
+work. A command/shell draft must be changed to normal input first. Palette
+Recent is recorded only after a matching successful answer, not editor open,
+cancellation, or failed dispatch.
+
+The reference decision is `adapt`: OpenCode snapshot
+`1743d1a24e2356b3f631d3d384f44cb9d8359add`,
+`.reference/opencode/packages/tui/src/feature-plugins/prompt/btw.tsx`, uses a
+separate generated answer dialog; its GUI model owns cancellable ephemeral
+questions. YHC retains its single tool-free auxiliary provider/usage boundary,
+rejects returned tool calls, and requires explicit draft staging. References
+supply the user problem; the YHC engine owns lifecycle and permission rules.

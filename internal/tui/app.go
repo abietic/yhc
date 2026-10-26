@@ -72,6 +72,7 @@ const (
 	StateDiffContext     // captured Git file/hunk context selector
 	StateInputDelivery   // busy composer delivery choice
 	StateInputQueue      // pending input controls and delivery receipts
+	StateSideQuestion    // independent tool-free question
 )
 
 type InputMode int
@@ -114,27 +115,31 @@ type App struct {
 	renderEnvironment RenderEnvironment
 
 	// Components
-	textarea          textarea.Model
-	chat              *ChatView
-	dialog            *PermissionDialog
-	resume            *ResumeDialog
-	help              *HelpOverlay
-	search            *SearchOverlay
-	msgSelector       *MessageSelector
-	mcpApproval       *MCPApprovalDialog
-	modelPicker       *ModelPicker
-	backgroundTasks   *BackgroundTasksPanel
-	agentWizard       *AgentWizard
-	mcpSettings       *MCPSettingsPanel
-	teamsPanel        *TeamsPanel
-	taskExplorer      *TaskExplorerPanel
-	commandPalette    *CommandPalette
-	planDialog        *PlanDialog
-	questionDialog    *QuestionDialog
-	agentPicker       *AgentThreadPicker
-	contextManager    composerContextManager
-	diffContext       composerDiffContext
-	diffContextSerial uint64
+	textarea             textarea.Model
+	chat                 *ChatView
+	dialog               *PermissionDialog
+	resume               *ResumeDialog
+	help                 *HelpOverlay
+	search               *SearchOverlay
+	msgSelector          *MessageSelector
+	mcpApproval          *MCPApprovalDialog
+	modelPicker          *ModelPicker
+	backgroundTasks      *BackgroundTasksPanel
+	agentWizard          *AgentWizard
+	mcpSettings          *MCPSettingsPanel
+	teamsPanel           *TeamsPanel
+	taskExplorer         *TaskExplorerPanel
+	commandPalette       *CommandPalette
+	sideQuestionDialog   *SideQuestionDialog
+	sideQuestionRequest  *sideQuestionRequest
+	sideQuestionPalette  *commandPaletteSubmission
+	sideQuestionAnswerID string
+	planDialog           *PlanDialog
+	questionDialog       *QuestionDialog
+	agentPicker          *AgentThreadPicker
+	contextManager       composerContextManager
+	diffContext          composerDiffContext
+	diffContextSerial    uint64
 
 	// Streaming & Progress integration
 	streamingCtx    *ChatStreamingContext
@@ -388,33 +393,34 @@ func New(cfg Config) *App {
 		notificationAfter = defaultNotificationAfter
 	}
 	app := &App{
-		focus:             FocusEditor,
-		state:             initialState,
-		dialogs:           &appDialogStack{},
-		inputMode:         InputNormal,
-		permMode:          permission.ModeDefault,
-		commandHintIdx:    -1,
-		fileHintIdx:       -1,
-		mentionHintIdx:    -1,
-		commandRegistry:   cmdReg,
-		styles:            styles,
-		renderEnvironment: renderEnvironment,
-		statusLineHook:    cfg.StatusLineHook,
-		textarea:          ta,
-		chat:              newChatViewWithRenderEnvironment(renderEnvironment),
-		dialog:            NewPermissionDialog(styles),
-		resume:            NewResumeDialog(styles),
-		help:              NewHelpOverlay(styles, resolver),
-		search:            NewSearchOverlay(styles),
-		msgSelector:       NewMessageSelector(styles),
-		mcpApproval:       NewMCPApprovalDialog(styles),
-		modelPicker:       NewModelPicker(styles),
-		backgroundTasks:   NewBackgroundTasksPanel(styles),
-		mcpSettings:       NewMCPSettingsPanel(styles),
-		agentWizard:       NewAgentWizard(styles),
-		teamsPanel:        NewTeamsPanel(styles),
-		taskExplorer:      NewTaskExplorerPanel(styles),
-		commandPalette:    NewCommandPalette(styles),
+		focus:              FocusEditor,
+		state:              initialState,
+		dialogs:            &appDialogStack{},
+		inputMode:          InputNormal,
+		permMode:           permission.ModeDefault,
+		commandHintIdx:     -1,
+		fileHintIdx:        -1,
+		mentionHintIdx:     -1,
+		commandRegistry:    cmdReg,
+		styles:             styles,
+		renderEnvironment:  renderEnvironment,
+		statusLineHook:     cfg.StatusLineHook,
+		textarea:           ta,
+		chat:               newChatViewWithRenderEnvironment(renderEnvironment),
+		dialog:             NewPermissionDialog(styles),
+		resume:             NewResumeDialog(styles),
+		help:               NewHelpOverlay(styles, resolver),
+		search:             NewSearchOverlay(styles),
+		msgSelector:        NewMessageSelector(styles),
+		mcpApproval:        NewMCPApprovalDialog(styles),
+		modelPicker:        NewModelPicker(styles),
+		backgroundTasks:    NewBackgroundTasksPanel(styles),
+		mcpSettings:        NewMCPSettingsPanel(styles),
+		agentWizard:        NewAgentWizard(styles),
+		teamsPanel:         NewTeamsPanel(styles),
+		taskExplorer:       NewTaskExplorerPanel(styles),
+		commandPalette:     NewCommandPalette(styles),
+		sideQuestionDialog: NewSideQuestionDialog(styles),
 		planDialog: newPlanDialog(
 			styles,
 			resolver,
@@ -518,6 +524,7 @@ func (a *App) SetProgram(p *tea.Program) {
 
 // SetEngine sets the query engine after creation.
 func (a *App) SetEngine(eng *engine.QueryEngine) {
+	a.dismissSideQuestion()
 	a.removeDialog(StateDiffContext)
 	a.removeDialog(StateCommandPalette)
 	a.commandPalette.Close()
@@ -984,6 +991,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if a.quitting {
+			a.dismissSideQuestion()
 			a.removeDialog(StateDiffContext)
 			a.dismissComposerSuggestion()
 			a.stopMascotIdle()
@@ -1001,6 +1009,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case tea.PasteMsg:
+		if state, active := a.activeDialogState(); active && state == StateSideQuestion {
+			a.sideQuestionDialog.HandlePaste(msg.Content)
+			return a, nil
+		}
 		if state, active := a.activeDialogState(); active && state == StateCommandPalette {
 			if a.commandPaletteTargetMatches() {
 				a.commandPalette.HandlePaste(msg.Content)
@@ -1211,6 +1223,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		}
 		return a, a.mascotAnim.TriggerIdle(a.mascotIdleSequence())
 
+	case sideQuestionResultMsg:
+		a.handleSideQuestionResult(msg)
+		a.updateLayout()
+		return a, nil
 	case composerSuggestionMsg:
 		a.handleComposerSuggestion(msg)
 		a.updateLayout()
@@ -1638,7 +1654,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, cmd
 	}
 
-	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue || state == StateCommandPalette) {
+	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue || state == StateCommandPalette || state == StateSideQuestion) {
 		if state == StateContextManager {
 			cmds = append(cmds, a.updateComposerContextQuery(msg))
 		}
@@ -4635,6 +4651,9 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 			return nil
 		}
 	}
+	if canonicalName == "btw" {
+		return a.dispatchSideQuestion(value, cmdCtx, paletteSubmission, false)
+	}
 	if tuiCommandAvailable &&
 		(commandName == "exit" || commandName == "quit") &&
 		len(commandArgs) == 0 {
@@ -5062,6 +5081,7 @@ func (a *App) commandCapabilityContext() *commands.CommandContext {
 		"terminal_capabilities": a.terminalDiagnostics(),
 		"terminal_clipboard":    a.terminalCaps.Interactive,
 		"interactive_tui":       true,
+		"leader_view":           a.isLeaderThreadView(),
 	}
 	if a.engine != nil {
 		ctx := a.engine.CommandContext()
@@ -5175,6 +5195,7 @@ func (a *App) propagateStyles() {
 	a.mcpSettings.SetRenderEnvironment(a.renderEnvironment)
 	a.teamsPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.commandPalette.SetRenderEnvironment(a.renderEnvironment)
+	a.sideQuestionDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.planDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.questionDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.agentPicker.SetRenderEnvironment(a.renderEnvironment)
@@ -5196,6 +5217,7 @@ func (a *App) projectModalRenderEnvironment() {
 	a.search.SetRenderEnvironment(a.renderEnvironment)
 	a.modelPicker.SetRenderEnvironment(a.renderEnvironment)
 	a.commandPalette.SetRenderEnvironment(a.renderEnvironment)
+	a.sideQuestionDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.agentPicker.SetRenderEnvironment(a.renderEnvironment)
 	a.expandSearch.SetRenderEnvironment(a.renderEnvironment)
 	a.help.SetRenderEnvironment(a.renderEnvironment)

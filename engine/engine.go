@@ -80,6 +80,7 @@ type QueryEngine struct {
 	contentReplacementState      *ContentReplacementState
 	fileStateCache               *FileStateCache
 	commandRegistry              *commands.Registry
+	sideQuestions                sideQuestionController
 	pluginDirs                   []string
 	skillRegistry                *skills.SkillRegistry
 	approvalTracker              *permission.ApprovalTracker
@@ -2622,6 +2623,7 @@ func (e *QueryEngine) Close() {
 
 func (e *QueryEngine) closeWithPersistence(persist bool) {
 	e.closeOnce.Do(func() {
+		e.closeSideQuestions()
 		e.mediaLifecycleMu.Lock()
 		e.mediaLifecycleClosed = true
 		e.mediaLifecycleMu.Unlock()
@@ -4874,6 +4876,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 	}
 	defer releaseRestore()
 
+	e.invalidateSideQuestions()
 	turnID = strings.TrimSpace(turnID)
 	e.goalProviderBoundary.Lock()
 	providerBoundaryLocked := true

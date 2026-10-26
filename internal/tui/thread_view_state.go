@@ -333,6 +333,7 @@ func (a *App) switchThreadView(threadID string, mode engine.ThreadAttachmentMode
 	}
 	previousThreadID := a.activeThreadViewID()
 	if previousThreadID != normalizeThreadViewID(threadID) {
+		a.dismissSideQuestion()
 		a.removeDialog(StateDiffContext)
 		a.removeDialog(StateInputDelivery)
 		a.removeDialog(StateInputQueue)

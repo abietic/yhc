@@ -32,8 +32,8 @@ commands, so the ordinary active snapshot contains 43 commands and its
 maximum static discovery is 43 for TUI, 32 for plain, 18 for headless, 14
 for ACP, and none for CLI administration or the dedicated headless Goal
 entrypoint. Contextual discovery may narrow those sets. During an active TUI
-turn only `/agent`, `/team`, `/keybindings`, and
-`/queue` remain reachable; other entrypoints expose no active-turn slash
+turn only `/agent`, `/team`, `/keybindings`, `/queue`, and the explicitly requested
+`/btw` remain reachable; other entrypoints expose no active-turn slash
 projection. `/effort` is omitted when the active resolved provider/model does
 not support the exact request field, and `/copy` is omitted without an
 interactive clipboard-capable TUI. One engine command executor now
@@ -123,7 +123,7 @@ and MCP arguments are rejected before manager side effects.
 
 | Entrypoint | How it dispatches | Current observable boundary |
 |---|---|---|
-| TUI | Discovery, help, completion, palette, and dispatch use the TUI-filtered registry snapshot. `/search`, `/team`, `/queue`, `/keybindings`, `/terminal`, and capability-gated `/copy` are registered TUI-only commands whose panels, diagnostics, or side effects remain local. | Engine-owned commands enter `QueryEngine`; the TUI only projects the typed result and local presentation. |
+| TUI | Discovery, help, completion, palette, and dispatch use the TUI-filtered registry snapshot. `/search`, `/team`, `/queue`, `/btw`, `/keybindings`, `/terminal`, and capability-gated `/copy` are registered TUI-only commands whose panels, diagnostics, or side effects remain local. | Engine-owned commands enter `QueryEngine`; the TUI only projects the typed result and local presentation. |
 | Plain REPL | Uses the plain-filtered registry snapshot. Engine-owned commands, including runtime-gated `/goal`, enter `QueryEngine`; entrypoint-owned presentation/workflow actions remain local. | TUI-only commands are excluded before handler execution; enabled saved-root Plain shares Goal command authority but not TUI panels. |
 | Headless `exec` / compatibility `-p` | Passes input through a headless-configured `QueryEngine`; lifecycle, model, effort, plan, permissions, diagnostics, `/diff`, `/files`, and explicit `/add-dir` are in scope when contextual capability admits them. | One text/JSON renderer projects typed success and stable failure/cancellation status. Prompt workflows and TUI-only commands remain outside this projection. |
 | Dedicated headless Goal | `yhc goal run` resumes an exact saved Session and calls only the engine's dedicated Goal continuation claim/submission boundary. It does not dispatch slash input. | Requires an explicit Session and positive continuation limit; emits one final text/JSON `goal_run` result and exits `0` only for durable Goal completion. |
@@ -217,7 +217,7 @@ the original reproduction and adoption boundary remain in the
 [`recent-delivery remediation audit`](../../migration/reference/runtime/recent-delivery-remediation-audit.md#repair-contract-g27-result-bound-recent-commands).
 
 The typed phase environment defaults to idle. During an active TUI turn only
-`/agent`, `/team`, `/keybindings`, and `/queue` are discoverable. A command
+`/agent`, `/team`, `/keybindings`, `/queue`, and `/btw` are discoverable. A command
 seen while idle but dispatched after the phase changes is revalidated by
 `Registry.Dispatch` and fails with `ActionNone` before its handler. This does
 not broaden plain, headless, ACP, administration, or standalone MCP ownership.

@@ -165,7 +165,7 @@ func isDialogState(state AppState) bool {
 	case StatePermission, StateResume, StateHelp,
 		StateBypassConfirm, StateMCPApproval, StateModelPicker,
 		StateBackgroundTasks, StateMCPSettings, StateAgentWizard, StateTeams,
-		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext, StateInputDelivery, StateInputQueue:
+		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext, StateInputDelivery, StateInputQueue, StateSideQuestion:
 		return true
 	default:
 		return false
@@ -337,6 +337,8 @@ func (a *App) renderDialogState(state AppState, base string) string {
 		return a.composerDiffContextOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateInputDelivery:
 		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, false)
+	case StateSideQuestion:
+		return a.sideQuestionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateInputQueue:
 		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, true)
 	case StateAgentPicker:
@@ -446,6 +448,8 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, a.handleComposerDiffContextKey(msg)
 	case StateInputDelivery:
 		return true, a.handleInputDeliveryKey(msg)
+	case StateSideQuestion:
+		return true, a.handleSideQuestionKey(msg)
 	case StateInputQueue:
 		a.handleInputQueueKey(msg)
 		return true, nil
@@ -556,6 +560,9 @@ func (a *App) closeActiveDialog() (handled, continueInterrupt bool) {
 		a.mcpSettings.Close()
 	case StateTeams:
 		a.teamsPanel.Close()
+	case StateSideQuestion:
+		a.dismissSideQuestion()
+		return true, false
 	case StateCommandPalette:
 		a.commandPalette.Close()
 	case StateAgentPicker:
