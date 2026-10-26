@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/abietic/yhc/engine/commands"
+	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/filehistory"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/tools"
@@ -164,6 +165,33 @@ func TestWorkspaceRestoreRequiresFreshAllowOnceEvenInBypass(t *testing.T) {
 }
 
 func TestWorkspaceRestorePolicyAndDirectShellFences(t *testing.T) {
+	t.Run("unavailable execution policy", func(t *testing.T) {
+		eng, path, turn, calls, prompts := newRestoreEngineFixture(t, PermissionAllowOnce)
+		cwd := filepath.Dir(path)
+		readRoots, tempRoots, deniedRoots, err := workspaceGuestRoots(cwd, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		adapter := workspaceGuestAdapter()
+		spec := workspaceGuestSpec(cwd, containmentEntrypoint(commands.EntrypointTUI), containment.SelectionDefault,
+			adapter.Family(), adapter.CapabilityGeneration(), containment.StateUnavailable,
+			containment.RootIdentity{Path: cwd}, readRoots, []string{cwd}, tempRoots, deniedRoots)
+		policy, err := containment.NewExecutionPolicySnapshot(&spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eng.mu.Lock()
+		eng.executionPolicy = policy
+		eng.mu.Unlock()
+		beforeCalls := calls.Load()
+		if _, err := eng.PrepareWorkspaceRestore(turn, "", ""); err == nil || !strings.Contains(err.Error(), "execution policy") {
+			t.Fatalf("unavailable execution policy admitted restore: %v", err)
+		}
+		actual, err := os.ReadFile(path)
+		if err != nil || string(actual) != "agent content\n" || prompts.Load() != 0 || calls.Load() != beforeCalls {
+			t.Fatal("unavailable execution policy crossed permission, model, or write boundary")
+		}
+	})
 	t.Run("policy drift", func(t *testing.T) {
 		eng, path, turn, _, prompts := newRestoreEngineFixture(t, PermissionAllowOnce)
 		preview, err := eng.PrepareWorkspaceRestore(turn, "", "")

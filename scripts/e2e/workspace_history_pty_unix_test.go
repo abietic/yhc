@@ -101,9 +101,11 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// This workflow exercises explicitly authorized local file recovery. Pin
+	// its execution policy rather than depending on the host sandbox probe.
 	cmd := exec.CommandContext(ctx, e2eBinary(t),
 		"--provider", "openai", "--model", "gpt-4o", "--api-key", "e2e-key", "--base-url", provider.URL,
-		"--tools", "Read,Write,Edit", "--permission-mode", "acceptEdits")
+		"--tools", "Read,Write,Edit", "--permission-mode", "acceptEdits", "--sandbox", "danger-full-access")
 	cmd.Dir = repo
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(root, "home"), "XDG_CONFIG_HOME=" + filepath.Join(root, "cfg"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "TMPDIR=" + filepath.Join(root, "tmp"), "CLAUDE_TRANSCRIPT_DIR=" + filepath.Join(root, "transcripts"), "NO_PROXY=127.0.0.1,localhost", "GOTOOLCHAIN=local", "TERM=xterm-256color"}
 	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 100, Rows: 28})
