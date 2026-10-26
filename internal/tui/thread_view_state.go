@@ -37,6 +37,7 @@ type threadComposerElement struct {
 // threadQueuedInput is a non-dispatchable projection of an engine-owned
 // pending input. It never carries prompt media bytes, paths, refs, or IDs.
 type threadQueuedInput struct {
+	Delivery      engine.PromptDeliveryMode
 	ID            string
 	Content       string
 	Parts         []engine.QueuedPromptPart
@@ -333,6 +334,8 @@ func (a *App) switchThreadView(threadID string, mode engine.ThreadAttachmentMode
 	previousThreadID := a.activeThreadViewID()
 	if previousThreadID != normalizeThreadViewID(threadID) {
 		a.removeDialog(StateDiffContext)
+		a.removeDialog(StateInputDelivery)
+		a.removeDialog(StateInputQueue)
 		a.removeDialog(StateContextManager)
 	}
 	if previousThreadID != normalizeThreadViewID(threadID) && a.state == StateExpand && a.expandConversation {

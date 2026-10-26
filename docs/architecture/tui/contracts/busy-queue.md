@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-26
 
 **Ownership:** the Session `RuntimeInputCoordinator` owns pending leader input;
 `tools.AgentRunner` owns child source outboxes until durable transfer; the TUI
@@ -10,12 +10,19 @@ owns sanitized presentation only.
 
 ## Decision
 
-Enter while the leader is running submits one literal ordered prompt to
-`QueryEngine.EnqueuePromptInput`. The engine performs selected-route admission,
-publishes any image bytes into the Session-private MediaStore, and commits one
-bounded ref-only `RuntimeItemUserPrompt` before returning acceptance. It does
-not cancel or replace the active turn. `Ctrl+C` is the explicit immediate-stop
-gesture.
+Enter while the leader is running opens an explicit delivery choice. The
+composer stays unchanged until `QueryEngine.EnqueuePromptInputWithDelivery`
+returns durable acceptance:
+
+- **Steer now** records `steer` and becomes eligible at the next prepare or
+  completed-tool safe point. Running model/tool operations finish normally.
+- **Next turn** records `next_turn` and stays pending at every active-turn safe
+  point, including Sleep. Only an idle invocation may claim it.
+
+If the active task ends before steering is claimed, idle processing delivers
+that input in a fresh invocation. A changed task generation, engine, thread or
+draft invalidates an open choice. Esc retains the draft. `Ctrl+C` keeps the
+existing dialog-close and explicit immediate-stop behavior.
 
 Pending input survives process restart through the engine ledger. TUI
 presentation sidecars exclude queue payloads; construction and resume rebuild
@@ -25,15 +32,21 @@ safe previews from engine-owned descriptors.
 
 [`QueuedPromptDraft`](../../../../engine/queued_input.go) is the transient edit
 handoff only. [`QueuedPromptSnapshot`](../../../../engine/queued_input.go)
-contains ID, display text, ordered sanitized text/image descriptors, time, and
-state. It never resolves or exposes image refs, bytes, paths, URIs, digests, or
+contains ID, delivery mode, display text, ordered sanitized text/image
+descriptors, time, and state. It never resolves or exposes image refs, bytes, paths, URIs, digests, or
 caller metadata.
 
 `QueryEngine.EnqueuePromptInput` enforces selected-route admission and the
 32-pending-user-input bound. Rich items use one ref-backed durable prompt
 record; text-only callers retain legacy compatibility. The coordinator orders
-explicit priority then FIFO. Cancellation, claim, and edit serialize under the
-same durable owner.
+explicit priority then FIFO among eligible items. Delivery eligibility is
+independent of priority; assigning `later` cannot express next-turn isolation.
+Cancellation, claim, and edit serialize under the same durable owner.
+
+The optional `RuntimeItem.Delivery` is part of the admission identity digest
+and transcript metadata. Explicit modes use item version 2, so older runtimes
+fail closed when reading them. Existing version-1 items and callers with an
+empty delivery mode retain their established prepare/after-tool behavior.
 
 The source-compatible `QueryEngine.EnqueueUserInput` wrapper follows the same
 split: text-only input keeps the legacy path, while image-bearing input becomes
@@ -54,7 +67,7 @@ stateDiagram-v2
     accTitle: Busy composer queue lifecycle
     accDescr: A durably accepted busy submission can execute at a Graph safe point, start a fresh turn, return to editing, or be cancelled.
     [*] --> Pending: Enter while busy and durable engine acceptance
-    Pending --> Processing: Graph after-tool safe point
+    Pending --> Processing: eligible steering safe point
     Pending --> FreshTurn: TUI idle claim
     Pending --> Editing: atomic exact-item edit
     Pending --> Cancelled: exact durable remove
@@ -64,13 +77,13 @@ stateDiagram-v2
     Editing --> Draft: exact materialize then durable remove
 ```
 
-1. `beginComposerAdmission` captures one ordered draft and starts one typed
+1. `beginComposerAdmissionWithDelivery` captures one ordered draft and starts one typed
    acceptance request.
 2. The engine validates and durably enqueues before returning the queue ID.
 3. Only the matching acceptance result clears the draft and appends the safe
    preview.
-4. A completed tool round may claim eligible user input and emit its lifecycle
-   plus attachment.
+4. Prepare and completed-tool boundaries may claim steering and emit its
+   lifecycle plus attachment; next-turn items remain pending.
 5. If the old turn terminates first, the coordinator signal schedules
    `startNextQueuedInput`; the TUI atomically claims the next priority/FIFO item
    and submits it through `QueryEngine.SubmitRuntimeItem`.
@@ -82,7 +95,10 @@ stateDiagram-v2
 ## Queue Commands
 
 The active leader view renders up to three recent pending rows plus an earlier
-count. `/queue list`, `/queue edit <id|last>`, and
+count, including delivery mode and pending state. `/queue` opens a leader
+panel with bounded recent receipts. Arrow keys select, `e` edits, and `d`
+withdraws only a still-pending item. Claimed or delivered entries remain
+read-only. `/queue list`, `/queue edit <id|last>`, and
 `/queue remove <id|last|all>` operate only on pending user items.
 
 Rich edit requires an empty composer, no pending media load, and no pending
@@ -100,6 +116,19 @@ partial mutation. After success, the App constructs one exact ordered draft,
 takes ownership of detached bytes, and zeros the handoff copies.
 
 `/queue list` and ordinary preview never call this materializing path.
+
+The panel projects `pending` and `claimed` from the coordinator and `delivered`
+from transcript-confirmed delivery identities through
+`QueryEngine.QueuedPromptDeliveryStatuses`. A command-completed event alone
+cannot establish delivery. `editing` and `withdrawn` require the exact engine's
+successful durable removal. Missing or failed evidence shows `unknown` or
+`unavailable`. Delivered confirms durable conversation input; task outcome
+remains separate.
+
+Recent receipt presentation is bounded to 32 entries and is not persisted in a
+TUI sidecar. Restart reconstructs pending items from the ledger. A late
+acceptance is fenced by its original engine; failed cancellation after claim
+reports the previous session's acceptance rather than claiming withdrawal.
 
 ## Child And Background Flow
 
@@ -128,6 +157,13 @@ input arrives. They merge pending runtime items into the next inbound query.
 
 ## Evidence
 
+- delivery eligibility, Sleep isolation, downgrade fencing, admission identity,
+  real tool-round steering, transcript status, restart and claim/edit races:
+  [`input_delivery_test.go`](../../../../engine/input_delivery_test.go)
+- explicit TUI choice, edit/withdraw, stale owner fences and responsive frames:
+  [`input_delivery_test.go`](../../../../internal/tui/input_delivery_test.go)
+- real CLI input selection, editing, withdrawal and provider payload isolation:
+  [`input_delivery_pty_unix_test.go`](../../../../scripts/e2e/input_delivery_pty_unix_test.go)
 - ordered rich queue, restart, atomic edit, claim race, execution, and
   transcript settlement:
   [`p30_4_queued_prompt_test.go`](../../../../engine/p30_4_queued_prompt_test.go)

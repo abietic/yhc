@@ -32,6 +32,9 @@ func newQueueTestApp(t *testing.T) (*App, *engine.QueryEngine) {
 
 func settleComposerAdmission(t *testing.T, app *App, cmd tea.Cmd) {
 	t.Helper()
+	if cmd == nil && app.hasDialog(StateInputDelivery) {
+		cmd = app.handleInputDeliveryKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
 	if cmd == nil {
 		t.Fatal("composer admission command is nil")
 	}

@@ -168,7 +168,7 @@ func isDialogState(state AppState) bool {
 	case StatePermission, StateResume, StateHelp,
 		StateBypassConfirm, StateMCPApproval, StateModelPicker,
 		StateBackgroundTasks, StateMCPSettings, StateAgentWizard, StateTeams,
-		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext:
+		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext, StateInputDelivery, StateInputQueue:
 		return true
 	default:
 		return false
@@ -338,6 +338,10 @@ func (a *App) renderDialogState(state AppState, base string) string {
 		return a.composerContextManagerOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateDiffContext:
 		return a.composerDiffContextOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateInputDelivery:
+		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, false)
+	case StateInputQueue:
+		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, true)
 	case StateAgentPicker:
 		return a.agentPicker.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	default:
@@ -443,6 +447,10 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, a.handleComposerContextManagerKey(msg)
 	case StateDiffContext:
 		return true, a.handleComposerDiffContextKey(msg)
+	case StateInputDelivery:
+		return true, a.handleInputDeliveryKey(msg)
+	case StateInputQueue:
+		return true, a.handleInputQueueKey(msg)
 	case StateAgentPicker:
 		threadID, selected, dismissed, cmd := a.agentPicker.HandleKey(msg)
 		if dismissed {
