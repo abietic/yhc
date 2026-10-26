@@ -636,9 +636,24 @@ empty session and preserves the source transcript.
 - `/help` and the TUI help overlay group all currently reachable primary and
   secondary commands by category. The empty command palette shows at most
   three process-local Recent commands followed by the twelve ordered Suggested
-  commands; typing searches the complete reachable set. Recent entries are
-  recorded only after fresh admission and are never persisted.
-- While a TUI request is running, discovery exposes only `/agent`, `/team`,
+  commands; typing also finds non-hidden unavailable commands and explains why
+  they cannot run. Recent entries are recorded only after a successful admitted
+  result and are never persisted.
+- In Ctrl+K, select a command with Enter to edit its parameters. Tab/Shift+Tab
+  switches fields; arrows cycle static choices, and you can type other values.
+  Required fields carry `*`; defaults appear in the fields. Enter confirms;
+  Esc returns to the list with the draft intact. Commands without parameters
+  run when selected. Skill confirmation stages the complete slash invocation
+  in the composer; press Enter again there to submit it to the model.
+- The selected command shows its source, availability reason, direct side
+  effect, and whether it calls a model. F1 opens full details, including the
+  Skill source path; arrows scroll and Esc returns. `Effect: none (direct)`
+  means the command handler itself does not mutate state. A submitted Skill
+  still runs through normal model and tool permission checks. `possible`
+  depends on the selected action; `unknown` means the extension has not
+  declared its model policy. Browsing and editing a form do not call the model.
+  Reopen a form after changing session, draft, or loaded command definitions.
+- While a TUI request is running, executable discovery exposes only `/agent`, `/team`,
   `/keybindings`, and `/queue`. Direct dispatch rechecks the live phase, so a
   command selected from an idle snapshot cannot execute after the turn starts.
 - Headless `exec` and compatibility `-p` pass through the same `QueryEngine`,

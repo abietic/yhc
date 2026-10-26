@@ -113,7 +113,37 @@ projection is clipped to the available cells and is hidden during history
 recall, modal ownership, cursor movement into the text, or actual argument
 entry. It never changes text, cursor, undo, structured elements, or submission
 bytes. Tab, Right Arrow, and Enter cannot accept argument placeholders.
-Selecting a skill in the command palette stages it for argument editing.
+Selecting a parameterized command in the command palette opens an isolated
+form. The engine's [`DescribeOperation`](../../../../engine/commands/operation.go)
+projects argument types, required/default values, static choices, and branch
+fields from the same registry used by dispatch. Metadata reads do not discover
+files, execute commands, or request model suggestions. Skill fields come from
+the loaded Skill snapshot; `Skill.Render` retains invocation validation.
+
+The selection displays source/trust, effective availability and its reason,
+direct handler side effects, and model invocation policy. F1 shows source paths
+and longer details. Hidden commands stay hidden; search can explain disabled
+or unavailable commands. Prompt workflows report a model call after submission
+even when a Skill disables automatic model invocation. Direct side-effect
+metadata does not restrict the tools a submitted prompt may request.
+
+Tab moves between fields; arrows cycle declared choices, and free text remains
+available. Changing a branch drops dependent values. Esc returns to the list
+without changing the draft. Enter validates the form and safely encodes slash
+arguments, preserving spaces, quotes, Unicode, and interior empty positions.
+Single-line controls and size bounds apply before dispatch. A normal command
+uses the existing submission path; a Skill is staged in the composer and needs
+a separate submit. Editing, cancelling, or staging does not record Recent.
+
+[`handleCommandPaletteKey`](../../../../internal/tui/command_palette_actions.go)
+fences the engine, registry, thread view, leader thread, and draft revision.
+Confirmation rechecks the definition token, actual arguments, and current
+availability; a stale form cannot overwrite another draft or invoke a reloaded
+definition. Runtime dispatch still owns final permission and phase checks.
+Regression evidence is in
+[`command_palette_form_test.go`](../../../../internal/tui/command_palette_form_test.go)
+and the real CLI
+[`command_palette_pty_unix_test.go`](../../../../scripts/e2e/command_palette_pty_unix_test.go).
 
 The skill discovery and invocation contract belongs to
 [`Skills`](../../capabilities/skills.md). Regression evidence is in

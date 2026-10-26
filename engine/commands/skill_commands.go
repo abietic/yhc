@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,9 +23,10 @@ func (r *Registry) SetSkillRegistry(registry *skills.SkillRegistry) {
 }
 
 type commandRegistrySnapshot struct {
-	commands map[string]*Command
-	order    []string
-	removed  map[string]*RemovedCommand
+	commands   map[string]*Command
+	order      []string
+	removed    map[string]*RemovedCommand
+	generation uint64
 }
 
 // commandSnapshot seals static commands before projecting one skill snapshot.
@@ -32,7 +34,7 @@ type commandRegistrySnapshot struct {
 // the same immutable skill bytes that supplied its metadata.
 func (r *Registry) commandSnapshot() commandRegistrySnapshot {
 	r.mu.RLock()
-	snapshot := commandRegistrySnapshot{commands: make(map[string]*Command, len(r.commands)), order: append([]string(nil), r.order...), removed: make(map[string]*RemovedCommand, len(r.removed))}
+	snapshot := commandRegistrySnapshot{commands: make(map[string]*Command, len(r.commands)), order: append([]string(nil), r.order...), removed: make(map[string]*RemovedCommand, len(r.removed)), generation: r.promptGeneration.Revision}
 	for key, cmd := range r.commands {
 		snapshot.commands[key] = cmd
 	}
@@ -95,10 +97,13 @@ func skillCommand(skill *skills.Skill, name string) *Command {
 	return &Command{
 		Completion: completion,
 		Name:       commandName, Description: skill.Description, Usage: "/" + commandName + " " + hint,
-		Source: "skill:" + skill.Source, Trust: CommandTrustConfigured,
+		Source: "skill:" + skill.Source, SourcePath: skill.FilePath, Trust: CommandTrustConfigured,
 		Category: CommandCategoryExtensions, DiscoveryTier: DiscoveryTierSecondary, DisplayOrder: 8100, PhaseScope: PhaseScopeIdleOnly,
 		Kind: CommandKindPromptWorkflow, Entrypoints: EntrypointsTUI | EntrypointsPlain,
 		Availability: AvailabilitySupported, SideEffect: SideEffectNone, ResultKind: ResultKindPrompt, ExecutionOwner: ExecutionOwnerEntrypoint,
+		ModelInvocation: ModelInvocationPrompt,
+		operationArgs:   args,
+		definitionToken: fmt.Sprintf("%x", sha256.Sum256([]byte(skill.FilePath+"\x00"+skill.Content+"\x00"+skill.ArgumentHint+"\x00"+fmt.Sprintf("%#v", skill.Args)))),
 		// Skill.Render owns required/default validation by declared position. The
 		// command's free-form Usage is a hint, not a second validation schema.
 		Execute: func(ctx context.Context, cmdCtx *CommandContext) (*CommandResult, error) {

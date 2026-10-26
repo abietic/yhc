@@ -27,15 +27,23 @@ const (
 // Opened via Ctrl+K. Users can type to fuzzy-filter, navigate with arrows,
 // and select a command with Enter. Esc dismisses the palette.
 type CommandPalette struct {
-	visible     bool
-	styles      Styles
-	environment RenderEnvironment
-	query       string
-	cursor      int
-	all         []*commands.Command // all non-hidden commands
-	recent      []string            // canonical names, newest first; intentionally instance-local
-	filtered    []commandPaletteItem
-	offset      int // scroll offset for long lists
+	visible        bool
+	styles         Styles
+	environment    RenderEnvironment
+	query          string
+	cursor         int
+	all            []*commands.Command // all non-hidden commands
+	recent         []string            // canonical names, newest first; intentionally instance-local
+	filtered       []commandPaletteItem
+	offset         int // scroll offset for long lists
+	registry       *commands.Registry
+	commandContext *commands.CommandContext
+	operations     map[string]commands.OperationDescription
+	form           *commandPaletteForm
+	feedback       string
+	details        bool
+	detailOffset   int
+	selectionToken string
 }
 
 // NewCommandPalette creates a new command palette.
@@ -53,6 +61,7 @@ func (p *CommandPalette) SetStyles(styles Styles) {
 func (p *CommandPalette) SetRenderEnvironment(env RenderEnvironment) {
 	p.environment = env.normalized()
 	p.styles = p.environment.styles
+	p.styleFormInputs()
 }
 
 // Show makes the palette visible and populates it from the registry.
@@ -68,20 +77,22 @@ func (p *CommandPalette) ShowFor(registry *commands.Registry, cmdCtx *commands.C
 	p.offset = 0
 	p.all = nil
 	p.filtered = nil
-
+	p.registry, p.commandContext = registry, cmdCtx
+	p.form, p.feedback, p.details, p.detailOffset, p.selectionToken = nil, "", false, 0, ""
+	p.operations = make(map[string]commands.OperationDescription)
 	if registry != nil {
-		p.all = registry.ListForContext(
-			context.Background(),
-			commands.EntrypointTUI,
-			cmdCtx,
-		)
+		for _, operation := range registry.DescribeOperations(context.Background(), commands.EntrypointTUI, cmdCtx) {
+			p.all = append(p.all, operation.Command)
+			p.operations[operation.Command.Name] = operation
+		}
 	}
 	p.applyFilter()
 }
 
-// Close hides the palette without selecting anything.
+// Close hides the palette and discards any parameter editor.
 func (p *CommandPalette) Close() {
 	p.visible = false
+	p.form = nil
 }
 
 // Visible returns whether the palette is currently shown.
@@ -90,69 +101,70 @@ func (p *CommandPalette) Visible() bool {
 }
 
 // HandleKey processes key events for the command palette.
-// Returns the selected command name (non-empty on confirm) and whether the overlay was dismissed.
+// Returns a canonical command name or an encoded slash invocation on confirm,
+// and whether the overlay was dismissed.
 func (p *CommandPalette) HandleKey(msg tea.KeyPressMsg) (selectedCommand string, dismissed bool) {
+	if p.details {
+		return p.handleDetailsKey(msg)
+	}
+	if p.form != nil {
+		return p.handleFormKey(msg)
+	}
+	p.feedback = ""
 	switch msg.String() {
 	case "esc", "ctrl+c", "ctrl+k":
 		p.Close()
 		return "", true
-
+	case "f1":
+		p.details, p.detailOffset = true, 0
 	case "enter":
-		if p.cursor >= 0 && p.cursor < len(p.filtered) {
-			selected := p.filtered[p.cursor].command.Name
-			p.Close()
-			return selected, true
+		if p.cursor < 0 || p.cursor >= len(p.filtered) {
+			return "", false
 		}
-		// No items — just dismiss
+		command := p.filtered[p.cursor].command
+		operation, ok := p.registry.DescribeOperation(context.Background(), commands.EntrypointTUI, p.commandContext, command.Name, nil)
+		if !ok {
+			p.feedback = "Command is no longer available"
+			return "", false
+		}
+		if operation.Command.Availability != commands.AvailabilitySupported {
+			p.feedback = operation.Command.AvailabilityReason
+			return "", false
+		}
+		if len(operation.Fields) > 0 {
+			p.openForm(operation)
+			return "", false
+		}
+		p.selectionToken = operation.Token
 		p.Close()
-		return "", true
-
+		return command.Name, true
 	case "up", "ctrl+p":
 		if len(p.filtered) > 0 {
-			p.cursor--
-			if p.cursor < 0 {
-				p.cursor = len(p.filtered) - 1
-			}
+			p.cursor = (p.cursor + len(p.filtered) - 1) % len(p.filtered)
 			p.ensureCursorVisible()
 		}
-
 	case "down", "ctrl+n":
 		if len(p.filtered) > 0 {
 			p.cursor = (p.cursor + 1) % len(p.filtered)
 			p.ensureCursorVisible()
 		}
-
 	case "pgup":
-		p.cursor -= 5
-		if p.cursor < 0 {
-			p.cursor = 0
-		}
+		p.cursor = max(0, p.cursor-5)
 		p.ensureCursorVisible()
-
 	case "pgdown":
-		p.cursor += 5
-		if p.cursor >= len(p.filtered) {
-			p.cursor = len(p.filtered) - 1
-		}
-		if p.cursor < 0 {
-			p.cursor = 0
-		}
+		p.cursor = max(0, min(len(p.filtered)-1, p.cursor+5))
 		p.ensureCursorVisible()
-
 	case "backspace":
 		if p.query != "" {
 			runes := []rune(p.query)
 			p.query = string(runes[:len(runes)-1])
 			p.applyFilter()
 		}
-
 	default:
 		if msg.Text != "" {
-			p.query += msg.Text
-			p.applyFilter()
+			p.appendQuery(msg.Text)
 		}
 	}
-
 	return "", false
 }
 
@@ -161,110 +173,7 @@ func (p *CommandPalette) Overlay(base string, width, height int) string {
 	if !p.visible {
 		return base
 	}
-
-	dialogWidth := width - 8
-	if dialogWidth > 70 {
-		dialogWidth = 70
-	}
-	if dialogWidth < 44 {
-		dialogWidth = 44
-	}
-
-	// Compute visible area height
-	maxContentHeight := height - 10 // room for title, search, footer, borders
-	if maxContentHeight < 5 {
-		maxContentHeight = 5
-	}
-
-	// Render visible items
-	visibleItems := maxContentHeight
-	if p.query == "" {
-		visibleItems -= p.emptyQuerySectionCount()
-		if visibleItems < 1 {
-			visibleItems = 1
-		}
-	}
-	if visibleItems > len(p.filtered) {
-		visibleItems = len(p.filtered)
-	}
-
-	// Ensure offset is sane
-	if p.offset > len(p.filtered)-visibleItems {
-		p.offset = len(p.filtered) - visibleItems
-	}
-	if p.offset < 0 {
-		p.offset = 0
-	}
-
-	profile := p.environment.normalized().profile
-	var parts []string
-
-	// Title
-	title := p.styles.DialogTitle.Render("  Command Palette")
-	parts = append(parts, title)
-	parts = append(parts, "")
-
-	// Search input
-	searchPrompt := p.styles.Subtle.Render("  > ")
-	cursor := p.styles.Bold.Render("|")
-	if p.query == "" {
-		placeholder := p.styles.Subtle.Render("Type to search commands...")
-		parts = append(parts, searchPrompt+placeholder+cursor)
-	} else {
-		parts = append(parts, searchPrompt+p.query+cursor)
-	}
-	parts = append(parts, "  "+strings.Repeat("\u2500", dialogWidth-6))
-
-	// Command list
-	if len(p.filtered) == 0 {
-		if p.query != "" {
-			parts = append(parts, "  "+p.styles.Subtle.Render("No matching commands"))
-		} else {
-			parts = append(parts, "  "+p.styles.Subtle.Render("No commands registered"))
-		}
-	} else {
-		end := p.offset + visibleItems
-		if end > len(p.filtered) {
-			end = len(p.filtered)
-		}
-
-		// Scroll up indicator
-		if p.offset > 0 {
-			parts = append(parts, "  "+p.styles.Subtle.Render("\u2191 more"))
-		}
-
-		for i := p.offset; i < end; i++ {
-			item := p.filtered[i]
-			if item.section != "" &&
-				(i == p.offset || item.section != p.filtered[i-1].section) {
-				parts = append(parts, "  "+p.styles.Bold.Render(item.section))
-			}
-			line := p.renderItem(profile, item, i == p.cursor, dialogWidth)
-			parts = append(parts, line)
-		}
-
-		// Scroll down indicator
-		if end < len(p.filtered) {
-			parts = append(parts, "  "+p.styles.Subtle.Render("\u2193 more"))
-		}
-	}
-
-	// Footer
-	parts = append(parts, "")
-	parts = append(parts, "  "+strings.Repeat("\u2500", dialogWidth-6))
-	helpText := p.styles.DialogHelp.Render(
-		"  \u2191\u2193 navigate  Enter select  Esc cancel",
-	)
-	parts = append(parts, helpText)
-
-	dialog := contentRenderStyleWidth(
-		profile,
-		p.styles.DialogBorder,
-		dialogWidth,
-		strings.Join(parts, "\n"),
-	)
-	view, _ := modalCenteredOverlay(profile, base, dialog, width, height)
-	return view
+	return p.operationOverlay(base, width, height)
 }
 
 // renderItem renders a single command item in the palette list.
@@ -277,14 +186,14 @@ func (p *CommandPalette) renderItem(
 	cmd := item.command
 
 	// Command name with leading slash
-	name := "/" + cmd.Name
+	name := "/" + composerContextLabel(cmd.Name)
 
 	// Aliases
 	aliasStr := ""
 	if len(cmd.Aliases) > 0 {
 		aliases := make([]string, len(cmd.Aliases))
 		for i, a := range cmd.Aliases {
-			aliases[i] = "/" + a
+			aliases[i] = "/" + composerContextLabel(a)
 		}
 		aliasStr = " " + p.styles.Subtle.Render("("+strings.Join(aliases, ", ")+")")
 	}
@@ -293,11 +202,14 @@ func (p *CommandPalette) renderItem(
 	if cmd.Source != string(commands.CommandSourceCore) ||
 		cmd.Trust != commands.CommandTrustCore {
 		originStr = " " + p.styles.Subtle.Render(
-			"["+cmd.Source+" / "+string(cmd.Trust)+"]",
+			"["+composerContextLabel(cmd.Source)+" / "+composerContextLabel(string(cmd.Trust))+"]",
 		)
 	}
 	// Description — truncate to fit
-	desc := cmd.Description
+	desc := composerContextLabel(cmd.Description)
+	if cmd.Availability != commands.AvailabilitySupported {
+		desc = "[" + string(cmd.Availability) + "] " + desc
+	}
 	nameWidth := profile.measure(name+aliasStr+originStr, 4)
 	descAvail := dialogWidth - nameWidth - 8 // padding + margins
 	if descAvail < 10 {
@@ -330,7 +242,7 @@ func (p *CommandPalette) applyFilter() {
 		seen := make(map[string]struct{})
 		for _, name := range p.recent {
 			for _, cmd := range p.all {
-				if cmd.Name == name {
+				if cmd.Name == name && cmd.Availability == commands.AvailabilitySupported {
 					p.filtered = append(p.filtered, commandPaletteItem{
 						command: cmd,
 						section: commandPaletteSectionRecent,
@@ -341,7 +253,7 @@ func (p *CommandPalette) applyFilter() {
 			}
 		}
 		for _, cmd := range p.all {
-			if cmd.DiscoveryTier == commands.DiscoveryTierPrimary {
+			if cmd.DiscoveryTier == commands.DiscoveryTierPrimary && cmd.Availability == commands.AvailabilitySupported {
 				if _, exists := seen[cmd.Name]; !exists {
 					p.filtered = append(p.filtered, commandPaletteItem{
 						command: cmd,
@@ -366,7 +278,7 @@ func (p *CommandPalette) applyFilter() {
 			}
 		}
 		// Check description match (lower priority)
-		descScore := fuzzyScore(strings.ToLower(cmd.Description), query) / 2
+		descScore := fuzzyScore(strings.ToLower(cmd.Description+" "+cmd.Source+" "+cmd.SourcePath), query) / 2
 
 		bestScore := nameScore
 		if aliasScore > bestScore {
@@ -406,18 +318,6 @@ func (p *CommandPalette) RecordRecent(name string) {
 		}
 	}
 	p.recent = next
-}
-
-func (p *CommandPalette) emptyQuerySectionCount() int {
-	count := 0
-	previous := ""
-	for _, item := range p.filtered {
-		if item.section != "" && item.section != previous {
-			count++
-			previous = item.section
-		}
-	}
-	return count
 }
 
 // sortPaletteItems sorts palette items by score descending, then by name ascending.
