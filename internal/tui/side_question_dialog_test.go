@@ -71,7 +71,7 @@ func TestSideQuestionDialogGoldenWidths(t *testing.T) {
 	}
 	got := strings.Join(frames, "\n")
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
-		if err := os.WriteFile("testdata/side_question_dialog.golden", []byte(got), 0o600); err != nil {
+		if err := os.WriteFile("testdata/side_question_dialog.golden", []byte(strings.TrimRight(got, "\n")+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
