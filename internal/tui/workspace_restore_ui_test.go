@@ -44,7 +44,7 @@ func TestWorkspaceRestorePrepareDoesNotAutoConfirmOrAlterDraft(t *testing.T) {
 	if !handled || cmd == nil || app.workspaceRestoreUI == nil || !app.workspaceRestoreUI.preparing {
 		t.Fatalf("r did not begin an inert preview request: handled=%v cmd=%v ui=%#v", handled, cmd != nil, app.workspaceRestoreUI)
 	}
-	if _, next := app.handleWorkspaceRestoreMessage(cmd()); next != nil || app.workspaceRestoreUI.applying || app.textarea.Value() != "keep draft" || len(app.engine.GetMessages()) != 0 {
+	if !app.handleWorkspaceRestoreMessage(cmd()) || app.workspaceRestoreUI.applying || app.textarea.Value() != "keep draft" || len(app.engine.GetMessages()) != 0 {
 		t.Fatalf("preparing a preview auto-confirmed or altered conversation/draft: applying=%v draft=%q messages=%d", app.workspaceRestoreUI.applying, app.textarea.Value(), len(app.engine.GetMessages()))
 	}
 }
@@ -57,9 +57,9 @@ func TestWorkspaceRestoreStaleResultCannotReplaceNewProjection(t *testing.T) {
 	ui.request = request
 	app.workspaceRestoreUI = ui
 	app.changeReviewTarget = changeReviewTarget{engine: app.engine, view: "new"}
-	handled, cmd := app.handleWorkspaceRestoreMessage(workspaceRestoreResultMsg{request: request, preview: engine.WorkspaceRestorePreview{ID: "stale"}})
-	if !handled || cmd != nil || app.workspaceRestoreUI != ui || app.workspaceRestoreUI.preview.ID != "" {
-		t.Fatalf("stale result replaced current projection: handled=%v cmd=%v ui=%#v", handled, cmd != nil, app.workspaceRestoreUI)
+	handled := app.handleWorkspaceRestoreMessage(workspaceRestoreResultMsg{request: request, preview: engine.WorkspaceRestorePreview{ID: "stale"}})
+	if !handled || app.workspaceRestoreUI != ui || app.workspaceRestoreUI.preview.ID != "" {
+		t.Fatalf("stale result replaced current projection: handled=%v ui=%#v", handled, app.workspaceRestoreUI)
 	}
 }
 

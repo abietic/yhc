@@ -191,10 +191,10 @@ func (a *App) handleWorkspaceRestoreKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 	return true, nil
 }
 
-func (a *App) handleWorkspaceRestoreMessage(msg tea.Msg) (bool, tea.Cmd) {
+func (a *App) handleWorkspaceRestoreMessage(msg tea.Msg) bool {
 	result, ok := msg.(workspaceRestoreResultMsg)
 	if !ok {
-		return false, nil
+		return false
 	}
 	request := result.request
 	if request == nil || a == nil || a.workspaceRestoreUI != request.ui || request.ui.request != request || !a.workspaceRestoreTargetMatches(request.target) || !a.hasDialog(StateChangeReview) {
@@ -204,7 +204,7 @@ func (a *App) handleWorkspaceRestoreMessage(msg tea.Msg) (bool, tea.Cmd) {
 		if request != nil && request.prepare && result.preview.ID != "" && request.engine != nil {
 			request.engine.DiscardWorkspaceRestorePreview(result.preview.ID)
 		}
-		return true, nil
+		return true
 	}
 	ui := request.ui
 	if request.cancel != nil {
@@ -215,15 +215,15 @@ func (a *App) handleWorkspaceRestoreMessage(msg tea.Msg) (bool, tea.Cmd) {
 		ui.preparing = false
 		if result.err != nil {
 			ui.feedback = "Restore preview unavailable: " + changeReviewDisplay(result.err.Error())
-			return true, nil
+			return true
 		}
 		if result.preview.ID == "" || result.preview.SessionID != request.target.session || result.preview.ThreadID != request.target.thread || result.preview.OwnerGeneration != request.target.generation {
 			ui.feedback = "Restore preview owner changed; prepare again."
-			return true, nil
+			return true
 		}
 		ui.preview, ui.selected, ui.lineOffset = result.preview, 0, 0
 		ui.feedback = "Review the captured transition, then press Enter to request a fresh allow-once permission."
-		return true, nil
+		return true
 	}
 	ui.applying = false
 	ui.preview = engine.WorkspaceRestorePreview{}
@@ -231,12 +231,12 @@ func (a *App) handleWorkspaceRestoreMessage(msg tea.Msg) (bool, tea.Cmd) {
 	a.refreshChangeReview()
 	if result.err != nil {
 		ui.feedback = "Restore result: " + changeReviewDisplay(result.err.Error())
-		return true, nil
+		return true
 	}
 	ui.preview = engine.WorkspaceRestorePreview{}
 	ui.feedback = fmt.Sprintf("%s %d/%d paths finished.", changeReviewDisplay(result.status.State), result.status.Finished, result.status.Paths)
 	a.refreshChangeReview()
-	return true, nil
+	return true
 }
 
 // dismissWorkspaceRestoreUI revokes only the ephemeral preview or pending

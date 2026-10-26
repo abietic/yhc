@@ -196,7 +196,7 @@ func TestApplyRestorePartialConflictCanRollbackOriginalBytesAndModes(t *testing.
 	}
 	assertRestoreFixture(t, root, "a.txt", "dirty a\r\nlast", 0o640)
 	assertRestoreFixture(t, root, "b.txt", "external conflict", 0o600)
-	rollback, err := j.PrepareRestoreRecovery("rollback")
+	_, err = j.PrepareRestoreRecovery("rollback")
 	if err == nil {
 		// The conflict must be preserved rather than rolled back over; restore it
 		// to the original state only after proving the conflict blocked recovery.
@@ -204,7 +204,7 @@ func TestApplyRestorePartialConflictCanRollbackOriginalBytesAndModes(t *testing.
 	}
 	writeRestoreFixture(t, root, "b.txt", "agent b\n", 0o750)
 	j.restoreAfterPath = nil
-	rollback, err = j.PrepareRestoreRecovery("rollback")
+	rollback, err := j.PrepareRestoreRecovery("rollback")
 	if err != nil {
 		t.Fatal(err)
 	}

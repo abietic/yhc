@@ -919,8 +919,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		)
 	}()
 
-	if handled, cmd := a.handleWorkspaceRestoreMessage(msg); handled {
-		return a, cmd
+	if a.handleWorkspaceRestoreMessage(msg) {
+		return a, nil
 	}
 
 	var cmds []tea.Cmd
