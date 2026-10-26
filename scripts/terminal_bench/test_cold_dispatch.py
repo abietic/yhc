@@ -192,6 +192,52 @@ class GrantTests(unittest.TestCase):
                     workspace.inventory()
                 workspace.docker.assert_called_once_with("inspect", workspace.container)
 
+    def test_external_or_dns_gateway_cannot_consume_claim_or_shared_allocation(self):
+        from scripts.terminal_bench.cohort_admission import CohortAdmission
+        from scripts.terminal_bench.test_cohort_admission import cohort_plan
+        hosts = ("gateway.example.invalid", "host.docker.internal", "localhost", "0.0.0.0",
+                 "10.0.0.2", "127.0.0.1.example.invalid", "127.1", "[::ffff:127.0.0.1]")
+        for host in hosts:
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                body, grant = copy.deepcopy(self.body), copy.deepcopy(self.grant)
+                grant["route"]["base_url"] = "http://" + host + ":12345"
+                plan = cohort_plan([body["usage_history"]])
+                body["cohort_id"] = plan["cohort_id"]
+                cohort = CohortAdmission.create(root / "cohort", plan, digest(plan))
+                workspace = SimpleNamespace(attempt=grant["attempt_id"],
+                    rpc=mock.Mock(return_value=dict(binary_sha256=grant["binary_sha256"])),
+                    launch_cold=mock.Mock(side_effect=SnapshotError("fixture_network_unreachable")), quarantine=mock.Mock())
+                bundle = SimpleNamespace(control=root, workspace=workspace,
+                    load=mock.Mock(return_value=(body, None, None)), prepare_dispatch=mock.Mock(return_value=(body, {},
+                        dict(workspace=dict(attempt_id=grant["attempt_id"]), tree_sha256="e" * 64))))
+                original = copy.deepcopy(body)
+                before = cohort.inspect()
+                with self.assertRaisesRegex(SnapshotError, "dispatch_gateway_transport_unverified"):
+                    ColdBenchmarkLauncher(bundle, cohort=cohort, wall=lambda: 1000).dispatch(
+                        None, "d" * 64, None, grant, digest(grant), "fixture")
+                bundle.prepare_dispatch.assert_not_called()
+                workspace.rpc.assert_not_called()
+                workspace.launch_cold.assert_not_called()
+                self.assertFalse(any(root.glob("dispatch.*.json")))
+                self.assertEqual(cohort.inspect(), before)
+                self.assertEqual(body, original)
+
+    def test_gateway_preflight_accepts_literal_loopback_without_dns_or_io(self):
+        from scripts.terminal_bench.cold_dispatch import validate_gateway_transport
+        with mock.patch("socket.getaddrinfo", side_effect=AssertionError("DNS must not run")):
+            for host in ("127.0.0.1", "127.0.0.2", "[::1]"):
+                grant = copy.deepcopy(self.grant)
+                grant["route"]["base_url"] = "http://" + host + ":12345"
+                validate_gateway_transport(grant)
+            for value in (None, {}, {"route": None}, {"route": {"base_url": 4}},
+                          {"route": {"base_url": "http://[broken"}},
+                          {"route": {"base_url": "http://[::1%25lo]:80"}},
+                          {"route": {"base_url": "http://127.0.0.1:0"}},
+                          {"route": {"base_url": "http://127.0.0.1:70000"}},
+                          {"route": {"base_url": "http://127.0.0.1:bad"}}):
+                with self.assertRaises(SnapshotError): validate_gateway_transport(value)
+
 
 @unittest.skipUnless(os.name == "posix", "process groups and pipe selectors require POSIX")
 class OutputBoundaryTests(unittest.TestCase):

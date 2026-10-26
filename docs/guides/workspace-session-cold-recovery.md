@@ -330,6 +330,23 @@ hashing task-authored JSON does not turn it into permission. Calls must be
 1–200, output tokens 1–65536, and timeout 1–900 seconds. A zero total-token
 threshold disables only that threshold. The new cost cap must be positive.
 
+The current keeper protocol requires Docker `network_mode: none`. Before any
+native probe, source claim or cohort allocation, `validate_gateway_transport`
+therefore requires a literal loopback IP in `route.base_url`, HTTP(S), and a
+valid port (1–65535 when explicit). Host/external addresses, DNS names including
+`localhost`, scoped IPv6 and ambiguous shorthand addresses are blocked without
+DNS lookup or a connection attempt. A host gateway cannot be reached through
+this profile; a verified relay or a separately verified network profile is
+still required before using it for real provider traffic. The launcher does
+not add a relay or change the container network.
+
+A loopback address is only a necessary transport condition. It does not prove
+that a trusted gateway is ready or grant spending permission. The independently
+anchored grant, token, joined restore proof and budget gates still apply.
+Historical grants and closed cohort usage retain their original route metadata;
+the new-dispatch transport policy does not rewrite or invalidate their ledger
+replay.
+
 All historical usage must be complete, uniquely identified and free of retained
 or outstanding reservations. The launcher adds its known native estimates
 without rewriting earlier rows, then reserves the full new cap inside the

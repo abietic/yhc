@@ -5897,6 +5897,32 @@ privacy:
       match_sha256: cc6d96611cffa9f02c3626f0b9ee897dc171e2d540a5cae349d4ec316104997b
       purpose: synthetic-security-fixture
 
+    - path: scripts/terminal_bench/test_cohort_admission.py
+      line: 125
+      rule_id: private-url
+      match_sha256: bda8e6ef76541ee9914daa1425214b440e00893a739990187f25d4dc2b7b80ca
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_cold_dispatch.py
+      line: 235
+      rule_id: private-url
+      match_sha256: 18bacee95d44416db7dffc6ce652421e444e4c5d66c7a69b62d1346a051fee87
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_cold_dispatch.py
+      line: 236
+      rule_id: private-url
+      match_sha256: f61266b267457f5dd796b31c5f557f366433c793fd3e4d11e7f9e3df4e95ff8f
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_cold_dispatch.py
+      line: 237
+      rule_id: private-url
+      match_sha256: b8ac1379b6050f4463f91b63445d009072ac3f02ad7fb9fffd74940f04281740
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_recovery_bundle_docker.py
+      line: 355
+      rule_id: private-url
+      match_sha256: bda8e6ef76541ee9914daa1425214b440e00893a739990187f25d4dc2b7b80ca
+      purpose: synthetic-security-fixture
+
 dependencies:
   license_policy: quality/dependency-licenses.yaml
 rules:
