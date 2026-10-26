@@ -12,6 +12,7 @@ from pathlib import Path
 from scripts.terminal_bench.cold_recovery import DockerServices
 from scripts.terminal_bench.recovery import write_report
 from scripts.terminal_bench.recovery_bundle import RecoveryBundle, user_files
+from scripts.terminal_bench.paused_recovery import SCOPE
 from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history
 from scripts.terminal_bench import test_service_snapshot_docker as service_fixture
@@ -102,7 +103,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self, unbound=False, tool_ready=False):
+    def capture_joint(self, unbound=False, tool_ready=False, paused=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -110,13 +111,34 @@ class NativeColdDockerTests(unittest.TestCase):
             self.business(source_project, source_definition, name, "mutate")
             observed[name] = self.business(source_project, source_definition, name, "state")
         source, volume = self.provision_workspace()
-        args = ["--unbound-model"] if unbound else ["--tool-ready"] if tool_ready else []
+        args = ["--unbound-model"] if unbound else ["--tool-ready"] if tool_ready or paused else []
         self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, *args)
         git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
+        supplied_history = history(self.session)
+        pause_record = None
+        if paused:
+            price = supplied_history["segments"][0]["usage"]["cost"]["price_card"]
+            self.paused_execution = json.loads(self.docker("exec", "--workdir", "/workspace", source.container,
+                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py", self.session, "pause_tool", json.dumps(price)))
+            execution = self.paused_execution
+            self.assertFalse(execution["provider_protocol_errors"], execution)
+            self.assertEqual(execution["observed_provider_requests"], 1)
+            self.assertEqual(execution["exit_code"], 1)
+            pause_record = dict(version=1, scope=SCOPE, session_id=self.session,
+                segment_id=execution["durable_checkpoint"]["segment_id"], checkpoint_path=execution["checkpoint_path"],
+                terminal=execution["result"], native_proof=execution["native_after_pause"])
+            # This is the trusted host launcher receipt, outside the task tree.
+            write_report(self.control / "operator-pause.json", pause_record)
+            evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+            if evidence:
+                write_report(Path(evidence) / ("paused-source-observed-" + self.session + ".json"),
+                             dict(record=pause_record, checkpoint=execution["durable_checkpoint"], verification_complete=False))
+            supplied_history = history(self.session, [s["usage"] for s in supplied_history["segments"]] + [execution["result"]["usage"]])
+            git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
         original_rpc = source.rpc
         def source_rpc(operation, **body):
             value = original_rpc(operation, **body)
-            if operation == "native_probe" and value.get("validation_complete") is not True:
+            if operation == "native_probe" and value.get("validation_complete") is not True and not paused:
                 debug = json.loads(self.docker("exec", "--workdir", "/workspace", source.container, "/usr/bin/env",
                     "HOME=/tmp/yhc-proof-home", "YHC_SESSION_CATALOG=/workspace/.yhc/session-roots.json",
                     "/opt/yhc/yhc", "sessions", "resume", self.session, "--recovery-proof", "--output-format", "json"))
@@ -130,7 +152,8 @@ class NativeColdDockerTests(unittest.TestCase):
         source_services = ServiceSnapshots(self.plan, DockerServices(source_project, source_definition, self.plan), control_dir=self.control)
         self.bundle_path = self.root / "bundle"
         captured = RecoveryBundle(source_services, source).capture(
-            self.bundle_path, self.snapshot, self.service_digest, self.session, history(self.session))
+            self.bundle_path, self.snapshot, self.service_digest, self.session, supplied_history,
+            pause_record=pause_record, pause_sha256=digest(pause_record) if pause_record else None)
         self.bundle_digest = captured["bundle_sha256"]
         manifest = json.loads((self.bundle_path / "manifest.json").read_text())
         old_service = json.loads((self.snapshot / "manifest.json").read_text())
@@ -141,6 +164,61 @@ class NativeColdDockerTests(unittest.TestCase):
         self.assertNotEqual(missing.returncode, 0)
         self.assertNotIn(volume, self.docker("volume", "ls", "--quiet").split())
         return manifest, observed, git_status
+
+    def test_clean_budget_pause_restores_exact_tools_closed_checkpoint_and_services(self):
+        manifest, observed, git_status = self.capture_joint(paused=True)
+        bundle = self.target_bundle()
+        receipt = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        self.assertEqual(manifest["version"], 2)
+        self.assertFalse(receipt["native_proof"]["validation_complete"])
+        self.assertEqual(receipt["native_proof"]["blocking_reasons"], ["native_turn_incomplete"])
+        joint = receipt["paused_joint_proof"]
+        self.assertTrue(joint["accounting_complete"])
+        self.assertEqual(joint, manifest["paused_invocation"]["joint_proof"])
+        self.assertFalse(joint["can_resume_agent"] or joint["new_spending_authorized"] or receipt["can_resume_agent"])
+        self.assertEqual(receipt["accounting"]["totals"]["provider_calls"], 3)
+        self.assertEqual(receipt["accounting"]["totals"]["total_tokens"], 42)
+        self.assertEqual(receipt["native_proof"]["native_usage"]["total_tokens"], 32)
+        self.assertEqual(receipt["native_proof"]["tool_boundary"]["tool_names"], ["Write"])
+        self.assertNotEqual(receipt["native_proof"]["process_nonce"], manifest["native_proof"]["process_nonce"])
+        self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/continued.txt"), "continued once")
+        self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/effects.count"), "1")
+        self.assertEqual(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container, "git", "status", "--porcelain=v1"), git_status)
+        claim = (self.control / ("bundle-restore." + self.bundle_digest + ".json")).read_bytes()
+        with self.assertRaisesRegex(SnapshotError, "already_claimed"):
+            bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        self.assertEqual((self.control / ("bundle-restore." + self.bundle_digest + ".json")).read_bytes(), claim)
+        for name, original in observed.items():
+            actual = json.loads(self.docker("exec", bundle.services.backend.handles[name], "/usr/local/bin/python3", "-I",
+                                          "/opt/checkpoint/service.py", "business", "state"))
+            self.assertEqual((actual["memory"], actual["durable"], actual["next_random"]),
+                             (original["memory"], original["durable"], original["next_random"]))
+            self.assertGreaterEqual(actual["logical_ns"], receipt["services"]["expected_clocks"][name]["logical_ns"])
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            write_report(Path(evidence) / "paused-joint-roundtrip.json", dict(manifest=manifest, receipt=receipt,
+                         offline_pause=self.paused_execution, source_containers_and_volumes_destroyed=True,
+                         effect_count=1, real_provider_requests=0, can_resume_agent=False))
+
+    def test_unclosed_checkpoint_after_import_quarantines_before_service_activation(self):
+        manifest, _, _ = self.capture_joint(paused=True)
+        bundle = self.target_bundle()
+        original = bundle.workspace.rpc
+        def unclose_before_usage_probe(operation, **body):
+            if operation == "usage_probe":
+                path = "/workspace/" + manifest["paused_invocation"]["record"]["checkpoint_path"] + "/checkpoint.json"
+                code = ("import hashlib,json; from pathlib import Path; p=Path(" + repr(path) + "); "
+                        "e=json.loads(p.read_text()); d=e['data']; d['admission_closed']=False; d['phase']='settled'; "
+                        "raw=json.dumps(d,separators=(',',':')); e['data']=d; e['sha256']=hashlib.sha256(raw.encode()).hexdigest(); "
+                        "p.write_text(json.dumps(e,separators=(',',':')))")
+                self.docker("exec", bundle.workspace.container, "/usr/local/bin/python3", "-I", "-c", code)
+            return original(operation, **body)
+        bundle.workspace.rpc = unclose_before_usage_probe
+        with self.assertRaisesRegex(SnapshotError, "paused_usage_checkpoint_not_closed"):
+            bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        self.assertFalse((self.control / ("activation." + self.service_digest + ".json")).exists())
+        self.assertTrue((self.control / ("bundle-restore." + self.bundle_digest + ".json")).exists())
+        self.assertFalse(json.loads(self.docker("inspect", bundle.workspace.container))[0]["State"]["Running"])
 
     def target_bundle(self):
         project, definition, unused_attempt = self.provision(target=True)

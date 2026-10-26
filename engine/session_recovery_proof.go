@@ -32,6 +32,7 @@ type SessionRecoveryProof struct {
 	ValidationComplete bool                    `json:"validation_complete"`
 	BlockingReasons    []string                `json:"blocking_reasons"`
 	CanResumeAgent     bool                    `json:"can_resume_agent"`
+	ToolBoundary       *SessionToolBoundary    `json:"tool_boundary,omitempty"`
 }
 
 // ResumeInfoWithRecoveryProof executes the same canonical restore as ResumeInfo
@@ -74,6 +75,7 @@ func (s *SessionService) ResumeInfoWithRecoveryProof(
 		CanResumeAgent: false,
 	}
 	proof.BlockingReasons = recoveryProofBlockers(resumed, s.engine.RuntimeItems(), usage)
+	proof.ToolBoundary = recoveryProofToolBoundary(loadedMessages, proof.CWD)
 	proof.ValidationComplete = len(proof.BlockingReasons) == 0
 	return resumed, proof, nil
 }

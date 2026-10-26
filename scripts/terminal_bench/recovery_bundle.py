@@ -19,8 +19,10 @@ from scripts.terminal_bench.service_snapshot import (
 )
 from scripts.terminal_bench.workspace_io import MAX_FILE, validate_entries
 from scripts.terminal_bench.workspace_recovery import DockerWorkspace, native_proof, usage_history
+from scripts.terminal_bench.paused_recovery import verify_paused_joint
 
 PROTOCOL = "yhc-cold-recovery-bundle-v1"
+PAUSED_PROTOCOL = "yhc-cold-recovery-bundle-v2"
 
 
 def file_digest(raw):
@@ -42,7 +44,13 @@ class RecoveryBundle:
         self.services._anchor(root_digest)  # Shared strict digest syntax.
         return self.control / (prefix + "." + root_digest + ".json")
 
-    def capture(self, path, service_path, service_digest, session_id, history):
+    def _paused(self, pause, proof, history):
+        record = pause["record"]
+        checkpoint = self.workspace.rpc("usage_probe", checkpoint_path=record["checkpoint_path"], segment_id=record["segment_id"])
+        joint = verify_paused_joint(record, pause["record_sha256"], proof, checkpoint, history, self.workspace.cwd)
+        return dict(record=record, record_sha256=pause["record_sha256"], checkpoint=checkpoint, joint_proof=joint)
+
+    def capture(self, path, service_path, service_digest, session_id, history, *, pause_record=None, pause_sha256=None):
         path = Path(path).absolute()
         self.services._outside_capsule(path)
         require(path.parent.resolve() == path.parent and path.parent.stat().st_uid == os.geteuid()
@@ -56,9 +64,19 @@ class RecoveryBundle:
         native_path = ".yhc/transcripts/" + session_id + ".jsonl"
         require(any(e["path"] == native_path and e["kind"] == "file" for e in pre_native), "canonical_native_transcript_not_captured")
         proof = self.workspace.rpc("native_probe", session_id=session_id)
-        native_proof(proof, session_id, before["cwd"])
+        pause = None
+        if pause_record is not None or pause_sha256 is not None:
+            require(isinstance(pause_record, dict) and pause_record.get("session_id") == session_id
+                    and digest(pause_record) == pause_sha256, "paused_record_anchor_or_identity_mismatch")
+            pause = self._paused(dict(record=pause_record, record_sha256=pause_sha256), proof, history)
+        else:
+            native_proof(proof, session_id, before["cwd"])
         entries = validate_entries(self.workspace.rpc("inventory"))
         require(any(e["path"] == native_path and e["kind"] == "file" for e in entries), "canonical_native_transcript_not_captured")
+        if pause:
+            checkpoint_path = pause["record"]["checkpoint_path"]
+            require(all(any(e["path"] == checkpoint_path + "/" + filename and e["kind"] == "file" for e in entries)
+                        for filename in ("owner.json", "checkpoint.json")), "paused_checkpoint_not_captured")
         require(user_files(entries) == user_files(pre_native), "source_native_load_changed_user_workspace")
         path.mkdir(mode=0o700)
         payloads = []
@@ -82,6 +100,8 @@ class RecoveryBundle:
                         service_snapshot_sha256=service_digest, source_workspace=before, entries=entries, payloads=payloads,
                         native_proof=proof, usage_history=history, usage_coverage_complete=accounting["coverage_complete"],
                         can_resume_agent=False)
+        if pause:
+            manifest.update(version=2, protocol=PAUSED_PROTOCOL, paused_invocation=pause)
         write_report(path / "manifest.json", manifest)
         require((path / "manifest.json").stat().st_size <= MAX_BYTES, "bundle_manifest_too_large")
         seal_capsule(path, [p["file"] for p in payloads] + ["manifest.json"])
@@ -97,7 +117,9 @@ class RecoveryBundle:
         anchor = private_json(self._record("bundle", expected_digest))
         body = private_json(path / "manifest.json", sealed=True)
         require(digest(body) == expected_digest and isinstance(body, dict)
-                and body.get("version") == 1 and body.get("protocol") == PROTOCOL, "bundle_anchor_mismatch")
+                and ((body.get("version") == 1 and body.get("protocol") == PROTOCOL and "paused_invocation" not in body)
+                     or (body.get("version") == 2 and body.get("protocol") == PAUSED_PROTOCOL and "paused_invocation" in body)),
+                "bundle_anchor_mismatch")
         require(anchor == dict(version=1, bundle_sha256=expected_digest, service_snapshot_sha256=body["service_snapshot_sha256"],
                                cohort_id=body["cohort_id"], barrier_id=body["barrier_id"]), "bundle_capture_record_mismatch")
         service, _ = self.services.load(service_path, body["service_snapshot_sha256"])
@@ -106,7 +128,12 @@ class RecoveryBundle:
         require(source["cohort_id"] == body["cohort_id"] and source["daemon_id"] == service["source"]["daemon_id"],
                 "bundle_workspace_epoch_mismatch")
         session_id = body["native_proof"]["session_id"]
-        native_proof(body["native_proof"], session_id, source["cwd"])
+        if "paused_invocation" in body:
+            pause = body["paused_invocation"]
+            require(verify_paused_joint(pause["record"], pause["record_sha256"], body["native_proof"], pause["checkpoint"],
+                                       body["usage_history"], source["cwd"]) == pause["joint_proof"], "paused_joint_proof_mismatch")
+        else:
+            native_proof(body["native_proof"], session_id, source["cwd"])
         accounting = usage_history(body["usage_history"], session_id)
         entries = validate_entries(body["entries"])
         files = [e for e in entries if e["kind"] == "file"]
@@ -154,8 +181,14 @@ class RecoveryBundle:
             require(restored == body["entries"], "workspace_restore_probe_mismatch")
             session_id = body["native_proof"]["session_id"]
             loaded = self.workspace.rpc("native_probe", session_id=session_id)
-            require(native_proof(loaded, session_id, target["cwd"]) == native_proof(body["native_proof"], session_id, source["cwd"])
-                    and loaded["process_nonce"] != body["native_proof"]["process_nonce"], "native_loaded_state_mismatch")
+            restored_pause = None
+            if "paused_invocation" in body:
+                restored_pause = self._paused(body["paused_invocation"], loaded, body["usage_history"])
+                require(restored_pause == body["paused_invocation"], "paused_joint_proof_mismatch")
+            else:
+                require(native_proof(loaded, session_id, target["cwd"]) == native_proof(body["native_proof"], session_id, source["cwd"]),
+                        "native_loaded_state_mismatch")
+            require(loaded["process_nonce"] != body["native_proof"]["process_nonce"], "native_loader_process_reused")
             post_native = self.workspace.rpc("inventory")
             require(user_files(post_native) == user_files(restored), "native_restore_changed_user_workspace")
             # Service activation is last. Every file/native/financial check has
@@ -163,13 +196,16 @@ class RecoveryBundle:
             services = self.services.restore(service_path, attempt, expected_snapshot_sha256=body["service_snapshot_sha256"], activate=True)
             require(self.workspace.inventory() == target and self.workspace.rpc("inventory") == post_native,
                     "workspace_changed_before_proof_commit")
-            receipt = dict(version=1, protocol=PROTOCOL, status="restored_components_verified", bundle_sha256=expected_digest,
+            receipt = dict(version=body["version"], protocol=body["protocol"], status="restored_components_verified", bundle_sha256=expected_digest,
                            service_snapshot_sha256=body["service_snapshot_sha256"], cohort_id=body["cohort_id"],
                            barrier_id=body["barrier_id"], attempt_id=attempt, workspace_runtime=target,
                            workspace_restored=True, restored_tree_sha256=digest(restored), post_native_tree_sha256=digest(post_native),
                            native_session_loaded=True, native_proof=loaded, cumulative_usage_restored=True, accounting=accounting,
                            services=services, can_resume_agent=False,
                            blocking_reasons=["native_runtime_dispatch_not_integrated", "new_spending_authorization_required"])
+            if restored_pause:
+                receipt["paused_joint_proof"] = restored_pause["joint_proof"]
+                receipt["blocking_reasons"].insert(1, "tool_runtime_state_not_integrated")
             write_report(self._record("bundle-receipt", expected_digest), receipt)
             return receipt
         except BaseException:
@@ -197,6 +233,8 @@ def main():
     parser.add_argument("--attempt-id")
     parser.add_argument("--session-id")
     parser.add_argument("--usage-history", type=Path)
+    parser.add_argument("--pause-record", type=Path)
+    parser.add_argument("--pause-sha256")
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--bundle-sha256")
     parser.add_argument("--control-dir", type=Path, required=True)
@@ -208,7 +246,8 @@ def main():
         bundle = RecoveryBundle(services, workspace)
         if args.operation == "capture":
             require(args.usage_history is not None and args.session_id is not None, "capture_native_inputs_required")
-            result = bundle.capture(args.snapshot, args.service_snapshot, args.service_sha256, args.session_id, private_json(args.usage_history))
+            result = bundle.capture(args.snapshot, args.service_snapshot, args.service_sha256, args.session_id, private_json(args.usage_history),
+                                    pause_record=private_json(args.pause_record) if args.pause_record else None, pause_sha256=args.pause_sha256)
         else:
             result = bundle.restore(args.snapshot, args.bundle_sha256, args.service_snapshot, args.attempt_id)
         print(json.dumps({k: result[k] for k in ("cohort_id", "can_resume_agent", "bundle_sha256")}

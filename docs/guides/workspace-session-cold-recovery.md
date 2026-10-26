@@ -75,6 +75,15 @@ reported usage so far is known. Metadata and API-error diagnostics do not
 substitute for that final response. This stricter proof does not change
 ordinary Session resume.
 
+The optional `tool_boundary` is an observation of a committed tool-result
+suffix, with a digest rather than arguments or output text. It rejects missing,
+orphaned or reused tool identities, including unresolved earlier rounds.
+`workspace_local` requires all historical calls to be `Read`, `Write` or `Edit`
+with declared targets inside the captured root. File transport independently
+rejects links and external mounts. This is evidence of declared file targets
+and committed results; it does not attest to a past filesystem resolution or
+restore process-local guards.
+
 Native transcript usage and invocation usage have different coverage. Both
 must retain their original facts; their totals are not forced equal. The
 provider-free loader is not appended as another paid invocation.
@@ -150,10 +159,75 @@ This is quarantine, not rollback. Retain the capture and history, inspect the
 failure, and explicitly reconcile the attempt; do not clear claims or
 automatically retry a budget- or infrastructure-stopped task.
 
+## Join a clean tool pause to closed accounting
+
+The opt-in v2 bundle can preserve and verify a budget pause after a committed
+workspace file-tool round. The native proof itself still reports
+`native_turn_incomplete`. The joint protocol accepts that one blocker only
+when an externally recorded invocation receipt and the exact checkpoint agree.
+Every other native blocker remains fatal.
+
+The trusted launcher must record the terminal JSON result and a subsequent
+provider-free native proof outside the task workspace. Assemble one private
+JSON record with these fields, then retain its SHA-256 independently:
+
+| Field | Required source |
+|---|---|
+| `version`, `scope` | `1`, `yhc-operator-tool-pause-v1` |
+| `session_id` | Exact expected Session UUID from the launcher |
+| `segment_id` | Exact invocation UUID from that terminal receipt |
+| `checkpoint_path` | Relative path under `.yhc/usage-checkpoints/` captured in the workspace |
+| `terminal` | Original `yhc exec --output-format json` result, including raw `usage` |
+| `native_proof` | Original `sessions resume --recovery-proof` result's `recovery_proof` field |
+
+The native messages, native usage and tool-boundary digest must match a fresh
+source load. The terminal result must be a `run_budget_exceeded` failure with a
+real denied admission and at least one known call. Its usage must be the last
+segment of the complete supplied history. The immutable image's `yhc usage
+inspect` then reads the expected segment: admission must be closed, phase
+`sealed`, tokens and cost complete, and all reservations reconciled. The
+terminal persistence sequence must match. The receipt and stored snapshot bind
+every field apart from the later terminal elapsed time, its persistence-status
+wrapper, and an unspecified route effort's documented `""` to `"unknown"`
+representation. Native and invocation token totals still retain their different
+coverage.
+
+Add these arguments to the capture command above:
+
+```bash
+  --pause-record /absolute/private-dir/operator-pause.json \
+  --pause-sha256 PAUSE_RECORD_SHA256
+```
+
+The digest uses the same canonical JSON encoding as
+[`service_snapshot.digest`](../../scripts/terminal_bench/service_snapshot.py).
+This external record is a trusted operator assertion of which invocation
+belongs to which Session. Checkpoint checksums alone do not authenticate that
+relationship. Do not generate it from task-authored JSON or infer it by matching
+token totals. Existing v1 captures are not upgraded.
+
+Capture seals both checkpoint files, the host record, source native observation
+and joint proof with the workspace/service bundle. Restore uses the same command
+as v1. After importing the files it repeats the actual native load and checkpoint
+inspection in fresh processes, compares the exact joint proof, and activates
+services last. A mismatch quarantines both target groups and consumes the same
+single-use restore claim. An open-but-fully-priced checkpoint remains rejected.
+
+The receipt's `paused_joint_proof` verifies this component boundary, not a
+ready-to-run Agent. It keeps `tool_runtime_restored: false`,
+`can_resume_agent: false` and `new_spending_authorized: false`; the outer receipt
+also reports `tool_runtime_state_not_integrated`. In particular, the
+[`file-read guard`](../../tools/read_state.go) is process-local and is not
+restored by loading messages. Shell, Agent and MCP state, external file targets,
+arbitrary interrupted side effects, unknown charges and a new spending grant
+remain outside this proof. Ordinary resume is unchanged. No capture, restore
+or proof inspection starts a model request or reopens the old checkpoint writer.
+
 ## Reproduce without a paid provider
 
 ```bash
 python3 -m unittest scripts.terminal_bench.test_recovery_bundle.HistoryTests
+python3 -m unittest scripts.terminal_bench.test_paused_recovery
 go test ./engine/session ./engine ./cmd/yhc/cmd \
   -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof)'
 ```
@@ -245,3 +319,11 @@ process. Their deliberately incomplete history remains blocked; knowing an
 earlier response's token count never proves that a later request or the current
 turn finished. They do not establish reconciliation of unknown provider charges
 or interruption in the middle of an arbitrary tool's external side effect.
+
+The paused Docker cases run a real public CLI to its call-budget stop, inspect
+its closed checkpoint, and destroy the original containers and volumes. They
+restore its exact tool history, single file effect, accounting and service
+state/clocks without dispatching again. A separate fault reopens the imported
+checkpoint while retaining known usage; it must quarantine before services
+activate. These are offline recovery checks and supply no benchmark reward
+or paid-provider evidence.

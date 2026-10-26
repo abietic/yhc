@@ -50,6 +50,12 @@ conversation turn: pending user input, unresolved tool calls and a tool-result
 tail without the final assistant response remain `native_turn_incomplete`.
 Metadata and API-error diagnostics do not close the turn. The proof grants no
 Agent activation or spending, and ordinary resume semantics are unchanged.
+For a uniquely paired, committed tool-result suffix, the opt-in proof also
+exposes `tool_boundary`: a content-free digest, call count, tool names and a
+check that declared historical file targets stay within CWD. This observation
+does not clear `native_turn_incomplete` or restore process-local tool state.
+The operator-only paused bundle joins it to an externally anchored invocation
+receipt and the exact closed usage checkpoint. Its dispatch remains blocked.
 See the [cold-recovery guide](../../guides/workspace-session-cold-recovery.md)
 and its real-process crash fixtures for the supported subset.
 
