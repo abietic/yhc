@@ -5,6 +5,7 @@ and historical usage never manufacture that grant or reopen an old writer.
 """
 
 import copy
+import ipaddress
 import os
 import re
 import stat
@@ -26,6 +27,26 @@ from scripts.terminal_bench.workspace_recovery import usage_history
 
 def sha(value):
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def validate_gateway_transport(grant):
+    """The current keeper protocol has network=none and no host relay.
+
+    This is new-dispatch policy, not historical grant/usage validation. DNS,
+    external/host routes and unproved network transitions cannot consume a
+    source claim or budget allocation merely to fail when the CLI connects.
+    A loopback address alone does not certify a trusted provider is ready.
+    """
+    route = grant.get("route") if isinstance(grant, dict) else None
+    base = route.get("base_url") if isinstance(route, dict) else None
+    require(isinstance(base, str) and 0 < len(base) <= 256, "dispatch_gateway_transport_unverified")
+    try:
+        url = urlsplit(base)
+        require(url.scheme in ("http", "https") and url.hostname and "%" not in url.hostname
+                and ipaddress.ip_address(url.hostname).is_loopback
+                and (url.port is None or 0 < url.port <= 65535), "dispatch_gateway_transport_unverified")
+    except ValueError:
+        raise SnapshotError("dispatch_gateway_transport_unverified") from None
 
 
 def validate_grant(value, anchor, body, bundle_digest, attempt, now):
@@ -105,6 +126,7 @@ class ColdBenchmarkLauncher:
         require(self.cohort is not None, "dispatch_shared_cohort_admission_required")
         body, _, _ = self.bundle.load(path, bundle_digest, service_path)
         require("paused_invocation" in body, "dispatch_requires_verified_paused_bundle")
+        validate_gateway_transport(grant)
         segment = body["paused_invocation"]["record"]["segment_id"]
         with dispatch_lock(self.bundle.control, segment) as claim:
             # The consumed check precedes every native probe. A losing launch

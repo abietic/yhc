@@ -352,6 +352,7 @@ class NativeColdDockerTests(unittest.TestCase):
         if scenario == "history": grant["usage_history_sha256"] = "f" * 64
         if scenario == "budget": grant["max_cumulative_estimated_cost"] = "5"
         if scenario == "binary": grant["binary_sha256"] = "f" * 64
+        if scenario == "external_gateway": grant["route"]["base_url"] = "https://gateway.example.invalid"
         if scenario == "workspace":
             self.docker("exec", bundle.workspace.container, "/usr/local/bin/python3", "-I", "-c",
                         "from pathlib import Path; Path('/workspace/continued.txt').write_text('changed')")
@@ -449,7 +450,7 @@ else: raise AssertionError('uncapped child')
             self.assertNotIn("cold_dispatch", calls)
             self.assertFalse((self.control / ("dispatch." + manifest["paused_invocation"]["record"]["segment_id"] + ".json")).exists())
             self.assertEqual(cohort.inspect(), before_cohort)
-            if scenario == "cohort_budget":
+            if scenario in ("cohort_budget", "external_gateway"):
                 self.assertEqual(calls, [])
                 retained = self.docker("exec", bundle.workspace.container, "/usr/local/bin/python3", "-I", "-c",
                                        "from pathlib import Path; print(Path('/workspace/continued.txt').read_bytes().hex())")
@@ -487,6 +488,9 @@ else: raise AssertionError('uncapped child')
 
     def test_benchmark_launcher_shared_budget_exhaustion_preserves_real_restored_progress(self):
         self.check_benchmark_launcher("cohort_budget")
+
+    def test_benchmark_launcher_external_gateway_keeps_claim_budget_and_real_progress(self):
+        self.check_benchmark_launcher("external_gateway")
 
     def test_benchmark_launcher_joins_real_recovery_and_cumulative_usage_before_dispatch(self):
         self.check_benchmark_launcher("known")

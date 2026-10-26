@@ -121,6 +121,15 @@ class CohortTests(unittest.TestCase):
             with self.admit(): pass
         self.assertEqual(self.ledger.inspect()["known_estimated_amount"], "0.000150000000")
 
+    def test_historical_transport_policy_does_not_rewrite_verified_accounting(self):
+        self.grant["route"]["base_url"] = "https://gateway.example.invalid"
+        with self.admit() as allocation:
+            allocation.reserve(self.body, self.grant, digest(self.grant), now=1000)
+            self.reconcile(allocation, self.body, self.grant)
+        reopened = CohortAdmission(self.root, self.anchor).inspect()
+        self.assertFalse(reopened["blocked"])
+        self.assertEqual(reopened["known_estimated_amount"], "0.000150000000")
+
     def test_ambiguous_exit_keeps_full_allocation_and_blocks_another_session(self):
         with self.admit() as allocation:
             allocation.reserve(self.body, self.grant, digest(self.grant), now=1000)
