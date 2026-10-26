@@ -53,6 +53,7 @@ class HostPipeColdDockerTests(native_fixture.NativeColdDockerTests):
         # Keep the exact source URL and opaque credential for native route binding.
         # The container port is inherited from capture, never selected by a task.
         grant["route"]["base_url"] = "http://127.0.0.1:" + str(self.paused_execution["provider_port"])
+        fixture_platform = self.docker("image", "inspect", self.image, "--format", "{{.Os}}/{{.Architecture}}")
         plan = cohort_plan([manifest["usage_history"], history(str(uuid.uuid4()))], cohort=manifest["cohort_id"],
                            cap="0.1" if scenario == "budget" else "6")
         plan["expires_unix"] = int(time.time()) + 2000
@@ -76,7 +77,7 @@ class HostPipeColdDockerTests(native_fixture.NativeColdDockerTests):
                     count = state["requests"]
                     fixture.assertLessEqual(count, 2 if scenario == "known" else 1)
                     stage = "native_history"
-                    verify_input(body, provider_call_limit=2, cold_round=count,
+                    verify_input(body, platform_name=fixture_platform, provider_call_limit=2, cold_round=count,
                                  cold_prompt="Continue the saved task using the verified restored state. Do not repeat completed side effects.")
                     checkpoint = state["launch"]["checkpoint_path"]
                     stage = "durable_admission"
