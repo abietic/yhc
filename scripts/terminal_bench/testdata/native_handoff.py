@@ -51,7 +51,7 @@ def text_parts(content):
     return content
 
 
-def verify_input(body, now=None, platform_name=None, tool_round=0):
+def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None):
     items = body.get("input")
     require(isinstance(items, list), "missing_input")
     projected = []
@@ -73,7 +73,8 @@ def verify_input(body, now=None, platform_name=None, tool_round=0):
             and all(item[:2] == ["message", "user"] for item in projected[:2]), "unexpected_runtime_prefix")
     now = now or datetime.datetime.now(datetime.timezone.utc)
     deadline = re.search(r"\ndeadline_utc=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) ", projected[0][2])
-    template = BUDGET_TEMPLATE.replace("provider_call_limit=1", "provider_call_limit=2") if tool_round else BUDGET_TEMPLATE
+    limit = provider_call_limit if provider_call_limit is not None else 2 if tool_round else 1
+    template = BUDGET_TEMPLATE.replace("provider_call_limit=1", "provider_call_limit=" + str(limit))
     require(deadline is not None and projected[0][2] == template.format(deadline=deadline[1]), "unexpected_budget_context")
     parsed = datetime.datetime.strptime(deadline[1][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
     if "." in deadline[1]:
@@ -100,13 +101,13 @@ def verify_input(body, now=None, platform_name=None, tool_round=0):
 
 def run(session_id, scenario, card):
     require(str(uuid.UUID(session_id)) == session_id, "invalid_fixture_session")
-    require(scenario in ("known", "unknown", "denied", "unbound", "tool", "crash_before_response", "crash_after_tool"), "invalid_fixture_scenario")
+    require(scenario in ("known", "unknown", "denied", "unbound", "tool", "pause_tool", "crash_before_response", "crash_after_tool"), "invalid_fixture_scenario")
     root = Path.cwd()
     require(str(root) == "/workspace" and Path("/opt/yhc/yhc").is_file(), "container_only_fixture")
     requests, errors, inputs, admissions = [], [], [], []
     crash = scenario.startswith("crash_")
-    two_rounds = scenario in ("tool", "crash_after_tool")
-    persist_usage = scenario == "tool" or crash
+    two_rounds = scenario in ("tool", "pause_tool", "crash_after_tool")
+    persist_usage = scenario in ("tool", "pause_tool") or crash
     process_ready = threading.Event()
     checkpoint = root / ".yhc/usage-checkpoints" / ("tool-" + uuid.uuid4().hex)
     if persist_usage:
@@ -137,7 +138,7 @@ def run(session_id, scenario, card):
                 body = json.loads(self.rfile.read(size))
                 requests.append(hashlib.sha256(json.dumps(body.get("input"), sort_keys=True, separators=(",", ":")).encode()).hexdigest())
                 inputs.append(body.get("input"))
-                verify_input(body, tool_round=len(requests) if two_rounds else 0)
+                verify_input(body, tool_round=len(requests) if two_rounds else 0, provider_call_limit=1 if scenario == "pause_tool" else None)
                 require(len(requests) <= (2 if two_rounds else 1), "unexpected_retry_or_auxiliary_call")
                 if persist_usage:
                     view = inspect_checkpoint()
@@ -198,7 +199,7 @@ def run(session_id, scenario, card):
                     "--max-estimated-cost", "0.01" if scenario == "denied" else "5"]
             if two_rounds:
                 args[args.index("--max-turns") + 1] = "2"
-                args[args.index("--max-provider-calls") + 1] = "2"
+                args[args.index("--max-provider-calls") + 1] = "1" if scenario == "pause_tool" else "2"
             if persist_usage:
                 args.extend(["--usage-checkpoint-dir", str(checkpoint)])
             process = subprocess.Popen(args, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -213,7 +214,7 @@ def run(session_id, scenario, card):
             result = None if crash else json.loads(stdout)
             require(not crash or process.returncode == -signal.SIGKILL, "fixture_did_not_kill_cli")
             native = None
-            if crash:
+            if crash or scenario == "pause_tool":
                 probe = subprocess.run(["/opt/yhc/yhc", "sessions", "resume", session_id, "--recovery-proof", "--output-format", "json"],
                                        cwd=root, env=env, capture_output=True, timeout=20, check=True)
                 require(len(probe.stdout) <= 1 << 20, "oversized_native_proof")
@@ -225,6 +226,8 @@ def run(session_id, scenario, card):
     require(not thread.is_alive(), "fixture_provider_did_not_stop")
     return dict(version=1, scope="offline_public_exec_resume", scenario=scenario, result=result,
                 durable_admissions=admissions, durable_checkpoint=inspect_checkpoint() if persist_usage else None,
+                checkpoint_path=checkpoint.relative_to(root).as_posix() if persist_usage else None,
+                native_after_pause=native if scenario == "pause_tool" else None,
                 native_after_crash=native, killed_by_fixture=crash,
                 exit_code=process.returncode, observed_provider_requests=len(requests), request_input_sha256=requests,
                 provider="synthetic_loopback", provider_protocol_errors=errors,

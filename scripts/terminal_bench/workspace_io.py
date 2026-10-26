@@ -165,6 +165,19 @@ def operate(request):
         value = json.loads(result.stdout)
         require(value.get("status") == "completed" and value.get("operation") == "sessions.resume")
         return value["result"]["recovery_proof"]
+    if op == "usage_probe":
+        relative = request["checkpoint_path"]
+        require(isinstance(relative, str) and relative.startswith(".yhc/usage-checkpoints/"))
+        directory = child(root, relative)
+        require(directory.is_dir() and directory.resolve() == directory)
+        segment = request["segment_id"]
+        require(isinstance(segment, str) and len(segment) == 36)
+        result = subprocess.run(["/opt/yhc/yhc", "usage", "inspect", "--checkpoint-dir", str(directory),
+                                 "--segment-id", segment], cwd=root,
+                                env=dict(PATH="/usr/local/bin:/usr/bin:/bin", HOME="/tmp/yhc-proof-home"),
+                                capture_output=True, timeout=20, check=True)
+        require(len(result.stdout) <= MAX_JSON)
+        return json.loads(result.stdout)
     raise ValueError("unsupported_workspace_operation")
 
 
