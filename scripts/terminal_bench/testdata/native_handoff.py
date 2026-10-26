@@ -21,6 +21,7 @@ import uuid
 from pathlib import Path
 
 PROMPT = "continue the owned checkpoint in one new turn"
+COLD_PROMPT = "finish the owned paused file task"
 OUTPUT = "offline continuation complete"
 BUDGET_TEMPLATE = (
     "<run-budget>\nRuntime-enforced limits for this invocation, shared with children and auxiliary calls. "
@@ -51,7 +52,7 @@ def text_parts(content):
     return content
 
 
-def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None):
+def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None, cold_round=0):
     items = body.get("input")
     require(isinstance(items, list), "missing_input")
     projected = []
@@ -69,7 +70,15 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
         else:
             require(kind == "message" and role in ("user", "assistant"), "unexpected_input_item")
             projected.append(["message", role, text_parts(item.get("content"))])
-    require(len(projected) == (11 if tool_round == 2 else 8)
+    if cold_round == 2:
+        memory = projected[-1]
+        prefix = "[system] [Session Memory — context from previous interactions:]\n\n"
+        require(memory[:2] == ["message", "user"] and memory[2].startswith(prefix)
+                and sorted(memory[2][len(prefix):].splitlines()) == sorted([
+                    "- [] File modified: /workspace/continued.txt (via Write)",
+                    "- [] File modified: effects.count (via Write)"]), "unexpected_restored_memory_context")
+        projected = projected[:-1]
+    require(len(projected) == (13 + 3 * (cold_round - 1) if cold_round else 11 if tool_round == 2 else 8)
             and all(item[:2] == ["message", "user"] for item in projected[:2]), "unexpected_runtime_prefix")
     now = now or datetime.datetime.now(datetime.timezone.utc)
     deadline = re.search(r"\ndeadline_utc=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) ", projected[0][2])
@@ -91,23 +100,41 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
                 ["call", "fixture-write", "Write", dict(file_path="effects.count", content="1\n")],
                 ["result", "fixture-write", "committed once"],
                 ["message", "assistant", "checkpoint complete"], ["message", "user", PROMPT]]
-    if tool_round == 2:
+    if tool_round == 2 or cold_round:
         expected.extend([["message", "assistant", " "],
                          ["call", "continued-write", "Write", dict(file_path="/workspace/continued.txt", content="continued once\n")],
                          ["result", "continued-write", "Wrote 15 bytes to /workspace/continued.txt"]])
+    if cold_round:
+        expected.extend([["message", "assistant", "Model error: provider usage accounting failed closed: run usage budget exceeded"],
+                         ["message", "user", COLD_PROMPT]])
+        if cold_round == 2:
+            expected.extend([["message", "assistant", " "],
+                             ["call", "cold-edit", "Edit", dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore")],
+                             ["result", "cold-edit", "Replaced 1 occurrence in /workspace/continued.txt"]])
     require(projected == expected, "native_history_or_new_turn_changed")
     return hashlib.sha256(json.dumps(items, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def run(session_id, scenario, card):
+def run(session_id, scenario, card, handoff=None):
     require(str(uuid.UUID(session_id)) == session_id, "invalid_fixture_session")
-    require(scenario in ("known", "unknown", "denied", "unbound", "tool", "pause_tool", "crash_before_response", "crash_after_tool"), "invalid_fixture_scenario")
+    require(scenario in ("known", "unknown", "denied", "unbound", "tool", "pause_tool", "crash_before_response", "crash_after_tool",
+                        "cold_edit", "cold_race", "cold_unknown", "cold_denied", "cold_changed", "cold_checkpoint_open", "cold_repeated", "cold_crash", "cold_route_changed"), "invalid_fixture_scenario")
     root = Path.cwd()
     require(str(root) == "/workspace" and Path("/opt/yhc/yhc").is_file(), "container_only_fixture")
     requests, errors, inputs, admissions = [], [], [], []
-    crash = scenario.startswith("crash_")
-    two_rounds = scenario in ("tool", "pause_tool", "crash_after_tool")
-    persist_usage = scenario in ("tool", "pause_tool") or crash
+    race_probes = []
+    cold = scenario.startswith("cold_")
+    require(not cold or isinstance(handoff, dict), "cold_handoff_required")
+    fixture_port = 0
+    if cold:
+        require(set(handoff) == {"handoff", "fixture_port"} and type(handoff["fixture_port"]) is int
+                and 0 < handoff["fixture_port"] < 65536, "cold_fixture_route_required")
+        fixture_port, handoff = handoff["fixture_port"], handoff["handoff"]
+        if scenario == "cold_route_changed":
+            fixture_port = fixture_port + 1 if fixture_port < 65535 else fixture_port - 1
+    crash = scenario.startswith("crash_") or scenario == "cold_crash"
+    two_rounds = scenario in ("tool", "pause_tool", "crash_after_tool") or cold
+    persist_usage = scenario in ("tool", "pause_tool") or crash or cold
     process_ready = threading.Event()
     checkpoint = root / ".yhc/usage-checkpoints" / ("tool-" + uuid.uuid4().hex)
     if persist_usage:
@@ -138,7 +165,9 @@ def run(session_id, scenario, card):
                 body = json.loads(self.rfile.read(size))
                 requests.append(hashlib.sha256(json.dumps(body.get("input"), sort_keys=True, separators=(",", ":")).encode()).hexdigest())
                 inputs.append(body.get("input"))
-                verify_input(body, tool_round=len(requests) if two_rounds else 0, provider_call_limit=1 if scenario == "pause_tool" else None)
+                verify_input(body, tool_round=len(requests) if two_rounds and not cold else 0,
+                             provider_call_limit=1 if scenario == "pause_tool" else 2 if cold else None,
+                             cold_round=len(requests) if cold else 0)
                 require(len(requests) <= (2 if two_rounds else 1), "unexpected_retry_or_auxiliary_call")
                 if persist_usage:
                     view = inspect_checkpoint()
@@ -148,7 +177,21 @@ def run(session_id, scenario, card):
                             and snapshot["known_calls"] == len(requests) - 1
                             and snapshot["cost"]["reservation"]["outstanding_amount"] != "0.000000000000", "provider_entered_without_durable_admission")
                     admissions.append(view)
-                if scenario == "crash_before_response" or scenario == "crash_after_tool" and len(requests) == 2:
+                if scenario == "cold_race" and len(requests) == 1:
+                    transcript = root / ".yhc/transcripts" / (session_id + ".jsonl")
+                    claim = root / ".yhc/cold-dispatch-claims" / (handoff["checkpoint"]["segment_id"] + ".json")
+                    before_native, before_claim = transcript.read_bytes(), claim.read_bytes()
+                    competing = list(args)
+                    competing[competing.index("--usage-checkpoint-dir") + 1] = str(checkpoint.parent / ("competing-" + uuid.uuid4().hex))
+                    loser = subprocess.run(competing, cwd=root, env=env, capture_output=True, timeout=10, check=False)
+                    require(len(loser.stdout) <= 1 << 20, "oversized_competing_result")
+                    value = json.loads(loser.stdout)
+                    require(loser.returncode != 0 and value.get("error", {}).get("code") == "cold_tool_handoff_invalid"
+                            and transcript.read_bytes() == before_native and claim.read_bytes() == before_claim,
+                            "competing_launch_mutated_winner_native_or_claim")
+                    race_probes.append(dict(loser_exit_code=loser.returncode, loser_result=value,
+                                            winner_transcript_unchanged=True, winner_claim_unchanged=True))
+                if scenario in ("crash_before_response", "cold_crash") or scenario == "crash_after_tool" and len(requests) == 2:
                     require(process_ready.wait(5), "fixture_process_not_ready")
                     process.kill()
                     return
@@ -156,7 +199,7 @@ def run(session_id, scenario, card):
                 errors.append(str(error)[:180])
                 self.send_error(400)
                 return
-            if scenario == "unknown":
+            if scenario in ("unknown", "cold_unknown"):
                 self.send_response(503)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -178,10 +221,15 @@ def run(session_id, scenario, card):
                             arguments=json.dumps(dict(file_path="/workspace/continued.txt", content="continued once\n")))
                 events[0] = dict(type="response.output_item.done", sequence_number=0, output_index=0, item=item)
                 events[1]["response"]["output"] = [item]
+                if cold:
+                    item = dict(type="function_call", id="cold-edit-item", call_id="cold-edit", name="Edit", status="completed",
+                                arguments=json.dumps(dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore")))
+                    events[0]["item"] = item
+                    events[1]["response"]["output"] = [item]
             for event in events:
                 self.wfile.write(("event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n").encode())
 
-    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    server = http.server.HTTPServer(("127.0.0.1", fixture_port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -191,17 +239,35 @@ def run(session_id, scenario, card):
             env = dict(PATH="/usr/local/bin:/usr/bin:/bin", HOME=temporary, TZ="UTC",
                        XDG_CONFIG_HOME=temporary + "/config", XDG_DATA_HOME=temporary + "/data",
                        XDG_CACHE_HOME=temporary + "/cache", YHC_SESSION_CATALOG=str(root / ".yhc/session-roots.json"))
-            args = ["/opt/yhc/yhc", "exec", PROMPT, "--resume", session_id, "--output-format", "json",
+            args = ["/opt/yhc/yhc", "exec", COLD_PROMPT if cold else PROMPT, "--resume", session_id, "--output-format", "json",
                     "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", "http://127.0.0.1:" + str(server.server_port),
                     "--api-key", "fixture", "--permission-mode", "acceptEdits", "--tools", "Write", "--max-turns", "1",
                     "--timeout", "20s", "--max-provider-calls", "1", "--price-card", str(price),
                     "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "16",
-                    "--max-estimated-cost", "0.01" if scenario == "denied" else "5"]
+                    "--max-estimated-cost", "0.01" if scenario in ("denied", "cold_denied") else "5"]
             if two_rounds:
                 args[args.index("--max-turns") + 1] = "2"
                 args[args.index("--max-provider-calls") + 1] = "1" if scenario == "pause_tool" else "2"
             if persist_usage:
                 args.extend(["--usage-checkpoint-dir", str(checkpoint)])
+            if scenario == "pause_tool" or cold:
+                args.append("--capture-read-guards")
+            if cold:
+                data = json.dumps(handoff, separators=(",", ":")).encode()
+                handoff_file = Path(temporary) / "cold-handoff.json"
+                handoff_file.write_bytes(data)
+                handoff_file.chmod(0o600)
+                args.extend(["--cold-tool-handoff", str(handoff_file), "--cold-tool-handoff-sha256", hashlib.sha256(data).hexdigest()])
+                args[args.index("--tools") + 1] = "Read,Write,Edit"
+                if scenario == "cold_changed":
+                    (root / "continued.txt").write_text("externally changed\n")
+                if scenario == "cold_checkpoint_open":
+                    path = root / handoff["checkpoint_path"] / "checkpoint.json"
+                    envelope = json.loads(path.read_text())
+                    envelope["data"]["admission_closed"], envelope["data"]["phase"] = False, "settled"
+                    raw = json.dumps(envelope["data"], separators=(",", ":")).encode()
+                    envelope["sha256"] = hashlib.sha256(raw).hexdigest()
+                    path.write_text(json.dumps(envelope, separators=(",", ":")))
             process = subprocess.Popen(args, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             process_ready.set()
             try:
@@ -226,18 +292,20 @@ def run(session_id, scenario, card):
     require(not thread.is_alive(), "fixture_provider_did_not_stop")
     return dict(version=1, scope="offline_public_exec_resume", scenario=scenario, result=result,
                 durable_admissions=admissions, durable_checkpoint=inspect_checkpoint() if persist_usage else None,
+                concurrent_launch_probes=race_probes,
                 checkpoint_path=checkpoint.relative_to(root).as_posix() if persist_usage else None,
                 native_after_pause=native if scenario == "pause_tool" else None,
                 native_after_crash=native, killed_by_fixture=crash,
                 exit_code=process.returncode, observed_provider_requests=len(requests), request_input_sha256=requests,
                 provider="synthetic_loopback", provider_protocol_errors=errors,
+                provider_port=server.server_port,
                 failed_fixture_inputs=inputs if errors else [], real_provider_requests=0, can_resume_agent=False)
 
 
 def main():
     try:
-        require(len(sys.argv) == 4, "fixture_arguments")
-        value = run(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]))
+        require(len(sys.argv) in (4, 5), "fixture_arguments")
+        value = run(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), json.loads(sys.argv[4]) if len(sys.argv) == 5 else None)
         print(json.dumps(value, separators=(",", ":")))
     except Exception as error:
         print("offline native handoff fixture failed: " + type(error).__name__ + ":" + str(error)[:240], file=sys.stderr)
