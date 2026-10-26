@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 from scripts.terminal_bench.cold_recovery import bounded_command
 from scripts.terminal_bench.service_snapshot import decode, encode, identity, require
 from scripts.terminal_bench.usage import sum_usage, validated_usage
-from scripts.terminal_bench.workspace_io import PROTOCOL
+from scripts.terminal_bench.workspace_io import PROTOCOL, session_identity
 
 WORKSPACE_COHORT = "io.yhc.workspace-cohort"
 WORKSPACE_ROLE = "io.yhc.workspace-role"
@@ -19,7 +19,7 @@ ATTEMPT = "io.yhc.restore-attempt"
 
 
 def usage_history(value, session_id):
-    require(isinstance(value, dict) and set(value) == {"version", "session_id", "segment_ids", "segments"}
+    require(session_identity(session_id) and isinstance(value, dict) and set(value) == {"version", "session_id", "segment_ids", "segments"}
             and type(value["version"]) is int and value["version"] == 1
             and value["session_id"] == session_id, "usage_history_identity_mismatch")
     rows = value["segments"]
@@ -57,7 +57,7 @@ def usage_history(value, session_id):
 
 
 def native_proof(value, session_id, cwd):
-    require(isinstance(value, dict) and type(value.get("version")) is int and value["version"] == 1
+    require(session_identity(session_id) and isinstance(value, dict) and type(value.get("version")) is int and value["version"] == 1
             and value.get("scope") == "canonical_administration_restore"
             and value.get("session_id") == session_id and value.get("cwd") == cwd
             and isinstance(value.get("thread_id"), str) and bool(value["thread_id"])

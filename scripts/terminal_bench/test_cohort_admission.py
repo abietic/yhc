@@ -81,6 +81,42 @@ class CohortTests(unittest.TestCase):
             pass  # No reservation yet; admission checks alone consume nothing.
         self.assertEqual(self.ledger.inspect(), actual)
 
+    def test_native_session_name_survives_admission_settlement_and_cold_ledger_reopen(self):
+        session = "session-1700000000000000001"
+        plan = cohort_plan([history(session), history(str(uuid.uuid4()))])
+        ledger = CohortAdmission.create(self.root.parent / "native-session", plan, digest(plan))
+        body = dispatch_body(plan)
+        grant = grant_for(body)
+        with ledger.admit(body, grant, digest(grant), now=1000) as allocation:
+            allocation.reserve(body, grant, digest(grant), now=1000)
+            result = self.reconcile(allocation, body, grant)
+        reopened = CohortAdmission(ledger.root, digest(plan)).inspect()
+        self.assertFalse(reopened["blocked"])
+        self.assertEqual(reopened["known_estimated_amount"], "0.000150000000")
+        self.assertEqual(reopened["usage_histories"][session], result["usage_history"])
+
+    def test_native_session_names_cannot_replace_cohort_reservation_or_dispatch_uuids(self):
+        session = "session-1700000000000000001"
+        for field in ("cohort", "reservation"):
+            plan = copy.deepcopy(self.plan)
+            if field == "cohort": plan["cohort_id"] = session
+            else: plan["external_reservations"] = [dict(reservation_id=session, amount="1", state="retained")]
+            with self.subTest(field=field), self.assertRaises(SnapshotError):
+                CohortAdmission.create(self.root.parent / ("invalid-" + field), plan, digest(plan))
+        for field in ("dispatch_id", "attempt_id"):
+            grant = copy.deepcopy(self.grant)
+            grant[field] = session
+            with self.subTest(field=field), self.assertRaises(SnapshotError):
+                with self.ledger.admit(self.body, grant, digest(grant), now=1000): pass
+
+    def test_unsafe_session_names_never_create_a_cohort_ledger(self):
+        for index, session in enumerate((None, [], "../session", "a/b", "-session", "a b", "aé", "a" * 129)):
+            root = self.root.parent / ("invalid-session-" + str(index))
+            plan = cohort_plan([history(session)])
+            with self.subTest(session=session), self.assertRaisesRegex(SnapshotError, "cohort_session_invalid"):
+                CohortAdmission.create(root, plan, digest(plan))
+            self.assertFalse(root.exists())
+
     def test_exhaustion_preserves_journal_and_each_session_history_without_dispatch(self):
         self.plan["max_estimated_cost"] = "0.1"
         ledger = CohortAdmission.create(self.root.parent / "small", self.plan, digest(self.plan))

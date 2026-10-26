@@ -1,4 +1,4 @@
-// Owned offline fixture. No provider is constructed or called.
+// Owned offline fixture. No provider request is made.
 package main
 
 import (
@@ -10,6 +10,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/abietic/yhc/engine"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/transcript"
 )
@@ -72,6 +73,14 @@ func seed() error {
 	}
 	dir := filepath.Join(root, ".yhc", "transcripts")
 	id := os.Args[1]
+	generated := id == "--generated-session-id"
+	if generated {
+		// Exercise the production default ID generator without a model or turn.
+		// Staging construction and Close do not persist a second Session.
+		staging := engine.NewRestoreStagingQueryEngine(engine.QueryEngineConfig{CWD: root, TranscriptDir: dir})
+		id = staging.SessionID()
+		staging.Close()
+	}
 	recorder := transcript.NewRecorder(id, dir)
 	messages := []*schema.Message{
 		{Role: schema.User, Content: "owned checkpoint fixture prompt"},
@@ -102,5 +111,11 @@ func seed() error {
 	if err := recorder.RecordAuxiliaryUsage(auxiliary); err != nil {
 		return err
 	}
-	return recorder.Close()
+	if err := recorder.Close(); err != nil {
+		return err
+	}
+	if generated {
+		fmt.Println(id)
+	}
+	return nil
 }

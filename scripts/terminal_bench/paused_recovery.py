@@ -8,6 +8,7 @@ neither task-authored JSON nor a self-rewritten checkpoint supplies it.
 from pathlib import PurePosixPath
 
 from scripts.terminal_bench.service_snapshot import digest, identity, require
+from scripts.terminal_bench.workspace_io import session_identity
 from scripts.terminal_bench.workspace_recovery import native_proof, usage_history
 
 SCOPE = "yhc-operator-tool-pause-v1"
@@ -39,7 +40,7 @@ def verify_paused_joint(record, expected_digest, native, checkpoint, history, cw
     require(isinstance(record, dict) and digest(record) == expected_digest
             and set(record) == {"version", "scope", "session_id", "segment_id", "checkpoint_path", "terminal", "native_proof"}
             and type(record["version"]) is int and record["version"] == 1 and record["scope"] == SCOPE
-            and identity(record["session_id"]) and identity(record["segment_id"]), "paused_record_anchor_or_identity_mismatch")
+            and session_identity(record["session_id"]) and identity(record["segment_id"]), "paused_record_anchor_or_identity_mismatch")
     session_id, segment_id = record["session_id"], record["segment_id"]
     path = record["checkpoint_path"]
     require(isinstance(path, str) and len(path) <= 512 and "\0" not in path, "paused_checkpoint_path_invalid")

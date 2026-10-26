@@ -96,6 +96,14 @@ JSON with `version: 1`, `session_id`, ordered `segment_ids`, and `segments`.
 Each segment has its one-based `ordinal`, the same `session_id`, and its raw
 `usage` receipt with a single invocation `call_ledger`.
 
+In this bundle protocol, `SESSION_ID` is the exact native Session name: 1–128
+ASCII letters, digits, underscores, dots or hyphens, beginning with a letter or
+digit. The shared [`session_identity`](../../scripts/terminal_bench/workspace_io.py)
+validator accepts both production `session-<Unix-nanoseconds>` names and UUID
+names; no layer renames, trims or normalizes them. Cohort, restore-attempt,
+dispatch, reservation, invocation-segment and call identities remain canonical
+UUIDs. A valid Session name never substitutes for any of those identities.
+
 ```bash
 python3 -m scripts.terminal_bench.recovery_bundle capture \
   --service-contract /absolute/private-dir/service-contract.json \
@@ -174,7 +182,7 @@ JSON record with these fields, then retain its SHA-256 independently:
 | Field | Required source |
 |---|---|
 | `version`, `scope` | `1`, `yhc-operator-tool-pause-v1` |
-| `session_id` | Exact expected Session UUID from the launcher |
+| `session_id` | Exact expected native Session name from the launcher, using the Session-name contract above |
 | `segment_id` | Exact invocation UUID from that terminal receipt |
 | `checkpoint_path` | Relative path under `.yhc/usage-checkpoints/` captured in the workspace |
 | `terminal` | Original `yhc exec --output-format json` result, including raw `usage` |
@@ -477,7 +485,9 @@ provider after host admission; they prove no paid gateway or model capability.
 
 ```bash
 python3 -m unittest scripts.terminal_bench.test_recovery_bundle.HistoryTests
+python3 -m unittest scripts.terminal_bench.test_recovery_bundle.SessionIdentityTests
 python3 -m unittest scripts.terminal_bench.test_paused_recovery
+python3 -m unittest scripts.terminal_bench.test_cohort_admission
 go test ./engine/session ./engine ./cmd/yhc/cmd \
   -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof)'
 ```
@@ -499,6 +509,13 @@ replaying its effect, and independently queries restored service state. A
 damaged native record must quarantine both target groups before service
 activation. These fixtures establish recovery mechanics, not a benchmark
 reward or live-provider reliability claim.
+
+Additional launcher cases obtain a default Session ID from the production
+QueryEngine constructor, rather than a test-authored UUID. They exercise a
+closed cumulative settlement and ledger reopen after cold dispatch, as well as
+unknown-usage retention and shared-budget exhaustion with progress preserved.
+UUID-based cases remain as compatibility coverage. These checks do not make
+an old capture with incomplete state or accounting eligible for continuation.
 
 ### Exercise the first production turn offline
 
