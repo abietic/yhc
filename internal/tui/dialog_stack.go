@@ -165,7 +165,7 @@ func isDialogState(state AppState) bool {
 	case StatePermission, StateResume, StateHelp,
 		StateBypassConfirm, StateMCPApproval, StateModelPicker,
 		StateBackgroundTasks, StateMCPSettings, StateAgentWizard, StateTeams,
-		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext, StateInputDelivery, StateInputQueue, StateSideQuestion:
+		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext, StateInputDelivery, StateInputQueue, StateSideQuestion, StateChangeReview:
 		return true
 	default:
 		return false
@@ -176,7 +176,7 @@ func (a *App) pushDialog(state AppState) {
 	if a == nil || !isDialogState(state) {
 		return
 	}
-	if state == StateContextManager || state == StateDiffContext || a.hasDialog(StateContextManager) || a.hasDialog(StateDiffContext) {
+	if state == StateContextManager || state == StateDiffContext || state == StateChangeReview || a.hasDialog(StateContextManager) || a.hasDialog(StateDiffContext) || a.hasDialog(StateChangeReview) {
 		a.keybindResolver.ResetPending()
 	}
 	if a.dialogs == nil {
@@ -337,6 +337,8 @@ func (a *App) renderDialogState(state AppState, base string) string {
 		return a.composerDiffContextOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateInputDelivery:
 		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, false)
+	case StateChangeReview:
+		return a.changeReviewPanel.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateSideQuestion:
 		return a.sideQuestionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateInputQueue:
@@ -448,6 +450,9 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		return true, a.handleComposerDiffContextKey(msg)
 	case StateInputDelivery:
 		return true, a.handleInputDeliveryKey(msg)
+	case StateChangeReview:
+		a.handleChangeReviewKey(msg)
+		return true, nil
 	case StateSideQuestion:
 		return true, a.handleSideQuestionKey(msg)
 	case StateInputQueue:
@@ -560,6 +565,9 @@ func (a *App) closeActiveDialog() (handled, continueInterrupt bool) {
 		a.mcpSettings.Close()
 	case StateTeams:
 		a.teamsPanel.Close()
+	case StateChangeReview:
+		a.dismissChangeReview()
+		return true, false
 	case StateSideQuestion:
 		a.dismissSideQuestion()
 		return true, false

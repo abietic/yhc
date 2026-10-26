@@ -119,6 +119,14 @@ func TestG11F1ProductionGeometrySelectorsAreClassified(t *testing.T) {
 		{"composer_output_context.go", "App.attachSelectedOutputContext", "unicode/utf8.RuneCountInString"}: {
 			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
 		},
+		{"workspace_history.go", "App.appendCapturedReviewContext", "unicode/utf8.RuneCountInString"}: {
+			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 3,
+		},
+		// This is a bounded semantic identity prefix. DisplayCellProfile still
+		// owns clipping and the final terminal cell grid for the rendered row.
+		{"change_review_panel.go", "changeReviewShort", "unicode/utf8.RuneCountInString"}: {
+			owner: "history identity prefix", removalCondition: "identity prefix contract changes", calls: 1,
+		},
 		{"composer_diff_context.go", "App.attachComposerDiffContext", "unicode/utf8.RuneCountInString"}: {
 			owner: "composer rune offsets", removalCondition: "editor offset contract changes", calls: 1,
 		},

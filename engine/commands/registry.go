@@ -2319,6 +2319,7 @@ Use quoted rule arguments so parsing is deterministic:
 
 	registerAdditionalCommands(r)
 	registerSideQuestionCommand(r)
+	registerWorkspaceHistoryCommands(r)
 	registerRemovedDefaults(r)
 }
 

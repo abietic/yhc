@@ -1001,7 +1001,7 @@ privacy:
       match_sha256: 21619631049e363032a186489e2f5fac2baeeeefc2e84bec18743c52ffa4185b
       purpose: documentation-example
     - path: docs/architecture/tui/contracts/sessions.md
-      line: 249
+      line: 293
       rule_id: high-entropy-token
       match_sha256: aece79c263020517bf0e500b74fa44f5d8434ca372e0203fa4f8e766a181d5bc
       purpose: documentation-example

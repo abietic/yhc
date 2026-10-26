@@ -81,6 +81,7 @@ type QueryEngine struct {
 	fileStateCache               *FileStateCache
 	commandRegistry              *commands.Registry
 	sideQuestions                sideQuestionController
+	workspaceRevisions           workspaceRevisionController
 	pluginDirs                   []string
 	skillRegistry                *skills.SkillRegistry
 	approvalTracker              *permission.ApprovalTracker
@@ -1904,7 +1905,8 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 				ReportFileStateSnapshotFailure: func(error) {
 					fileStateSnapshotRepairRequired.Store(true)
 				},
-				ProviderUsage: e.currentProviderUsageAdmitter(),
+				ProviderUsage:       e.currentProviderUsageAdmitter(),
+				RecordWorkspaceTool: e.workspaceRecorderForTurn(turnID),
 			},
 		}
 		params.modelDispatchGuard = e.checkModelDispatch
@@ -2624,6 +2626,7 @@ func (e *QueryEngine) Close() {
 func (e *QueryEngine) closeWithPersistence(persist bool) {
 	e.closeOnce.Do(func() {
 		e.closeSideQuestions()
+		e.closeWorkspaceRevisions()
 		e.mediaLifecycleMu.Lock()
 		e.mediaLifecycleClosed = true
 		e.mediaLifecycleMu.Unlock()
@@ -5267,6 +5270,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 	// Session activation is a route-generation boundary even when the restored
 	// model spelling matches the previous session.
 	e.promptRouteGeneration++
+	e.resetWorkspaceRevisions()
 	e.config.Model = firstSessionValue(
 		modelAdmission.selector,
 		resumed.Metadata.Model,
