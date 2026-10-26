@@ -83,6 +83,114 @@ func isPDFExtension(path string) bool {
 }
 
 func ReadTool() ToolImpl {
+	execute := func(ctx context.Context, input string) (string, error) {
+		var params struct {
+			FilePath string `json:"file_path"`
+			Limit    *int   `json:"limit"`
+			Offset   *int   `json:"offset"`
+			Line     *int   `json:"line"`
+			Pages    string `json:"pages"`
+		}
+		if err := json.Unmarshal([]byte(input), &params); err != nil {
+			return "", fmt.Errorf("read: invalid params: %w", err)
+		}
+		if params.FilePath == "" {
+			return "", fmt.Errorf("read: file_path is required")
+		}
+
+		// Resolve absolute path.
+		fullPath := params.FilePath
+		if !filepath.IsAbs(fullPath) {
+			if wd, err := os.Getwd(); err == nil {
+				fullPath = filepath.Join(wd, fullPath)
+			}
+		}
+		fullPath = filepath.Clean(fullPath)
+
+		// Block device paths.
+		if isBlockedDevicePath(fullPath) {
+			return "", fmt.Errorf("read: blocked device path: %s", params.FilePath)
+		}
+
+		// Binary file detection (allow images and PDFs).
+		if hasBinaryExtension(fullPath) && !isImageExtension(fullPath) && !isPDFExtension(fullPath) {
+			return "", fmt.Errorf("read: this tool cannot read binary files: %s", params.FilePath)
+		}
+		if isPDFExtension(fullPath) {
+			result, err := readPDFForTool(context.Background(), params.FilePath, fullPath, params.Pages, nil)
+			if err != nil {
+				return "", fmt.Errorf("read: %w", err)
+			}
+			recordFileReadUnverified(ctx, fullPath, false)
+			return result, nil
+		}
+
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "", fmt.Errorf("read: file not found: %s", params.FilePath)
+			}
+			return "", fmt.Errorf("read: %w", err)
+		}
+
+		lines := strings.Split(string(data), "\n")
+		totalLines := len(lines)
+
+		// Determine if this is a partial view.
+		hasExplicitRange := params.Offset != nil || params.Limit != nil || params.Line != nil
+
+		// Handle `line` parameter: center view around the specified line.
+		// Mirrors TS FileReadTool `line` parameter behavior.
+		offset := 0
+		if params.Line != nil {
+			lineNum := *params.Line
+			if lineNum < 1 {
+				lineNum = 1
+			}
+			limit := defaultLineLimit
+			if params.Limit != nil && *params.Limit > 0 {
+				limit = *params.Limit
+			}
+			// Center the view around the target line.
+			offset = lineNum - 1 - limit/2
+			if offset < 0 {
+				offset = 0
+			}
+			hasExplicitRange = true
+		} else if params.Offset != nil {
+			offset = *params.Offset
+		}
+
+		if offset >= totalLines {
+			return "", nil
+		}
+		lines = lines[offset:]
+
+		// Apply limit: explicit limit > default 250.
+		limit := defaultLineLimit
+		if params.Limit != nil && *params.Limit > 0 {
+			limit = *params.Limit
+			hasExplicitRange = true
+		}
+		// Clamp to hard maximum.
+		if limit > maxLinesToRead {
+			limit = maxLinesToRead
+		}
+		if limit > 0 && limit < len(lines) {
+			lines = lines[:limit]
+			hasExplicitRange = true
+		}
+
+		// Record file-read state for Edit/Write guards.
+		isPartial := hasExplicitRange && (offset > 0 || len(lines) < totalLines)
+		recordFileReadObserved(ctx, fullPath, isPartial, data)
+
+		result := formatReadResult(params.FilePath, offset, lines)
+		if isPartial {
+			result += fmt.Sprintf("\n[Partial Read: lines %d-%d of %d.]\n", offset+1, offset+len(lines), totalLines)
+		}
+		return result, nil
+	}
 	impl := ToolImpl{
 		Info: &schema.ToolInfo{
 			Name: "Read",
@@ -100,115 +208,8 @@ func ReadTool() ToolImpl {
 		IsConcurrencySafe: func(input map[string]any) bool {
 			return true
 		},
-		Execute: func(input string) (string, error) {
-			var params struct {
-				FilePath string `json:"file_path"`
-				Limit    *int   `json:"limit"`
-				Offset   *int   `json:"offset"`
-				Line     *int   `json:"line"`
-				Pages    string `json:"pages"`
-			}
-			if err := json.Unmarshal([]byte(input), &params); err != nil {
-				return "", fmt.Errorf("read: invalid params: %w", err)
-			}
-			if params.FilePath == "" {
-				return "", fmt.Errorf("read: file_path is required")
-			}
-
-			// Resolve absolute path.
-			fullPath := params.FilePath
-			if !filepath.IsAbs(fullPath) {
-				if wd, err := os.Getwd(); err == nil {
-					fullPath = filepath.Join(wd, fullPath)
-				}
-			}
-			fullPath = filepath.Clean(fullPath)
-
-			// Block device paths.
-			if isBlockedDevicePath(fullPath) {
-				return "", fmt.Errorf("read: blocked device path: %s", params.FilePath)
-			}
-
-			// Binary file detection (allow images and PDFs).
-			if hasBinaryExtension(fullPath) && !isImageExtension(fullPath) && !isPDFExtension(fullPath) {
-				return "", fmt.Errorf("read: this tool cannot read binary files: %s", params.FilePath)
-			}
-			if isPDFExtension(fullPath) {
-				result, err := readPDFForTool(context.Background(), params.FilePath, fullPath, params.Pages, nil)
-				if err != nil {
-					return "", fmt.Errorf("read: %w", err)
-				}
-				RecordFileRead(fullPath, false)
-				return result, nil
-			}
-
-			data, err := os.ReadFile(fullPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					return "", fmt.Errorf("read: file not found: %s", params.FilePath)
-				}
-				return "", fmt.Errorf("read: %w", err)
-			}
-
-			lines := strings.Split(string(data), "\n")
-			totalLines := len(lines)
-
-			// Determine if this is a partial view.
-			hasExplicitRange := params.Offset != nil || params.Limit != nil || params.Line != nil
-
-			// Handle `line` parameter: center view around the specified line.
-			// Mirrors TS FileReadTool `line` parameter behavior.
-			offset := 0
-			if params.Line != nil {
-				lineNum := *params.Line
-				if lineNum < 1 {
-					lineNum = 1
-				}
-				limit := defaultLineLimit
-				if params.Limit != nil && *params.Limit > 0 {
-					limit = *params.Limit
-				}
-				// Center the view around the target line.
-				offset = lineNum - 1 - limit/2
-				if offset < 0 {
-					offset = 0
-				}
-				hasExplicitRange = true
-			} else if params.Offset != nil {
-				offset = *params.Offset
-			}
-
-			if offset >= totalLines {
-				return "", nil
-			}
-			lines = lines[offset:]
-
-			// Apply limit: explicit limit > default 250.
-			limit := defaultLineLimit
-			if params.Limit != nil && *params.Limit > 0 {
-				limit = *params.Limit
-				hasExplicitRange = true
-			}
-			// Clamp to hard maximum.
-			if limit > maxLinesToRead {
-				limit = maxLinesToRead
-			}
-			if limit > 0 && limit < len(lines) {
-				lines = lines[:limit]
-				hasExplicitRange = true
-			}
-
-			// Record file-read state for Edit/Write guards.
-			isPartial := hasExplicitRange && (offset > 0 || len(lines) < totalLines)
-			RecordFileRead(fullPath, isPartial)
-
-			result := formatReadResult(params.FilePath, offset, lines)
-			if isPartial {
-				result += fmt.Sprintf("\n[Partial Read: lines %d-%d of %d.]\n", offset+1, offset+len(lines), totalLines)
-			}
-			return result, nil
-		},
 	}
+	impl.Execute = func(input string) (string, error) { return execute(context.Background(), input) }
 	impl.ExecuteCtx = func(ctx context.Context, input string) (string, error) {
 		var params struct {
 			FilePath string `json:"file_path"`
@@ -232,14 +233,14 @@ func ReadTool() ToolImpl {
 			if err != nil {
 				return "", fmt.Errorf("read: %w", err)
 			}
-			RecordFileRead(fullPath, false)
+			recordFileReadUnverified(ctx, fullPath, false)
 			return result, nil
 		}
 		rewritten, err := rewriteExecutionPathInput(ctx, input, "file_path", false)
 		if err != nil {
 			return "", fmt.Errorf("read: %w", err)
 		}
-		return impl.Execute(rewritten)
+		return execute(ctx, rewritten)
 	}
 	return impl
 }

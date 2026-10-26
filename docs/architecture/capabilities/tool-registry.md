@@ -1,7 +1,7 @@
 # Tool Registry and Model-Visible Pool
 
 **Status:** current
-**Last verified:** 2026-10-21
+**Last verified:** 2026-10-26
 
 > **Ownership:** `tools.Registry` for dispatch; QueryEngine and `AssembleToolPool` for model visibility
 
@@ -67,6 +67,29 @@ that capability through canonical tool context instead of letting tools
 recompute another path.
 
 ## Registration and execution
+
+File-tool read credit has an optional context-scoped owner. `WithFileReadGuards`
+binds a `FileReadGuards` instance to Read/Write/Edit execution; callers without
+it retain the process-global guard. These contexts neither change tool schemas
+nor grant permission. Headless guard capture and cold handoff use isolated
+owners, so another invocation's global read credit cannot authorize their edits.
+
+An opt-in snapshot binds each entry to bytes observed by the file tool, its
+relative path, size and partial/full state. Capture checks current bytes against
+that evidence and detects concurrent owner updates. A later partial read keeps
+the earlier complete observation; changed bytes cannot become freshly verified
+full credit. Unknown observations, including the current PDF path, are not
+certified. Bounds are 1024 entries, 4 MiB per file and 64 MiB total.
+
+Restore validates the whole snapshot before creating a fresh owner. It rejects
+changed bytes, noncanonical/outside paths, links, mixed file owners and special
+mode bits. Partial-only entries remain unable to edit. Restored owners recheck
+file bytes before granting Edit/Write read credit, including after later
+observations. Source timestamps are not reused as evidence. Ordinary filesystem
+tools retain their existing external-actor race boundary between validation and
+mutation; this does not make writes descriptor-pinned transactions. See the
+[cold-recovery guide](../../guides/workspace-session-cold-recovery.md) for the
+explicit launch and authority boundaries.
 
 `RegisterDefaults` installs built-ins and their behavioral metadata. MCP client
 discovery can add `mcp__server__tool` entries to the same registry. `Registry.Get`
@@ -275,6 +298,7 @@ Examples and recovery guidance are in the
 - [`ToolPoolOptions` and `AssembleToolPool`](../../../tools/tool_pool.go)
 - [`ToolSelection` and `ParseToolSelection`](../../../tools/presets.go)
 - [`ReadTool`](../../../tools/read.go) owns text-window feedback and read-state recording.
+- [`FileReadGuards.Snapshot` and `RestoreFileReadGuards`](../../../tools/read_guard_recovery.go) own opt-in content-bound read-credit capture and restoration.
 - [`RecordFileRead` and `HasFileBeenRead`](../../../tools/read_state.go) own complete-read admission state.
 - [`editToolPrompt` and `readToolPrompt`](../../../tools/tool_prompts.go) describe the same rule to the model.
 - [`QueryEngine.modelVisibleTools`](../../../engine/engine.go)

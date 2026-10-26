@@ -218,10 +218,75 @@ ready-to-run Agent. It keeps `tool_runtime_restored: false`,
 `can_resume_agent: false` and `new_spending_authorized: false`; the outer receipt
 also reports `tool_runtime_state_not_integrated`. In particular, the
 [`file-read guard`](../../tools/read_state.go) is process-local and is not
-restored by loading messages. Shell, Agent and MCP state, external file targets,
+restored by loading messages alone. The explicit launch below rehydrates a
+separately captured, verified owner in the dispatch process. Shell, Agent and MCP state, external file targets,
 arbitrary interrupted side effects, unknown charges and a new spending grant
 remain outside this proof. Ordinary resume is unchanged. No capture, restore
 or proof inspection starts a model request or reopens the old checkpoint writer.
+
+## Restore file guards and explicitly dispatch a new turn
+
+Add `--capture-read-guards` to the source `yhc exec --output-format json`
+invocation. It creates an isolated guard owner and emits `read_guards` in the
+terminal JSON. `complete: true` means the saved hashes still match actual
+file-tool observations. A failed capture reports `complete: false`; it preserves
+the ordinary result and accounting but cannot supply a cold handoff. Old
+captures without this field cannot be upgraded by guessing read credit.
+
+After restoring the v2 bundle, the trusted host can call
+[`cold_tool_handoff`](../../scripts/terminal_bench/paused_recovery.py) with the
+anchored operator record, current native proof, retained checkpoint and original
+ordered history. It repeats the joint checks and prepares a bounded handoff
+object; it does not start execution or authorize spending. Serialize it into a
+private host-owned regular file in a private directory and independently retain
+the SHA-256 of those exact file bytes. Transfer it through the trusted control
+channel, outside the task's editable inputs.
+
+The host still owns cumulative usage, fresh service/clock and workspace proofs,
+the immutable image, route/configuration identity and a separate finite spending
+authorization. The CLI handoff verifies the exact native state and source
+invocation checkpoint; it does not replace these host-level gates. Do not build
+this input from task-authored JSON or treat its checksum as authentication of
+an untrusted launcher.
+
+An explicitly approved new turn can then use this shape; replace the uppercase
+identifiers and paths with checked inputs, including the separately authorized
+limit in the current price card's native currency:
+
+```bash
+yhc exec "Continue the saved task." --resume SESSION_ID \
+  --output-format json \
+  --cold-tool-handoff /private/control/handoff.json \
+  --cold-tool-handoff-sha256 HANDOFF_FILE_SHA256 \
+  --usage-checkpoint-dir /workspace/.yhc/usage-checkpoints/NEW_INVOCATION \
+  --timeout 900s --max-provider-calls 20 \
+  --price-card /private/control/current-prices.json \
+  --reserve-cost-before-dispatch --max-output-tokens-per-call 16384 \
+  --max-estimated-cost NEW_NATIVE_CURRENCY_LIMIT
+```
+
+Capture and cold handoff currently require JSON output; JSONL/TUI and automatic
+benchmark dispatch are not integrated. These options are off by default. Normal
+resume and default budget behavior are unchanged. The cold path requires an
+explicit resume, a fresh checkpoint namespace, finite timeout/call limits and
+cost reservation; it never imports old limits or reopens the old writer.
+
+Before the shared agent traversal starts, the CLI reads the handoff against its
+external digest, validates the actual closed source checkpoint, checks loaded
+native state and recreates file read credit against current bytes. The
+source-invocation lock and existing-claim check precede native resume; an
+exclusive claim is fsynced under `.yhc/cold-dispatch-claims/` before dispatch.
+Changing JSON whitespace or choosing another new usage segment cannot reopen
+that source claim. Failures after the claim, including route-revision rejection,
+denied reservation or process death, keep it consumed. Preserve the records and
+reconcile explicitly; do not delete claims to retry automatically.
+
+`cold_recovery` in the terminal result identifies the exact old and new segments,
+native digest, restored guard count and consumed claim. Its scope is file-tool
+state restoration for an **explicit new user turn**, not resumption of an old
+Graph frame or tool replay. New usage is counted in the new invocation. The
+source checkpoint and earlier history remain unchanged, and original component
+receipts continue to report `can_resume_agent: false`.
 
 ## Reproduce without a paid provider
 
@@ -327,3 +392,12 @@ state/clocks without dispatching again. A separate fault reopens the imported
 checkpoint while retaining known usage; it must quarantine before services
 activate. These are offline recovery checks and supply no benchmark reward
 or paid-provider evidence.
+
+The cold-launch cases additionally recreate the same synthetic model endpoint
+after source destruction, restore the guards inside the real CLI process and
+perform an Edit without another Read or replayed Write. They verify rejection
+of changed bytes, open source accounting and a changed model route; budget
+denial, unknown usage and SIGKILL retain the appropriate claims and liability.
+A competing process runs while the winner is blocked in its first provider
+request; the loser must leave the winner's transcript and claim byte-for-byte
+unchanged. Traffic stays on the isolated container's loopback interface.

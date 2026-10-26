@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from scripts.terminal_bench.test_recovery_bundle_docker import validate_proof_directory
-from scripts.terminal_bench.testdata.native_handoff import BUDGET_TEMPLATE, CONTEXT_TEMPLATE, PROMPT, verify_input
+from scripts.terminal_bench.testdata.native_handoff import BUDGET_TEMPLATE, COLD_PROMPT, CONTEXT_TEMPLATE, PROMPT, verify_input
 
 NOW = datetime.datetime(2026, 10, 25, tzinfo=datetime.timezone.utc)
 
@@ -28,6 +28,33 @@ def request():
 
 
 class HistoryOracleTests(unittest.TestCase):
+    def test_cold_turn_preserves_budget_diagnostic_and_exact_restored_memory_facts(self):
+        body = request()
+        body["input"][0]["content"] = body["input"][0]["content"].replace("provider_call_limit=1", "provider_call_limit=2")
+        body["input"].extend([
+            dict(type="message", role="assistant", content=" "),
+            dict(type="function_call", call_id="continued-write", name="Write", arguments=json.dumps(dict(file_path="/workspace/continued.txt", content="continued once\n"))),
+            dict(type="function_call_output", call_id="continued-write", output="Wrote 15 bytes to /workspace/continued.txt"),
+            dict(type="message", role="assistant", content="Model error: provider usage accounting failed closed: run usage budget exceeded"),
+            dict(type="message", role="user", content=COLD_PROMPT),
+        ])
+        verify_input(body, NOW, "linux/arm64", provider_call_limit=2, cold_round=1)
+        body["input"].extend([
+            dict(type="message", role="assistant", content=" "),
+            dict(type="function_call", call_id="cold-edit", name="Edit", arguments=json.dumps(dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore"))),
+            dict(type="function_call_output", call_id="cold-edit", output="Replaced 1 occurrence in /workspace/continued.txt"),
+            dict(type="message", role="user", content="[system] [Session Memory — context from previous interactions:]\n\n- [] File modified: /workspace/continued.txt (via Write)\n- [] File modified: effects.count (via Write)\n"),
+        ])
+        verify_input(body, NOW, "linux/arm64", provider_call_limit=2, cold_round=2)
+        for fault in ("diagnostic", "old_result", "extra_prompt", "memory_fact"):
+            changed = copy.deepcopy(body)
+            if fault == "diagnostic": changed["input"].pop(11)
+            if fault == "old_result": changed["input"].pop(10)
+            if fault == "extra_prompt": changed["input"].insert(12, dict(type="message", role="user", content="extra"))
+            if fault == "memory_fact": changed["input"][-1]["content"] += "- [] unrelated fact\n"
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                verify_input(changed, NOW, "linux/arm64", provider_call_limit=2, cold_round=2)
+
     def test_new_tool_round_keeps_old_history_and_exact_new_effect(self):
         body = request()
         body["input"][0]["content"] = body["input"][0]["content"].replace("provider_call_limit=1", "provider_call_limit=2")

@@ -9,14 +9,21 @@ import (
 type ReadFileEntry struct {
 	Timestamp int64 // Unix milliseconds
 	IsPartial bool  // true if offset/limit was used (partial view)
+	sha256    string
+	size      int64
 }
 
 // readFileState tracks which files have been read by the Read tool.
 // Used by Edit and Write tools to enforce file-not-read guards.
-var readFileState = struct {
+type FileReadGuards struct {
 	sync.RWMutex
-	m map[string]*ReadFileEntry
-}{m: make(map[string]*ReadFileEntry)}
+	m        map[string]*ReadFileEntry
+	root     string
+	restored bool
+	revision uint64
+}
+
+var readFileState = NewFileReadGuards()
 
 // RecordFileRead records that a file was read at the current time.
 func RecordFileRead(path string, isPartial bool) {

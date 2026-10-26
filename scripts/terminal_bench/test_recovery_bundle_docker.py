@@ -12,7 +12,7 @@ from pathlib import Path
 from scripts.terminal_bench.cold_recovery import DockerServices
 from scripts.terminal_bench.recovery import write_report
 from scripts.terminal_bench.recovery_bundle import RecoveryBundle, user_files
-from scripts.terminal_bench.paused_recovery import SCOPE
+from scripts.terminal_bench.paused_recovery import SCOPE, cold_tool_handoff
 from scripts.terminal_bench.service_snapshot import ServiceSnapshots, SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history
 from scripts.terminal_bench import test_service_snapshot_docker as service_fixture
@@ -219,6 +219,119 @@ class NativeColdDockerTests(unittest.TestCase):
         self.assertFalse((self.control / ("activation." + self.service_digest + ".json")).exists())
         self.assertTrue((self.control / ("bundle-restore." + self.bundle_digest + ".json")).exists())
         self.assertFalse(json.loads(self.docker("inspect", bundle.workspace.container))[0]["State"]["Running"])
+
+    def check_cold_tool_dispatch(self, scenario):
+        manifest, observed, _ = self.capture_joint(paused=True)
+        bundle = self.target_bundle()
+        restored = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        pause = manifest["paused_invocation"]
+        handoff = cold_tool_handoff(pause["record"], pause["record_sha256"], restored["native_proof"], pause["checkpoint"],
+                                   manifest["usage_history"], "/workspace")
+        before_source = bundle.workspace.rpc("read", entry=next(e for e in bundle.workspace.rpc("inventory")
+            if e["path"] == handoff["checkpoint_path"] + "/checkpoint.json"))
+        claim_path = self.control / ("bundle-restore." + self.bundle_digest + ".json")
+        restore_claim = claim_path.read_bytes()
+        price = pause["record"]["terminal"]["usage"]["cost"]["price_card"]
+        def run(mode):
+            return json.loads(self.docker("exec", "--workdir", "/workspace", bundle.workspace.container,
+                "/usr/local/bin/python3", "-I", "/opt/checkpoint/native_handoff.py", self.session, mode, json.dumps(price),
+                json.dumps(dict(handoff=handoff, fixture_port=self.paused_execution["provider_port"]))))
+        result = run(scenario)
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            write_report(Path(evidence) / (scenario + "-observed.json"), dict(offline_execution=result, verification_complete=False))
+        self.assertFalse(result["provider_protocol_errors"], result)
+        self.assertEqual(result["real_provider_requests"], 0)
+        terminal, checkpoint = result["result"], result["durable_checkpoint"]
+        if scenario in ("cold_edit", "cold_race"):
+            self.assertEqual(result["observed_provider_requests"], 2)
+            self.assertEqual((result["exit_code"], terminal["status"]), (0, "completed"))
+            proof = terminal["cold_recovery"]
+            self.assertTrue(proof["read_guards_restored"] and proof["dispatch_claimed"])
+            self.assertFalse(proof["historical_budget_used"])
+            self.assertEqual(proof["source_segment_id"], handoff["checkpoint"]["segment_id"])
+            self.assertEqual(proof["new_segment_id"], terminal["usage"]["call_ledger"]["segment_id"])
+            self.assertTrue(checkpoint["accounting_complete"] and terminal["read_guards"]["complete"])
+            self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/continued.txt"), "edited after cold restore")
+            repeated = run("cold_repeated")
+            self.assertEqual(repeated["observed_provider_requests"], 0)
+            self.assertEqual(repeated["result"]["error"]["code"], "cold_tool_handoff_invalid")
+            self.assertEqual(checkpoint["snapshot"]["known_calls"], 2)
+            if scenario == "cold_race":
+                self.assertEqual(len(result["concurrent_launch_probes"]), 1)
+                self.assertTrue(result["concurrent_launch_probes"][0]["winner_transcript_unchanged"])
+                self.assertTrue(result["concurrent_launch_probes"][0]["winner_claim_unchanged"])
+        elif scenario in ("cold_changed", "cold_checkpoint_open"):
+            self.assertEqual(result["observed_provider_requests"], 0)
+            self.assertEqual(terminal["error"]["code"], "cold_tool_handoff_invalid")
+        elif scenario == "cold_denied":
+            self.assertEqual(result["observed_provider_requests"], 0)
+            self.assertEqual(terminal["error"]["code"], "run_budget_exceeded")
+            self.assertTrue(checkpoint["accounting_complete"])
+            self.assertTrue(terminal["cold_recovery"]["dispatch_claimed"])
+        elif scenario == "cold_route_changed":
+            self.assertEqual(result["observed_provider_requests"], 0)
+            self.assertIn("model_binding_route_revision_changed", terminal["error"]["message"])
+            self.assertTrue(terminal["cold_recovery"]["dispatch_claimed"])
+            repeated = run("cold_repeated")
+            self.assertEqual(repeated["observed_provider_requests"], 0)
+            self.assertEqual(repeated["result"]["error"]["code"], "cold_tool_handoff_invalid")
+        elif scenario == "cold_unknown":
+            self.assertEqual(result["observed_provider_requests"], 1)
+            self.assertEqual(terminal["error"]["code"], "run_usage_unknown")
+            self.assertFalse(checkpoint["accounting_complete"])
+            self.assertNotEqual(checkpoint["snapshot"]["cost"]["reservation"]["retained_amount"], "0.000000000000")
+        elif scenario == "cold_crash":
+            self.assertEqual(result["observed_provider_requests"], 1)
+            self.assertEqual(result["exit_code"], -9)
+            self.assertIsNone(terminal)
+            self.assertFalse(checkpoint["accounting_complete"])
+            self.assertEqual(checkpoint["snapshot"]["in_flight"], 1)
+            self.assertNotEqual(checkpoint["snapshot"]["cost"]["reservation"]["outstanding_amount"], "0.000000000000")
+            repeated = run("cold_repeated")
+            self.assertEqual(repeated["observed_provider_requests"], 0)
+        self.assertEqual(claim_path.read_bytes(), restore_claim)
+        self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/effects.count"), "1")
+        current = bundle.workspace.rpc("inventory")
+        if scenario != "cold_checkpoint_open":
+            after_source = bundle.workspace.rpc("read", entry=next(e for e in current if e["path"] == handoff["checkpoint_path"] + "/checkpoint.json"))
+            self.assertEqual(before_source, after_source)
+        if terminal and "usage" in terminal:
+            extended = history(self.session, [s["usage"] for s in manifest["usage_history"]["segments"]] + [terminal["usage"]])
+            self.assertEqual(extended["segments"][:-1], manifest["usage_history"]["segments"])
+            self.assertEqual(usage_history(extended, self.session)["coverage_complete"], scenario in ("cold_edit", "cold_race", "cold_denied", "cold_route_changed"))
+        for name, original in observed.items():
+            state = json.loads(self.docker("exec", bundle.services.backend.handles[name], "/usr/local/bin/python3", "-I", "/opt/checkpoint/service.py", "business", "state"))
+            self.assertEqual((state["memory"], state["durable"], state["next_random"]), (original["memory"], original["durable"], original["next_random"]))
+            self.assertGreaterEqual(state["logical_ns"], restored["services"]["expected_clocks"][name]["logical_ns"])
+        if evidence:
+            write_report(Path(evidence) / (scenario + ".json"), dict(restored_components=restored, offline_execution=result,
+                         source_checkpoint_unchanged=scenario != "cold_checkpoint_open", real_provider_requests=0,
+                         automatic_paid_dispatch=False, verification_complete=True))
+
+    def test_cold_dispatch_restores_guard_and_edits_without_replaying_write(self):
+        self.check_cold_tool_dispatch("cold_edit")
+
+    def test_cold_dispatch_competing_process_cannot_mutate_winner_session_or_claim(self):
+        self.check_cold_tool_dispatch("cold_race")
+
+    def test_cold_dispatch_rejects_changed_guard_bytes_before_provider(self):
+        self.check_cold_tool_dispatch("cold_changed")
+
+    def test_cold_dispatch_rejects_open_source_accounting_before_provider(self):
+        self.check_cold_tool_dispatch("cold_checkpoint_open")
+
+    def test_cold_dispatch_unknown_usage_retains_reservation(self):
+        self.check_cold_tool_dispatch("cold_unknown")
+
+    def test_cold_dispatch_denied_reservation_keeps_claim_and_progress(self):
+        self.check_cold_tool_dispatch("cold_denied")
+
+    def test_cold_dispatch_changed_route_blocks_without_reopening_claim(self):
+        self.check_cold_tool_dispatch("cold_route_changed")
+
+    def test_cold_dispatch_crash_retains_claim_and_inflight_reservation(self):
+        self.check_cold_tool_dispatch("cold_crash")
 
     def target_bundle(self):
         project, definition, unused_attempt = self.provision(target=True)

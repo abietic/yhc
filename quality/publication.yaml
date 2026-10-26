@@ -5402,7 +5402,7 @@ privacy:
       match_sha256: 66e7c82b49bb291dd09c8e020448311c4a7bb96aeb5c5db769f66812b13a50b5
       purpose: synthetic-security-fixture
     - path: docs/architecture/capabilities/tool-registry.md
-      line: 125
+      line: 148
       rule_id: credential-assignment
       match_sha256: a0ee8e57e20c1482942c4d1f5fe31ac922bfb170456431f51679d355df38a819
       purpose: documentation-example
@@ -5862,7 +5862,7 @@ privacy:
       match_sha256: 0bbea7534b662f8b1ad149a1a6cbe5be759bd0cd7bf7787c6a5d7018a1433bc7
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/testdata/native_handoff.py
-      line: 195
+      line: 243
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
