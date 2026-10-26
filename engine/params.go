@@ -77,7 +77,7 @@ type QueryDeps struct {
 	ReportFileStateSnapshotFailure func(error)
 	ProviderUsage                  execution.ProviderUsageAdmitter
 	// RecordWorkspaceTool returns a post-execution observer, after permissions.
-	RecordWorkspaceTool func(name, toolUseID string, input map[string]any) func(outcome string)
+	RecordWorkspaceTool func(name, toolUseID string, input map[string]any, action *PermissionActionDescriptor) func(outcome string)
 }
 
 // ToolExecutor executes a tool by name with the given JSON input and returns the result.

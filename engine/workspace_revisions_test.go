@@ -126,7 +126,7 @@ func TestWorkspaceHistoryStaleCallbacksCannotReopenOwner(t *testing.T) {
 	eng.mu.Lock()
 	eng.resetWorkspaceRevisions()
 	eng.mu.Unlock()
-	if finish := old("Write", "old-tool", map[string]any{"file_path": "file.txt"}); finish != nil {
+	if finish := old("Write", "old-tool", map[string]any{"file_path": "file.txt"}, nil); finish != nil {
 		t.Fatal("stale observer reopened an invalidated owner")
 	}
 	if snapshot := eng.WorkspaceChanges(); len(snapshot.Records) != 0 || snapshot.Warning != "" {

@@ -74,6 +74,131 @@ func TestRevisionJournalRoundTripPendingAndDefensiveCopies(t *testing.T) {
 	}
 }
 
+func TestRevisionJournalBeginRecordsParentExistence(t *testing.T) {
+	j, root, _ := openJournal(t)
+	missingID, err := j.Begin("turn", "tool", "Write", filepath.Join("new", "nested", "file.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := j.Read(missingID); got.ParentExisted {
+		t.Fatalf("missing parent reported as existing: %#v", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "new", "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existingID, err := j.Begin("turn", "tool", "Write", filepath.Join("new", "nested", "second.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := j.Read(existingID); !got.ParentExisted {
+		t.Fatalf("existing parent not recorded: %#v", got)
+	}
+}
+
+func TestRevisionJournalVersionOneReplayAndProofRejection(t *testing.T) {
+	j, root, dir := openJournal(t)
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := j.Begin("turn", "tool", "Edit", "a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Finish(id, "succeeded"); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, journalFile)
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frames []journalFrame
+	for _, line := range bytes.Split(bytes.TrimSpace(b), []byte{'\n'}) {
+		var frame journalFrame
+		if err := json.Unmarshal(line, &frame); err != nil {
+			t.Fatal(err)
+		}
+		frame.Version = 1
+		frame.Record.ParentExisted = false
+		frames = append(frames, frame)
+	}
+	var legacy bytes.Buffer
+	for _, frame := range frames {
+		line, err := json.Marshal(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		legacy.Write(line)
+		legacy.WriteByte('\n')
+	}
+	if err := os.WriteFile(log, legacy.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	j, err = OpenRevisionJournal(root, dir, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := j.Read(id); got.ParentExisted {
+		t.Fatalf("legacy replay inferred parent proof: %#v", got)
+	}
+	frames[0].Record.ParentExisted = true
+	forged, err := json.Marshal(frames[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(log, append(forged, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenRevisionJournal(root, dir, "session-1"); err == nil {
+		t.Fatal("accepted version one parent proof")
+	}
+}
+
+func TestRevisionJournalAfterBindsParentExistence(t *testing.T) {
+	j, root, dir := openJournal(t)
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := j.Begin("turn", "tool", "Edit", "a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("after"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Finish(id, "succeeded"); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, journalFile)
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(b), []byte{'\n'})
+	var after journalFrame
+	if err := json.Unmarshal(lines[1], &after); err != nil {
+		t.Fatal(err)
+	}
+	after.Record.ParentExisted = false
+	line, err := json.Marshal(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines[1] = line
+	if err := os.WriteFile(log, append(bytes.Join(lines, []byte{'\n'}), '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenRevisionJournal(root, dir, "session-1"); err == nil {
+		t.Fatal("accepted after frame with changed parent proof")
+	}
+}
+
 func TestRevisionJournalRejectsCorruptionWithoutRewriting(t *testing.T) {
 	j, root, dir := openJournal(t)
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o600); err != nil {

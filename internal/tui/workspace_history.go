@@ -29,6 +29,7 @@ func (a *App) changeReviewTargetMatches() bool {
 }
 
 func (a *App) openChangeReview() {
+	a.dismissWorkspaceRestoreUI()
 	a.dismissComposerSuggestion()
 	snapshot := a.engine.WorkspaceChanges()
 	a.changeReviewTarget = changeReviewTarget{engine: a.engine, session: snapshot.SessionID, thread: snapshot.ThreadID, view: a.activeThreadViewID(), generation: snapshot.OwnerGeneration}
@@ -46,7 +47,12 @@ func (a *App) refreshChangeReview() {
 		return
 	}
 	snapshot := a.engine.WorkspaceChanges()
-	if snapshot.Revision != a.changeReviewPanel.snapshot.Revision || snapshot.Warning != a.changeReviewPanel.snapshot.Warning {
+	oldRestore, newRestore := a.changeReviewPanel.snapshot.Restore, snapshot.Restore
+	restoreChanged := (oldRestore == nil) != (newRestore == nil)
+	if oldRestore != nil && newRestore != nil {
+		restoreChanged = *oldRestore != *newRestore
+	}
+	if restoreChanged || snapshot.Revision != a.changeReviewPanel.snapshot.Revision || snapshot.Warning != a.changeReviewPanel.snapshot.Warning {
 		a.changeReviewPanel.Refresh(snapshot)
 	}
 }
@@ -55,6 +61,7 @@ func (a *App) dismissChangeReview() {
 	if a == nil {
 		return
 	}
+	a.dismissWorkspaceRestoreUI()
 	if a.changeReviewPanel != nil {
 		a.changeReviewPanel.Close()
 	}

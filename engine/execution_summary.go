@@ -74,6 +74,10 @@ func (e *QueryEngine) recordExecutionTurnEvent(event QueryEvent) {
 	if !turn.FinishedAt.IsZero() {
 		return
 	}
+	if event.Type == EventHookStatus {
+		c.markUnobservedWriter(event.TurnID, "hooks_unobserved")
+		turn = c.turns[event.TurnID]
+	}
 	if event.Type == EventStreamRequestStart {
 		turn.ModelRequested = true
 		c.turns[event.TurnID] = turn
@@ -85,6 +89,7 @@ func (e *QueryEngine) recordExecutionTurnEvent(event QueryEvent) {
 	observed.StartedAt, observed.FinishedAt = turn.StartedAt, event.Timestamp.UTC()
 	observed.TerminalReason = string(event.TerminalInfo.Reason)
 	observed.ModelRequested = turn.ModelRequested
+	observed.RestoreBoundaryKnown, observed.RestoreEligible, observed.RestoreReason, observed.FileBoundarySequence = turn.RestoreBoundaryKnown, turn.RestoreEligible, turn.RestoreReason, turn.FileBoundarySequence
 	if err := journal.RecordTurnTerminal(observed); err != nil {
 		c.warning = "Execution history is incomplete; the terminal fact was not recorded."
 		return

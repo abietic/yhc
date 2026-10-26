@@ -108,3 +108,68 @@ func TestTurnFramesRejectMixedPayload(t *testing.T) {
 		t.Fatal("accepted missing turn payload")
 	}
 }
+
+func TestTurnRestoreBoundaryProofRoundTripAndTerminalDegrade(t *testing.T) {
+	j, root, dir := openJournal(t)
+	if err := os.WriteFile(filepath.Join(root, "before.txt"), []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Begin("prior", "tool", "Edit", "before.txt"); err != nil {
+		t.Fatal(err)
+	}
+	start := turnStart()
+	if err := j.RecordTurnStartWithRestoreBoundary("turn", "thread", start, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	degraded := terminal(start)
+	degraded.RestoreBoundaryKnown = true
+	degraded.RestoreEligible = false
+	degraded.RestoreReason = "later_tool_uncovered"
+	degraded.FileBoundarySequence = 1
+	if err := j.RecordTurnTerminal(degraded); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	j, err := OpenRevisionJournal(root, dir, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := j.Snapshot().Turns[0]
+	if !got.RestoreBoundaryKnown || got.RestoreEligible || got.RestoreReason != "later_tool_uncovered" || got.FileBoundarySequence != 1 {
+		t.Fatalf("restore proof replay=%#v", got)
+	}
+}
+
+func TestTurnRestoreBoundaryRejectsFalseToTrueAndLegacyProof(t *testing.T) {
+	j, _, _ := openJournal(t)
+	start := turnStart()
+	if err := j.RecordTurnStartWithRestoreBoundary("turn", "thread", start, false, "not_restorable"); err != nil {
+		t.Fatal(err)
+	}
+	upgrade := terminal(start)
+	upgrade.RestoreBoundaryKnown = true
+	upgrade.RestoreEligible = true
+	upgrade.FileBoundarySequence = 0
+	if err := j.RecordTurnTerminal(upgrade); err == nil {
+		t.Fatal("accepted restore eligibility upgrade")
+	}
+
+	legacy, _, _ := openJournal(t)
+	if err := legacy.RecordTurnStart("legacy", "thread", start); err != nil {
+		t.Fatal(err)
+	}
+	got := legacy.Snapshot().Turns[0]
+	if got.RestoreBoundaryKnown || got.RestoreEligible || got.RestoreReason != "" || got.FileBoundarySequence != 0 {
+		t.Fatalf("legacy turn inferred proof: %#v", got)
+	}
+}
+
+func TestTurnVersionOneRejectsRestoreProof(t *testing.T) {
+	j, _, _ := openJournal(t)
+	f := journalFrame{Version: 1, Type: "turn_start", Root: j.rootPath, RootIdentity: j.rootIdentity, SessionID: j.sessionID, FrameSequence: 1, Turn: &TurnRecord{SessionID: j.sessionID, ThreadID: "thread", TurnID: "turn", StartedAt: turnStart(), RestoreBoundaryKnown: true, RestoreEligible: true}}
+	if err := j.applyFrame(f); err == nil {
+		t.Fatal("accepted version one restore proof")
+	}
+}

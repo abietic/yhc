@@ -68,6 +68,74 @@ func WithFileReadGuards(ctx context.Context, guards *FileReadGuards) context.Con
 	return context.WithValue(ctx, fileReadGuardsContextKey{}, guards)
 }
 
+// BoundFileReadGuards returns only an explicit context owner, without the
+// process-global compatibility fallback.
+func BoundFileReadGuards(ctx context.Context) *FileReadGuards {
+	if ctx != nil {
+		if guards, ok := ctx.Value(fileReadGuardsContextKey{}).(*FileReadGuards); ok {
+			return guards
+		}
+	}
+	return nil
+}
+
+// WithDefaultFileReadGuards preserves an explicitly supplied recovery owner.
+func WithDefaultFileReadGuards(ctx context.Context, guards *FileReadGuards) context.Context {
+	if guards == nil || BoundFileReadGuards(ctx) != nil {
+		return ctx
+	}
+	return WithFileReadGuards(ctx, guards)
+}
+
+// ForkFileReadGuards preserves this workspace's compatibility read credit in a
+// private owner. Clearing restored paths then cannot reset another engine.
+func ForkFileReadGuards(ctx context.Context, roots []string) *FileReadGuards {
+	source := fileReadGuardsFromContext(ctx)
+	source.RLock()
+	defer source.RUnlock()
+	result := NewFileReadGuards()
+	result.root, result.restored = source.root, source.restored
+	seen := 0
+	for path, entry := range source.m {
+		seen++
+		if seen > maxReadGuardEntries {
+			return NewFileReadGuards()
+		}
+		if entry == nil {
+			continue
+		}
+		inside := false
+		for _, root := range roots {
+			if !filepath.IsAbs(root) {
+				continue
+			}
+			rel, err := filepath.Rel(root, path)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				inside = true
+				break
+			}
+		}
+		if inside {
+			copy := *entry
+			result.m[path] = &copy
+		}
+	}
+	return result
+}
+
+// Invalidate removes only the named paths from this explicit owner.
+func (guards *FileReadGuards) Invalidate(paths ...string) {
+	if guards == nil {
+		return
+	}
+	guards.Lock()
+	defer guards.Unlock()
+	for _, path := range paths {
+		delete(guards.m, filepath.Clean(path))
+	}
+	guards.revision++
+}
+
 func fileReadGuardsFromContext(ctx context.Context) *FileReadGuards {
 	if ctx != nil {
 		if guards, ok := ctx.Value(fileReadGuardsContextKey{}).(*FileReadGuards); ok && guards != nil {

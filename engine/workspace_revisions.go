@@ -1,9 +1,12 @@
 package engine
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/abietic/yhc/tools"
 
 	"github.com/abietic/yhc/engine/filehistory"
 )
@@ -11,6 +14,7 @@ import (
 // WorkspaceChangeSnapshot lists captured file facts, never inferred Git state
 // or a claim that arbitrary tool/external effects can be undone.
 type WorkspaceChangeSnapshot struct {
+	Restore             *WorkspaceRestoreStatus
 	Turns               []filehistory.TurnRecord
 	OwnerGeneration     uint64
 	SessionID, ThreadID string
@@ -20,6 +24,13 @@ type WorkspaceChangeSnapshot struct {
 }
 
 type workspaceRevisionController struct {
+	hadRestoreAuthority          bool
+	restorePreview               *workspaceRestorePending
+	restoreCancel                context.CancelFunc
+	restoreNoticePaths           []string
+	externalWriters              int
+	restoreReadGuards            *tools.FileReadGuards
+	lastRestoreGuardID           string
 	mu                           sync.Mutex
 	journal                      *filehistory.RevisionJournal
 	sessionID, cwd, dir, warning string
@@ -89,6 +100,9 @@ func (c *workspaceRevisionController) journalLocked(identity workspaceRevisionId
 		c.journal = journal
 		c.turns = make(map[string]filehistory.TurnRecord)
 		for _, turn := range journal.Snapshot().Turns {
+			if turn.RestoreBoundaryKnown && turn.RestoreEligible {
+				c.hadRestoreAuthority = true
+			}
 			c.turns[turn.TurnID] = turn
 		}
 	}
@@ -131,9 +145,18 @@ func (e *QueryEngine) WorkspaceChanges() WorkspaceChangeSnapshot {
 		captured := journal.Snapshot()
 		snapshot.Records, snapshot.Revision, snapshot.Warning = captured.Records, captured.Revision, captured.Warning
 		snapshot.Turns = captured.Turns
+		if op, found, err := journal.LoadRestoreOperation(); err != nil {
+			snapshot.Warning = "Restore recovery state is unavailable; existing files were preserved."
+		} else if found {
+			status := workspaceRestoreStatus(op)
+			snapshot.Restore = &status
+		}
 		for index, turn := range snapshot.Turns {
 			if live, ok := c.turns[turn.TurnID]; ok && turn.FinishedAt.IsZero() {
 				snapshot.Turns[index].ModelRequested = live.ModelRequested
+				snapshot.Turns[index].RestoreBoundaryKnown = live.RestoreBoundaryKnown
+				snapshot.Turns[index].RestoreEligible = live.RestoreEligible
+				snapshot.Turns[index].RestoreReason = live.RestoreReason
 			}
 		}
 	}
@@ -158,7 +181,7 @@ func (e *QueryEngine) WorkspaceChange(id string) (filehistory.RevisionRecord, bo
 
 // Capturing runs only after actual permission/hook/input admission. It never
 // changes a tool result or blocks ordinary execution when history is unavailable.
-func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, string, map[string]any) func(string) {
+func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, string, map[string]any, *PermissionActionDescriptor) func(string) {
 	e.mu.Lock()
 	identity := e.workspaceRevisionIdentityLocked()
 	c := &e.workspaceRevisions
@@ -169,14 +192,11 @@ func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, strin
 	if identity.child || identity.closed {
 		return nil
 	}
-	return func(name, toolUseID string, input map[string]any) func(string) {
-		if name != "Write" && name != "Edit" {
-			if e.toolRegistry != nil {
-				if impl, ok := e.toolRegistry.Get(name); ok && impl.IsReadOnly {
-					return nil
-				}
-			}
+	return func(name, toolUseID string, input map[string]any, action *PermissionActionDescriptor) func(string) {
+		if name != "Write" && name != "Edit" && supportedWorkspaceRead(action) {
+			return nil
 		}
+
 		c.mu.Lock()
 		if c.generation != generation {
 			c.mu.Unlock()
@@ -188,6 +208,7 @@ func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, strin
 			return nil
 		}
 		if name != "Write" && name != "Edit" {
+			c.markUnobservedWriter(turnID, "unsupported_tool_effects")
 			if err := journal.RecordUncovered(turnID, toolUseID, name, "Non-file tool effects are not captured."); err != nil {
 				c.warning = "Workspace history is incomplete; some tool effects were not recorded."
 			}
@@ -195,6 +216,9 @@ func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, strin
 			return nil
 		}
 		path, _ := input["file_path"].(string)
+		if !supportedWorkspaceWrite(action, path) {
+			c.markUnobservedWriter(turnID, "unsupported_file_dispatch")
+		}
 		rel, ok := workspaceRevisionRelativePath(identity.cwd, path)
 		var id string
 		var err error
@@ -202,6 +226,7 @@ func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, strin
 			id, err = journal.Begin(turnID, toolUseID, name, rel)
 		}
 		if !ok || err != nil {
+			c.markUnobservedWriter(turnID, "file_capture_unavailable")
 			c.warning = "Workspace history is incomplete; a file snapshot could not be captured."
 			_ = journal.RecordUncovered(turnID, toolUseID, name, "File snapshot unavailable.")
 			c.mu.Unlock()
@@ -215,6 +240,7 @@ func (e *QueryEngine) workspaceRecorderForTurn(turnID string) func(string, strin
 				return
 			}
 			if err := journal.Finish(id, outcome); err != nil {
+				c.markUnobservedWriter(turnID, "file_capture_unavailable")
 				c.warning = "Workspace history is incomplete; a file result could not be captured."
 			}
 		}
@@ -245,8 +271,18 @@ func (e *QueryEngine) closeWorkspaceRevisions() {
 	c := &e.workspaceRevisions
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.restoreCancel != nil {
+		c.restoreCancel()
+		c.restoreCancel = nil
+	}
+	c.restorePreview = nil
 	c.closed = true
 	c.generation++
+	c.restorePreview = nil
+	c.restoreReadGuards = nil
+	c.hadRestoreAuthority = false
+	c.restoreNoticePaths = nil
+	c.lastRestoreGuardID = ""
 	if c.journal != nil {
 		_ = c.journal.Close()
 		c.journal = nil
@@ -258,6 +294,11 @@ func (e *QueryEngine) resetWorkspaceRevisions() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.generation++
+	c.restorePreview = nil
+	c.restoreReadGuards = nil
+	c.hadRestoreAuthority = false
+	c.restoreNoticePaths = nil
+	c.lastRestoreGuardID = ""
 	if c.journal != nil {
 		_ = c.journal.Close()
 		c.journal = nil

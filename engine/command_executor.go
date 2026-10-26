@@ -43,6 +43,14 @@ func (e *QueryEngine) executeCommand(
 		Status:  CommandResultSucceeded,
 	}
 
+	if cmd != nil && (cmd.ModelInvocation != commands.ModelInvocationNone || cmd.SideEffect == commands.SideEffectWorkspace || cmd.SideEffect == commands.SideEffectExternal || canonicalName == "fork") {
+		if err := e.workspaceRestorePendingActionError(); err != nil {
+			outcome.Status = CommandResultFailed
+			outcome.Error = err.Error()
+			outcome.Output = err.Error()
+			return commandExecution{result: outcome}
+		}
+	}
 	cmdCtx := e.CommandContext()
 	if cmd != nil &&
 		cmd.Entrypoints.Supports(e.config.CommandEntrypoint) &&

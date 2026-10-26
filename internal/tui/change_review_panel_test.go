@@ -91,6 +91,11 @@ func TestChangeReviewOverlayKeepsFooterAtSmallSize(t *testing.T) {
 		}
 		fmt.Fprintf(&golden, "== %d ==\n%s\n", width, changeReviewGoldenNormalize(plain))
 	}
+	if os.Getenv("UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile("testdata/change_review_panel.golden", []byte(strings.TrimSpace(golden.String())+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	want, err := os.ReadFile("testdata/change_review_panel.golden")
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
