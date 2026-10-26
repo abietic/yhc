@@ -445,7 +445,7 @@ else: raise AssertionError('uncapped child')
                                   "from pathlib import Path; print(Path('/proof/continued.txt').read_bytes().hex())")
             self.assertEqual(bytes.fromhex(retained), b"continued once\n")
             evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
-            if evidence and scenario in ("cohort_budget", "external_gateway"):
+            if evidence:
                 write_report(Path(evidence) / "launcher-detached.json", dict(verification_complete=True,
                              workspace_stopped=True, source_claim_retained=True, volume_retained=True,
                              source_progress_retained=True, real_provider_requests=0))
@@ -462,7 +462,7 @@ else: raise AssertionError('uncapped child')
                                        "from pathlib import Path; print(Path('/workspace/continued.txt').read_bytes().hex())")
                 self.assertEqual(bytes.fromhex(retained), b"continued once\n")
             evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
-            if evidence:
+            if evidence and scenario in ("cohort_budget", "external_gateway"):
                 suffix = "-native-session" if generated_session else ""
                 write_report(Path(evidence) / ("launcher-" + scenario + suffix + ".json"),
                              dict(verification_complete=True, session_id=self.session, generated_session=generated_session,
@@ -529,6 +529,9 @@ else: raise AssertionError('uncapped child')
 
     def test_benchmark_launcher_rejects_changed_workspace_before_dispatch(self):
         self.check_benchmark_launcher("workspace")
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            self.assertFalse((Path(evidence) / "launcher-workspace.json").exists(), "changed progress cannot get a preserved-progress receipt")
 
     def test_benchmark_launcher_rejects_expired_grant_before_dispatch(self):
         self.check_benchmark_launcher("expired")
@@ -547,6 +550,10 @@ else: raise AssertionError('uncapped child')
 
     def test_benchmark_launcher_quarantines_detached_descendant_before_return(self):
         self.check_benchmark_launcher("detached")
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            receipt = json.loads((Path(evidence) / "launcher-detached.json").read_bytes())
+            self.assertTrue(receipt["verification_complete"] and receipt["workspace_stopped"] and receipt["source_progress_retained"])
 
     def test_container_dispatch_transport_bounds_both_output_pipes(self):
         workspace, unused_volume = self.provision_workspace()

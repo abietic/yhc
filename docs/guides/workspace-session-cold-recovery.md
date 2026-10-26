@@ -348,6 +348,37 @@ this profile; a verified relay or a separately verified network profile is
 still required before using it for real provider traffic. The launcher does
 not add a relay or change the container network.
 
+The optional [host-pipe fixture](../../scripts/terminal_bench/test_host_gateway_pipe_docker.py)
+tests that missing channel without enabling it in production. Its immutable
+[test helper](../../scripts/terminal_bench/testdata/host_gateway_pipe.py) forwards
+opaque JSON request and response-body bytes over bounded, nonce-bound standard
+input/output frames to an
+owned host-loopback fake provider. It supports only a literal synthetic
+credential, the fixture's Responses path and fixed headers; it reconstructs
+HTTP framing rather than preserving every HTTP header. It performs no DNS,
+proxy lookup,
+redirect following or automatic retry. An absolute deadline also bounds slow
+headers; frame, request and response sizes are capped. It verifies byte counts,
+checksums and request sequence, without interpreting provider usage.
+
+The fixture inserts the bridge only after production cohort admission, then
+removes it before the workspace's post-dispatch process inventory. It exercises
+actual native pause/destroy/restore/dispatch, read guards and closed cumulative
+usage. The host checks each real CLI admission checkpoint and the cohort claim
+before replying. A truncated HTTP stream must retain unknown usage and the
+full new cohort allocation; a denied shared budget must start no bridge or
+request. User-file progress and cooperative service state are checked again.
+A helper that exits during startup must be reaped with closed pipes and no
+relay thread, while the consumed claim and complete allocation remain retained
+and the owned workspace is quarantined with its data volume intact.
+
+This is test-only wiring: `ColdBenchmarkLauncher` and `DockerWorkspace.rpc`
+still have no production host relay. Successful byte transfer grants neither
+resume authority nor spending authority and is not provider-usage closure.
+Real funding/account coverage, opaque credential integration and a production
+transport lifecycle remain unverified and blocked. Do not use the fixture
+helper for paid traffic.
+
 A loopback address is only a necessary transport condition. It does not prove
 that a trusted gateway is ready or grant spending permission. The independently
 anchored grant, token, joined restore proof and budget gates still apply.
@@ -502,6 +533,16 @@ and `YHC_NATIVE_RECOVERY_DOCKER_TEST=1` before running
 The default cached fixture is `yhc-generic-concurrency:20261020-arm64`; override
 `YHC_NATIVE_RECOVERY_BASE` only with an already cached matching Git/Python image.
 The test installs no packages and pulls no images.
+
+For the host-pipe proof, set both `YHC_NATIVE_RECOVERY_DOCKER_TEST=1` and
+`YHC_HOST_GATEWAY_PIPE_DOCKER_TEST=1` and run
+`python3 -m unittest scripts.terminal_bench.test_host_gateway_pipe_docker`.
+It reuses the same cached image, Linux binaries and private evidence-directory
+variables. The host requires POSIX descriptors. The module selects only its
+host-pipe cases, rather than rerunning inherited native-only cases. Pure
+framing, deadline, endpoint and disconnect checks run with
+`python3 -m unittest scripts.terminal_bench.test_host_gateway_pipe` and are part
+of `make test-provider-costs`.
 
 The positive fixture destroys original containers and volumes, checks Git
 staged/unstaged state and file metadata, loads committed tool history without
