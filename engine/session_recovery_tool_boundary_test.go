@@ -18,8 +18,8 @@ func TestRecoveryProofObservesCommittedToolsWithoutAuthorizingPausedTurn(t *test
 	messages := []*schema.Message{
 		{Role: schema.User, Content: "private prompt"},
 		{Role: schema.Assistant, ToolCalls: []schema.ToolCall{
-			{ID: "one", Type: "function", Function: schema.FunctionCall{Name: "Write", Arguments: `{}`}},
-			{ID: "two", Type: "function", Function: schema.FunctionCall{Name: "Read", Arguments: `{}`}},
+			{ID: "one", Type: "function", Function: schema.FunctionCall{Name: "Write", Arguments: `{"file_path":"one.txt"}`}},
+			{ID: "two", Type: "function", Function: schema.FunctionCall{Name: "Read", Arguments: `{"file_path":"two.txt"}`}},
 		}, ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 7, CompletionTokens: 3, TotalTokens: 10}}},
 		{Role: schema.Tool, ToolCallID: "two", Content: "private result"},
 		{Role: schema.Tool, ToolCallID: "one", Content: "saved once"},
@@ -45,17 +45,18 @@ func TestRecoveryProofObservesCommittedToolsWithoutAuthorizingPausedTurn(t *test
 	}
 	var raw struct {
 		ToolBoundary struct {
-			Version int      `json:"version"`
-			Kind    string   `json:"kind"`
-			Count   int      `json:"call_count"`
-			Names   []string `json:"tool_names"`
-			SHA256  string   `json:"sha256"`
+			Version        int      `json:"version"`
+			Kind           string   `json:"kind"`
+			Count          int      `json:"call_count"`
+			Names          []string `json:"tool_names"`
+			SHA256         string   `json:"sha256"`
+			WorkspaceLocal bool     `json:"workspace_local"`
 		} `json:"tool_boundary"`
 	}
 	if err := json.Unmarshal(encoded, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if raw.ToolBoundary.Version != 1 || raw.ToolBoundary.Kind != "committed_tool_results" || raw.ToolBoundary.Count != 2 || len(raw.ToolBoundary.SHA256) != 64 || len(raw.ToolBoundary.Names) != 2 {
+	if raw.ToolBoundary.Version != 1 || raw.ToolBoundary.Kind != "committed_tool_results" || raw.ToolBoundary.Count != 2 || len(raw.ToolBoundary.SHA256) != 64 || len(raw.ToolBoundary.Names) != 2 || !raw.ToolBoundary.WorkspaceLocal {
 		t.Fatalf("missing exact committed-tool observation: %s", encoded)
 	}
 	if strings.Contains(string(encoded), "private prompt") || strings.Contains(string(encoded), "private result") || strings.Contains(string(encoded), "saved once") {
@@ -106,7 +107,7 @@ func TestRecoveryProofLocalFileCallsFailClosedOutsideCapturedWorkspace(t *testin
 
 func TestRecoveryProofToolBoundaryRejectsAmbiguousOrUnfinishedTools(t *testing.T) {
 	call := func(id string) *schema.Message {
-		return &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: id, Type: "function", Function: schema.FunctionCall{Name: "Write", Arguments: `{}`}}}}
+		return &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: id, Type: "function", Function: schema.FunctionCall{Name: "Write", Arguments: `{"file_path":"local.txt"}`}}}}
 	}
 	result := func(id string) *schema.Message {
 		return &schema.Message{Role: schema.Tool, ToolCallID: id, Content: "saved"}
@@ -127,6 +128,7 @@ func TestRecoveryProofToolBoundaryRejectsAmbiguousOrUnfinishedTools(t *testing.T
 		{name: "completed turn", messages: []*schema.Message{{Role: schema.User}, call("a"), result("a"), {Role: schema.Assistant}}},
 		{name: "empty id", messages: []*schema.Message{{Role: schema.User}, call(""), result("")}},
 		{name: "unknown role", messages: []*schema.Message{call("a"), result("a"), {Role: schema.RoleType("future")}}},
+		{name: "unknown metadata role", messages: []*schema.Message{call("a"), result("a"), {Role: schema.RoleType("future"), Extra: map[string]any{"is_meta": true}}}},
 		{name: "hidden pending", messages: []*schema.Message{call("a"), result("a"), {Role: schema.Assistant, ToolCalls: call("b").ToolCalls, Extra: map[string]any{"is_meta": true}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -32,6 +32,11 @@ func recoveryProofToolBoundary(messages []*schema.Message, cwd string) *SessionT
 		if message == nil {
 			continue
 		}
+		switch message.Role {
+		case schema.User, schema.Assistant, schema.Tool, schema.System, schema.RoleType("developer"):
+		default:
+			return nil
+		}
 		meta, _ := message.Extra["is_meta"].(bool)
 		apiError, _ := message.Extra["api_error"].(bool)
 		if message.Role == schema.System || message.Role == schema.RoleType("developer") || meta || apiError {
