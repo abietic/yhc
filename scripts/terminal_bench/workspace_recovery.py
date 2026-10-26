@@ -122,7 +122,8 @@ class DockerWorkspace:
         for mount in mounts:
             destination = mount.get("Destination", "")
             require(destination and all(not (binary == destination or binary.startswith(destination.rstrip("/") + "/"))
-                    for binary in ("/opt/checkpoint/workspace_io.py", "/opt/yhc/yhc", "/usr/local/bin/python3")),
+                    for binary in ("/opt/checkpoint/workspace_io.py", "/opt/checkpoint/host_gateway_transport.py",
+                                   "/opt/yhc/yhc", "/usr/local/bin/python3")),
                     "workspace_control_executable_not_immutable")
         volumes = [m for m in mounts if m.get("Type") == "volume"]
         require(len(volumes) == 1 and volumes[0].get("Destination") == self.cwd
@@ -152,10 +153,10 @@ class DockerWorkspace:
         ids = self.docker("ps", "--all", "--quiet", "--no-trunc").decode().split()
         require(source["container_id"] not in ids, "workspace_source_container_still_exists")
 
-    def launch_cold(self, launch, gateway_token):
+    def launch_cold(self, launch, gateway_token, *, transport=None):
         require(self.inventory() == launch["expected_workspace"], "dispatch_workspace_generation_changed")
         payload = {"launch": launch, "gateway_token": gateway_token}
-        result = self.rpc("cold_dispatch", **payload)
+        result = self.rpc("cold_dispatch", **payload) if transport is None else transport.rpc(self, launch, gateway_token)
         require(self.inventory() == launch["expected_workspace"], "dispatch_uncheckpointed_processes_remain")
         return result
 

@@ -283,8 +283,16 @@ def main():
     parser.add_argument("--dispatch-grant-sha256")
     parser.add_argument("--cohort-ledger", type=Path)
     parser.add_argument("--cohort-plan-sha256")
+    parser.add_argument("--host-gateway-transport", type=Path)
+    parser.add_argument("--host-gateway-transport-sha256")
     args = parser.parse_args()
     try:
+        transport = None
+        if args.host_gateway_transport is not None or args.host_gateway_transport_sha256 is not None:
+            require(args.operation == "dispatch" and args.host_gateway_transport is not None
+                    and args.host_gateway_transport_sha256, "explicit_host_gateway_binding_required")
+            from scripts.terminal_bench.host_gateway_transport import HostGatewayTransport
+            transport = HostGatewayTransport(private_json(args.host_gateway_transport), args.host_gateway_transport_sha256)
         contract = private_json(args.service_contract)
         services = ServiceSnapshots(contract, DockerServices(args.service_project, args.service_definition, contract), control_dir=args.control_dir)
         workspace = DockerWorkspace(args.workspace_container, args.cwd, args.cohort_id, args.attempt_id)
@@ -301,7 +309,7 @@ def main():
             require(args.dispatch_grant is not None and args.dispatch_grant_sha256, "explicit_dispatch_grant_required")
             require(args.cohort_ledger is not None and args.cohort_plan_sha256, "explicit_shared_cohort_ledger_required")
             cohort = CohortAdmission(args.cohort_ledger, args.cohort_plan_sha256)
-            result = ColdBenchmarkLauncher(bundle, cohort=cohort).dispatch(args.snapshot, args.bundle_sha256, args.service_snapshot,
+            result = ColdBenchmarkLauncher(bundle, cohort=cohort, transport=transport).dispatch(args.snapshot, args.bundle_sha256, args.service_snapshot,
                 private_json(args.dispatch_grant), args.dispatch_grant_sha256, os.environ.get("YHC_BENCH_GATEWAY_TOKEN"))
             print(json.dumps({k: result[k] for k in ("status", "source_segment_id", "accounting_complete", "automatic_paid_resume")}))
             if result["status"] != "completed": parser.exit(1)

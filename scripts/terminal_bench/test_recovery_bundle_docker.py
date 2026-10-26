@@ -81,6 +81,7 @@ class NativeColdDockerTests(unittest.TestCase):
             cls.docker("cp", str(binary), helper + ":/opt/yhc/yhc")
             cls.docker("cp", str(seed), helper + ":/opt/checkpoint/seed-native")
             cls.docker("cp", str(Path(__file__).parent / "workspace_io.py"), helper + ":/opt/checkpoint/workspace_io.py")
+            cls.docker("cp", str(Path(__file__).parent / "host_gateway_transport.py"), helper + ":/opt/checkpoint/host_gateway_transport.py")
             cls.docker("cp", str(Path(__file__).parent / "testdata/native_handoff.py"), helper + ":/opt/checkpoint/native_handoff.py")
             cls.docker("commit", helper, cls.image)
         finally:

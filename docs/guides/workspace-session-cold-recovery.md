@@ -343,13 +343,13 @@ native probe, source claim or cohort allocation, `validate_gateway_transport`
 therefore requires a literal loopback IP in `route.base_url`, HTTP(S), and a
 valid port (1–65535 when explicit). Host/external addresses, DNS names including
 `localhost`, scoped or IPv4-mapped IPv6 and ambiguous shorthand addresses are blocked without
-DNS lookup or a connection attempt. A host gateway cannot be reached through
-this profile; a verified relay or a separately verified network profile is
-still required before using it for real provider traffic. The launcher does
-not add a relay or change the container network.
+DNS lookup or a connection attempt. The optional host transport below adds a
+bounded pipe while keeping this network profile; without it the route must
+already be reachable inside the isolated container. Neither choice proves real
+gateway account coverage or provides a spending grant.
 
 The optional [host-pipe fixture](../../scripts/terminal_bench/test_host_gateway_pipe_docker.py)
-tests that missing channel without enabling it in production. Its immutable
+keeps an independent synthetic-only byte-channel calibration. Its immutable
 [test helper](../../scripts/terminal_bench/testdata/host_gateway_pipe.py) forwards
 opaque JSON request and response-body bytes over bounded, nonce-bound standard
 input/output frames to an
@@ -372,12 +372,11 @@ A helper that exits during startup must be reaped with closed pipes and no
 relay thread, while the consumed claim and complete allocation remain retained
 and the owned workspace is quarantined with its data volume intact.
 
-This is test-only wiring: `ColdBenchmarkLauncher` and `DockerWorkspace.rpc`
-still have no production host relay. Successful byte transfer grants neither
+This original fixture remains test-only. The separate operator transport below
+uses the production launcher and keeper. Successful byte transfer grants neither
 resume authority nor spending authority and is not provider-usage closure.
-Real funding/account coverage, opaque credential integration and a production
-transport lifecycle remain unverified and blocked. Do not use the fixture
-helper for paid traffic.
+Real funding/account coverage and provider billing closure remain separate
+unverified requirements. Do not use the fixture helper for paid traffic.
 
 A loopback address is only a necessary transport condition. It does not prove
 that a trusted gateway is ready or grant spending permission. The independently
@@ -509,8 +508,68 @@ This remains the explicitly cooperative, isolated keeper protocol above.
 Service/workspace observations are point-in-time checks within that closed
 world, not transactions against arbitrary external host actors. Network or
 environment transitions, unsupported tool/process state and ordinary Harbor
-cold recovery remain blocked. Offline fixtures install a synthetic loopback
-provider after host admission; they prove no paid gateway or model capability.
+cold recovery remain blocked. Offline fixtures exercise synthetic loopback
+providers; they prove no paid gateway or model capability.
+
+### Opt in to the host gateway transport
+
+The optional
+[`HostGatewayTransport`](../../scripts/terminal_bench/host_gateway_transport.py)
+connects the existing CLI to a trusted host-owned HTTP gateway through the
+keeper RPC's standard input/output. It is disabled when its two options are
+absent. It currently supports the DeepSeek Responses route, an explicit numeric
+loopback HTTP endpoint on both sides, and the captured native route/token
+identity. DNS, proxies, redirects, other API protocols and network-profile
+changes remain unsupported. The gateway owns provider credentials, account
+coverage and its reservation policy; this transport reads no provider key and
+implements no replacement budget or billing system.
+
+Before capture, install the repository's `workspace_io.py` and
+`host_gateway_transport.py` at their fixed `/opt/checkpoint/` paths in the same
+immutable image as the CLI. Capture and restore must use that exact image.
+Prepare a private host-owned JSON binding with exactly these fields:
+
+| Field | Required value |
+|---|---|
+| `version`, `scope` | `1`, `benchmark-host-gateway-transport-v1` |
+| `grant_sha256` | The separately anchored dispatch grant's canonical digest |
+| `workspace_container_id` | Exact target container ID |
+| `upstream_base_url` | Explicit numeric host-loopback HTTP URL and port, without credentials, query or path prefix |
+| `gateway_token_sha256` | SHA-256 of the existing opaque `YHC_BENCH_GATEWAY_TOKEN`, never the provider key |
+| `expires_unix` | UTC expiry covering the full granted timeout |
+
+Anchor that binding's canonical digest independently, then add these options to
+the dispatch command above:
+
+```bash
+  --host-gateway-transport /absolute/private-control-dir/transport.json \
+  --host-gateway-transport-sha256 TRANSPORT_CANONICAL_SHA256
+```
+
+Pure binding and token checks precede the source lock. The existing consumed
+check precedes every readiness probe; a losing/replayed dispatcher cannot probe
+or change the winner's Session. Workspace inventory and the anchored image are
+verified before invoking the immutable helper. Helper bytes and local port
+availability are checked, followed by a host TCP readiness check with no HTTP
+request. These checks precede cohort admission and are repeated before its
+durable allocation. They establish point-in-time transport readiness, not
+account, provider, price or billing verification.
+
+The claim and complete new allocation remain durable before the CLI starts.
+Nonce, sequence, integrity, route/model, output cap, actual call count and
+expiry checks bound each forwarded request. Framing is capped at 8 MiB per
+frame, requests at 4 MiB, and total response bytes at 8 MiB. The grant's call
+window cannot be extended by the 15-second transport shutdown grace. After a
+stream fault or non-2xx response, no later request is forwarded; only terminal
+checkpoint readback can close the channel. Unknown usage retains its allocation.
+
+The container binds a loopback server only while the existing immutable CLI
+operation runs. Its task environment receives the opaque gateway token; the
+host Docker client does not inherit provider-key or proxy variables. The
+normal post-dispatch inventory still requires a passive keeper. A broken pipe,
+unclosed server or leftover process retains the claim and allocation and
+quarantines the owned workspace. Neither that failure nor a successful receipt
+allows automatic paid retry or reopens the old source.
 
 ## Reproduce without a paid provider
 
@@ -543,6 +602,19 @@ host-pipe cases, rather than rerunning inherited native-only cases. Pure
 framing, deadline, endpoint and disconnect checks run with
 `python3 -m unittest scripts.terminal_bench.test_host_gateway_pipe` and are part
 of `make test-provider-costs`.
+
+For the production transport, use the same cached image/binary/proof-directory
+setup with `YHC_NATIVE_RECOVERY_DOCKER_TEST=1` and
+`YHC_HOST_GATEWAY_TRANSPORT_DOCKER_TEST=1`, then run
+`python3 -m unittest scripts.terminal_bench.test_host_gateway_transport_docker`.
+These cases use the actual optional launcher path without an injected RPC
+wrapper, with known settlement, truncated unknown usage, budget denial,
+unready gateway and killed-helper quarantine. Fake host-key canaries are
+checked against restored workspace files. Pure framing, admission, fault and
+process-cleanup checks run through
+`python3 -m unittest scripts.terminal_bench.test_host_gateway_transport` and
+`make test-provider-costs`. This proves offline wiring, not real funding,
+provider billing, benchmark reward or model quality.
 
 The positive fixture destroys original containers and volumes, checks Git
 staged/unstaged state and file metadata, loads committed tool history without

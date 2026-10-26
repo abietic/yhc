@@ -5867,7 +5867,7 @@ privacy:
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_recovery_bundle_docker.py
-      line: 355
+      line: 356
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
@@ -5918,13 +5918,94 @@ privacy:
       match_sha256: b8ac1379b6050f4463f91b63445d009072ac3f02ad7fb9fffd74940f04281740
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_recovery_bundle_docker.py
-      line: 360
+      line: 361
       rule_id: private-url
       match_sha256: bda8e6ef76541ee9914daa1425214b440e00893a739990187f25d4dc2b7b80ca
       purpose: synthetic-security-fixture
 
     - path: scripts/terminal_bench/test_host_gateway_pipe_docker.py
       line: 55
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+
+    - path: scripts/terminal_bench/cold_dispatch.py
+      line: 140
+      rule_id: credential-assignment
+      match_sha256: ff11ed26497552231fa3974aca874f81299eb449dccd2491cf6f3296929199fb
+      purpose: runtime-loopback
+    - path: scripts/terminal_bench/cold_dispatch.py
+      line: 151
+      rule_id: credential-assignment
+      match_sha256: ff11ed26497552231fa3974aca874f81299eb449dccd2491cf6f3296929199fb
+      purpose: runtime-loopback
+    - path: scripts/terminal_bench/host_gateway_transport.py
+      line: 336
+      rule_id: credential-assignment
+      match_sha256: d86a2d5bba5e946d3ee2834dfc0c62b8f96ed54d8c7c4acefe59f0ca04fdb140
+      purpose: runtime-loopback
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 27
+      rule_id: credential-assignment
+      match_sha256: 3577412b35d01d69e68f3a1e42f8137ec3d0cb70a95e35d0541ca8e886aa3215
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 29
+      rule_id: private-url
+      match_sha256: 3408bef3a73507555837700870fe8f1bd7099e8a8de380a74b80883446221dd1
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 43
+      rule_id: private-url
+      match_sha256: cdf6c32a66da37f9dd270e1442bcdf2b6b26f42149f1add179e8d3a57c42de27
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 47
+      rule_id: private-url
+      match_sha256: 95bd8950c21c1294c6c0408521381453bde62be1df02df429f79791abb319f37
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 48
+      rule_id: private-url
+      match_sha256: a668a38bdecae39b427c304ab56ddceb7f5bc8917c8fbc6d83b930b0d016f996
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 113
+      rule_id: private-url
+      match_sha256: b1eb01f67aeb47bb8ad310944096a2ec0d9e857c64f3e04d5e7b5719cc810dfa
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 153
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 154
+      rule_id: credential-assignment
+      match_sha256: c7308232c19e31ad073a29fa0f2368e9a1266721c25089ed032d8f86f6ef69c7
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 155
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport.py
+      line: 200
+      rule_id: bearer-token
+      match_sha256: c7308232c19e31ad073a29fa0f2368e9a1266721c25089ed032d8f86f6ef69c7
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport_docker.py
+      line: 41
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport_docker.py
+      line: 149
+      rule_id: private-url
+      match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_host_gateway_transport_docker.py
+      line: 155
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture

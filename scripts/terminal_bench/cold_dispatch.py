@@ -30,7 +30,7 @@ def sha(value):
 
 
 def validate_gateway_transport(grant):
-    """The current keeper protocol has network=none and no host relay.
+    """The keeper retains network=none; any host pipe is separately qualified.
 
     This is new-dispatch policy, not historical grant/usage validation. DNS,
     external/host routes and unproved network transitions cannot consume a
@@ -120,18 +120,24 @@ def dispatch_lock(control, segment):
 
 
 class ColdBenchmarkLauncher:
-    def __init__(self, bundle, *, cohort=None, wall=time.time):
-        self.bundle, self.cohort, self.wall = bundle, cohort, wall
+    def __init__(self, bundle, *, cohort=None, transport=None, wall=time.time):
+        self.bundle, self.cohort, self.transport, self.wall = bundle, cohort, transport, wall
 
     def dispatch(self, path, bundle_digest, service_path, grant, grant_digest, gateway_token):
         require(self.cohort is not None, "dispatch_shared_cohort_admission_required")
         body, _, _ = self.bundle.load(path, bundle_digest, service_path)
         require("paused_invocation" in body, "dispatch_requires_verified_paused_bundle")
         validate_gateway_transport(grant)
+        if self.transport is not None:
+            self.transport.validate_token(gateway_token)
+            self.transport.validate(self.bundle.workspace, grant, grant_digest, self.wall())
         segment = body["paused_invocation"]["record"]["segment_id"]
         with dispatch_lock(self.bundle.control, segment) as claim:
             # The consumed check precedes every native probe. A losing launch
             # cannot change a winner's canonical session while it is running.
+            if self.transport is not None:
+                self.transport.preflight(self.bundle.workspace, grant, grant_digest, now=self.wall(),
+                                         gateway_token=gateway_token, expected_image=body["source_workspace"]["image"])
             with self.cohort.admit(body, grant, grant_digest, now=self.wall()) as allocation:
                 budget = validate_grant(grant, grant_digest, body, bundle_digest, self.bundle.workspace.attempt, self.wall())
                 require(isinstance(gateway_token, str) and 0 < len(gateway_token) <= 512
@@ -140,6 +146,9 @@ class ColdBenchmarkLauncher:
                 validate_grant(grant, grant_digest, body, bundle_digest, joint["workspace"]["attempt_id"], self.wall())
                 actual = self.bundle.workspace.rpc("control_probe")
                 require(actual == dict(binary_sha256=grant["binary_sha256"]), "dispatch_binary_changed")
+                if self.transport is not None:
+                    self.transport.preflight(self.bundle.workspace, grant, grant_digest, now=self.wall(),
+                                             gateway_token=gateway_token, expected_image=body["source_workspace"]["image"])
                 admission = allocation.reserve(body, grant, grant_digest, now=self.wall())
                 checkpoint = ".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]
                 launch = dict(version=1, handoff=handoff, grant=grant, checkpoint_path=checkpoint,
@@ -150,7 +159,10 @@ class ColdBenchmarkLauncher:
                 # Any exception, crash or ambiguous transport leaves this claim and
                 # its full newly allocated exposure retained. No automatic retry.
                 try:
-                    execution = self.bundle.workspace.launch_cold(launch, gateway_token)
+                    if self.transport is None:
+                        execution = self.bundle.workspace.launch_cold(launch, gateway_token)
+                    else:
+                        execution = self.bundle.workspace.launch_cold(launch, gateway_token, transport=self.transport)
                 except BaseException:
                     try:
                         self.bundle.workspace.quarantine(joint["workspace"])
