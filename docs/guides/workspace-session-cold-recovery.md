@@ -4,7 +4,7 @@
 **Last verified:** 2026-10-26
 
 > **Ownership:** the operator-only file/native/usage recovery bundle, its
-> binding to cooperative service proofs, and explicit benchmark dispatch
+> binding to cooperative service proofs, and explicitly funded benchmark dispatch
 
 This workflow restores a supported workspace into fresh storage, loads its
 Session through the production QueryEngine administration path, reconstructs
@@ -334,10 +334,73 @@ All historical usage must be complete, uniquely identified and free of retained
 or outstanding reservations. The launcher adds its known native estimates
 without rewriting earlier rows, then reserves the full new cap inside the
 cumulative envelope. Different currencies are blocked; no exchange rate is
-guessed. This is an estimate envelope for the captured Session, not an account
-balance or a shared-cohort ledger. A funding controller must separately reserve
-shared-cohort exposure and provide an opaque gateway token. The launcher reads
+guessed. The launcher additionally requires the shared cohort ledger below.
+Neither envelope is an account balance or an invoice. A funding controller must
+still check account coverage, price freshness and the gateway's per-request
+reservation policy, then provide an opaque gateway token. The launcher reads
 only `YHC_BENCH_GATEWAY_TOKEN`; it does not fall back to host provider keys.
+
+### Admit spending across Sessions
+
+[`CohortAdmission`](../../scripts/terminal_bench/cohort_admission.py) owns a
+private host ledger outside every task mount. The trusted authorizer supplies
+one plan and its independent canonical digest. Its exact schema is:
+
+| Field | Meaning |
+|---|---|
+| `version`, `scope` | `1`, `benchmark-cohort-admission-v1` |
+| `cohort_id`, `currency` | The captured cohort UUID and one native settlement currency |
+| `max_estimated_cost`, `expires_unix` | Shared positive decimal ceiling and UTC expiry covering the entire new timeout |
+| `sessions` | 1–128 objects, each with exactly `session_id`, `max_estimated_cost`, `usage_history` |
+| `external_reservations` | Up to 128 objects with exactly `reservation_id` (UUID), positive `amount`, and `state` (`outstanding` or `retained`) |
+
+Each Session history uses the complete ordered history format above. Invocation
+and call UUIDs must be unique across the entire inventory. Every Session's grant
+must fit both its plan ceiling and the shared ceiling. The plan attests the
+supplied cohort inventory; it cannot discover omitted spending or operations
+through another launcher. Keep all work against this budget on this single
+ledger. Never clone, rewind, delete or initialize another ledger to represent
+the same funds. The host operator and independent anchors remain trusted.
+
+Initialize once, using the authorizer's private plan, then reuse the exact
+ledger path and digest for every participating Session:
+
+```bash
+python3 -m scripts.terminal_bench.cohort_admission init \
+  --plan /absolute/private-control-dir/cohort-plan.json \
+  --plan-sha256 COHORT_PLAN_CANONICAL_SHA256 \
+  --ledger-dir /absolute/private-control-dir/cohort-ledger
+
+python3 -m scripts.terminal_bench.cohort_admission inspect \
+  --plan-sha256 COHORT_PLAN_CANONICAL_SHA256 \
+  --ledger-dir /absolute/private-control-dir/cohort-ledger
+```
+
+Initialization requires a new directory and never resets an existing ledger.
+An imported incomplete history or external hold is conserved and blocks all
+new dispatch. Mixed currencies, stale/reset histories, unknown Sessions, reused
+source/dispatch identities, and unverified accounting are also blocked. There
+is no automatic migration, hold release, top-up or retry command.
+
+One nonblocking POSIX lock spans the whole dispatch, so this entrypoint runs
+one Session per cohort at a time. A competing process fails before native
+probes. With verified accounting, the gate requires enough headroom for the
+**full new cost cap**, counting every Session's known estimates and all holds.
+Insufficient funds leave the journal, histories and workspace progress intact;
+no source claim is consumed. A checked admission is repeated immediately before
+the durable reservation and single-use dispatch claim.
+
+The append-only, hash-chained journal syncs a high-water intent, event and
+directory before acknowledging a reservation. Missing, changed, torn or
+unsealed files fail closed. After execution, the launcher reconciles the actual
+checkpoint and terminal usage again before replacing that reservation with the
+new verified cost. Unused allocation becomes available to other Sessions.
+Unknown/partial accounting, a crash or a failed settlement retains the full
+allocation; any verified partial cost is counted within it, never added twice.
+An abandoned reservation is retained on restart even when its process lock has
+disappeared. Existing closed history rows remain unchanged. Explicit inspection
+reports known estimates, outstanding/retained amounts, total exposure and the
+updated per-Session histories; it authorizes no new call.
 
 With a checked grant and token in the operator environment, use the target's
 service project/definition and the original capture identity:
@@ -353,6 +416,8 @@ python3 -m scripts.terminal_bench.recovery_bundle dispatch \
   --snapshot /absolute/private-dir/bundle --bundle-sha256 BUNDLE_SHA256 \
   --dispatch-grant /absolute/private-control-dir/grant.json \
   --dispatch-grant-sha256 GRANT_CANONICAL_SHA256 \
+  --cohort-ledger /absolute/private-control-dir/cohort-ledger \
+  --cohort-plan-sha256 COHORT_PLAN_CANONICAL_SHA256 \
   --control-dir /absolute/private-control-dir
 ```
 
@@ -377,6 +442,12 @@ Unknown usage, an open checkpoint, a transport failure, changed route or denied
 reservation cannot reopen a consumed claim. Preserve the journal and new
 checkpoint for explicit reconciliation. A successful receipt authorizes no
 later retry; `automatic_paid_resume` remains false.
+
+Budget exhaustion preserves progress but does not itself prove another cold
+handoff is possible: the next source must still satisfy the supported paused
+Session, tool, service, clock and closed-usage contract. Unsupported states stay
+blocked even when funds remain. A source claim cannot be reopened with a new
+grant or a different control directory; the shared ledger also remembers it.
 
 This remains the explicitly cooperative, isolated keeper protocol above.
 Service/workspace observations are point-in-time checks within that closed
