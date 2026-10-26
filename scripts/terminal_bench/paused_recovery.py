@@ -101,3 +101,34 @@ def verify_paused_joint(record, expected_digest, native, checkpoint, history, cw
                 tool_boundary=original["tool_boundary"], accounting_complete=True,
                 tool_runtime_restored=False,
                 can_resume_agent=False, new_spending_authorized=False)
+
+
+def cold_tool_handoff(record, record_sha256, native, checkpoint, history, cwd):
+    """Prepare an operator-only explicit launch input; never launches a task.
+
+    The caller must retain a digest of the exact serialized handoff bytes.
+    Target-side Go validation repeats native/accounting/file checks and claims
+    the source invocation once before accepting an explicit new user turn.
+    """
+    verify_paused_joint(record, record_sha256, native, checkpoint, history, cwd)
+    captured = record["terminal"].get("read_guards")
+    require(isinstance(captured, dict) and set(captured) == {"version", "complete", "snapshot"}
+            and type(captured["version"]) is int and captured["version"] == 1 and captured["complete"] is True,
+            "cold_read_guards_not_captured")
+    snapshot = captured["snapshot"]
+    require(isinstance(snapshot, dict) and set(snapshot) == {"version", "cwd", "entries"}
+            and type(snapshot["version"]) is int and snapshot["version"] == 1 and snapshot["cwd"] == cwd
+            and isinstance(snapshot["entries"], list) and len(snapshot["entries"]) <= 1024, "cold_read_guards_invalid")
+    previous, total = "", 0
+    for entry in snapshot["entries"]:
+        require(isinstance(entry, dict) and set(entry) == {"path", "sha256", "size", "is_partial"}
+                and isinstance(entry["path"], str) and previous < entry["path"]
+                and PurePosixPath(entry["path"]).as_posix() == entry["path"] and entry["path"] != "."
+                and not PurePosixPath(entry["path"]).is_absolute() and ".." not in PurePosixPath(entry["path"]).parts
+                and "\0" not in entry["path"] and type(entry["size"]) is int and 0 <= entry["size"] <= 4 << 20
+                and type(entry["is_partial"]) is bool and isinstance(entry["sha256"], str) and len(entry["sha256"]) == 64
+                and all(c in "0123456789abcdef" for c in entry["sha256"]), "cold_read_guards_invalid")
+        previous, total = entry["path"], total + entry["size"]
+    require(total <= 64 << 20, "cold_read_guards_too_large")
+    return dict(version=1, scope="cold-file-read-guard-handoff-v1", native_proof=native,
+                checkpoint_path=record["checkpoint_path"], checkpoint=checkpoint, read_guards=snapshot)

@@ -4,7 +4,7 @@ import copy
 import unittest
 import uuid
 
-from scripts.terminal_bench.paused_recovery import SCOPE, verify_paused_joint
+from scripts.terminal_bench.paused_recovery import SCOPE, cold_tool_handoff, verify_paused_joint
 from scripts.terminal_bench.service_snapshot import SnapshotError, digest
 from scripts.terminal_bench.test_recovery_bundle import history, invocation, proof
 
@@ -29,6 +29,27 @@ def inputs():
 
 
 class PausedProofTests(unittest.TestCase):
+    def test_cold_tool_handoff_requires_complete_explicit_guard_capture(self):
+        record, native, checkpoint, cumulative = inputs()
+        with self.assertRaisesRegex(SnapshotError, "not_captured"):
+            cold_tool_handoff(record, digest(record), native, checkpoint, cumulative, "/workspace")
+        record["terminal"]["read_guards"] = dict(version=1, complete=True, snapshot=dict(version=1, cwd="/workspace", entries=[
+            dict(path="file.txt", sha256="c" * 64, size=5, is_partial=False)]))
+        actual = cold_tool_handoff(record, digest(record), native, checkpoint, cumulative, "/workspace")
+        self.assertEqual(actual["read_guards"], record["terminal"]["read_guards"]["snapshot"])
+        self.assertEqual(actual["checkpoint"], checkpoint)
+        for fault in ("partial_missing", "escape", "duplicate", "unknown_capture", "unknown_history"):
+            changed = copy.deepcopy(record)
+            cap = changed["terminal"]["read_guards"]
+            if fault == "partial_missing": cap["snapshot"]["entries"][0].pop("is_partial")
+            if fault == "escape": cap["snapshot"]["entries"][0]["path"] = "../outside"
+            if fault == "duplicate": cap["snapshot"]["entries"].append(copy.deepcopy(cap["snapshot"]["entries"][0]))
+            if fault == "unknown_capture": cap["complete"] = False
+            history_value = copy.deepcopy(cumulative)
+            if fault == "unknown_history": history_value["segments"].pop()
+            with self.subTest(fault=fault), self.assertRaises(SnapshotError):
+                cold_tool_handoff(changed, digest(changed), native, checkpoint, history_value, "/workspace")
+
     def test_full_closed_checkpoint_and_exact_operator_receipt_form_no_spending_grant(self):
         record, native, checkpoint, cumulative = inputs()
         original = copy.deepcopy((record, native, checkpoint, cumulative))

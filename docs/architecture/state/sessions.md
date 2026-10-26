@@ -56,6 +56,14 @@ check that declared historical file targets stay within CWD. This observation
 does not clear `native_turn_incomplete` or restore process-local tool state.
 The operator-only paused bundle joins it to an externally anchored invocation
 receipt and the exact closed usage checkpoint. Its dispatch remains blocked.
+For an explicitly requested new headless turn,
+`SessionService.ResumeInfoWithColdToolHandoff` validates that native boundary
+again, verifies the retained source checkpoint, restores an isolated file-read
+guard owner and consumes a durable source-invocation claim before returning.
+The claim lock precedes canonical resume, so a competing or replayed launch
+cannot mutate the winner's Session. This is a separate opt-in launch gate;
+component receipts retain their original authority. The
+[tool registry owner](../capabilities/tool-registry.md) describes guard semantics.
 See the [cold-recovery guide](../../guides/workspace-session-cold-recovery.md)
 and its real-process crash fixtures for the supported subset.
 
