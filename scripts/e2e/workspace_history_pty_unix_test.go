@@ -23,6 +23,12 @@ import (
 // TestWorkspaceHistoryRealCLIPTY proves the public terminal workflow keeps a
 // captured Write snapshot distinct from both disk state and model dispatch.
 func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
+	testWorkspaceHistoryRealCLIPTY(t, "openai", "gpt-4o")
+}
+
+func testWorkspaceHistoryRealCLIPTY(t *testing.T, providerName, model string) {
+	t.Helper()
+	deepSeek := providerName == "agenticdeepseek"
 	root, repo := scenarioRepo(t, map[string]string{"README.md": "history fixture\n"})
 	writeCLIContextSettings(t, root)
 	canonicalRepo, err := filepath.EvalSymlinks(repo)
@@ -68,7 +74,7 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 			}
 			auxiliary.Add(1)
 			w.Header().Set("Content-Type", "text/event-stream")
-			cliContextSSE(w, 4, "No durable findings.")
+			historyTextSSE(w, deepSeek, "auxiliary", "No durable findings.")
 			return
 		}
 		call := primary.Add(1)
@@ -80,19 +86,21 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 				fail("first request did not contain fixture prompt")
 				return
 			}
-			historyWriteToolSSE(w, path, content)
+			historyReadToolSSE(w, deepSeek, filepath.Join(canonicalRepo, "README.md"))
 		case 2:
+			historyWriteToolSSE(w, deepSeek, path, content)
+		case 3:
 			if strings.Contains(latest, "Captured change context") {
 				fail("captured context appeared before explicit submission")
 				return
 			}
-			cliContextSSE(w, call, "WRITE_HISTORY_COMPLETE")
-		case 3:
+			historyTextSSE(w, deepSeek, fmt.Sprintf("%d", call), "WRITE_HISTORY_COMPLETE")
+		case 4:
 			if !strings.Contains(latest, "Captured change context") || !strings.Contains(latest, "CAPTURED_HISTORY_BYTES") || !strings.Contains(latest, "captured.txt") {
 				fail("explicit submission lacks captured change context")
 				return
 			}
-			cliContextSSE(w, call, "HISTORY_CONTEXT_ACCEPTED")
+			historyTextSSE(w, deepSeek, fmt.Sprintf("%d", call), "HISTORY_CONTEXT_ACCEPTED")
 		default:
 			fail("unexpected primary request %d", call)
 		}
@@ -104,7 +112,7 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	// This workflow exercises explicitly authorized local file recovery. Pin
 	// its execution policy rather than depending on the host sandbox probe.
 	cmd := exec.CommandContext(ctx, e2eBinary(t),
-		"--provider", "openai", "--model", "gpt-4o", "--api-key", "e2e-key", "--base-url", provider.URL,
+		"--provider", providerName, "--model", model, "--api-key", "e2e-key", "--base-url", provider.URL,
 		"--tools", "Read,Write,Edit", "--permission-mode", "acceptEdits", "--sandbox", "danger-full-access")
 	cmd.Dir = repo
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(root, "home"), "XDG_CONFIG_HOME=" + filepath.Join(root, "cfg"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "TMPDIR=" + filepath.Join(root, "tmp"), "CLAUDE_TRANSCRIPT_DIR=" + filepath.Join(root, "transcripts"), "NO_PROXY=127.0.0.1,localhost", "GOTOOLCHAIN=local", "TERM=xterm-256color"}
@@ -145,22 +153,28 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	cliContextWait(t, cmd, output, "Ask anything...")
 	cliContextWritePTY(t, terminal, "WRITE_HISTORY_FIXTURE\r")
 	cliContextWait(t, cmd, output, "WRITE_HISTORY_COMPLETE")
+	cliContextWaitScreenContains(t, cmd, output, "Write")
+	cliContextWaitScreenAbsent(t, cmd, output, "Write running")
 	if got, readErr := os.ReadFile(path); readErr != nil || string(got) != content {
 		t.Fatalf("real Write result = %q, %v", got, readErr)
 	}
-	if primary.Load() != 2 {
-		t.Fatalf("first turn provider requests = %d, want 2", primary.Load())
+	if primary.Load() != 3 {
+		t.Fatalf("first turn provider requests = %d, want 3", primary.Load())
 	}
 
 	// /recap is a local fact view; it must not make a provider request.
 	cliContextWritePTY(t, terminal, "/recap\r")
 	cliContextWaitScreenContains(t, cmd, output, "Verification receipts")
 	cliContextWaitScreenContains(t, cmd, output, "Captured file history")
-	if primary.Load() != 2 {
+	cliContextWaitScreenContains(t, cmd, output, "Write")
+	cliContextWaitScreenAbsent(t, cmd, output, "Write running")
+	if primary.Load() != 3 {
 		t.Fatalf("/recap dispatched a model request: %d", primary.Load())
 	}
 	cliContextWritePTY(t, terminal, "\x1b")
 	cliContextWaitScreenAbsent(t, cmd, output, "Verification receipts")
+	cliContextWaitScreenContains(t, cmd, output, "Write")
+	cliContextWaitScreenAbsent(t, cmd, output, "Write running")
 
 	cliContextWritePTY(t, terminal, "/changes\r")
 	cliContextWaitScreenContains(t, cmd, output, "Captured changes")
@@ -189,7 +203,7 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	output.width, output.height = 100, 28
 	output.mu.Unlock()
 	cliContextWaitScreenContains(t, cmd, output, "[Pasted Content")
-	if primary.Load() != 2 {
+	if primary.Load() != 3 {
 		t.Fatalf("adding a captured hunk submitted a request: %d", primary.Load())
 	}
 	if got, readErr := os.ReadFile(path); readErr != nil || string(got) != content {
@@ -210,7 +224,7 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	cliContextWritePTY(t, terminal, "\r")
 	cliContextWaitScreenContains(t, cmd, output, "WorkspaceRestore")
 	cliContextWaitScreenContains(t, cmd, output, "Tool use")
-	if primary.Load() != 3 {
+	if primary.Load() != 4 {
 		t.Fatal("restore confirmation dispatched a model")
 	}
 	cliContextWritePTY(t, terminal, "n")
@@ -229,7 +243,7 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("created file was not removed by confirmed restore: %v", err)
 	}
-	if primary.Load() != 3 {
+	if primary.Load() != 4 {
 		t.Fatal("applying restore called the provider")
 	}
 	cliContextWritePTY(t, terminal, "\x1b")
@@ -258,7 +272,7 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 		t.Fatal(err)
 	default:
 	}
-	if primary.Load() != 3 {
+	if primary.Load() != 4 {
 		t.Fatalf("provider primary=%d auxiliary=%d", primary.Load(), auxiliary.Load())
 	}
 	for _, sequence := range []string{"\x1b[?25h", "\x1b[?1049l"} {
@@ -268,17 +282,63 @@ func TestWorkspaceHistoryRealCLIPTY(t *testing.T) {
 	}
 }
 
-func historyWriteToolSSE(w http.ResponseWriter, path, content string) {
-	event := func(name string, value map[string]any) {
-		encoded, _ := json.Marshal(value)
-		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, encoded)
-		if flush, ok := w.(http.Flusher); ok {
-			flush.Flush()
-		}
+func TestWorkspaceHistoryAgenticDeepSeekRealCLIPTY(t *testing.T) {
+	testWorkspaceHistoryRealCLIPTY(t, "agenticdeepseek", "deepseek-flash")
+}
+
+func historyWriteToolSSE(w http.ResponseWriter, deepSeek bool, path, content string) {
+	sequence := int64(0)
+	historyToolSSE(w, deepSeek, &sequence, "history-write", "history-write-item", "Write", map[string]string{"file_path": path, "content": content})
+}
+
+func historyReadToolSSE(w http.ResponseWriter, deepSeek bool, path string) {
+	sequence := int64(0)
+	historyToolSSE(w, deepSeek, &sequence, "history-read", "history-read-item", "Read", map[string]string{"file_path": path})
+}
+
+func historyToolSSE(w http.ResponseWriter, deepSeek bool, sequence *int64, callID, itemID, name string, arguments map[string]string) {
+	argumentsJSON, _ := json.Marshal(arguments)
+	item := map[string]any{"type": "function_call", "id": itemID, "call_id": callID, "name": name, "arguments": string(argumentsJSON), "status": "completed"}
+	historyEvent(w, deepSeek, sequence, "response.output_item.added", map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item})
+	historyEvent(w, deepSeek, sequence, "response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+	output := []any{}
+	if deepSeek {
+		output = append(output, item)
 	}
-	arguments, _ := json.Marshal(map[string]string{"file_path": path, "content": content})
-	item := map[string]any{"type": "function_call", "id": "history-write-item", "call_id": "history-write", "name": "Write", "arguments": string(arguments), "status": "completed"}
-	event("response.output_item.added", map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item})
-	event("response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
-	event("response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": "history-write-response", "object": "response", "status": "completed", "model": "gpt-4o", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2, "input_tokens_details": map[string]int{"cached_tokens": 0}, "output_tokens_details": map[string]int{"reasoning_tokens": 0}}}})
+	historyEvent(w, deepSeek, sequence, "response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": callID + "-response", "object": "response", "status": "completed", "model": historyModel(deepSeek), "output": output, "usage": historyUsage()}})
+}
+
+func historyTextSSE(w http.ResponseWriter, deepSeek bool, id, text string) {
+	sequence := int64(0)
+	item := map[string]any{"type": "message", "id": "message-" + id, "role": "assistant", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}}}
+	historyEvent(w, deepSeek, &sequence, "response.output_text.delta", map[string]any{"type": "response.output_text.delta", "item_id": "message-" + id, "output_index": 0, "content_index": 0, "delta": text})
+	historyEvent(w, deepSeek, &sequence, "response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+	output := []any{}
+	if deepSeek {
+		output = append(output, item)
+	}
+	historyEvent(w, deepSeek, &sequence, "response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": "response-" + id, "object": "response", "status": "completed", "model": historyModel(deepSeek), "output": output, "usage": historyUsage()}})
+}
+
+func historyEvent(w http.ResponseWriter, deepSeek bool, sequence *int64, name string, value map[string]any) {
+	if deepSeek {
+		value["sequence_number"] = *sequence
+		*sequence++
+	}
+	encoded, _ := json.Marshal(value)
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, encoded)
+	if flush, ok := w.(http.Flusher); ok {
+		flush.Flush()
+	}
+}
+
+func historyModel(deepSeek bool) string {
+	if deepSeek {
+		return "deepseek-flash"
+	}
+	return "gpt-4o"
+}
+
+func historyUsage() map[string]any {
+	return map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2, "input_tokens_details": map[string]int{"cached_tokens": 0}, "output_tokens_details": map[string]int{"reasoning_tokens": 0}}
 }
