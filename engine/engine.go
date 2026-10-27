@@ -29,6 +29,7 @@ import (
 	modelcaps "github.com/abietic/yhc/engine/model"
 	"github.com/abietic/yhc/engine/notify"
 	"github.com/abietic/yhc/engine/permission"
+	"github.com/abietic/yhc/engine/provider"
 	"github.com/abietic/yhc/engine/services"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/skills"
@@ -2949,6 +2950,11 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 	}
 	call.options.SystemPrompt = systemPrompt
 	call.options.QuerySource = querySource
+	if querySource == "prompt_suggestion_generation" && call.options.Provider == string(provider.ProviderAgenticDeepSeek) {
+		// DeepSeek counts reasoning against the same small output budget. This
+		// per-call control leaves the admitted main route and its effort intact.
+		call.options.EffortValue = "none"
+	}
 	call.options.Messages = make([]*schema.Message, 0, len(conversation))
 	for _, entry := range conversation {
 		call.options.Messages = append(call.options.Messages, &schema.Message{
@@ -2979,6 +2985,12 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 	e.mu.Unlock()
 	if !routeUnchanged {
 		return "", fmt.Errorf("prompt suggestion model route changed")
+	}
+	if response.ResponseMeta != nil {
+		switch strings.ToLower(strings.TrimSpace(response.ResponseMeta.FinishReason)) {
+		case "length", "max_tokens", "max_output_tokens":
+			return "", nil
+		}
 	}
 	return response.Content, nil
 }
