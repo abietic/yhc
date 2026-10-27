@@ -50,7 +50,7 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 			}))
 			defer server.Close()
 			chatModel, err := provider.NewChatModel(t.Context(), provider.Config{
-				Provider: provider.ProviderAgenticDeepSeek, Model: "deepseek-flash", APIKey: "fixture-key", BaseURL: server.URL,
+				Provider: provider.ProviderAgenticDeepSeek, Model: "deepseek-flash", APIKey: "sentinel-provider-credential", BaseURL: server.URL,
 			})
 			if err != nil {
 				t.Fatal(err)
