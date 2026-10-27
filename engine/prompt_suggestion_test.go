@@ -24,6 +24,7 @@ type promptSuggestionProbeModel struct {
 	calls         int
 	messages      []*schema.Message
 	result        string
+	finishReason  string
 	wait          bool
 	model         string
 	tools         int
@@ -74,7 +75,7 @@ func (m *promptSuggestionProbeModel) Stream(
 	return schema.StreamReaderFromArray([]*schema.Message{{
 		Role:    schema.Assistant,
 		Content: m.result,
-		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
+		ResponseMeta: &schema.ResponseMeta{FinishReason: m.finishReason, Usage: &schema.TokenUsage{
 			PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12,
 		}},
 	}}), nil

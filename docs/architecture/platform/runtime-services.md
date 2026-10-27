@@ -139,11 +139,20 @@ generation method inside a cancellable Bubble Tea command. The service applies
 a 30-second deadline, requires at least two assistant message records, and
 filters unsafe or implausible output. The request uses the current engine chat
 model through the controlled side-query seam, preserving the admitted model,
-provider, main role, profile, reasoning effort, and Session identity. It sends
+provider, main role, profile, and Session identity. It sends
 a bounded conversation snapshot with no tools, allows at most one provider
 dispatch with a 64-token output cap, and is disabled in Plan mode, while
 permission input is pending at dispatch admission, or while an unfinished Goal
 requires exact provider accounting.
+
+Prompt suggestions on an admitted DeepSeek route explicitly request
+`reasoning.effort=none`: the provider's
+[output limit includes reasoning tokens](https://api-docs.deepseek.com/api/create-response/),
+so thinking can otherwise consume the entire short suggestion budget. This is
+a per-call control; the main route's reasoning setting and argument-suggestion
+effort remain unchanged. Other providers keep their admitted effort. The shared
+auxiliary suggestion boundary records usage and discards known token-truncated
+responses before text can become a candidate; it never retries to fill the gap.
 
 [`GeneratePromptSuggestionResult`](../../../engine/prompt_suggestion.go) returns
 one ephemeral [`PromptSuggestionResult`](../../../engine/services/prompt_suggestion_result.go).
