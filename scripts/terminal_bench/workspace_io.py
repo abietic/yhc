@@ -218,6 +218,8 @@ def operate(request):
     require(isinstance(request, dict) and request.get("protocol") == PROTOCOL)
     root = root_path(request["root"])
     op = request["operation"]
+    if op == "host_gateway_probe":
+        return host_gateway_module().probe(request["route"])
     if op == "control_probe":
         return control_identity()
     if op == "cold_dispatch":
@@ -277,6 +279,22 @@ def operate(request):
         value = json.loads(result.stdout)
         require(value.get("status") == "completed" and value.get("operation") == "sessions.resume")
         return value["result"]["recovery_proof"]
+    if op == "history_migrate":
+        session = request["session_id"]
+        require(session_identity(session))
+        source, migration, binding = request["source_proof"], request["migration_id"], request["binding_sha256"]
+        require(isinstance(source, dict) and source.get("session_id") == session
+                and isinstance(migration, str) and isinstance(binding, str))
+        payload = json.dumps(source, separators=(",", ":"), ensure_ascii=False).encode()
+        require(len(payload) <= 65536)
+        env = dict(PATH="/usr/local/bin:/usr/bin:/bin", HOME="/tmp/yhc-proof-home",
+                   YHC_SESSION_CATALOG=str(root / ".yhc" / "session-roots.json"))
+        code, raw = bounded_exec(["/opt/yhc/yhc", "sessions", "recover-history", session,
+                                  "--source-sha256", source["sha256"], "--migration-id", migration,
+                                  "--binding-sha256", binding, "--output-format", "json"], root, env, payload, 30)
+        value = json.loads(raw)
+        require(code == 0 and value.get("status") == "completed" and value.get("operation") == "sessions.recover-history")
+        return value["result"]
     if op == "usage_probe":
         relative = request["checkpoint_path"]
         require(isinstance(relative, str) and relative.startswith(".yhc/usage-checkpoints/"))
@@ -293,7 +311,24 @@ def operate(request):
     raise ValueError("unsupported_workspace_operation")
 
 
+def host_gateway_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("yhc_host_gateway_transport", "/opt/checkpoint/host_gateway_transport.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--host-gateway-pipe":
+        try:
+            module = host_gateway_module()
+            message = module.DispatchFrames(sys.stdin.fileno(), sys.stdout.fileno(), sys.argv[2], 915)
+            module.run_container(message, operate)
+        except Exception:
+            sys.exit(1)
+        return
+    require(len(sys.argv) == 1)
     try:
         raw = sys.stdin.buffer.read(MAX_JSON + 1)
         require(len(raw) <= MAX_JSON)

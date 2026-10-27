@@ -6,10 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
+	"github.com/abietic/yhc/engine/filehistory"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/transcript"
 )
@@ -20,19 +23,21 @@ const canonicalAdministrationRestoreScope = "canonical_administration_restore"
 // administration restore. It deliberately proves only loaded local state; it
 // never authorizes a later Agent activation or provider call.
 type SessionRecoveryProof struct {
-	Version            int                     `json:"version"`
-	Scope              string                  `json:"scope"`
-	SessionID          string                  `json:"session_id"`
-	ThreadID           string                  `json:"thread_id"`
-	CWD                string                  `json:"cwd"`
-	MessageCount       int                     `json:"message_count"`
-	MessagesSHA256     string                  `json:"messages_sha256"`
-	NativeUsage        transcript.UsageSummary `json:"native_usage"`
-	ProcessNonce       string                  `json:"process_nonce"`
-	ValidationComplete bool                    `json:"validation_complete"`
-	BlockingReasons    []string                `json:"blocking_reasons"`
-	CanResumeAgent     bool                    `json:"can_resume_agent"`
-	ToolBoundary       *SessionToolBoundary    `json:"tool_boundary,omitempty"`
+	Version                int                             `json:"version"`
+	Scope                  string                          `json:"scope"`
+	SessionID              string                          `json:"session_id"`
+	ThreadID               string                          `json:"thread_id"`
+	CWD                    string                          `json:"cwd"`
+	MessageCount           int                             `json:"message_count"`
+	MessagesSHA256         string                          `json:"messages_sha256"`
+	NativeUsage            transcript.UsageSummary         `json:"native_usage"`
+	ProcessNonce           string                          `json:"process_nonce"`
+	ValidationComplete     bool                            `json:"validation_complete"`
+	BlockingReasons        []string                        `json:"blocking_reasons"`
+	CanResumeAgent         bool                            `json:"can_resume_agent"`
+	ToolBoundary           *SessionToolBoundary            `json:"tool_boundary,omitempty"`
+	WorkspaceHistory       *filehistory.ColdHistoryProof   `json:"workspace_history,omitempty"`
+	WorkspaceHistoryOrigin *filehistory.ColdHistoryReceipt `json:"workspace_history_origin,omitempty"`
 }
 
 // ResumeInfoWithRecoveryProof executes the same canonical restore as ResumeInfo
@@ -75,9 +80,57 @@ func (s *SessionService) ResumeInfoWithRecoveryProof(
 		CanResumeAgent: false,
 	}
 	proof.BlockingReasons = recoveryProofBlockers(resumed, s.engine.RuntimeItems(), usage)
+	var blocker string
+	proof.WorkspaceHistory, proof.WorkspaceHistoryOrigin, blocker = s.engine.recoveryProofWorkspaceHistory()
+	if blocker != "" {
+		proof.BlockingReasons = append(proof.BlockingReasons, blocker)
+	}
 	proof.ToolBoundary = recoveryProofToolBoundary(loadedMessages, proof.CWD)
 	proof.ValidationComplete = len(proof.BlockingReasons) == 0
 	return resumed, proof, nil
+}
+
+// Inspect only an existing journal: proving a Session with no history must not
+// create one. Reuse its owning validator without rebinding filesystem identity
+// or replaying a restore. Restore operations require a separate cold-state proof.
+func (e *QueryEngine) recoveryProofWorkspaceHistoryBlocker() string {
+	_, _, blocker := e.recoveryProofWorkspaceHistory()
+	return blocker
+}
+
+func (e *QueryEngine) recoveryProofWorkspaceHistory() (*filehistory.ColdHistoryProof, *filehistory.ColdHistoryReceipt, string) {
+	identity, c := e.lockWorkspaceRevisions()
+	defer c.mu.Unlock()
+	if c.restoreCancel != nil || c.restorePreview != nil || c.externalWriters != 0 {
+		return nil, nil, "workspace_restore_state_unverified"
+	}
+	historyDir := filepath.Join(identity.dir, identity.sessionID+".workspace-history")
+	if filehistory.CheckColdHistoryGate(historyDir) != nil {
+		return nil, nil, "workspace_history_migration_incomplete"
+	}
+	_, err := os.Lstat(historyDir)
+	if os.IsNotExist(err) && !c.hadRestoreAuthority {
+		return nil, nil, ""
+	}
+	if err != nil {
+		return nil, nil, "workspace_history_unavailable"
+	}
+	journal := c.journalLocked(identity)
+	if journal == nil {
+		return nil, nil, "workspace_history_unavailable"
+	}
+	if _, _, err := journal.LoadRestoreOperation(); err != nil {
+		return nil, nil, "workspace_restore_state_unverified"
+	}
+	observed, err := journal.ExportColdState()
+	if err != nil {
+		return nil, nil, "workspace_history_state_unverified"
+	}
+	origin, err := journal.ColdOrigin(observed.OriginSHA256)
+	if err != nil {
+		return nil, nil, "workspace_history_state_unverified"
+	}
+	return &observed, origin, ""
 }
 
 func recoveryProofMessagesSHA256(messages any) (string, error) {

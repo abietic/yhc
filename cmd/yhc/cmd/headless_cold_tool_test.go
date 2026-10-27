@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/abietic/yhc/engine"
 	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/session"
+	"github.com/google/uuid"
 )
 
 func TestExecColdToolHandoffRestoresGuardBeforeEditAndRejectsUnverifiedState(t *testing.T) {
@@ -130,6 +132,52 @@ func TestExecColdToolHandoffRestoresGuardBeforeEditAndRejectsUnverifiedState(t *
 		hash := sha256.Sum256(data)
 		return run(filepath.Join(parent, name), "--max-provider-calls", "2", "--resume", source.SessionID, "--cold-tool-handoff", path, "--cold-tool-handoff-sha256", hex.EncodeToString(hash[:]))
 	}
+	if native.WorkspaceHistory == nil {
+		t.Fatal("source lacks real history proof")
+	}
+	unverified, unverifiedErr := invoke(handoff, "unimported_history")
+	if unverifiedErr == nil || unverified.Error == nil || calls.Load() != 1 {
+		t.Fatal("history without migration provenance was admitted")
+	}
+	proofRaw, err := json.Marshal(native.WorkspaceHistory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(foreign)
+	wrongRoot := newRootCommand()
+	wrongRoot.SetIn(bytes.NewReader(proofRaw))
+	var wrongOut, wrongErr bytes.Buffer
+	wrongRoot.SetOut(&wrongOut)
+	wrongRoot.SetErr(&wrongErr)
+	wrongRoot.SetArgs([]string{"sessions", "recover-history", source.SessionID, "--source-sha256", native.WorkspaceHistory.SHA256, "--migration-id", uuid.NewString(), "--binding-sha256", strings.Repeat("a", 64), "--output-format", "json"})
+	rootErr := wrongRoot.ExecuteContext(t.Context())
+	t.Chdir(repo)
+	if rootErr == nil || calls.Load() != 1 {
+		t.Fatal("logical root remapping admitted or dispatched a provider")
+	}
+	if entries, err := os.ReadDir(foreign); err != nil || len(entries) != 0 {
+		t.Fatal("invalid root import mutated the target before admission", err)
+	}
+	var historyOut, historyErr bytes.Buffer
+	importCommand := newRootCommand()
+	importCommand.SetIn(bytes.NewReader(proofRaw))
+	importCommand.SetOut(&historyOut)
+	importCommand.SetErr(&historyErr)
+	importCommand.SetArgs([]string{"sessions", "recover-history", source.SessionID, "--source-sha256", native.WorkspaceHistory.SHA256, "--migration-id", uuid.NewString(), "--binding-sha256", strings.Repeat("a", 64), "--output-format", "json"})
+	if err := importCommand.ExecuteContext(t.Context()); err != nil || calls.Load() != 1 {
+		t.Fatalf("provider-free history import: err=%v stderr=%s", err, historyErr.String())
+	}
+	admin = engine.NewSessionAdministrationEngine(engine.SessionAdministrationConfig{CWD: repo, TranscriptDir: transcriptDir})
+	_, native, err = admin.SessionService().ResumeInfoWithRecoveryProof(t.Context(), session.SessionInfo{SessionID: source.SessionID, CWD: repo, TranscriptDir: transcriptDir})
+	admin.Close()
+	if err != nil || native.WorkspaceHistoryOrigin == nil {
+		t.Fatal("imported history lacks fresh native provenance", err)
+	}
+	handoff.NativeProof = native
 	for _, fault := range []string{"native", "sequence", "open_accounting", "file_hash", "external_path"} {
 		data, _ := json.Marshal(handoff)
 		var bad engine.ColdToolHandoff
@@ -158,7 +206,7 @@ func TestExecColdToolHandoffRestoresGuardBeforeEditAndRejectsUnverifiedState(t *
 		t.Fatal(err)
 	}
 	result, err := invoke(handoff, "next")
-	if err != nil || result.Status != "completed" || result.ColdRecovery == nil || !result.ColdRecovery.ReadGuardsRestored || !result.ColdRecovery.DispatchClaimed {
+	if err != nil || result.Status != "completed" || result.ColdRecovery == nil || !result.ColdRecovery.ReadGuardsRestored || !result.ColdRecovery.DispatchClaimed || !result.ColdRecovery.HistoryRestored {
 		t.Fatalf("cold result=%+v error=%v", result, err)
 	}
 	if result.Usage.ProviderCalls != 2 || result.Usage.CallLedger.SegmentID == source.Usage.CallLedger.SegmentID || calls.Load() != 3 {

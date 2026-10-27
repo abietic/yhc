@@ -415,14 +415,69 @@ type cliContextPTYOutput struct {
 	mu       sync.Mutex
 	buffer   bytes.Buffer
 	emulator *vt.Emulator
+	input    io.Closer
+	drained  chan struct{}
+	closed   bool
 	width    int
 	height   int
 }
 
+func TestCLIContextPTYBoundsScrollingMarginsAfterResize(t *testing.T) {
+	for _, margins := range []string{"\x1b[1;12r", "\x1b[1;28r", "\x1b[30;40r", "\x1b[3;10r"} {
+		t.Run(fmt.Sprintf("%q", margins), func(t *testing.T) {
+			output := newCLIContextPTYOutput(100, 28)
+			t.Cleanup(output.close)
+			output.mu.Lock()
+			output.emulator.Resize(40, 12)
+			output.width, output.height = 40, 12
+			output.mu.Unlock()
+			for row := 1; row <= 12; row++ {
+				output.append([]byte(fmt.Sprintf("\x1b[%d;1HROW%02d", row, row)))
+			}
+			// An old frame can be in the PTY pipe when the screen shrinks.
+			// Its out-of-bounds margin must leave the current region intact.
+			output.append([]byte(margins + "\x1b[3S"))
+			rows := output.rows()
+			if margins == "\x1b[3;10r" {
+				if strings.TrimSpace(rows[0]) != "ROW01" || strings.TrimSpace(rows[2]) != "ROW06" || strings.TrimSpace(rows[6]) != "ROW10" || strings.TrimSpace(rows[11]) != "ROW12" {
+					t.Fatalf("valid subregion lost its bounds: %q", rows)
+				}
+			} else if strings.TrimSpace(rows[0]) != "ROW04" || strings.TrimSpace(rows[8]) != "ROW12" || strings.TrimSpace(rows[9]) != "" {
+				t.Fatalf("invalid margins changed full-screen scrolling: %q", rows)
+			}
+			if !strings.Contains(output.raw(), margins) {
+				t.Fatal("the raw PTY evidence was filtered")
+			}
+		})
+	}
+}
+
 func newCLIContextPTYOutput(width, height int) *cliContextPTYOutput {
 	emulator := vt.NewEmulator(width, height)
-	go func() { _, _ = io.Copy(io.Discard, emulator) }()
-	return &cliContextPTYOutput{emulator: emulator, width: width, height: height}
+	// The pinned decoder accepts margins beyond its resized page, then panics
+	// on the next scroll. Reject only that invalid DECSTBM; valid regions use
+	// the original decoder, and append still retains every raw PTY byte.
+	emulator.RegisterCsiHandler('r', func(params ansi.Params) bool {
+		top, _, _ := params.Param(0, 1)
+		bottom, _, _ := params.Param(1, emulator.Height())
+		if top < 1 {
+			top = 1
+		}
+		if bottom < 1 {
+			bottom = emulator.Height()
+		}
+		return top >= bottom || top > emulator.Height() || bottom > emulator.Height()
+	})
+	input, ok := emulator.InputPipe().(io.Closer)
+	if !ok {
+		panic("test terminal input pipe is not closeable")
+	}
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		_, _ = io.Copy(io.Discard, emulator)
+	}()
+	return &cliContextPTYOutput{emulator: emulator, input: input, drained: drained, width: width, height: height}
 }
 
 func (o *cliContextPTYOutput) append(value []byte) {
@@ -470,7 +525,19 @@ func (o *cliContextPTYOutput) rows() []string {
 	return rows
 }
 
-func (o *cliContextPTYOutput) close() { _ = o.emulator.Close() }
+func (o *cliContextPTYOutput) close() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return
+	}
+	// The pinned decoder's Close mutates a flag also read by Read. Close its
+	// pipe first and join the reader before touching that flag.
+	_ = o.input.Close()
+	<-o.drained
+	_ = o.emulator.Close()
+	o.closed = true
+}
 
 func cliContextWritePTY(t *testing.T, terminal *os.File, input string) {
 	t.Helper()

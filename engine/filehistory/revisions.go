@@ -65,19 +65,25 @@ type RevisionJournalSnapshot struct {
 }
 
 type journalFrame struct {
-	Version       int            `json:"version"`
-	Type          string         `json:"type"`
-	Root          string         `json:"root"`
-	RootIdentity  string         `json:"root_identity"`
-	SessionID     string         `json:"session_id"`
-	FrameSequence uint64         `json:"frame_sequence"`
-	Record        RevisionRecord `json:"record"`
-	Turn          *TurnRecord    `json:"turn,omitempty"`
+	Version         int            `json:"version"`
+	Type            string         `json:"type"`
+	Root            string         `json:"root"`
+	RootIdentity    string         `json:"root_identity"`
+	ColdMigrationID string         `json:"cold_migration_id,omitempty"`
+	SessionID       string         `json:"session_id"`
+	FrameSequence   uint64         `json:"frame_sequence"`
+	Record          RevisionRecord `json:"record"`
+	Turn            *TurnRecord    `json:"turn,omitempty"`
 }
 
 // RevisionJournal is a private, append-only observer of workspace files.
 type RevisionJournal struct {
 	mu sync.Mutex
+	// Only the private cold importer uses this metadata validator while it
+	// owns the pending marker, parent lock and source-directory lock.
+	coldImportValidation bool
+	coldMigrationID      string
+	coldOriginSHA256     string
 
 	rootPath, dir, sessionID  string
 	rootIdentity              string
@@ -102,6 +108,9 @@ type RevisionJournal struct {
 }
 
 func OpenRevisionJournal(root, dir, sessionID string) (*RevisionJournal, error) {
+	if err := CheckColdHistoryGate(dir); err != nil {
+		return nil, err
+	}
 	if !safeSessionID(sessionID) {
 		return nil, fmt.Errorf("invalid revision journal session ID")
 	}
@@ -142,6 +151,10 @@ func OpenRevisionJournal(root, dir, sessionID string) (*RevisionJournal, error) 
 		return nil, err
 	}
 	if err := j.replay(); err != nil {
+		j.Close()
+		return nil, err
+	}
+	if err := j.checkRootIdentity(); err != nil {
 		j.Close()
 		return nil, err
 	}
@@ -286,6 +299,9 @@ func (j *RevisionJournal) applyFrame(f journalFrame) error {
 	if (f.Version != 1 && f.Version != 2) || f.Root != j.rootPath || f.RootIdentity != j.rootIdentity || f.SessionID != j.sessionID || f.FrameSequence != j.frameSequence+1 {
 		return fmt.Errorf("revision journal identity or sequence mismatch")
 	}
+	if f.ColdMigrationID != "" && !coldMigrationID(f.ColdMigrationID) || j.frameSequence != 0 && f.ColdMigrationID != j.coldMigrationID {
+		return fmt.Errorf("revision journal migration identity mismatch")
+	}
 	if f.Version == 1 && (f.Record.ParentExisted || f.Turn != nil && (f.Turn.RestoreBoundaryKnown || f.Turn.RestoreEligible || f.Turn.RestoreReason != "" || f.Turn.FileBoundarySequence != 0)) {
 		return fmt.Errorf("legacy revision journal frame contains restore proof")
 	}
@@ -354,6 +370,7 @@ func (j *RevisionJournal) applyFrame(f journalFrame) error {
 		return fmt.Errorf("unknown revision journal frame")
 	}
 	j.frameSequence = f.FrameSequence
+	j.coldMigrationID = f.ColdMigrationID
 	return nil
 }
 
@@ -615,6 +632,7 @@ func (j *RevisionJournal) appendFrame(f journalFrame) error {
 		return j.seal(err)
 	}
 	f.RootIdentity = j.rootIdentity
+	f.ColdMigrationID = j.coldMigrationID
 	f.FrameSequence = j.frameSequence + 1
 	b, err := json.Marshal(f)
 	if err != nil || len(b)+1 > maxFrameBytes {
@@ -729,6 +747,11 @@ func randomID() (string, error) {
 }
 
 func (j *RevisionJournal) checkRootIdentity() error {
+	if !j.coldImportValidation {
+		if err := CheckColdHistoryGate(j.dir); err != nil {
+			return err
+		}
+	}
 	current, err := os.Lstat(j.rootPath)
 	if err != nil || !current.IsDir() || current.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("workspace root is unavailable or replaced")
@@ -740,6 +763,9 @@ func (j *RevisionJournal) checkRootIdentity() error {
 	identity, err := durableRootIdentity(j.root)
 	if err != nil || identity != j.rootIdentity {
 		return fmt.Errorf("workspace root identity changed")
+	}
+	if !j.coldImportValidation {
+		return j.checkColdOriginLocked()
 	}
 	return nil
 }

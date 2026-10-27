@@ -81,6 +81,7 @@ class NativeColdDockerTests(unittest.TestCase):
             cls.docker("cp", str(binary), helper + ":/opt/yhc/yhc")
             cls.docker("cp", str(seed), helper + ":/opt/checkpoint/seed-native")
             cls.docker("cp", str(Path(__file__).parent / "workspace_io.py"), helper + ":/opt/checkpoint/workspace_io.py")
+            cls.docker("cp", str(Path(__file__).parent / "host_gateway_transport.py"), helper + ":/opt/checkpoint/host_gateway_transport.py")
             cls.docker("cp", str(Path(__file__).parent / "testdata/native_handoff.py"), helper + ":/opt/checkpoint/native_handoff.py")
             cls.docker("commit", helper, cls.image)
         finally:
@@ -110,7 +111,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False, generated_session=False):
+    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False, generated_session=False, history_journal=False, restored_history=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -147,6 +148,15 @@ class NativeColdDockerTests(unittest.TestCase):
                              dict(record=pause_record, checkpoint=execution["durable_checkpoint"], verification_complete=False))
             supplied_history = history(self.session, [s["usage"] for s in supplied_history["segments"]] + [execution["result"]["usage"]])
             git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
+        if history_journal:
+            self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, "--history-journal")
+        if restored_history:
+            self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, "--restored-history")
+        if paused and (history_journal or restored_history):
+            # The trusted operator has changed only closed history, never the
+            # transcript or financial checkpoint. Reobserve and anchor it.
+            pause_record["native_proof"] = source.rpc("native_probe", session_id=self.session)
+            write_report(self.control / "operator-history-pause.json", pause_record)
         original_rpc = source.rpc
         def source_rpc(operation, **body):
             value = original_rpc(operation, **body)
@@ -181,7 +191,7 @@ class NativeColdDockerTests(unittest.TestCase):
         manifest, observed, git_status = self.capture_joint(paused=True)
         bundle = self.target_bundle()
         receipt = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
-        self.assertEqual(manifest["version"], 2)
+        self.assertEqual(manifest["version"], 3)
         self.assertFalse(receipt["native_proof"]["validation_complete"])
         self.assertEqual(receipt["native_proof"]["blocking_reasons"], ["native_turn_incomplete"])
         joint = receipt["paused_joint_proof"]

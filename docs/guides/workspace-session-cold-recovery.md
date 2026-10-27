@@ -1,7 +1,7 @@
 # Verify a Workspace, Native Session and Usage After Cold Restore
 
 **Status:** current
-**Last verified:** 2026-10-26
+**Last verified:** 2026-10-27
 
 > **Ownership:** the operator-only file/native/usage recovery bundle, its
 > binding to cooperative service proofs, and explicitly funded benchmark dispatch
@@ -68,6 +68,24 @@ state, pending inputs/callbacks, child lineage and external workspace state
 that this version cannot completely verify. Passive file retention never
 replaces this load test.
 
+An existing workspace history must also pass its owner's filesystem identity
+checks. A journal that cannot be opened or revalidated reports
+`workspace_history_unavailable`. Once the journal opens, an unreadable,
+malformed restore operation reports `workspace_restore_state_unverified`.
+Closed history and terminal file-restore operations require the separate
+history proof and import below. Incomplete file or transaction facts report
+`workspace_history_state_unverified`.
+Absent history is not created by inspection. These blockers stop bundle
+restoration before service activation, dispatch claims or new budget allocation.
+
+Local journal validity is not a portability proof: a destroyed volume's
+device/inode may be reused by another volume. History-bearing captures use
+bundle v3 and always perform an explicit import, even when source and target
+filesystem identities happen to match. History-free v1/v2 remain compatible.
+Legacy history-bearing bundles are rejected with
+`workspace_history_cold_migration_unverified` before restore claims or target
+RPC; they cannot be upgraded by editing their version field.
+
 The opt-in proof also requires a closed native conversation turn. A transcript
 ending at a user prompt, an unresolved tool call, or matched tool results without
 a final assistant response reports `native_turn_incomplete`, even when all
@@ -87,6 +105,84 @@ restore process-local guards.
 Native transcript usage and invocation usage have different coverage. Both
 must retain their original facts; their totals are not forced equal. The
 provider-free loader is not appended as another paid invocation.
+
+## Import closed workspace history
+
+The native proof's optional `workspace_history` binds the original journal,
+restore operation and origin file hashes, lengths, frame count and a logical
+state digest. The history owner rereads actual files, checks closed turns,
+bounded tool counts, completed effects, current file bytes/modes and transaction
+receipts. It does not repair missing facts to make a source eligible.
+
+| Retained state | Cold import policy |
+|---|---|
+| Closed history, no restore operation | Verify current tracked files and migrate. |
+| `completed` or `rolled_back` restore | Verify path receipts and sibling cleanup, preserve terminal state and migrate. |
+| Active turn, unfinished effect, unbounded tools or interactions | Block capture/export. |
+| `applying`, `partial`, malformed operation, unknown or leftover staging files | Block export/import and preserve all evidence. |
+| Changed tracked bytes, missing archive, damaged imported prefix or origin | Block cold proof; invalid provenance also blocks ordinary admission and appends. |
+| Pending import marker, including an absent active directory | Block native proof, Query and effectful command admission. |
+
+The trusted coordinator restores the exact tree first, then calls the
+provider-free public administration operation inside the passive target:
+
+```bash
+yhc sessions recover-history SESSION_ID \
+  --source-sha256 SOURCE_PROOF_CANONICAL_SHA256 \
+  --migration-id RESTORE_ATTEMPT_UUID \
+  --binding-sha256 TARGET_GENERATION_SHA256 \
+  --output-format json < /private/control/source-history-proof.json
+```
+
+The input is only the source `workspace_history` object. Its canonical digest
+must be retained outside the task. The target binding covers the anchored
+bundle, restore attempt and complete admitted workspace runtime inventory.
+The launcher computes it; copying a digest from the target's own files is
+insufficient. This operation requires a canonical Session inside the captured
+workspace, the same logical root path and the caller's already admitted
+quiescent keeper. It does not pause arbitrary host Sessions or establish a
+lease against other host actors.
+
+The filehistory owner publishes and syncs a pending marker, stages new
+target-bound frames and a terminal operation, then atomically exchanges the
+active and staging directories on Linux/Darwin. The original raw files remain
+byte-for-byte at
+`SESSION_ID.workspace-history.cold-source-RESTORE_ATTEMPT_UUID`. The new
+`cold-origin.json` binds that archive, normalized hashes and target generation.
+Keep the archive with the Session; later checks and migrations require it.
+
+Normalization changes physical root bindings, adds the migration UUID to frames
+and recomputes the root-dependent restore plan digest. Logical comparison
+excludes only those fields. Record IDs, ordering, timestamps, captured bytes,
+turn eligibility, path statuses and confirmation diagnostics remain bound;
+original physical bytes are separately archived and hashed. Stored confirmation
+never authorizes another restore or starts an Agent.
+
+Ordinary history opens and subsequent writes validate the immutable imported
+prefix, terminal restore bytes and archive chain. Later file-tool turns can
+append through the existing owner; they cannot rewrite that prefix. Starting
+another restore transaction on imported history is still unverified and is
+blocked at preparation, apply and store admission before intent is published.
+This also covers introducing a restore file when the source had none. A new process
+also rejects migrated frames whose origin receipt is missing. A later cold
+capture must export the newly advanced state rather than reuse an old import.
+Provenance is bounded to sixteen imports and 64 MiB of archived metadata.
+
+An interrupted import remains blocked. An explicit exact retry can converge
+before or after exchange only when the full source, staging files, target
+identity and original request still match. An unknown partial stage is preserved
+and rejected. A completed exact replay reads the same receipt without rewriting
+files. A different request or advanced history cannot reset progress. The outer
+bundle restore claim remains single use: import retry does not authorize
+retrying a quarantined bundle or paid task.
+
+After import, the launcher obtains a fresh native proof, verifies actual origin
+and target-local history, compares logical state with the captured source and
+rechecks closed cumulative usage. Services and advancing clocks activate only
+after those checks. Explicit dispatch repeats joined checks before claims and
+reservations. The cold tool handoff adopts the same verified read-guard owner;
+terminal restore paths lose prior read credit and retain the generic instruction
+to reread changed files. Unrelated read scopes stay blocked.
 
 ## Capture one bound bundle
 
@@ -343,13 +439,13 @@ native probe, source claim or cohort allocation, `validate_gateway_transport`
 therefore requires a literal loopback IP in `route.base_url`, HTTP(S), and a
 valid port (1–65535 when explicit). Host/external addresses, DNS names including
 `localhost`, scoped or IPv4-mapped IPv6 and ambiguous shorthand addresses are blocked without
-DNS lookup or a connection attempt. A host gateway cannot be reached through
-this profile; a verified relay or a separately verified network profile is
-still required before using it for real provider traffic. The launcher does
-not add a relay or change the container network.
+DNS lookup or a connection attempt. The optional host transport below adds a
+bounded pipe while keeping this network profile; without it the route must
+already be reachable inside the isolated container. Neither choice proves real
+gateway account coverage or provides a spending grant.
 
 The optional [host-pipe fixture](../../scripts/terminal_bench/test_host_gateway_pipe_docker.py)
-tests that missing channel without enabling it in production. Its immutable
+keeps an independent synthetic-only byte-channel calibration. Its immutable
 [test helper](../../scripts/terminal_bench/testdata/host_gateway_pipe.py) forwards
 opaque JSON request and response-body bytes over bounded, nonce-bound standard
 input/output frames to an
@@ -372,12 +468,11 @@ A helper that exits during startup must be reaped with closed pipes and no
 relay thread, while the consumed claim and complete allocation remain retained
 and the owned workspace is quarantined with its data volume intact.
 
-This is test-only wiring: `ColdBenchmarkLauncher` and `DockerWorkspace.rpc`
-still have no production host relay. Successful byte transfer grants neither
+This original fixture remains test-only. The separate operator transport below
+uses the production launcher and keeper. Successful byte transfer grants neither
 resume authority nor spending authority and is not provider-usage closure.
-Real funding/account coverage, opaque credential integration and a production
-transport lifecycle remain unverified and blocked. Do not use the fixture
-helper for paid traffic.
+Real funding/account coverage and provider billing closure remain separate
+unverified requirements. Do not use the fixture helper for paid traffic.
 
 A loopback address is only a necessary transport condition. It does not prove
 that a trusted gateway is ready or grant spending permission. The independently
@@ -509,8 +604,75 @@ This remains the explicitly cooperative, isolated keeper protocol above.
 Service/workspace observations are point-in-time checks within that closed
 world, not transactions against arbitrary external host actors. Network or
 environment transitions, unsupported tool/process state and ordinary Harbor
-cold recovery remain blocked. Offline fixtures install a synthetic loopback
-provider after host admission; they prove no paid gateway or model capability.
+cold recovery remain blocked. Offline fixtures exercise synthetic loopback
+providers; they prove no paid gateway or model capability.
+
+### Opt in to the host gateway transport
+
+The optional
+[`HostGatewayTransport`](../../scripts/terminal_bench/host_gateway_transport.py)
+connects the existing CLI to a trusted host-owned HTTP gateway through the
+keeper RPC's standard input/output. It is disabled when its two options are
+absent. It currently supports the DeepSeek Responses route, an explicit numeric
+loopback HTTP endpoint on both sides, and the captured native route/token
+identity. DNS, proxies, redirects, other API protocols and network-profile
+changes remain unsupported. The gateway owns provider credentials, account
+coverage and its reservation policy; this transport reads no provider key and
+implements no replacement budget or billing system.
+
+Before capture, install the repository's `workspace_io.py` and
+`host_gateway_transport.py` at their fixed `/opt/checkpoint/` paths in the same
+immutable image as the CLI. Capture and restore must use that exact image.
+Prepare a private host-owned JSON binding with exactly these fields:
+
+| Field | Required value |
+|---|---|
+| `version`, `scope` | `1`, `benchmark-host-gateway-transport-v1` |
+| `grant_sha256` | The separately anchored dispatch grant's canonical digest |
+| `workspace_container_id` | Exact target container ID |
+| `upstream_base_url` | Explicit numeric host-loopback HTTP URL and port, without credentials, query or path prefix |
+| `gateway_token_sha256` | SHA-256 of the existing opaque `YHC_BENCH_GATEWAY_TOKEN`, never the provider key |
+| `expires_unix` | UTC expiry covering the full granted timeout |
+
+Anchor that binding's canonical digest independently, then add these options to
+the dispatch command above:
+
+```bash
+  --host-gateway-transport /absolute/private-control-dir/transport.json \
+  --host-gateway-transport-sha256 TRANSPORT_CANONICAL_SHA256
+```
+
+Pure binding and token checks precede the source lock. The existing consumed
+check precedes every readiness probe; a losing/replayed dispatcher cannot probe
+or change the winner's Session. Workspace inventory and the anchored image are
+verified before invoking the immutable helper. Helper bytes and local port
+availability are checked, followed by a host TCP readiness check with no HTTP
+request. These checks precede cohort admission and are repeated before its
+durable allocation. They establish point-in-time transport readiness, not
+account, provider, price or billing verification.
+
+The claim and complete new allocation remain durable before the CLI starts.
+Nonce, sequence, integrity, route/model, output cap, actual call count and
+expiry checks bound each forwarded request. Framing is capped at 8 MiB per
+frame, requests at 4 MiB, and total response bytes at 8 MiB. The grant's call
+window cannot be extended by the 15-second transport shutdown grace. After a
+stream fault or non-2xx response, no later request is forwarded; only terminal
+checkpoint readback can close the channel. Unknown usage retains its allocation.
+
+The container binds a loopback server only while the existing immutable CLI
+operation runs. Its task environment receives the opaque gateway token; the
+host Docker client does not inherit provider-key or proxy variables. The
+normal post-dispatch inventory still requires a passive keeper. A broken pipe,
+unclosed server or leftover process retains the claim and allocation and
+quarantines the owned workspace. Neither that failure nor a successful receipt
+allows automatic paid retry or reopens the old source.
+
+Captured history uses the explicit migration above. The
+[revision journal](../../engine/filehistory/revisions.go) continues to reject
+an incompatible root, pending marker or invalid imported provenance. The
+[review owner](../../engine/workspace_revisions.go) preserves unavailable
+history; ordinary turns and effectful commands stop when it cannot be
+revalidated. The gateway transport supplies no alternative recovery authority.
 
 ## Reproduce without a paid provider
 
@@ -519,8 +681,10 @@ python3 -m unittest scripts.terminal_bench.test_recovery_bundle.HistoryTests
 python3 -m unittest scripts.terminal_bench.test_recovery_bundle.SessionIdentityTests
 python3 -m unittest scripts.terminal_bench.test_paused_recovery
 python3 -m unittest scripts.terminal_bench.test_cohort_admission
+python3 -m unittest scripts.terminal_bench.test_history_state
+go test -race ./engine/filehistory -run '^TestColdHistory'
 go test ./engine/session ./engine ./cmd/yhc/cmd \
-  -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof)'
+  -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof|ColdHistory|ExecColdToolHandoff)'
 ```
 
 The file-transport tests use Linux extended-attribute APIs. On a macOS host,
@@ -543,6 +707,20 @@ host-pipe cases, rather than rerunning inherited native-only cases. Pure
 framing, deadline, endpoint and disconnect checks run with
 `python3 -m unittest scripts.terminal_bench.test_host_gateway_pipe` and are part
 of `make test-provider-costs`.
+
+For the production transport, use the same cached image/binary/proof-directory
+setup with `YHC_NATIVE_RECOVERY_DOCKER_TEST=1` and
+`YHC_HOST_GATEWAY_TRANSPORT_DOCKER_TEST=1`, then run
+`python3 -m unittest scripts.terminal_bench.test_host_gateway_transport_docker`.
+These cases use the actual optional launcher path without an injected RPC
+wrapper, with known settlement, truncated unknown usage, budget denial,
+unready gateway, killed-helper quarantine, terminal restore migration and legacy
+history rejection. Fake host-key canaries are
+checked against restored workspace files. Pure framing, admission, fault and
+process-cleanup checks run through
+`python3 -m unittest scripts.terminal_bench.test_host_gateway_transport` and
+`make test-provider-costs`. This proves offline wiring, not real funding,
+provider billing, benchmark reward or model quality.
 
 The positive fixture destroys original containers and volumes, checks Git
 staged/unstaged state and file metadata, loads committed tool history without

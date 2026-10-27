@@ -12,6 +12,7 @@ from scripts.terminal_bench.cold_recovery import bounded_command
 from scripts.terminal_bench.service_snapshot import decode, encode, identity, require
 from scripts.terminal_bench.usage import sum_usage, validated_usage
 from scripts.terminal_bench.workspace_io import PROTOCOL, session_identity
+from scripts.terminal_bench.history_state import history_proof
 
 WORKSPACE_COHORT = "io.yhc.workspace-cohort"
 WORKSPACE_ROLE = "io.yhc.workspace-role"
@@ -81,8 +82,11 @@ def native_proof(value, session_id, cwd):
     # The nonce is evidence of a fresh loader process, never part of semantic
     # equality. Native transcript accounting and invocation accounting have
     # different coverage; do not force their token totals to be equal.
-    return {key: value[key] for key in ("version", "scope", "session_id", "thread_id", "cwd",
-                                       "message_count", "messages_sha256", "native_usage")}
+    result = {key: value[key] for key in ("version", "scope", "session_id", "thread_id", "cwd",
+                                        "message_count", "messages_sha256", "native_usage")}
+    if "workspace_history" in value:
+        result["workspace_history_semantic_sha256"] = history_proof(value["workspace_history"], session_id, cwd)["semantic_sha256"]
+    return result
 
 
 class DockerWorkspace:
@@ -122,7 +126,8 @@ class DockerWorkspace:
         for mount in mounts:
             destination = mount.get("Destination", "")
             require(destination and all(not (binary == destination or binary.startswith(destination.rstrip("/") + "/"))
-                    for binary in ("/opt/checkpoint/workspace_io.py", "/opt/yhc/yhc", "/usr/local/bin/python3")),
+                    for binary in ("/opt/checkpoint/workspace_io.py", "/opt/checkpoint/host_gateway_transport.py",
+                                   "/opt/yhc/yhc", "/usr/local/bin/python3")),
                     "workspace_control_executable_not_immutable")
         volumes = [m for m in mounts if m.get("Type") == "volume"]
         require(len(volumes) == 1 and volumes[0].get("Destination") == self.cwd
@@ -152,10 +157,10 @@ class DockerWorkspace:
         ids = self.docker("ps", "--all", "--quiet", "--no-trunc").decode().split()
         require(source["container_id"] not in ids, "workspace_source_container_still_exists")
 
-    def launch_cold(self, launch, gateway_token):
+    def launch_cold(self, launch, gateway_token, *, transport=None):
         require(self.inventory() == launch["expected_workspace"], "dispatch_workspace_generation_changed")
         payload = {"launch": launch, "gateway_token": gateway_token}
-        result = self.rpc("cold_dispatch", **payload)
+        result = self.rpc("cold_dispatch", **payload) if transport is None else transport.rpc(self, launch, gateway_token)
         require(self.inventory() == launch["expected_workspace"], "dispatch_uncheckpointed_processes_remain")
         return result
 

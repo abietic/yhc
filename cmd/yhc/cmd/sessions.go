@@ -105,7 +105,7 @@ func newSessionsCommand() *cobra.Command {
 			return renderSessionAdministrationUsage(
 				cmd,
 				"sessions",
-				usageErrorf("sessions requires one of: list, resume, rename, export, fork, delete, recover-workboard"),
+				usageErrorf("sessions requires one of: list, resume, rename, export, fork, delete, recover-workboard, recover-history"),
 			)
 		},
 	}
@@ -123,6 +123,7 @@ func newSessionsCommand() *cobra.Command {
 		newSessionsForkCommand(options),
 		newSessionsDeleteCommand(options),
 		newSessionsRecoverWorkBoardCommand(options),
+		newSessionsRecoverHistoryCommand(options),
 	)
 	return command
 }
