@@ -150,6 +150,10 @@ asks the model to continue only an explicit, unfinished user request whose
 prerequisites are met, preserving its action, target and scope. Completed
 explanations or summaries, missing information and unresolved choices call for
 abstention. Commit, push, edit and research are not inferred from task completion.
+For an explicitly requested test after a fix, an edit or file summary does not
+count as a test result: the original test remains pending until a post-fix result
+is reported. A short draft may reuse the user's test name or scope without
+inventing a literal command; actual reported blockers still call for abstention.
 The prompt uses the existing `no suggestion` marker for abstention, which
 `FilterSuggestion` hides as meta text. These are model instructions, not a
 deterministic semantic authorization check; the filter still checks text shape
