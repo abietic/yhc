@@ -35,6 +35,14 @@ def user_files(entries):
     return [e for e in entries if e["path"] != "." and e["path"] != ".yhc" and not e["path"].startswith(".yhc/")]
 
 
+def require_portable_history(entries, session_id):
+    # Device/inode can be reused after destroying a volume. Successful local
+    # journal loading therefore does not attest to a cross-volume migration.
+    prefix = ".yhc/transcripts/" + session_id + ".workspace-history"
+    require(not any(e["path"] == prefix or e["path"].startswith(prefix + "/") for e in entries),
+            "workspace_history_cold_migration_unverified")
+
+
 class RecoveryBundle:
     def __init__(self, services, workspace):
         self.services, self.workspace = services, workspace
@@ -61,6 +69,7 @@ class RecoveryBundle:
                 and before["daemon_id"] == service["source"]["daemon_id"], "bundle_source_cohort_mismatch")
         accounting = usage_history(history, session_id)
         pre_native = validate_entries(self.workspace.rpc("inventory"))
+        require_portable_history(pre_native, session_id)
         native_path = ".yhc/transcripts/" + session_id + ".jsonl"
         require(any(e["path"] == native_path and e["kind"] == "file" for e in pre_native), "canonical_native_transcript_not_captured")
         proof = self.workspace.rpc("native_probe", session_id=session_id)
@@ -72,6 +81,7 @@ class RecoveryBundle:
         else:
             native_proof(proof, session_id, before["cwd"])
         entries = validate_entries(self.workspace.rpc("inventory"))
+        require_portable_history(entries, session_id)
         require(any(e["path"] == native_path and e["kind"] == "file" for e in entries), "canonical_native_transcript_not_captured")
         if pause:
             checkpoint_path = pause["record"]["checkpoint_path"]
@@ -136,6 +146,7 @@ class RecoveryBundle:
             native_proof(body["native_proof"], session_id, source["cwd"])
         accounting = usage_history(body["usage_history"], session_id)
         entries = validate_entries(body["entries"])
+        require_portable_history(entries, session_id)
         files = [e for e in entries if e["kind"] == "file"]
         require(isinstance(body["payloads"], list) and len(files) == len(body["payloads"]), "bundle_payload_missing")
         blobs = {}

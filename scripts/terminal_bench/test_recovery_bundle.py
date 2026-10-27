@@ -233,6 +233,33 @@ class BundleTests(unittest.TestCase):
         extra["segments"].append(dict(ordinal=3, session_id=self.session, usage=more))
         self.assertEqual(usage_history(extra, self.session)["totals"]["total_tokens"], 42)
 
+    def test_existing_history_is_rejected_before_capture_native_probe(self):
+        journal = self.source_root / ".yhc/transcripts" / (self.session + ".workspace-history")
+        journal.mkdir(mode=0o700)
+        with self.assertRaisesRegex(SnapshotError, "workspace_history_cold_migration_unverified"):
+            self.capture()
+        self.assertNotIn("native_probe", self.source.calls)
+        self.assertFalse(self.path.exists())
+        self.assertTrue(journal.is_dir())
+
+    def test_legacy_history_bundle_is_rejected_before_restore_claim_or_rpc(self):
+        journal = self.source_root / ".yhc/transcripts" / (self.session + ".workspace-history")
+        journal.mkdir(mode=0o700)
+        (journal / "revisions.jsonl").write_text("owned legacy observation")
+        # Construct the old capturer's anchored artifact. The current loader
+        # must reject it even if an old/native proof would accept reused inodes.
+        with mock.patch("scripts.terminal_bench.recovery_bundle.require_portable_history"):
+            root_digest = self.capture()
+        manifest = (self.path / "manifest.json").read_bytes()
+        bundle, workspace, _ = self.target()
+        with self.assertRaisesRegex(SnapshotError, "workspace_history_cold_migration_unverified"):
+            bundle.restore(self.path, root_digest, self.service_path, self.attempt)
+        self.assertEqual(workspace.calls, [])
+        self.assertFalse(workspace.stopped)
+        self.assertEqual(list(self.target_root.iterdir()), [])
+        self.assertEqual((self.path / "manifest.json").read_bytes(), manifest)
+        self.assertFalse(list(self.control.glob("bundle-restore.*.json")))
+
     def test_unknown_usage_and_retained_reservation_are_preserved_without_target_mutation(self):
         self.hist = history(self.session, [invocation(), invocation(unknown=True)])
         root_digest = self.capture()

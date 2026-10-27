@@ -76,6 +76,15 @@ Even a completed file-restore operation remains outside this cold proof.
 Absent history is not created by inspection. These blockers stop bundle
 restoration before service activation, dispatch claims or new budget allocation.
 
+Local journal validity is not a portability proof: a destroyed volume's
+device/inode may be reused by another volume. The bundle therefore rejects
+the selected Session's `.workspace-history` at capture and load with
+`workspace_history_cold_migration_unverified`, even when native loading happens
+to accept its identity. Legacy bundles receive the same rejection before
+restore claims or target RPC. Current Sessions that contain this history need
+a separately verified migration; retaining the bytes does not make them
+eligible for this cold-dispatch path.
+
 The opt-in proof also requires a closed native conversation turn. A transcript
 ending at a user prompt, an unresolved tool call, or matched tool results without
 a final assistant response reports `native_turn_incomplete`, even when all

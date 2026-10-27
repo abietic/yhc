@@ -249,36 +249,36 @@ os.kill(found[0],signal.SIGKILL)
     def test_production_host_gateway_unready_precedes_claim(self): self.check_gateway("unready")
     def test_production_host_gateway_helper_eof_quarantines_workspace(self): self.check_gateway("helper_eof")
 
-    def test_copied_history_blocks_before_service_activation_and_dispatch(self):
-        manifest, _, _ = self.capture_joint(paused=True, environment_key=True, generated_session=True, history_journal=True)
+    def test_legacy_history_blocks_before_restore_claim_and_dispatch(self):
+        # Recreate an anchored bundle from the old capturer. The real current
+        # loader must not rely on an inode failing to be reused by Docker.
+        with mock.patch("scripts.terminal_bench.recovery_bundle.require_portable_history"):
+            manifest, _, _ = self.capture_joint(paused=True, environment_key=True, generated_session=True, history_journal=True)
         bundle = self.target_bundle()
         plan = cohort_plan([manifest["usage_history"], history(str(uuid.uuid4()))], cohort=manifest["cohort_id"], cap="6")
         cohort = CohortAdmission.create(self.control / "history-rejection-cohort", plan, digest(plan))
         before = cohort.inspect()
-        observed = {}
+        observed = []
         original_rpc = bundle.workspace.rpc
         def observe_rpc(operation, **body):
-            result = original_rpc(operation, **body)
-            if operation == "native_probe":
-                observed["native_proof"] = result
-            return result
+            observed.append(operation)
+            return original_rpc(operation, **body)
         bundle.workspace.rpc = observe_rpc
         with mock.patch.object(bundle.services, "restore", side_effect=AssertionError("services activated before native admission")) as activate:
-            with self.assertRaisesRegex(SnapshotError, "paused_native_has_other_blockers"):
+            with self.assertRaisesRegex(SnapshotError, "workspace_history_cold_migration_unverified"):
                 bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
             activate.assert_not_called()
-        self.assertIn("workspace_history_unavailable", observed["native_proof"]["blocking_reasons"])
-        self.assertFalse(observed["native_proof"]["validation_complete"])
+        self.assertEqual(observed, [])
         self.assertEqual(cohort.inspect(), before)
         self.assertFalse((self.control / ("bundle-receipt." + self.bundle_digest + ".json")).exists())
-        stopped = json.loads(self.docker("inspect", bundle.workspace.container))[0]["State"]
-        self.assertFalse(stopped["Running"] or stopped["Restarting"])
-        self.assertEqual(stopped["Pid"], 0)
+        self.assertFalse((self.control / ("bundle-restore." + self.bundle_digest + ".json")).exists())
+        self.assertEqual([entry["path"] for entry in original_rpc("inventory")], ["."])
         evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
         if evidence:
             write_report(Path(evidence) / "host-gateway-history-rejected.json", dict(
-                native_proof=observed["native_proof"], service_activation_calls=0, agent_dispatched=False,
-                cohort_unchanged=True, workspace_stopped=True, real_provider_requests=0))
+                blocking_reason="workspace_history_cold_migration_unverified", target_restore_rpc_calls=0,
+                service_activation_calls=0, agent_dispatched=False, restore_claim_created=False,
+                cohort_unchanged=True, target_unchanged=True, real_provider_requests=0, can_resume_agent=False))
 
 
 def load_tests(loader, tests, pattern):
@@ -286,4 +286,4 @@ def load_tests(loader, tests, pattern):
         "test_production_host_gateway_known_cold_dispatch", "test_production_host_gateway_reset_retains_closed_unknown_usage",
         "test_production_host_gateway_budget_denial_preserves_claim", "test_production_host_gateway_unready_precedes_claim",
         "test_production_host_gateway_helper_eof_quarantines_workspace",
-        "test_copied_history_blocks_before_service_activation_and_dispatch"))
+        "test_legacy_history_blocks_before_restore_claim_and_dispatch"))
