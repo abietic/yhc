@@ -68,6 +68,14 @@ state, pending inputs/callbacks, child lineage and external workspace state
 that this version cannot completely verify. Passive file retention never
 replaces this load test.
 
+An existing workspace history must also pass its owner's filesystem identity
+checks. A journal that cannot be opened or revalidated reports
+`workspace_history_unavailable`. Once the journal opens, an unreadable,
+malformed or recorded restore operation reports `workspace_restore_state_unverified`.
+Even a completed file-restore operation remains outside this cold proof.
+Absent history is not created by inspection. These blockers stop bundle
+restoration before service activation, dispatch claims or new budget allocation.
+
 The opt-in proof also requires a closed native conversation turn. A transcript
 ending at a user prompt, an unresolved tool call, or matched tool results without
 a final assistant response reports `native_turn_incomplete`, even when all
@@ -571,14 +579,17 @@ unclosed server or leftover process retains the claim and allocation and
 quarantines the owned workspace. Neither that failure nor a successful receipt
 allows automatic paid retry or reopens the old source.
 
-Captured change-review journals are a separate observability component. The
+Captured change-review and file-restore journals have their own state owner. The
 [revision journal](../../engine/filehistory/revisions.go) binds its frames to
 the original filesystem root identity; copying its bytes to a new volume does
 not make it replayable. The current
 [review owner](../../engine/workspace_revisions.go) preserves an incompatible
-journal and reports history unavailable. This file-tool dispatch proof does
-not rebind that history or certify its restoration. Do not weaken that owner
-check or describe copied review files as recovered review capability.
+journal and reports history unavailable. Ordinary new turns and effectful
+commands also stop when that existing history cannot be revalidated. The
+opt-in native proof reports the blocker before cold budget admission. This
+file-tool dispatch proof does not rebind that history or certify restoration
+of file-restore operations. Do not weaken that owner check or describe copied
+history files as recovered capability.
 
 ## Reproduce without a paid provider
 

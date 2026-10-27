@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/abietic/yhc/engine"
+	"github.com/abietic/yhc/engine/filehistory"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/transcript"
 )
@@ -24,8 +25,20 @@ func main() {
 
 func seed() error {
 	root, err := os.Getwd()
-	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready"))) {
+	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready" && os.Args[2] != "--history-journal"))) {
 		return fmt.Errorf("fixture arguments")
+	}
+	if len(os.Args) == 3 && os.Args[2] == "--history-journal" {
+		id := os.Args[1]
+		journal, err := filehistory.OpenRevisionJournal(root, filepath.Join(root, ".yhc", "transcripts", id+".workspace-history"), id)
+		if err != nil {
+			return err
+		}
+		if err := journal.RecordTurnStart("fixture-history-turn", id, time.Unix(1, 0).UTC()); err != nil {
+			_ = journal.Close()
+			return err
+		}
+		return journal.Close()
 	}
 	write := func(name, text string, mode os.FileMode) error {
 		return os.WriteFile(filepath.Join(root, name), []byte(text), mode)

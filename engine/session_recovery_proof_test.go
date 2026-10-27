@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/abietic/yhc/engine/filehistory"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/transcript"
 )
@@ -43,6 +46,9 @@ func TestResumeInfoWithRecoveryProofUsesLoadedAdministrationState(t *testing.T) 
 	if resumed.SessionID != proof.SessionID || proof.ThreadID != "proof-thread" || proof.MessageCount != 2 || proof.NativeUsage.TotalTokens != 10 || !proof.ValidationComplete || proof.CanResumeAgent {
 		t.Fatalf("proof = %#v", proof)
 	}
+	if _, err := os.Lstat(filepath.Join(transcriptDir, "proof-session.workspace-history")); !os.IsNotExist(err) {
+		t.Fatalf("proof created an absent history journal: %v", err)
+	}
 	encoded, err := json.Marshal(proof)
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +64,106 @@ func TestResumeInfoWithRecoveryProofRejectsNonAdministrationEngine(t *testing.T)
 	_, _, err := eng.SessionService().ResumeInfoWithRecoveryProof(t.Context(), session.SessionInfo{SessionID: "nope"})
 	if err == nil || !strings.Contains(err.Error(), "administration") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestResumeInfoWithRecoveryProofRejectsUnverifiedWorkspaceHistory(t *testing.T) {
+	for _, scenario := range []string{"compatible", "replaced_root", "invalid_restore"} {
+		t.Run(scenario, func(t *testing.T) {
+			parent, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, dir := filepath.Join(parent, "workspace"), filepath.Join(parent, "transcripts")
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			const id = "history-proof"
+			recorder := transcript.NewRecorder(id, dir)
+			if err := recorder.RecordMessages([]*schema.Message{
+				{Role: schema.User, Content: "owned recovery fixture"},
+				{Role: schema.Assistant, Content: "completed", ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 7, CompletionTokens: 3, TotalTokens: 10}}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := session.WriteSessionMetadata(recorder, &session.SessionMetadataFull{SessionID: id, ThreadID: id, CWD: root, QueryKernelVersion: queryKernelVersionProjectGraph, QueryKernelStage: string(queryKernelStageFull)}); err != nil {
+				t.Fatal(err)
+			}
+			if err := recorder.Close(); err != nil {
+				t.Fatal(err)
+			}
+			historyDir := filepath.Join(dir, id+".workspace-history")
+			journal, err := filehistory.OpenRevisionJournal(root, historyDir, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.RecordTurnStart("source-turn", id, time.Unix(1, 0).UTC()); err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+			journalPath := filepath.Join(historyDir, "revisions.jsonl")
+			before, err := os.ReadFile(journalPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ""
+			switch scenario {
+			case "replaced_root":
+				if err := os.Rename(root, root+"-original"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(root, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				want = "workspace_history_unavailable"
+			case "invalid_restore":
+				if err := os.WriteFile(filepath.Join(historyDir, "restore.json"), []byte("{invalid fixture"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				want = "workspace_restore_state_unverified"
+			}
+			eng := NewSessionAdministrationEngine(SessionAdministrationConfig{CWD: root, TranscriptDir: dir})
+			t.Cleanup(eng.Close)
+			_, proof, err := eng.SessionService().ResumeInfoWithRecoveryProof(t.Context(), session.SessionInfo{SessionID: id, CWD: root, TranscriptDir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want == "" {
+				if !proof.ValidationComplete {
+					t.Fatalf("compatible observation history rejected: %+v", proof)
+				}
+			} else if proof.ValidationComplete || !slices.Contains(proof.BlockingReasons, want) || proof.CanResumeAgent {
+				t.Fatalf("unverified history accepted: %+v", proof)
+			}
+			after, err := os.ReadFile(journalPath)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("proof changed the source journal: %v", err)
+			}
+		})
+	}
+}
+
+func TestRecoveryProofExcludesCompletedWorkspaceRestore(t *testing.T) {
+	eng, _, turn, calls, _ := newRestoreEngineFixture(t, PermissionAllowOnce)
+	if blocker := eng.recoveryProofWorkspaceHistoryBlocker(); blocker != "" {
+		t.Fatalf("compatible capture blocked: %s", blocker)
+	}
+	preview, err := eng.PrepareWorkspaceRestore(turn, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := eng.ConfirmWorkspaceRestore(t.Context(), preview.ID, true)
+	if err != nil || status.State != "completed" || status.Finished != 1 {
+		t.Fatalf("restore status=%+v err=%v", status, err)
+	}
+	before := calls.Load()
+	if blocker := eng.recoveryProofWorkspaceHistoryBlocker(); blocker != "workspace_restore_state_unverified" {
+		t.Fatalf("completed restore accepted without a cold-state proof: %s", blocker)
+	}
+	if calls.Load() != before {
+		t.Fatal("recovery inspection dispatched model work")
 	}
 }
 

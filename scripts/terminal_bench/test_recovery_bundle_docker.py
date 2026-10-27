@@ -111,7 +111,7 @@ class NativeColdDockerTests(unittest.TestCase):
         self.addCleanup(self.remove_workspace, container, volume)
         return DockerWorkspace(container, "/workspace", self.cohort, attempt), volume
 
-    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False, generated_session=False):
+    def capture_joint(self, unbound=False, tool_ready=False, paused=False, environment_key=False, generated_session=False, history_journal=False):
         self.session, self.attempt = str(uuid.uuid4()), str(uuid.uuid4())
         source_project, source_definition, _ = self.provision()
         observed = {}
@@ -148,6 +148,8 @@ class NativeColdDockerTests(unittest.TestCase):
                              dict(record=pause_record, checkpoint=execution["durable_checkpoint"], verification_complete=False))
             supplied_history = history(self.session, [s["usage"] for s in supplied_history["segments"]] + [execution["result"]["usage"]])
             git_status = self.docker("exec", "--workdir", "/workspace", source.container, "git", "status", "--porcelain=v1")
+        if history_journal:
+            self.docker("exec", "--workdir", "/workspace", source.container, "/opt/checkpoint/seed-native", self.session, "--history-journal")
         original_rpc = source.rpc
         def source_rpc(operation, **body):
             value = original_rpc(operation, **body)

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
@@ -75,9 +77,38 @@ func (s *SessionService) ResumeInfoWithRecoveryProof(
 		CanResumeAgent: false,
 	}
 	proof.BlockingReasons = recoveryProofBlockers(resumed, s.engine.RuntimeItems(), usage)
+	if blocker := s.engine.recoveryProofWorkspaceHistoryBlocker(); blocker != "" {
+		proof.BlockingReasons = append(proof.BlockingReasons, blocker)
+	}
 	proof.ToolBoundary = recoveryProofToolBoundary(loadedMessages, proof.CWD)
 	proof.ValidationComplete = len(proof.BlockingReasons) == 0
 	return resumed, proof, nil
+}
+
+// Inspect only an existing journal: proving a Session with no history must not
+// create one. Reuse its owning validator without rebinding filesystem identity
+// or replaying a restore. Restore operations require a separate cold-state proof.
+func (e *QueryEngine) recoveryProofWorkspaceHistoryBlocker() string {
+	identity, c := e.lockWorkspaceRevisions()
+	defer c.mu.Unlock()
+	if c.restoreCancel != nil || c.restorePreview != nil || c.externalWriters != 0 {
+		return "workspace_restore_state_unverified"
+	}
+	_, err := os.Lstat(filepath.Join(identity.dir, identity.sessionID+".workspace-history"))
+	if os.IsNotExist(err) && !c.hadRestoreAuthority {
+		return ""
+	}
+	if err != nil {
+		return "workspace_history_unavailable"
+	}
+	journal := c.journalLocked(identity)
+	if journal == nil {
+		return "workspace_history_unavailable"
+	}
+	if _, found, err := journal.LoadRestoreOperation(); err != nil || found {
+		return "workspace_restore_state_unverified"
+	}
+	return ""
 }
 
 func recoveryProofMessagesSHA256(messages any) (string, error) {
