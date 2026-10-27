@@ -31,6 +31,9 @@ type renderCacheEntry struct {
 	themeGen    uint64 // active ChatView style generation
 	geometryGen uint64
 	environment renderEnvironmentIdentity
+
+	// Animation and content versions are separate cache dimensions.
+	animationVersion uint64
 }
 
 // chatViewportRowKind describes one final published chat row. Only transcript
@@ -1700,11 +1703,12 @@ func (c *ChatView) renderItem(item ChatItem, width int) *renderCacheEntry {
 	}
 
 	ver := semantic.Version()
+	var animationVersion uint64
 	if animated, ok := historyCapabilitySource(item).(HistoryAnimatableItem); ok {
-		ver = animated.HistoryAnimationVersion(uint64(c.spinnerCount))
+		animationVersion = animated.HistoryAnimationVersion(uint64(c.spinnerCount))
 	}
 
-	if fresh && entry.version == ver && entry.width == width {
+	if fresh && entry.version == ver && entry.animationVersion == animationVersion && entry.width == width {
 		return entry // cache hit
 	}
 
@@ -1776,6 +1780,8 @@ func (c *ChatView) renderItem(item ChatItem, width int) *renderCacheEntry {
 		themeGen:    c.themeGen,
 		geometryGen: c.environment.geometryGen,
 		environment: environment,
+
+		animationVersion: animationVersion,
 	}
 	c.renderCache[cacheKey] = entry
 	return entry
