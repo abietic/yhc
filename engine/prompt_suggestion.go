@@ -16,7 +16,7 @@ var (
 )
 
 func promptSuggestionInputMessages(conversation []string) []*schema.Message {
-	messages := make([]*schema.Message, 0, len(conversation)+1)
+	messages := make([]*schema.Message, 0, len(conversation))
 	for _, entry := range conversation {
 		// backgroundMessageStrings owns the outer role prefix. Decode it once;
 		// role-looking text inside the content remains literal historical text.
