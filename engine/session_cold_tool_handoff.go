@@ -42,6 +42,7 @@ type ColdToolStateProof struct {
 	SourceSegmentID       string `json:"source_segment_id"`
 	NewSegmentID          string `json:"new_segment_id"`
 	GuardCount            int    `json:"guard_count"`
+	InvalidatedGuardCount int    `json:"invalidated_guard_count,omitempty"`
 	ReadGuardsRestored    bool   `json:"read_guards_restored"`
 	DispatchClaimed       bool   `json:"dispatch_claimed"`
 	DispatchMode          string `json:"dispatch_mode"`
@@ -116,10 +117,6 @@ func (s *SessionService) ResumeInfoWithColdToolHandoff(ctx context.Context, info
 		checkpoint.Snapshot.Cost.Reservation.OutstandingAmount != "0.000000000000" || checkpoint.Snapshot.Cost.Reservation.RetainedAmount != "0.000000000000" {
 		return nil, proof, ErrColdToolHandoff
 	}
-	guards, err := tools.RestoreFileReadGuards(handoff.ReadGuards)
-	if err != nil {
-		return nil, proof, ErrColdToolHandoff
-	}
 	claimStore, unlock, err := openColdToolDispatchClaim(ctx, native.CWD, checkpoint.SegmentID)
 	if err != nil {
 		return nil, proof, err
@@ -143,19 +140,23 @@ func (s *SessionService) ResumeInfoWithColdToolHandoff(ctx context.Context, info
 	if historyBlocker != "" || !reflect.DeepEqual(history, native.WorkspaceHistory) || !reflect.DeepEqual(origin, native.WorkspaceHistoryOrigin) || history != nil && origin == nil {
 		return nil, proof, ErrColdToolHandoff
 	}
-	// Revalidate file bytes after canonical loading and before consuming the
-	// durable launch claim. A fresh process must hydrate them again after death.
-	if _, err := guards.Snapshot(native.CWD); err != nil {
+	var guards *tools.FileReadGuards
+	if history != nil {
+		guards, err = eng.restoreColdHistoryGuards(handoff.ReadGuards, *history)
+	} else {
+		guards, err = tools.RestoreFileReadGuards(handoff.ReadGuards)
+	}
+	if err != nil {
 		return nil, proof, ErrColdToolHandoff
 	}
-	if history != nil {
-		if err := eng.bindColdHistoryGuards(guards); err != nil {
-			return nil, proof, err
-		}
+	// Revalidate retained observations before consuming the durable launch claim.
+	retained, err := guards.Snapshot(native.CWD)
+	if err != nil {
+		return nil, proof, ErrColdToolHandoff
 	}
 	proof = ColdToolStateProof{
 		Version: 1, Scope: "cold_file_tool_state_restore", SessionID: native.SessionID, NativeSHA256: actualSHA,
-		SourceSegmentID: checkpoint.SegmentID, NewSegmentID: fresh.CallLedger.SegmentID, GuardCount: len(handoff.ReadGuards.Entries),
+		SourceSegmentID: checkpoint.SegmentID, NewSegmentID: fresh.CallLedger.SegmentID, GuardCount: len(retained.Entries), InvalidatedGuardCount: len(handoff.ReadGuards.Entries) - len(retained.Entries),
 		ReadGuardsRestored: true, DispatchClaimed: true, DispatchMode: "explicit_new_user_turn",
 	}
 	if history != nil {

@@ -18,9 +18,6 @@ func (j *RevisionJournal) PrepareRestoreOperation(turnID, onlyRevisionID string)
 	if j.closed || j.sealed {
 		return RestoreOperation{}, ErrJournalClosed
 	}
-	if err := j.coldRestoreMutationErrorLocked(); err != nil {
-		return RestoreOperation{}, err
-	}
 	if err := j.verifyFreshRestoreJournalLocked(); err != nil {
 		return RestoreOperation{}, err
 	}

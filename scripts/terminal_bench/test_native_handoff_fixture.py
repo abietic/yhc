@@ -28,6 +28,43 @@ def request():
 
 
 class HistoryOracleTests(unittest.TestCase):
+    def test_post_restore_read_then_edit_keeps_exact_native_history(self):
+        body = request()
+        body["input"][0]["content"] = body["input"][0]["content"].replace("provider_call_limit=1", "provider_call_limit=3")
+        body["input"].extend([
+            dict(type="message", role="assistant", content=" "),
+            dict(type="function_call", call_id="continued-write", name="Write", arguments=json.dumps(dict(file_path="/workspace/continued.txt", content="continued once\n"))),
+            dict(type="function_call_output", call_id="continued-write", output="Wrote 15 bytes to /workspace/continued.txt"),
+            dict(type="message", role="assistant", content="Model error: provider usage accounting failed closed: run usage budget exceeded"),
+            dict(type="message", role="user", content=COLD_PROMPT),
+            dict(type="message", role="assistant", content=" "),
+            dict(type="function_call", call_id="cold-read", name="Read", arguments=json.dumps(dict(file_path="/workspace/continued.txt"))),
+            dict(type="function_call_output", call_id="cold-read", output="     1→operator original\n"),
+        ])
+        verify_input(body, NOW, "linux/arm64", provider_call_limit=3, cold_round=2, restored_read=True)
+        prefix = "[system] [Session Memory — context from previous interactions:]\n\n"
+        memory = dict(type="message", role="user", content=prefix + "- [] File modified: effects.count (via Write)\n")
+        attached = copy.deepcopy(body)
+        attached["input"].append(memory)
+        verify_input(attached, NOW, "linux/arm64", provider_call_limit=3, cold_round=2, restored_read=True)
+        body["input"].append(memory)
+        body["input"].extend([
+            dict(type="message", role="assistant", content=" "),
+            dict(type="function_call", call_id="cold-edit", name="Edit", arguments=json.dumps(dict(file_path="/workspace/continued.txt", old_string="operator original", new_string="edited after cold restore"))),
+            dict(type="function_call_output", call_id="cold-edit", output="Replaced 1 occurrence in /workspace/continued.txt"),
+        ])
+        verify_input(body, NOW, "linux/arm64", provider_call_limit=3, cold_round=3, restored_read=True)
+        for fault in ("old_result", "read_result", "stale_edit", "unrelated_memory", "moved_memory", "duplicate_memory"):
+            changed = copy.deepcopy(body)
+            if fault == "old_result": changed["input"][10]["output"] = "replayed"
+            if fault == "read_result": changed["input"][15]["output"] = "old bytes"
+            if fault == "stale_edit": changed["input"][18]["arguments"] = json.dumps(dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore"))
+            if fault == "unrelated_memory": changed["input"].append(dict(type="message", role="user", content=prefix + "- [] unrelated fact\n"))
+            if fault == "moved_memory": changed["input"].insert(8, changed["input"].pop(16))
+            if fault == "duplicate_memory": changed["input"].insert(16, copy.deepcopy(memory))
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                verify_input(changed, NOW, "linux/arm64", provider_call_limit=3, cold_round=3, restored_read=True)
+
     def test_cold_turn_preserves_budget_diagnostic_and_exact_restored_memory_facts(self):
         body = request()
         body["input"][0]["content"] = body["input"][0]["content"].replace("provider_call_limit=1", "provider_call_limit=2")

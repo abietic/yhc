@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
+	"slices"
 
 	"github.com/abietic/yhc/engine/filehistory"
 	"github.com/abietic/yhc/engine/session"
@@ -32,29 +34,42 @@ func (s *SessionService) ImportWorkspaceHistory(ctx context.Context, info sessio
 	return receipt, nil
 }
 
-// bindColdHistoryGuards is called only after native/history/accounting proofs
-// match the actual retained stores and before consuming the launch claim.
-func (e *QueryEngine) bindColdHistoryGuards(guards *tools.FileReadGuards) error {
+// restoreColdHistoryGuards is called only after native/history/accounting
+// binding. Reobserve history before discarding any saved read credit.
+func (e *QueryEngine) restoreColdHistoryGuards(snapshot tools.ReadGuardSnapshot, expected filehistory.ColdHistoryProof) (*tools.FileReadGuards, error) {
 	identity, c := e.lockWorkspaceRevisions()
-	if guards == nil || c.restoreReadGuards != nil || c.restoreCancel != nil || c.externalWriters != 0 {
+	if c.restoreReadGuards != nil || c.restoreCancel != nil || c.externalWriters != 0 {
 		c.mu.Unlock()
-		return ErrColdToolHandoff
+		return nil, ErrColdToolHandoff
 	}
 	j := c.journalLocked(identity)
 	if j == nil {
 		c.mu.Unlock()
-		return ErrColdToolHandoff
+		return nil, ErrColdToolHandoff
 	}
-	op, found, err := j.LoadRestoreOperation()
-	if err != nil || found && op.State != "completed" && op.State != "rolled_back" {
+	actual, err := j.ExportColdState()
+	if err != nil || !reflect.DeepEqual(actual, expected) {
 		c.mu.Unlock()
-		return ErrColdToolHandoff
+		return nil, ErrColdToolHandoff
+	}
+	var paths []string
+	for _, record := range j.Snapshot().Records {
+		if record.Outcome == "succeeded" && (record.ToolName == "WorkspaceRestore" || record.ToolName == "WorkspaceRestoreRollback") {
+			paths = append(paths, filepath.ToSlash(record.Path))
+		}
+	}
+	slices.Sort(paths)
+	paths = slices.Compact(paths)
+	guards, err := tools.RestoreFileReadGuardsExcluding(snapshot, paths)
+	if err != nil {
+		c.mu.Unlock()
+		return nil, ErrColdToolHandoff
 	}
 	c.restoreReadGuards = guards
 	generation := c.generation
 	c.mu.Unlock()
-	if found {
-		e.invalidateRestoredWorkspace(identity, generation, op)
+	if len(paths) > 0 {
+		e.invalidateRestoredPaths(identity, generation, "cold:"+expected.SemanticSHA256, identity.cwd, paths)
 	}
-	return nil
+	return guards, nil
 }

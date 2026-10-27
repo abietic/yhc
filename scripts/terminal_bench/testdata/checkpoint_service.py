@@ -81,7 +81,9 @@ class Service:
                         rate_num=3, rate_den=2, in_flight=0, phase=self.current_phase(),
                         pristine=self.activity == self.imports == self.memory == self.durable() == 0)
         if op == "quiesce":
-            assert self.barrier in (None, barrier)
+            # A released target may become the source of a fresh capture. An
+            # active quiescent barrier still cannot be replaced or re-imported.
+            assert self.barrier in (None, barrier) or self.current_phase() == "running"
             self.clock.freeze()
             self.barrier, self.phase = barrier, "quiescent"
             return dict(phase=self.phase, in_flight=0)

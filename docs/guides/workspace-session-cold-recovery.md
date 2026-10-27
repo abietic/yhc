@@ -159,14 +159,33 @@ original physical bytes are separately archived and hashed. Stored confirmation
 never authorizes another restore or starts an Agent.
 
 Ordinary history opens and subsequent writes validate the immutable imported
-prefix, terminal restore bytes and archive chain. Later file-tool turns can
-append through the existing owner; they cannot rewrite that prefix. Starting
-another restore transaction on imported history is still unverified and is
-blocked at preparation, apply and store admission before intent is published.
-This also covers introducing a restore file when the source had none. A new process
-also rejects migrated frames whose origin receipt is missing. A later cold
-capture must export the newly advanced state rather than reuse an old import.
-Provenance is bounded to sixteen imports and 64 MiB of archived metadata.
+prefix, restore baseline and archive chain. Later file-tool turns append through
+the existing owner. A fresh ordinary workspace-restore preview and confirmation
+may start another transaction, including when the imported source had no
+operation. No archived bytes, imported prefix or prior grant is rewritten.
+
+Once imported restore state changes, the
+[restore store](../../engine/filehistory/restore_evolution.go) publishes a v2
+envelope containing both current operation and its root-independent metadata
+evolution. Each step binds the previous summary, immutable plan and actual
+journal revision; direction and progress transitions are checked. The existing
+temporary-file fsync, atomic rename and directory fsync publish them together.
+Unchanged imported operations and native v1 files remain compatible. Terminal
+diagnostics cannot change, and a terminal exact no-op preserves its bytes.
+
+An interrupted operation needs a fresh process-local preview and new confirmation
+before manual retry or rollback. It cannot be cold-exported while applying or
+partial. Unpublished temporary state remains blocked and preserved; inspection
+does not repair it. Missing receipts, owned siblings, damaged evolution or a
+missing origin also block cold proof. Metadata capacity is checked before file
+effects: exhausting the bounded chain preserves existing progress and requires
+operator intervention, rather than dropping older provenance.
+
+A later cold capture exports the newly advanced state, including its evolution;
+reusing an older import receipt cannot reset it. Normalization preserves that
+logical chain across another volume migration. Provenance is bounded to sixteen
+imports, 64 MiB of archived metadata and 512 restore evolution steps within the
+existing 12 MiB operation-file limit.
 
 An interrupted import remains blocked. An explicit exact retry can converge
 before or after exchange only when the full source, staging files, target
@@ -181,8 +200,12 @@ and target-local history, compares logical state with the captured source and
 rechecks closed cumulative usage. Services and advancing clocks activate only
 after those checks. Explicit dispatch repeats joined checks before claims and
 reservations. The cold tool handoff adopts the same verified read-guard owner;
-terminal restore paths lose prior read credit and retain the generic instruction
-to reread changed files. Unrelated read scopes stay blocked.
+paths backed by verified restore facts lose prior read credit and retain the
+generic instruction to reread changed files. Original snapshot schema is checked
+before discarding any credit; retained paths still require exact current bytes.
+This permits a real operator restore to change a previously read file without
+granting permission to edit it from stale observations. Unrelated read scopes
+stay blocked.
 
 ## Capture one bound bundle
 
@@ -387,7 +410,8 @@ denied reservation or process death, keep it consumed. Preserve the records and
 reconcile explicitly; do not delete claims to retry automatically.
 
 `cold_recovery` in the terminal result identifies the exact old and new segments,
-native digest, restored guard count and consumed claim. Its scope is file-tool
+native digest, retained guard count, optional invalidated guard count and consumed
+claim. Its scope is file-tool
 state restoration for an **explicit new user turn**, not resumption of an old
 Graph frame or tool replay. New usage is counted in the new invocation. The
 source checkpoint and earlier history remain unchanged, and original component
@@ -715,7 +739,11 @@ setup with `YHC_NATIVE_RECOVERY_DOCKER_TEST=1` and
 These cases use the actual optional launcher path without an injected RPC
 wrapper, with known settlement, truncated unknown usage, budget denial,
 unready gateway, killed-helper quarantine, terminal restore migration and legacy
-history rejection. Fake host-key canaries are
+history rejection. Another case imports once, performs a fresh real restore of
+a file covered by the paused read snapshot, captures a new service/clock/native/
+closed-usage bundle, destroys that target and imports into another fresh volume.
+The public cold dispatch must Read the restored bytes before Edit, retain the
+original closed usage and reject claim reuse. Fake host-key canaries are
 checked against restored workspace files. Pure framing, admission, fault and
 process-cleanup checks run through
 `python3 -m unittest scripts.terminal_bench.test_host_gateway_transport` and

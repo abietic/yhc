@@ -350,6 +350,14 @@ func (e *QueryEngine) invalidateRestoredWorkspace(identity workspaceRevisionIden
 	if op.ID == "" || len(op.Paths) == 0 {
 		return
 	}
+	paths := make([]string, len(op.Paths))
+	for i, path := range op.Paths {
+		paths[i] = path.Path
+	}
+	e.invalidateRestoredPaths(identity, generation, op.ID+":"+op.Direction+":"+op.State, op.Root, paths)
+}
+
+func (e *QueryEngine) invalidateRestoredPaths(identity workspaceRevisionIdentity, generation uint64, restoreID, root string, relative []string) {
 	e.mu.Lock()
 	cache := e.fileStateCache
 	c := &e.workspaceRevisions
@@ -359,18 +367,18 @@ func (e *QueryEngine) invalidateRestoredWorkspace(identity workspaceRevisionIden
 	if c.generation != generation || c.closed {
 		return
 	}
-	roots := []string{identity.cwd, op.Root}
+	roots := []string{identity.cwd, root}
 	if c.restoreReadGuards == nil {
 		c.restoreReadGuards = tools.ForkFileReadGuards(context.Background(), roots)
 	}
 	var paths []string
-	for _, path := range op.Paths {
+	for _, path := range relative {
 		for _, root := range roots {
-			paths = append(paths, filepath.Join(root, path.Path))
+			paths = append(paths, filepath.Join(root, path))
 		}
 	}
 	c.restoreReadGuards.Invalidate(paths...)
-	c.lastRestoreGuardID = op.ID + ":" + op.Direction + ":" + op.State
+	c.lastRestoreGuardID = restoreID
 	c.restoreNoticePaths = append([]string(nil), paths...)
 	if cache != nil {
 		cache.mu.Lock()

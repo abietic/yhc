@@ -6,8 +6,69 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestColdReadGuardInvalidationDropsOnlyVerifiedPathsAndValidatesOriginal(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := NewFileReadGuards()
+	ctx := WithFileReadGuards(t.Context(), owner)
+	for _, name := range []string{"changed.txt", "retained.txt"} {
+		if _, err := WriteTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"file_path": filepath.Join(root, name), "content": "before"})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot, err := owner.Snapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "changed.txt"), []byte("operator restored"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreFileReadGuards(snapshot); err == nil {
+		t.Fatal("stale bytes admitted without invalidation")
+	}
+	restored, err := RestoreFileReadGuardsExcluding(snapshot, []string{"changed.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := restored.Snapshot(root)
+	if err != nil || len(actual.Entries) != 1 || actual.Entries[0].Path != "retained.txt" || len(snapshot.Entries) != 2 {
+		t.Fatal("wrong retained credit", err)
+	}
+	cold := WithFileReadGuards(t.Context(), restored)
+	if _, err := EditTool().ExecuteCtx(cold, fileToolInput(t, map[string]any{"file_path": filepath.Join(root, "changed.txt"), "old_string": "operator restored", "new_string": "forbidden"})); err == nil {
+		t.Fatal("invalidated credit still authorized Edit")
+	}
+	if _, err := ReadTool().ExecuteCtx(cold, fileToolInput(t, map[string]any{"file_path": filepath.Join(root, "changed.txt")})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EditTool().ExecuteCtx(cold, fileToolInput(t, map[string]any{"file_path": filepath.Join(root, "changed.txt"), "old_string": "operator restored", "new_string": "fresh edit"})); err != nil {
+		t.Fatal("fresh Read cannot grant normal Edit", err)
+	}
+	for _, fault := range []string{"../escape", "changed.txt", "retained.txt"} {
+		bad := snapshot
+		bad.Entries = append([]ReadGuardEntry(nil), snapshot.Entries...)
+		if fault == "../escape" {
+			bad.Entries[0].Path = fault
+		} else {
+			bad.Entries[0].SHA256 = strings.Repeat("z", 64)
+		}
+		if _, err := RestoreFileReadGuardsExcluding(bad, []string{fault}); err == nil {
+			t.Fatal("exclusion hid malformed original entry")
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "retained.txt"), []byte("unproved change"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreFileReadGuardsExcluding(snapshot, []string{"changed.txt"}); err == nil {
+		t.Fatal("unrelated mismatch bypassed")
+	}
+}
 
 func TestColdReadGuardsRestoreExactContentAndRetainPartialDenials(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
