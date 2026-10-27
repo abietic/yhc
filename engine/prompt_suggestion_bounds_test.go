@@ -29,7 +29,13 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 			type request struct {
 				Model           string `json:"model"`
 				MaxOutputTokens int    `json:"max_output_tokens"`
-				Reasoning       *struct {
+				Input           []struct {
+					Role    string `json:"role"`
+					Content []struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"input"`
+				Reasoning *struct {
 					Effort string `json:"effort"`
 				} `json:"reasoning"`
 				Tools []json.RawMessage `json:"tools"`
@@ -71,7 +77,15 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 			eng.messages = []*schema.Message{{Role: schema.Assistant, Content: "first"}, {Role: schema.Assistant, Content: "done"}}
 			eng.mu.Unlock()
 			before, _ := json.Marshal(eng.GetMessages())
-			got, err := eng.generateAuxiliarySuggestionProvider(t.Context(), []string{"run the focused tests next"}, services.GetSuggestionPrompt(), tc.source)
+			wantPrompt := services.GetSuggestionPrompt()
+			var got string
+			if tc.source == "prompt_suggestion_generation" {
+				result, callErr := eng.GeneratePromptSuggestionResult(t.Context())
+				got, err = result.Suggestion, callErr
+			} else {
+				wantPrompt = services.GetCommandArgumentSuggestionPrompt()
+				got, err = eng.generateAuxiliarySuggestionProvider(t.Context(), []string{"run the focused tests next"}, wantPrompt, tc.source)
+			}
 			if err != nil || got != "run the focused tests" {
 				t.Fatalf("suggestion = %q, %v", got, err)
 			}
@@ -82,6 +96,9 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 			}
 			if body.Model != "deepseek-flash" || body.MaxOutputTokens != 64 || len(body.Tools) != 0 || effort != tc.wantEffort {
 				t.Fatalf("suggestion wire model=%q max_output_tokens=%d tools=%d effort=%q, want %q", body.Model, body.MaxOutputTokens, len(body.Tools), effort, tc.wantEffort)
+			}
+			if len(body.Input) == 0 || body.Input[0].Role != "system" || len(body.Input[0].Content) != 1 || body.Input[0].Content[0].Text != wantPrompt {
+				t.Fatal("provider request did not carry the selected suggestion policy")
 			}
 			after, _ := json.Marshal(eng.GetMessages())
 			eng.mu.Lock()
