@@ -2955,12 +2955,16 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 		// per-call control leaves the admitted main route and its effort intact.
 		call.options.EffortValue = "none"
 	}
-	call.options.Messages = make([]*schema.Message, 0, len(conversation))
-	for _, entry := range conversation {
-		call.options.Messages = append(call.options.Messages, &schema.Message{
-			Role:    schema.User,
-			Content: entry,
-		})
+	if querySource == "prompt_suggestion_generation" {
+		call.options.Messages = promptSuggestionInputMessages(conversation)
+	} else {
+		call.options.Messages = make([]*schema.Message, 0, len(conversation))
+		for _, entry := range conversation {
+			call.options.Messages = append(call.options.Messages, &schema.Message{
+				Role:    schema.User,
+				Content: entry,
+			})
+		}
 	}
 	// Permission state can change while the route snapshot is being built. The
 	// dispatch admission is the last safe fail-closed check; an already-issued

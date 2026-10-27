@@ -176,7 +176,7 @@ func TestGeneratePromptSuggestionUsesReadOnlyCurrentConversation(t *testing.T) {
 	if !utf8.ValidString(conversation) {
 		t.Fatalf("provider conversation is not valid UTF-8: %q", conversation)
 	}
-	for _, want := range []string{"user: \u4fee\u590d\u8f93\u5165\u6846", "assistant: \u5b9e\u73b0\u5b8c\u6210"} {
+	for _, want := range []string{"\u4fee\u590d\u8f93\u5165\u6846", "\u5b9e\u73b0\u5b8c\u6210"} {
 		if !strings.Contains(conversation, want) {
 			t.Fatalf("provider conversation missing %q: %q", want, conversation)
 		}
