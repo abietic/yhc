@@ -151,9 +151,9 @@ func importColdState(ctx context.Context, root, dir, session string, request Col
 	}
 	defer unlock()
 	validateRoot := func() error {
-		current, err := os.Lstat(root)
+		current, err := os.Lstat(filepath.Clean(root))
 		opened, openErr := workspace.Stat(".")
-		currentParent, parentErr := os.Lstat(parentPath)
+		currentParent, parentErr := os.Lstat(filepath.Clean(parentPath))
 		boundParent, boundErr := parent.Stat(".")
 		now, idErr := durableRootIdentity(workspace)
 		if err != nil || openErr != nil || parentErr != nil || boundErr != nil || idErr != nil || !os.SameFile(current, opened) || !os.SameFile(currentParent, boundParent) || !os.SameFile(parentInfo, boundParent) || now != identity {
