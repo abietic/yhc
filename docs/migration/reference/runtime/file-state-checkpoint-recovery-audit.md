@@ -142,8 +142,8 @@ flags is necessary provenance but not rollback capability.
 | Boundary | Evidence |
 |---|---|
 | File interaction update and incremental append | [`maybeRecordFileState`](../../../../engine/tool_execution.go#L801), [`Recorder.RecordFileHistorySnapshot`](../../../../engine/transcript/persist.go#L1253) |
-| Ordinary append checkpoint and flush | [`QueryEngine.recordTranscriptMessages`](../../../../engine/engine.go#L2166), [`Recorder.Flush`](../../../../engine/transcript/persist.go#L1190) |
-| Complete fsynced boundary | [`QueryEngine.recordTranscriptBoundary`](../../../../engine/engine.go#L2123), [`Recorder.RecordLifecycleBoundaryWithUsage`](../../../../engine/transcript/persist.go#L808) |
+| Ordinary append checkpoint and flush | [`QueryEngine.recordTranscriptMessages`](../../../../engine/engine.go), [`Recorder.Flush`](../../../../engine/transcript/persist.go#L1190) |
+| Complete fsynced boundary | [`QueryEngine.recordTranscriptBoundary`](../../../../engine/engine.go), [`Recorder.RecordLifecycleBoundaryWithUsage`](../../../../engine/transcript/persist.go#L808) |
 | Active replay selection | [`loadTranscriptFileContextMode`](../../../../engine/transcript/persist.go#L397) |
 | Construction and Session restore | [`NewQueryEngine`](../../../../engine/engine.go), [`QueryEngine.resumeSessionWithOptionsForTurn`](../../../../engine/engine.go), [`QueryEngine.reconstructFileStateCache`](../../../../engine/engine.go) |
 | Compatibility rewrite behavior | [`Recorder.ReplaceWithReplacements`](../../../../engine/transcript/persist.go#L1101), [`Recorder.prepareRewriteEntriesLocked`](../../../../engine/transcript/entry_identity.go#L433) |
