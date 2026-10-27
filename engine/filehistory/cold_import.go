@@ -110,7 +110,7 @@ func importColdState(ctx context.Context, root, dir, session string, request Col
 		return zero, fmt.Errorf("invalid cold history import request")
 	}
 	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil || canonical != root || !filepath.IsAbs(root) || filepath.Clean(root) != root || filepath.Base(dir) != session+".workspace-history" || filepath.Clean(dir) != dir {
+	if err != nil || canonical != root || !filepath.IsAbs(root) || filepath.Clean(root) != root || root == string(filepath.Separator) || len(root) > 2048 || filepath.Base(dir) != session+".workspace-history" || filepath.Clean(dir) != dir {
 		return zero, fmt.Errorf("unverified history import root")
 	}
 	parentPath := filepath.Dir(dir)

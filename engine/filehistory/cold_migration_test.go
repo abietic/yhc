@@ -679,6 +679,38 @@ func TestColdHistoryNoMarkerCanExistUnderRegularFile(t *testing.T) {
 	}
 }
 
+func TestColdHistoryRejectsSystemRootBeforePublishingUnverifiableOrigin(t *testing.T) {
+	if !RestoreFilesystemSupported() {
+		t.Skip("atomic directory exchange unsupported")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, ".yhc", "transcripts", "cold-session.workspace-history")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	j, err := OpenRevisionJournal(root, dir, "cold-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	p, err := j.ExportColdState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, target := coldCopy(t, root)
+	// Every path that could be written still belongs to this test's temporary
+	// directory. The system root is only the rejected logical root argument.
+	if _, err := ImportColdState(t.Context(), string(filepath.Separator), target, "cold-session", coldRequest(p)); err == nil {
+		t.Fatal("published an origin whose root the proof schema cannot accept")
+	}
+	if entries, err := os.ReadDir(target); err != nil || len(entries) != 0 || CheckColdHistoryGate(target) != nil {
+		t.Fatal("invalid root changed retained history or left a marker", err)
+	}
+}
+
 func TestColdHistoryFreshProcessCrashAndRecovery(t *testing.T) {
 	for _, stage := range []string{"marker_published", "before_exchange", "after_exchange", "parent_synced", "before_marker_remove"} {
 		t.Run(stage, func(t *testing.T) {
