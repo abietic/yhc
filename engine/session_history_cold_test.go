@@ -19,6 +19,10 @@ import (
 
 func TestColdHistoryGuardOwnerInvalidatesCompletedRestorePaths(t *testing.T) {
 	source, path, turn, _, _ := newRestoreEngineFixture(t, PermissionAllowOnce)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	preview, err := source.PrepareWorkspaceRestore(turn, "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -27,22 +31,19 @@ func TestColdHistoryGuardOwnerInvalidatesCompletedRestorePaths(t *testing.T) {
 		t.Fatal("source restore", err)
 	}
 	root, dir, id := source.GetCWD(), source.GetTranscriptDir(), source.SessionID()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
 	hash := sha256.Sum256(data)
 	snapshot := tools.ReadGuardSnapshot{Version: 1, CWD: root, Entries: []tools.ReadGuardEntry{{Path: filepath.Base(path), SHA256: hex.EncodeToString(hash[:]), Size: int64(len(data))}}}
-	guards, err := tools.RestoreFileReadGuards(snapshot)
-	if err != nil {
-		t.Fatal(err)
+	proof, _, blocker := source.recoveryProofWorkspaceHistory()
+	if blocker != "" || proof == nil {
+		t.Fatal("history proof", blocker)
 	}
 	fresh := NewSessionAdministrationEngine(SessionAdministrationConfig{CWD: root, TranscriptDir: dir})
 	t.Cleanup(fresh.Close)
 	// Only exercise the owner seam here; the actual public handoff also checks
 	// source native state, import provenance and closed financial checkpoints.
 	fresh.config.SessionID, fresh.config.ThreadID = id, id
-	if err := fresh.bindColdHistoryGuards(guards); err != nil {
+	guards, err := fresh.restoreColdHistoryGuards(snapshot, *proof)
+	if err != nil {
 		t.Fatal(err)
 	}
 	actual, err := guards.Snapshot(root)

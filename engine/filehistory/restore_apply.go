@@ -99,9 +99,6 @@ func (j *RevisionJournal) verifyFreshRestoreJournalLocked() error {
 func (j *RevisionJournal) PrepareRestoreRecovery(direction string) (RestoreOperation, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if err := j.coldRestoreMutationErrorLocked(); err != nil {
-		return RestoreOperation{}, err
-	}
 	if !restoreFilesystemSupported() {
 		return RestoreOperation{}, fmt.Errorf("guarded workspace restore is unavailable on this platform")
 	}
@@ -140,9 +137,6 @@ func (j *RevisionJournal) ApplyRestoreOperation(ctx context.Context, op RestoreO
 	}
 	if j.closed || j.sealed {
 		return op, ErrJournalClosed
-	}
-	if err := j.coldRestoreMutationErrorLocked(); err != nil {
-		return op, err
 	}
 	if !restoreFilesystemSupported() {
 		return op, fmt.Errorf("guarded workspace restore is unavailable on this platform")
@@ -202,6 +196,9 @@ func (j *RevisionJournal) ApplyRestoreOperation(ctx context.Context, op RestoreO
 		return op, err
 	}
 	op.State = "applying"
+	if err := j.admitRestoreEvolutionLocked(op); err != nil {
+		return op, err
+	}
 	if err := j.saveRestoreOperationLocked(op); err != nil {
 		return op, err
 	}

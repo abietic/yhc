@@ -41,9 +41,10 @@ type RestorePath struct {
 }
 
 type restoreOperationEnvelope struct {
-	Kind      string           `json:"kind"`
-	Version   int              `json:"version"`
-	Operation RestoreOperation `json:"operation"`
+	Kind      string            `json:"kind"`
+	Version   int               `json:"version"`
+	Operation RestoreOperation  `json:"operation"`
+	Evolution *restoreEvolution `json:"evolution,omitempty"`
 }
 
 type restorePlanState struct {
@@ -75,13 +76,18 @@ type restorePlan struct {
 // RestoreOperationPlanDigest returns the stable digest of immutable restore
 // intent. It intentionally omits payload bytes and all progress/auth fields.
 func RestoreOperationPlanDigest(op RestoreOperation) string {
+	plan := restoreOperationPlan(op)
+	b, _ := json.Marshal(plan)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func restoreOperationPlan(op RestoreOperation) restorePlan {
 	plan := restorePlan{ID: op.ID, SessionID: op.SessionID, TurnID: op.TurnID, Root: op.Root, RootIdentity: op.RootIdentity, JournalRevision: op.JournalRevision, StartedAt: op.StartedAt, Paths: make([]restorePlanPath, len(op.Paths))}
 	for i, path := range op.Paths {
 		plan.Paths[i] = restorePlanPath{Path: path.Path, BackupPath: path.BackupPath, TempPath: path.TempPath, Original: restorePlanState{Captured: path.Original.Captured, Exists: path.Original.Exists, Mode: path.Original.Mode, Digest: path.Original.Digest}, Target: restorePlanState{Captured: path.Target.Captured, Exists: path.Target.Exists, Mode: path.Target.Mode, Digest: path.Target.Digest}}
 	}
-	b, _ := json.Marshal(plan)
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
+	return plan
 }
 
 // LoadRestoreOperation reads only the stable operation file. A leftover temp
@@ -121,40 +127,47 @@ func (j *RevisionJournal) loadRestoreOperationLocked() (RestoreOperation, bool, 
 }
 
 func (j *RevisionJournal) decodeRestoreOperation(root *os.Root) (RestoreOperation, bool, error) {
+	envelope, found, err := j.readRestoreEnvelope(root)
+	return cloneRestoreOperation(envelope.Operation), found, err
+}
+
+func (j *RevisionJournal) readRestoreEnvelope(root *os.Root) (restoreOperationEnvelope, bool, error) {
 	before, err := root.Lstat(restoreOperationFile)
 	if os.IsNotExist(err) {
-		return RestoreOperation{}, false, nil
+		return restoreOperationEnvelope{}, false, nil
 	}
 	if err != nil || before.Mode()&os.ModeSymlink != 0 || !before.Mode().IsRegular() || before.Mode().Perm() != 0o600 || !restoreFileSingleLink(before) {
-		return RestoreOperation{}, false, fmt.Errorf("restore operation must be a non-symlink 0600 regular file")
+		return restoreOperationEnvelope{}, false, fmt.Errorf("restore operation must be a non-symlink 0600 regular file")
 	}
 	f, err := root.Open(restoreOperationFile)
 	if err != nil {
-		return RestoreOperation{}, false, fmt.Errorf("open restore operation: %w", err)
+		return restoreOperationEnvelope{}, false, fmt.Errorf("open restore operation: %w", err)
 	}
 	opened, statErr := f.Stat()
 	if statErr != nil || !os.SameFile(before, opened) || !opened.Mode().IsRegular() || opened.Mode().Perm() != 0o600 || !restoreFileSingleLink(opened) {
 		f.Close()
-		return RestoreOperation{}, false, fmt.Errorf("restore operation changed during open")
+		return restoreOperationEnvelope{}, false, fmt.Errorf("restore operation changed during open")
 	}
 	b, readErr := io.ReadAll(io.LimitReader(f, maxRestoreEncodedBytes+1))
+	end, endErr := f.Stat()
 	closeErr := f.Close()
-	if readErr != nil || closeErr != nil || len(b) > maxRestoreEncodedBytes {
-		return RestoreOperation{}, false, fmt.Errorf("read restore operation")
+	current, namespaceErr := root.Lstat(restoreOperationFile)
+	if readErr != nil || endErr != nil || closeErr != nil || namespaceErr != nil || !os.SameFile(opened, end) || !os.SameFile(end, current) || !sameCaptureMeta(opened, end) || !sameCaptureMeta(end, current) || len(b) > maxRestoreEncodedBytes {
+		return restoreOperationEnvelope{}, false, fmt.Errorf("read restore operation")
 	}
 	var envelope restoreOperationEnvelope
 	decoder := json.NewDecoder(bytes.NewReader(b))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&envelope); err != nil {
-		return RestoreOperation{}, false, fmt.Errorf("decode restore operation: %w", err)
+		return restoreOperationEnvelope{}, false, fmt.Errorf("decode restore operation: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return RestoreOperation{}, false, fmt.Errorf("restore operation contains trailing data")
+		return restoreOperationEnvelope{}, false, fmt.Errorf("restore operation contains trailing data")
 	}
-	if envelope.Kind != restoreOperationKind || envelope.Version != restoreOperationVersion || j.validRestoreOperation(envelope.Operation) != nil {
-		return RestoreOperation{}, false, fmt.Errorf("invalid restore operation")
+	if envelope.Evolution != nil && j.coldMigrationID == "" || j.validRestoreEnvelope(envelope) != nil || j.validRestoreOperation(envelope.Operation) != nil {
+		return restoreOperationEnvelope{}, false, fmt.Errorf("invalid restore operation")
 	}
-	return cloneRestoreOperation(envelope.Operation), true, nil
+	return envelope, true, nil
 }
 
 // SaveRestoreOperation atomically publishes a fully validated operation. It
@@ -164,9 +177,6 @@ func (j *RevisionJournal) SaveRestoreOperation(operation RestoreOperation) error
 	defer j.mu.Unlock()
 	if j.closed {
 		return ErrJournalClosed
-	}
-	if err := j.coldRestoreMutationErrorLocked(); err != nil {
-		return err
 	}
 	if err := j.validRestoreOperation(operation); err != nil {
 		return err
@@ -198,23 +208,28 @@ func (j *RevisionJournal) saveRestoreOperationLocked(operation RestoreOperation)
 	if err := j.checkRestoreStoreDirectory(j.dirRoot); err != nil {
 		return err
 	}
-	prior, found, err := j.decodeRestoreOperation(j.dirRoot)
+	before, err := stableRestoreFile(j.dirRoot)
 	if err != nil {
 		return err
 	}
+	previous, found, err := j.readRestoreEnvelope(j.dirRoot)
+	if err != nil {
+		return err
+	}
+	prior := previous.Operation
 	if err := j.validRestoreTransition(prior, found, operation); err != nil {
 		return err
 	}
 	if (!found && operation.JournalRevision != j.frameSequence) || (found && operation.ID != prior.ID && operation.JournalRevision != j.frameSequence) || (found && operation.ID == prior.ID && operation.JournalRevision > j.frameSequence) {
 		return fmt.Errorf("restore operation journal revision mismatch")
 	}
-	encoded, err := json.Marshal(restoreOperationEnvelope{Kind: restoreOperationKind, Version: restoreOperationVersion, Operation: operation})
-	if err != nil || len(encoded) > maxRestoreEncodedBytes {
-		return fmt.Errorf("encode restore operation")
-	}
-	before, err := stableRestoreFile(j.dirRoot)
+	envelope, err := j.nextRestoreEnvelope(previous, found, operation)
 	if err != nil {
 		return err
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil || len(encoded) > maxRestoreEncodedBytes {
+		return fmt.Errorf("encode restore operation")
 	}
 	f, err := j.openRestoreTemp()
 	if err != nil {

@@ -52,7 +52,7 @@ def text_parts(content):
     return content
 
 
-def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None, cold_round=0, cold_prompt=COLD_PROMPT):
+def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call_limit=None, cold_round=0, cold_prompt=COLD_PROMPT, restored_read=False):
     items = body.get("input")
     require(isinstance(items, list), "missing_input")
     projected = []
@@ -70,14 +70,33 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
         else:
             require(kind == "message" and role in ("user", "assistant"), "unexpected_input_item")
             projected.append(["message", role, text_parts(item.get("content"))])
-    if cold_round == 2:
+    if cold_round >= 2:
         memory = projected[-1]
         prefix = "[system] [Session Memory — context from previous interactions:]\n\n"
-        require(memory[:2] == ["message", "user"] and memory[2].startswith(prefix)
-                and sorted(memory[2][len(prefix):].splitlines()) == sorted([
-                    "- [] File modified: /workspace/continued.txt (via Write)",
-                    "- [] File modified: effects.count (via Write)"]), "unexpected_restored_memory_context")
-        projected = projected[:-1]
+        if restored_read:
+            # An attachment injected after Read remains between rounds on the
+            # third request. Admit only the exact tool-boundary positions and
+            # known fixture facts, then compare native history without it.
+            filtered, boundaries = [], set()
+            for item in projected:
+                if item[:2] != ["message", "user"] or not item[2].startswith(prefix):
+                    filtered.append(item)
+                    continue
+                boundary = len(filtered)
+                require(boundary in (16, 19) and boundary not in boundaries, "unexpected_restored_memory_position")
+                boundaries.add(boundary)
+                lines = item[2][len(prefix):].splitlines()
+                allowed = {"- [] File modified: /workspace/continued.txt (via Write)",
+                           "- [] File modified: /workspace/continued.txt (via Edit)",
+                           "- [] File modified: effects.count (via Write)"}
+                require(bool(lines) and len(lines) == len(set(lines)) and set(lines) <= allowed, "unexpected_restored_memory_context")
+            projected = filtered
+        else:
+            require(memory[:2] == ["message", "user"] and memory[2].startswith(prefix)
+                    and sorted(memory[2][len(prefix):].splitlines()) == sorted([
+                        "- [] File modified: /workspace/continued.txt (via Write)",
+                        "- [] File modified: effects.count (via Write)"]), "unexpected_restored_memory_context")
+            projected = projected[:-1]
     require(len(projected) == (13 + 3 * (cold_round - 1) if cold_round else 11 if tool_round == 2 else 8)
             and all(item[:2] == ["message", "user"] for item in projected[:2]), "unexpected_runtime_prefix")
     now = now or datetime.datetime.now(datetime.timezone.utc)
@@ -107,9 +126,13 @@ def verify_input(body, now=None, platform_name=None, tool_round=0, provider_call
     if cold_round:
         expected.extend([["message", "assistant", "Model error: provider usage accounting failed closed: run usage budget exceeded"],
                          ["message", "user", cold_prompt]])
-        if cold_round == 2:
+        if restored_read and cold_round >= 2:
             expected.extend([["message", "assistant", " "],
-                             ["call", "cold-edit", "Edit", dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore")],
+                             ["call", "cold-read", "Read", dict(file_path="/workspace/continued.txt")],
+                             ["result", "cold-read", "     1→operator original\n"]])
+        if cold_round == 2 and not restored_read or cold_round == 3 and restored_read:
+            expected.extend([["message", "assistant", " "],
+                             ["call", "cold-edit", "Edit", dict(file_path="/workspace/continued.txt", old_string="operator original" if restored_read else "continued once", new_string="edited after cold restore")],
                              ["result", "cold-edit", "Replaced 1 occurrence in /workspace/continued.txt"]])
     require(projected == expected, "native_history_or_new_turn_changed")
     return hashlib.sha256(json.dumps(items, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

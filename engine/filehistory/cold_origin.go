@@ -33,7 +33,11 @@ func coldNormalized(s *coldState, root, identity, migration string) (map[string]
 		op := cloneRestoreOperation(*s.operation)
 		op.Root, op.RootIdentity = root, identity
 		op.PlanDigest = RestoreOperationPlanDigest(op)
-		raw, err := json.Marshal(restoreOperationEnvelope{Kind: restoreOperationKind, Version: restoreOperationVersion, Operation: op})
+		version := restoreOperationVersion
+		if s.evolution != nil {
+			version = 2
+		}
+		raw, err := json.Marshal(restoreOperationEnvelope{Kind: restoreOperationKind, Version: version, Operation: op, Evolution: s.evolution})
 		if err != nil || len(raw) > maxRestoreEncodedBytes {
 			return nil, fmt.Errorf("normalized operation exceeds limit")
 		}
@@ -80,7 +84,7 @@ func verifyColdOriginChainBounded(parent *os.Root, current *coldState, actual *R
 			return err
 		}
 		if r == nil {
-			if current.journal.coldMigrationID != "" {
+			if current.journal.coldMigrationID != "" || current.evolution != nil {
 				return fmt.Errorf("history migration origin missing")
 			}
 			return nil
@@ -92,9 +96,6 @@ func verifyColdOriginChainBounded(parent *os.Root, current *coldState, actual *R
 		journal := current.files[journalFile]
 		if int64(len(journal)) < r.JournalBytes || r.JournalSHA256 != "" && coldSHA(journal[:r.JournalBytes]) != r.JournalSHA256 {
 			return fmt.Errorf("imported history prefix changed")
-		}
-		if coldFileSHA(current.files, restoreOperationFile) != r.RestoreSHA256 || int64(len(current.files[restoreOperationFile])) != r.RestoreBytes {
-			return fmt.Errorf("imported restore transaction changed")
 		}
 		files, err := readColdFiles(parent, r.ArchiveDirectory)
 		if err != nil || !coldMatchFiles(files, r.Source) {
@@ -113,6 +114,9 @@ func verifyColdOriginChainBounded(parent *os.Root, current *coldState, actual *R
 		normalized, err := coldNormalized(s, r.Root, r.RootIdentity, r.MigrationID)
 		if err != nil || coldFileSHA(normalized, journalFile) != r.JournalSHA256 || int64(len(normalized[journalFile])) != r.JournalBytes || coldFileSHA(normalized, restoreOperationFile) != r.RestoreSHA256 || int64(len(normalized[restoreOperationFile])) != r.RestoreBytes {
 			return fmt.Errorf("history normalization receipt mismatch")
+		}
+		if err := current.journal.verifyRestoreExtension(normalized, current.files, r.Source.FrameSequence); err != nil {
+			return err
 		}
 		current = s
 	}
@@ -146,6 +150,9 @@ func (j *RevisionJournal) checkColdOriginLocked() error {
 		return err
 	}
 	defer dir.Close()
+	if _, err := dir.Lstat(restoreOperationTemp); !os.IsNotExist(err) {
+		return fmt.Errorf("unpublished imported restore state")
+	}
 	raw, err := coldReadPrivate(dir, coldOriginFile, 16384)
 	if err != nil || j.coldOriginSHA256 != "" && j.coldOriginSHA256 != coldSHA(raw) {
 		return fmt.Errorf("history migration origin changed")
@@ -176,16 +183,6 @@ func (j *RevisionJournal) checkColdOriginLocked() error {
 	// No unknown state is accepted by learning a new origin in a live owner.
 	if j.coldOriginSHA256 == "" {
 		j.coldOriginSHA256, j.coldMigrationID = coldSHA(raw), origin.MigrationID
-	}
-	return nil
-}
-
-// A new mutable restore transaction needs an independent provenance protocol.
-// Until that contract is verified, stop before publishing any intent. Ordinary
-// file tools and closed history appends remain supported after a cold import.
-func (j *RevisionJournal) coldRestoreMutationErrorLocked() error {
-	if j.coldMigrationID != "" {
-		return fmt.Errorf("new restore transactions on cold-imported history are unverified")
 	}
 	return nil
 }

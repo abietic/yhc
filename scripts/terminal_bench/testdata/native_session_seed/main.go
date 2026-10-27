@@ -26,31 +26,33 @@ func main() {
 
 func seed() error {
 	root, err := os.Getwd()
-	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready" && os.Args[2] != "--history-journal" && os.Args[2] != "--restored-history"))) {
+	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready" && os.Args[2] != "--history-journal" && os.Args[2] != "--restored-history" && os.Args[2] != "--post-import-restore"))) {
 		return fmt.Errorf("fixture arguments")
 	}
-	if len(os.Args) == 3 && (os.Args[2] == "--history-journal" || os.Args[2] == "--restored-history") {
+	if len(os.Args) == 3 && (os.Args[2] == "--history-journal" || os.Args[2] == "--restored-history" || os.Args[2] == "--post-import-restore") {
 		id := os.Args[1]
 		journal, err := filehistory.OpenRevisionJournal(root, filepath.Join(root, ".yhc", "transcripts", id+".workspace-history"), id)
 		if err != nil {
 			return err
 		}
 		defer journal.Close()
-		restore := os.Args[2] == "--restored-history"
+		restore := os.Args[2] != "--history-journal"
+		path, turnID := "side.txt", "fixture-history-turn"
+		if os.Args[2] == "--post-import-restore" { path, turnID = "continued.txt", "fixture-post-import-turn" }
 		if restore {
-			if err := os.WriteFile(filepath.Join(root, "side.txt"), []byte("operator original"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(root, path), []byte("operator original"), 0o600); err != nil {
 				return err
 			}
 		}
-		if err := journal.RecordTurnStartWithRestoreBoundary("fixture-history-turn", id, time.Unix(1, 0).UTC(), true, ""); err != nil {
+		if err := journal.RecordTurnStartWithRestoreBoundary(turnID, id, time.Unix(1, 0).UTC(), true, ""); err != nil {
 			return err
 		}
 		if restore {
-			revision, err := journal.Begin("fixture-history-turn", "fixture-history-write", "Write", "side.txt")
+			revision, err := journal.Begin(turnID, turnID+"-write", "Write", path)
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(root, "side.txt"), []byte("operator changed"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(root, path), []byte("operator changed"), 0o600); err != nil {
 				return err
 			}
 			if err := journal.Finish(revision, "succeeded"); err != nil {
@@ -66,7 +68,7 @@ func seed() error {
 		if err := journal.RecordTurnTerminal(turn); err != nil || !restore {
 			return err
 		}
-		op, err := journal.PrepareRestoreOperation("fixture-history-turn", "")
+		op, err := journal.PrepareRestoreOperation(turnID, "")
 		if err != nil {
 			return err
 		}

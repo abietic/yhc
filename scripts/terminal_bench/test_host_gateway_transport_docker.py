@@ -1,6 +1,7 @@
 """Production host gateway wiring with owned synthetic services and no model calls."""
 
 import base64
+import copy
 import hashlib
 import http.server
 import json
@@ -19,6 +20,7 @@ from scripts.terminal_bench.cold_dispatch import ColdBenchmarkLauncher
 from scripts.terminal_bench.cohort_admission import CohortAdmission
 from scripts.terminal_bench.host_gateway_transport import HostGatewayTransport, PipeFailure
 from scripts.terminal_bench.recovery import write_report
+from scripts.terminal_bench.recovery_bundle import RecoveryBundle
 from scripts.terminal_bench.service_snapshot import SnapshotError, digest
 from scripts.terminal_bench.test_cold_dispatch import grant_for
 from scripts.terminal_bench.test_cohort_admission import cohort_plan
@@ -30,7 +32,57 @@ from scripts.terminal_bench.testdata.native_handoff import OUTPUT, verify_input
 @unittest.skipUnless(os.environ.get("YHC_HOST_GATEWAY_TRANSPORT_DOCKER_TEST") == "1"
                      and os.environ.get("YHC_NATIVE_RECOVERY_DOCKER_TEST") == "1", "explicit native and host-gateway Docker opt-in")
 class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
-    def check_gateway(self, scenario, *, restored_history=False):
+    def recapture_after_imported_restore(self, bundle, restored, manifest):
+        first = dict(bundle_sha256=self.bundle_digest, native_proof=restored["native_proof"],
+                     workspace=restored["workspace_runtime"], services=restored["services"])
+        self.docker("exec", "--workdir", "/workspace", bundle.workspace.container,
+                    "/opt/checkpoint/seed-native", self.session, "--post-import-restore")
+        old_receipt_path = self.control / ("bundle-receipt." + self.bundle_digest + ".json")
+        old_claim_path = self.control / ("bundle-restore." + self.bundle_digest + ".json")
+        old_receipt, old_claim = old_receipt_path.read_bytes(), old_claim_path.read_bytes()
+        with self.assertRaisesRegex(SnapshotError, "dispatch_workspace_changed"):
+            bundle.prepare_dispatch(self.bundle_path, self.bundle_digest, self.snapshot)
+        self.assertEqual(old_receipt_path.read_bytes(), old_receipt)
+        self.assertEqual(old_claim_path.read_bytes(), old_claim)
+        self.assertFalse(any(self.control.glob("dispatch.*.json")))
+        native = bundle.workspace.rpc("native_probe", session_id=self.session)
+        self.assertEqual(native["workspace_history"]["restore_state"], "completed")
+        self.assertNotEqual(native["workspace_history"]["semantic_sha256"], manifest["native_proof"]["workspace_history"]["semantic_sha256"])
+        self.assertEqual(native["native_usage"], manifest["native_proof"]["native_usage"])
+        record = copy.deepcopy(manifest["paused_invocation"]["record"])
+        record["native_proof"] = native
+        # New host observation after actual operator work. Original capture,
+        # source pause receipt, accounting and consumed import claim stay intact.
+        write_report(self.control / "operator-post-import-pause.json", record)
+        snapshot = self.root / "snapshot-post-import"
+        service = bundle.services.capture(snapshot, self.cohort)
+        path = self.root / "bundle-post-import"
+        captured = bundle.capture(path, snapshot, digest(service), self.session, manifest["usage_history"],
+                                  pause_record=record, pause_sha256=digest(record))
+        next_manifest = json.loads((path / "manifest.json").read_text())
+        self.assertEqual(next_manifest["usage_history"], manifest["usage_history"])
+        self.assertEqual(next_manifest["paused_invocation"]["checkpoint"], manifest["paused_invocation"]["checkpoint"])
+        ids = [r["container_id"] for r in service["source"]["containers"]] + [bundle.workspace.container]
+        volume = restored["workspace_runtime"]["volume"]
+        project = bundle.services.backend.project
+        self.compose(project, self.root / (project + ".json"), "down", "--volumes", "--remove-orphans")
+        self.remove_workspace(bundle.workspace.container, volume)
+        for identity in ids:
+            self.assertNotIn(identity, self.docker("ps", "--all", "--quiet", "--no-trunc").split())
+        self.assertNotIn(volume, self.docker("volume", "ls", "--quiet").split())
+        self.snapshot, self.bundle_path, self.bundle_digest = snapshot, path, captured["bundle_sha256"]
+        next_bundle = self.target_bundle()
+        next_restored = next_bundle.restore(path, self.bundle_digest, snapshot, self.attempt)
+        self.assertEqual(next_restored["native_proof"]["workspace_history"]["semantic_sha256"], native["workspace_history"]["semantic_sha256"])
+        self.assertEqual(next_restored["accounting"], restored["accounting"])
+        evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+        if evidence:
+            write_report(Path(evidence) / "post-import-restore-joint.json", dict(
+                verification_complete=True, first_import=first, recaptured=next_manifest, second_import=next_restored,
+                source_and_first_target_destroyed=True, closed_usage_unchanged=True, stale_joint_dispatch_blocked=True, real_provider_requests=0))
+        return next_bundle, next_restored, next_manifest
+
+    def check_gateway(self, scenario, *, restored_history=False, post_import_restore=False):
         manifest, observed, _ = self.capture_joint(paused=True, environment_key=True, generated_session=True, restored_history=restored_history)
         bundle = self.target_bundle()
         restored = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
@@ -45,7 +97,12 @@ class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
             original = self.docker("exec", bundle.workspace.container, "/bin/cat", source_path).encode()
             self.assertEqual(hashlib.sha256(original).hexdigest(), before["restore_sha256"])
             self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/side.txt"), "operator original")
+        if post_import_restore:
+            bundle, restored, manifest = self.recapture_after_imported_restore(bundle, restored, manifest)
+        self.post_import_restore = post_import_restore
+        self.expected_requests = 3 if post_import_restore else 2 if scenario == "known" else 1
         grant = grant_for(manifest, self.bundle_digest, self.attempt, int(time.time()))
+        grant["limits"]["max_provider_calls"] = 3 if post_import_restore else 2
         grant["binary_sha256"] = hashlib.sha256(Path(os.environ["YHC_NATIVE_RECOVERY_BINARY"]).read_bytes()).hexdigest()
         # Keep the exact source URL and opaque credential for native route binding.
         # The container port is inherited from capture, never selected by a task.
@@ -56,7 +113,7 @@ class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
         plan["expires_unix"] = int(time.time()) + 2000
         cohort = CohortAdmission.create(self.control / "host-gateway-cohort", plan, digest(plan))
         before = cohort.inspect()
-        state = dict(case=scenario + ("-terminal" if restored_history else ""), requests=0, errors=[], admissions=[], launch=dict(checkpoint_path=".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]))
+        state = dict(case=scenario + ("-post-import" if post_import_restore else "-terminal" if restored_history else ""), requests=0, errors=[], admissions=[], launch=dict(checkpoint_path=".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]))
         fixture = self
         def observe_failure_or_completion():
             evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
@@ -79,9 +136,9 @@ class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
                     body = json.loads(self.rfile.read(length))
                     state["requests"] += 1
                     count = state["requests"]
-                    fixture.assertLessEqual(count, 2 if scenario == "known" else 1)
+                    fixture.assertLessEqual(count, fixture.expected_requests)
                     stage = "native_history"
-                    verify_input(body, platform_name=fixture_platform, provider_call_limit=2, cold_round=count,
+                    verify_input(body, platform_name=fixture_platform, provider_call_limit=grant["limits"]["max_provider_calls"], cold_round=count, restored_read=post_import_restore,
                                  cold_prompt="Continue the saved task using the verified restored state. Do not repeat completed side effects.")
                     checkpoint = state["launch"]["checkpoint_path"]
                     stage = "durable_admission"
@@ -102,7 +159,10 @@ class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
                     fixture.assertEqual(Decimal(claim["cohort_admission"]["reserved_amount"]), Decimal("5"))
                     state["admissions"].append(view)
                 except Exception as error:
-                    state["errors"].append(stage + ":" + type(error).__name__)
+                    state["errors"].append(stage + ":" + type(error).__name__ + (":" + str(error) if isinstance(error, ValueError) else ""))
+                    evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
+                    if evidence and stage == "native_history" and post_import_restore:
+                        write_report(Path(evidence) / ("owned-oracle-input-" + str(state["requests"]) + "-" + fixture.session + ".json"), body)
                     self.send_error(400); self.close_connection = True
                     return
                 if scenario == "helper_eof":
@@ -134,9 +194,13 @@ os.kill(found[0],signal.SIGKILL)
                                 content=[dict(type="output_text", text=OUTPUT, annotations=[])])
                     event = dict(type="response.output_text.delta", sequence_number=0, item_id="offline-final",
                                  output_index=0, content_index=0, delta=OUTPUT)
-                    if state["requests"] == 1:
+                    if post_import_restore and state["requests"] == 1:
+                        item = dict(type="function_call", id="cold-read-item", call_id="cold-read", name="Read", status="completed",
+                                    arguments=json.dumps(dict(file_path="/workspace/continued.txt")))
+                        event = dict(type="response.output_item.done", sequence_number=0, output_index=0, item=item)
+                    elif state["requests"] == (2 if post_import_restore else 1):
                         item = dict(type="function_call", id="cold-edit-item", call_id="cold-edit", name="Edit", status="completed",
-                                    arguments=json.dumps(dict(file_path="/workspace/continued.txt", old_string="continued once", new_string="edited after cold restore")))
+                                    arguments=json.dumps(dict(file_path="/workspace/continued.txt", old_string="operator original" if post_import_restore else "continued once", new_string="edited after cold restore")))
                         event = dict(type="response.output_item.done", sequence_number=0, output_index=0, item=item)
                     events = [event, dict(type="response.completed", sequence_number=1, response=dict(id="offline-response", object="response",
                               status="completed", model="deepseek-v4-flash", output=[item], usage=dict(input_tokens=10, output_tokens=4, total_tokens=14,
@@ -219,7 +283,7 @@ os.kill(found[0],signal.SIGKILL)
             with mock.patch.dict(os.environ, {"PROV_API_KEY":canary.decode(), "DEEPSEEK_API_KEY":canary.decode()}):
                 result = launcher.dispatch(self.bundle_path, self.bundle_digest, self.snapshot, grant, digest(grant), "fixture")
             self.assertEqual(state["errors"], [])
-            self.assertEqual(state["requests"], 2 if scenario == "known" else 1)
+            self.assertEqual(state["requests"], self.expected_requests)
             self.assertEqual(len(state["admissions"]), state["requests"])
             self.assertEqual(result["status"], "completed" if scenario == "known" else "stopped")
             self.assertEqual(result["accounting_complete"], scenario == "known")
@@ -256,6 +320,7 @@ os.kill(found[0],signal.SIGKILL)
 
     def test_production_host_gateway_known_cold_dispatch(self): self.check_gateway("known")
     def test_completed_restore_transaction_cold_dispatch(self): self.check_gateway("known", restored_history=True)
+    def test_new_restore_after_import_recaptures_joint_proof_and_dispatches(self): self.check_gateway("known", restored_history=True, post_import_restore=True)
     def test_production_host_gateway_reset_retains_closed_unknown_usage(self): self.check_gateway("reset")
     def test_production_host_gateway_budget_denial_preserves_claim(self): self.check_gateway("budget")
     def test_production_host_gateway_unready_precedes_claim(self): self.check_gateway("unready")
@@ -295,7 +360,7 @@ os.kill(found[0],signal.SIGKILL)
 
 def load_tests(loader, tests, pattern):
     return unittest.TestSuite(HostGatewayDockerTests(name) for name in (
-        "test_production_host_gateway_known_cold_dispatch", "test_completed_restore_transaction_cold_dispatch", "test_production_host_gateway_reset_retains_closed_unknown_usage",
+        "test_production_host_gateway_known_cold_dispatch", "test_completed_restore_transaction_cold_dispatch", "test_new_restore_after_import_recaptures_joint_proof_and_dispatches", "test_production_host_gateway_reset_retains_closed_unknown_usage",
         "test_production_host_gateway_budget_denial_preserves_claim", "test_production_host_gateway_unready_precedes_claim",
         "test_production_host_gateway_helper_eof_quarantines_workspace",
         "test_legacy_history_blocks_before_restore_claim_and_dispatch"))

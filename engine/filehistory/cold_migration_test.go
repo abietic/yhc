@@ -496,7 +496,7 @@ func TestColdHistoryOrdinaryOwnerRejectsChangedProvenance(t *testing.T) {
 	}
 }
 
-func TestColdHistoryUnverifiedNewRestoreBlockedButLiveTurnSupported(t *testing.T) {
+func TestColdHistoryFreshRestorePreviewDoesNotPublishAuthorityAndLiveTurnSupported(t *testing.T) {
 	j, root, _ := coldJournal(t)
 	p, err := j.ExportColdState()
 	if err != nil {
@@ -511,12 +511,13 @@ func TestColdHistoryUnverifiedNewRestoreBlockedButLiveTurnSupported(t *testing.T
 		t.Fatal(err)
 	}
 	defer current.Close()
-	if _, err := current.PrepareRestoreOperation("turn-1", ""); err == nil {
-		t.Fatal("unverified new restore admitted")
+	if _, err := current.PrepareRestoreOperation("turn-1", ""); err != nil {
+		t.Fatal("fresh imported preview", err)
 	}
 	if _, err := os.Lstat(filepath.Join(dir, restoreOperationFile)); !os.IsNotExist(err) {
-		t.Fatal("denial published a restore transaction")
+		t.Fatal("preview published a restore transaction")
 	}
+	current.restorePreview = nil // Owned cancellation of this unused preview.
 	if err := current.ReconcileRestoreReceipts(); err != nil {
 		t.Fatal("receipt reconciliation", err)
 	}

@@ -239,31 +239,53 @@ func (guards *FileReadGuards) Snapshot(cwd string) (ReadGuardSnapshot, error) {
 // RestoreFileReadGuards validates the whole snapshot before creating a new
 // owner. It never merges with or mutates an existing/global guard map.
 func RestoreFileReadGuards(snapshot ReadGuardSnapshot) (*FileReadGuards, error) {
-	if snapshot.Version != 1 || snapshot.Entries == nil || len(snapshot.Entries) > maxReadGuardEntries {
+	return RestoreFileReadGuardsExcluding(snapshot, nil)
+}
+
+// RestoreFileReadGuardsExcluding discards observations invalidated by a verified
+// workspace restore. Every original entry is schema checked; excluded paths get
+// no read credit. All retained entries still require exact current file bytes.
+func RestoreFileReadGuardsExcluding(snapshot ReadGuardSnapshot, invalidated []string) (*FileReadGuards, error) {
+	if snapshot.Version != 1 || snapshot.Entries == nil || len(snapshot.Entries) > maxReadGuardEntries || len(invalidated) > maxReadGuardEntries {
 		return nil, ErrReadGuardRecovery
 	}
 	state := NewFileReadGuards()
 	state.root, state.restored = snapshot.CWD, true
 	previous := ""
 	var total int64
+	excluded := make(map[string]bool, len(invalidated))
+	for _, path := range invalidated {
+		if !validReadGuardRelative(path) {
+			return nil, ErrReadGuardRecovery
+		}
+		excluded[path] = true
+	}
 	for _, entry := range snapshot.Entries {
-		if entry.Path <= previous || entry.Size < 0 || entry.Size > maxReadGuardFileBytes || entry.Size > maxReadGuardTotalBytes-total {
+		digest, hashErr := hex.DecodeString(entry.SHA256)
+		if !validReadGuardRelative(entry.Path) || hashErr != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != entry.SHA256 || entry.Path <= previous || entry.Size < 0 || entry.Size > maxReadGuardFileBytes || entry.Size > maxReadGuardTotalBytes-total {
 			return nil, ErrReadGuardRecovery
 		}
 		total += entry.Size
+		previous = entry.Path
+		if excluded[entry.Path] {
+			continue
+		}
 		path := filepath.Join(snapshot.CWD, entry.Path)
 		actual, err := readGuardFile(snapshot.CWD, path)
 		if err != nil || actual.Path != entry.Path || actual.SHA256 != entry.SHA256 || actual.Size != entry.Size {
 			return nil, ErrReadGuardRecovery
 		}
 		state.m[path] = &ReadFileEntry{Timestamp: time.Now().UnixMilli(), IsPartial: entry.IsPartial, sha256: entry.SHA256, size: entry.Size}
-		previous = entry.Path
 	}
 	// Empty snapshots still require a canonical existing root.
 	if err := readGuardRoot(snapshot.CWD); err != nil {
 		return nil, err
 	}
 	return state, nil
+}
+
+func validReadGuardRelative(path string) bool {
+	return path != "" && path != "." && path != ".." && !strings.ContainsRune(path, 0) && !filepath.IsAbs(path) && filepath.ToSlash(filepath.Clean(filepath.FromSlash(path))) == path && !strings.HasPrefix(path, "../")
 }
 
 func readGuardRoot(cwd string) error {

@@ -69,6 +69,7 @@ type coldState struct {
 	frames    []journalFrame
 	journal   *RevisionJournal
 	operation *RestoreOperation
+	evolution *restoreEvolution
 }
 
 func coldSHA(raw []byte) string { sum := sha256.Sum256(raw); return hex.EncodeToString(sum[:]) }
@@ -233,7 +234,7 @@ func decodeColdState(files map[string][]byte, root, rootIdentity, session string
 	}
 	if data, ok := files[restoreOperationFile]; ok {
 		var envelope restoreOperationEnvelope
-		if coldDecode(data, &envelope) != nil || envelope.Kind != restoreOperationKind || envelope.Version != restoreOperationVersion {
+		if coldDecode(data, &envelope) != nil || view.validRestoreEnvelope(envelope) != nil {
 			return nil, fmt.Errorf("invalid cold restore operation")
 		}
 		op := envelope.Operation
@@ -241,6 +242,7 @@ func decodeColdState(files map[string][]byte, root, rootIdentity, session string
 			return nil, fmt.Errorf("unfinished cold restore operation")
 		}
 		s.operation = &op
+		s.evolution = envelope.Evolution
 		if actual != nil {
 			check := cloneRestoreOperation(op)
 			check.Root, check.RootIdentity = actual.rootPath, actual.rootIdentity
@@ -256,6 +258,9 @@ func decodeColdState(files map[string][]byte, root, rootIdentity, session string
 			}
 		}
 		if err := s.verifyRestoreReceipts(op); err != nil {
+			return nil, err
+		}
+		if err := s.verifyRestoreEvolution(); err != nil {
 			return nil, err
 		}
 	}
@@ -307,7 +312,8 @@ func (s *coldState) semanticSHA() string {
 		SessionID string
 		Frames    []journalFrame
 		Operation *RestoreOperation
-	}{1, s.journal.sessionID, frames, op})
+		Evolution *restoreEvolution `json:",omitempty"`
+	}{1, s.journal.sessionID, frames, op, s.evolution})
 	return coldSHA(raw)
 }
 
@@ -330,7 +336,7 @@ func (s *coldState) verifyFiles(actual *RevisionJournal) error {
 			return err
 		}
 	}
-	return nil
+	return s.verifyEvolutionSiblingsAbsent(actual)
 }
 
 func (s *coldState) proof(root, identity string) ColdHistoryProof {
