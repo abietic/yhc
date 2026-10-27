@@ -12,6 +12,7 @@ from scripts.terminal_bench.cold_recovery import bounded_command
 from scripts.terminal_bench.service_snapshot import decode, encode, identity, require
 from scripts.terminal_bench.usage import sum_usage, validated_usage
 from scripts.terminal_bench.workspace_io import PROTOCOL, session_identity
+from scripts.terminal_bench.history_state import history_proof
 
 WORKSPACE_COHORT = "io.yhc.workspace-cohort"
 WORKSPACE_ROLE = "io.yhc.workspace-role"
@@ -81,8 +82,11 @@ def native_proof(value, session_id, cwd):
     # The nonce is evidence of a fresh loader process, never part of semantic
     # equality. Native transcript accounting and invocation accounting have
     # different coverage; do not force their token totals to be equal.
-    return {key: value[key] for key in ("version", "scope", "session_id", "thread_id", "cwd",
-                                       "message_count", "messages_sha256", "native_usage")}
+    result = {key: value[key] for key in ("version", "scope", "session_id", "thread_id", "cwd",
+                                        "message_count", "messages_sha256", "native_usage")}
+    if "workspace_history" in value:
+        result["workspace_history_semantic_sha256"] = history_proof(value["workspace_history"], session_id, cwd)["semantic_sha256"]
+    return result
 
 
 class DockerWorkspace:

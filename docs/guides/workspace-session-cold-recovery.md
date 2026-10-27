@@ -1,7 +1,7 @@
 # Verify a Workspace, Native Session and Usage After Cold Restore
 
 **Status:** current
-**Last verified:** 2026-10-26
+**Last verified:** 2026-10-27
 
 > **Ownership:** the operator-only file/native/usage recovery bundle, its
 > binding to cooperative service proofs, and explicitly funded benchmark dispatch
@@ -71,19 +71,20 @@ replaces this load test.
 An existing workspace history must also pass its owner's filesystem identity
 checks. A journal that cannot be opened or revalidated reports
 `workspace_history_unavailable`. Once the journal opens, an unreadable,
-malformed or recorded restore operation reports `workspace_restore_state_unverified`.
-Even a completed file-restore operation remains outside this cold proof.
+malformed restore operation reports `workspace_restore_state_unverified`.
+Closed history and terminal file-restore operations require the separate
+history proof and import below. Incomplete file or transaction facts report
+`workspace_history_state_unverified`.
 Absent history is not created by inspection. These blockers stop bundle
 restoration before service activation, dispatch claims or new budget allocation.
 
 Local journal validity is not a portability proof: a destroyed volume's
-device/inode may be reused by another volume. The bundle therefore rejects
-the selected Session's `.workspace-history` at capture and load with
-`workspace_history_cold_migration_unverified`, even when native loading happens
-to accept its identity. Legacy bundles receive the same rejection before
-restore claims or target RPC. Current Sessions that contain this history need
-a separately verified migration; retaining the bytes does not make them
-eligible for this cold-dispatch path.
+device/inode may be reused by another volume. History-bearing captures use
+bundle v3 and always perform an explicit import, even when source and target
+filesystem identities happen to match. History-free v1/v2 remain compatible.
+Legacy history-bearing bundles are rejected with
+`workspace_history_cold_migration_unverified` before restore claims or target
+RPC; they cannot be upgraded by editing their version field.
 
 The opt-in proof also requires a closed native conversation turn. A transcript
 ending at a user prompt, an unresolved tool call, or matched tool results without
@@ -104,6 +105,84 @@ restore process-local guards.
 Native transcript usage and invocation usage have different coverage. Both
 must retain their original facts; their totals are not forced equal. The
 provider-free loader is not appended as another paid invocation.
+
+## Import closed workspace history
+
+The native proof's optional `workspace_history` binds the original journal,
+restore operation and origin file hashes, lengths, frame count and a logical
+state digest. The history owner rereads actual files, checks closed turns,
+bounded tool counts, completed effects, current file bytes/modes and transaction
+receipts. It does not repair missing facts to make a source eligible.
+
+| Retained state | Cold import policy |
+|---|---|
+| Closed history, no restore operation | Verify current tracked files and migrate. |
+| `completed` or `rolled_back` restore | Verify path receipts and sibling cleanup, preserve terminal state and migrate. |
+| Active turn, unfinished effect, unbounded tools or interactions | Block capture/export. |
+| `applying`, `partial`, malformed operation, unknown or leftover staging files | Block export/import and preserve all evidence. |
+| Changed tracked bytes, missing archive, damaged imported prefix or origin | Block cold proof; invalid provenance also blocks ordinary admission and appends. |
+| Pending import marker, including an absent active directory | Block native proof, Query and effectful command admission. |
+
+The trusted coordinator restores the exact tree first, then calls the
+provider-free public administration operation inside the passive target:
+
+```bash
+yhc sessions recover-history SESSION_ID \
+  --source-sha256 SOURCE_PROOF_CANONICAL_SHA256 \
+  --migration-id RESTORE_ATTEMPT_UUID \
+  --binding-sha256 TARGET_GENERATION_SHA256 \
+  --output-format json < /private/control/source-history-proof.json
+```
+
+The input is only the source `workspace_history` object. Its canonical digest
+must be retained outside the task. The target binding covers the anchored
+bundle, restore attempt and complete admitted workspace runtime inventory.
+The launcher computes it; copying a digest from the target's own files is
+insufficient. This operation requires a canonical Session inside the captured
+workspace, the same logical root path and the caller's already admitted
+quiescent keeper. It does not pause arbitrary host Sessions or establish a
+lease against other host actors.
+
+The filehistory owner publishes and syncs a pending marker, stages new
+target-bound frames and a terminal operation, then atomically exchanges the
+active and staging directories on Linux/Darwin. The original raw files remain
+byte-for-byte at
+`SESSION_ID.workspace-history.cold-source-RESTORE_ATTEMPT_UUID`. The new
+`cold-origin.json` binds that archive, normalized hashes and target generation.
+Keep the archive with the Session; later checks and migrations require it.
+
+Normalization changes physical root bindings, adds the migration UUID to frames
+and recomputes the root-dependent restore plan digest. Logical comparison
+excludes only those fields. Record IDs, ordering, timestamps, captured bytes,
+turn eligibility, path statuses and confirmation diagnostics remain bound;
+original physical bytes are separately archived and hashed. Stored confirmation
+never authorizes another restore or starts an Agent.
+
+Ordinary history opens and subsequent writes validate the immutable imported
+prefix, terminal restore bytes and archive chain. Later file-tool turns can
+append through the existing owner; they cannot rewrite that prefix. Starting
+another restore transaction on imported history is still unverified and is
+blocked at preparation, apply and store admission before intent is published.
+This also covers introducing a restore file when the source had none. A new process
+also rejects migrated frames whose origin receipt is missing. A later cold
+capture must export the newly advanced state rather than reuse an old import.
+Provenance is bounded to sixteen imports and 64 MiB of archived metadata.
+
+An interrupted import remains blocked. An explicit exact retry can converge
+before or after exchange only when the full source, staging files, target
+identity and original request still match. An unknown partial stage is preserved
+and rejected. A completed exact replay reads the same receipt without rewriting
+files. A different request or advanced history cannot reset progress. The outer
+bundle restore claim remains single use: import retry does not authorize
+retrying a quarantined bundle or paid task.
+
+After import, the launcher obtains a fresh native proof, verifies actual origin
+and target-local history, compares logical state with the captured source and
+rechecks closed cumulative usage. Services and advancing clocks activate only
+after those checks. Explicit dispatch repeats joined checks before claims and
+reservations. The cold tool handoff adopts the same verified read-guard owner;
+terminal restore paths lose prior read credit and retain the generic instruction
+to reread changed files. Unrelated read scopes stay blocked.
 
 ## Capture one bound bundle
 
@@ -588,17 +667,12 @@ unclosed server or leftover process retains the claim and allocation and
 quarantines the owned workspace. Neither that failure nor a successful receipt
 allows automatic paid retry or reopens the old source.
 
-Captured change-review and file-restore journals have their own state owner. The
-[revision journal](../../engine/filehistory/revisions.go) binds its frames to
-the original filesystem root identity; copying its bytes to a new volume does
-not make it replayable. The current
-[review owner](../../engine/workspace_revisions.go) preserves an incompatible
-journal and reports history unavailable. Ordinary new turns and effectful
-commands also stop when that existing history cannot be revalidated. The
-opt-in native proof reports the blocker before cold budget admission. This
-file-tool dispatch proof does not rebind that history or certify restoration
-of file-restore operations. Do not weaken that owner check or describe copied
-history files as recovered capability.
+Captured history uses the explicit migration above. The
+[revision journal](../../engine/filehistory/revisions.go) continues to reject
+an incompatible root, pending marker or invalid imported provenance. The
+[review owner](../../engine/workspace_revisions.go) preserves unavailable
+history; ordinary turns and effectful commands stop when it cannot be
+revalidated. The gateway transport supplies no alternative recovery authority.
 
 ## Reproduce without a paid provider
 
@@ -607,8 +681,10 @@ python3 -m unittest scripts.terminal_bench.test_recovery_bundle.HistoryTests
 python3 -m unittest scripts.terminal_bench.test_recovery_bundle.SessionIdentityTests
 python3 -m unittest scripts.terminal_bench.test_paused_recovery
 python3 -m unittest scripts.terminal_bench.test_cohort_admission
+python3 -m unittest scripts.terminal_bench.test_history_state
+go test -race ./engine/filehistory -run '^TestColdHistory'
 go test ./engine/session ./engine ./cmd/yhc/cmd \
-  -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof)'
+  -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof|ColdHistory|ExecColdToolHandoff)'
 ```
 
 The file-transport tests use Linux extended-attribute APIs. On a macOS host,
@@ -638,7 +714,8 @@ setup with `YHC_NATIVE_RECOVERY_DOCKER_TEST=1` and
 `python3 -m unittest scripts.terminal_bench.test_host_gateway_transport_docker`.
 These cases use the actual optional launcher path without an injected RPC
 wrapper, with known settlement, truncated unknown usage, budget denial,
-unready gateway and killed-helper quarantine. Fake host-key canaries are
+unready gateway, killed-helper quarantine, terminal restore migration and legacy
+history rejection. Fake host-key canaries are
 checked against restored workspace files. Pure framing, admission, fault and
 process-cleanup checks run through
 `python3 -m unittest scripts.terminal_bench.test_host_gateway_transport` and

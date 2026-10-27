@@ -385,6 +385,10 @@ func (e *QueryEngine) invalidateRestoredWorkspace(identity workspaceRevisionIden
 
 func (e *QueryEngine) workspaceRestoreQueryContext(ctx context.Context) (context.Context, string, error) {
 	identity, c := e.lockWorkspaceRevisions()
+	if err := filehistory.CheckColdHistoryGate(filepath.Join(identity.dir, identity.sessionID+".workspace-history")); err != nil {
+		c.mu.Unlock()
+		return ctx, "", err
+	}
 	if c.restoreCancel != nil || c.externalWriters > 0 && c.restorePreview != nil {
 		c.mu.Unlock()
 		return ctx, "", fmt.Errorf("wait for workspace restore or shell work to finish")
@@ -452,6 +456,9 @@ func (e *QueryEngine) workspaceRestoreQueryContext(ctx context.Context) (context
 func (e *QueryEngine) workspaceRestorePendingActionError() error {
 	identity, c := e.lockWorkspaceRevisions()
 	defer c.mu.Unlock()
+	if err := filehistory.CheckColdHistoryGate(filepath.Join(identity.dir, identity.sessionID+".workspace-history")); err != nil {
+		return err
+	}
 	if c.restoreCancel != nil {
 		return fmt.Errorf("workspace restore is in progress")
 	}

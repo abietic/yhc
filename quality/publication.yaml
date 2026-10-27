@@ -256,7 +256,7 @@ privacy:
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 341
+      line: 342
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
@@ -5867,7 +5867,7 @@ privacy:
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_recovery_bundle_docker.py
-      line: 358
+      line: 365
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
@@ -5918,7 +5918,7 @@ privacy:
       match_sha256: b8ac1379b6050f4463f91b63445d009072ac3f02ad7fb9fffd74940f04281740
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_recovery_bundle_docker.py
-      line: 363
+      line: 370
       rule_id: private-url
       match_sha256: bda8e6ef76541ee9914daa1425214b440e00893a739990187f25d4dc2b7b80ca
       purpose: synthetic-security-fixture
@@ -5995,17 +5995,17 @@ privacy:
       match_sha256: c7308232c19e31ad073a29fa0f2368e9a1266721c25089ed032d8f86f6ef69c7
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_host_gateway_transport_docker.py
-      line: 41
+      line: 52
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_host_gateway_transport_docker.py
-      line: 149
+      line: 160
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_host_gateway_transport_docker.py
-      line: 155
+      line: 166
       rule_id: private-url
       match_sha256: 9deeb77a1ebfc7b923b68a5d20b9f86483188dc9630bdf57c2c828f0ebcecf65
       purpose: synthetic-security-fixture

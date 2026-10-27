@@ -279,6 +279,22 @@ def operate(request):
         value = json.loads(result.stdout)
         require(value.get("status") == "completed" and value.get("operation") == "sessions.resume")
         return value["result"]["recovery_proof"]
+    if op == "history_migrate":
+        session = request["session_id"]
+        require(session_identity(session))
+        source, migration, binding = request["source_proof"], request["migration_id"], request["binding_sha256"]
+        require(isinstance(source, dict) and source.get("session_id") == session
+                and isinstance(migration, str) and isinstance(binding, str))
+        payload = json.dumps(source, separators=(",", ":"), ensure_ascii=False).encode()
+        require(len(payload) <= 65536)
+        env = dict(PATH="/usr/local/bin:/usr/bin:/bin", HOME="/tmp/yhc-proof-home",
+                   YHC_SESSION_CATALOG=str(root / ".yhc" / "session-roots.json"))
+        code, raw = bounded_exec(["/opt/yhc/yhc", "sessions", "recover-history", session,
+                                  "--source-sha256", source["sha256"], "--migration-id", migration,
+                                  "--binding-sha256", binding, "--output-format", "json"], root, env, payload, 30)
+        value = json.loads(raw)
+        require(code == 0 and value.get("status") == "completed" and value.get("operation") == "sessions.recover-history")
+        return value["result"]
     if op == "usage_probe":
         relative = request["checkpoint_path"]
         require(isinstance(relative, str) and relative.startswith(".yhc/usage-checkpoints/"))

@@ -100,6 +100,9 @@ func TestResumeInfoWithRecoveryProofRejectsUnverifiedWorkspaceHistory(t *testing
 			if err := journal.RecordTurnStart("source-turn", id, time.Unix(1, 0).UTC()); err != nil {
 				t.Fatal(err)
 			}
+			if err := journal.RecordTurnTerminal(filehistory.TurnRecord{SessionID: id, ThreadID: id, TurnID: "source-turn", StartedAt: time.Unix(1, 0).UTC(), FinishedAt: time.Unix(2, 0).UTC(), TerminalReason: "completed", ToolCountsBounded: true}); err != nil {
+				t.Fatal(err)
+			}
 			if err := journal.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -145,7 +148,7 @@ func TestResumeInfoWithRecoveryProofRejectsUnverifiedWorkspaceHistory(t *testing
 	}
 }
 
-func TestRecoveryProofExcludesCompletedWorkspaceRestore(t *testing.T) {
+func TestRecoveryProofAttestsCompletedWorkspaceRestore(t *testing.T) {
 	eng, _, turn, calls, _ := newRestoreEngineFixture(t, PermissionAllowOnce)
 	if blocker := eng.recoveryProofWorkspaceHistoryBlocker(); blocker != "" {
 		t.Fatalf("compatible capture blocked: %s", blocker)
@@ -159,8 +162,8 @@ func TestRecoveryProofExcludesCompletedWorkspaceRestore(t *testing.T) {
 		t.Fatalf("restore status=%+v err=%v", status, err)
 	}
 	before := calls.Load()
-	if blocker := eng.recoveryProofWorkspaceHistoryBlocker(); blocker != "workspace_restore_state_unverified" {
-		t.Fatalf("completed restore accepted without a cold-state proof: %s", blocker)
+	if state, _, blocker := eng.recoveryProofWorkspaceHistory(); blocker != "" || state == nil || state.RestoreState != "completed" {
+		t.Fatalf("completed restore lacks its validated state proof: %s", blocker)
 	}
 	if calls.Load() != before {
 		t.Fatal("recovery inspection dispatched model work")

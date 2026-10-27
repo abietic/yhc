@@ -20,9 +20,11 @@ from scripts.terminal_bench.service_snapshot import (
 from scripts.terminal_bench.workspace_io import MAX_FILE, validate_entries
 from scripts.terminal_bench.workspace_recovery import DockerWorkspace, native_proof, usage_history
 from scripts.terminal_bench.paused_recovery import cold_tool_handoff, verify_paused_joint
+from scripts.terminal_bench.history_state import check_history_staging, history_entries, target_binding, migration_receipt, verify_imported
 
 PROTOCOL = "yhc-cold-recovery-bundle-v1"
 PAUSED_PROTOCOL = "yhc-cold-recovery-bundle-v2"
+HISTORY_PROTOCOL = "yhc-cold-recovery-bundle-v3"
 
 
 def file_digest(raw):
@@ -35,12 +37,8 @@ def user_files(entries):
     return [e for e in entries if e["path"] != "." and e["path"] != ".yhc" and not e["path"].startswith(".yhc/")]
 
 
-def require_portable_history(entries, session_id):
-    # Device/inode can be reused after destroying a volume. Successful local
-    # journal loading therefore does not attest to a cross-volume migration.
-    prefix = ".yhc/transcripts/" + session_id + ".workspace-history"
-    require(not any(e["path"] == prefix or e["path"].startswith(prefix + "/") for e in entries),
-            "workspace_history_cold_migration_unverified")
+def require_portable_history(entries, session_id, native=None, *, verified=False):
+    return history_entries(entries, session_id, native, verified=verified)
 
 
 class RecoveryBundle:
@@ -69,7 +67,7 @@ class RecoveryBundle:
                 and before["daemon_id"] == service["source"]["daemon_id"], "bundle_source_cohort_mismatch")
         accounting = usage_history(history, session_id)
         pre_native = validate_entries(self.workspace.rpc("inventory"))
-        require_portable_history(pre_native, session_id)
+        check_history_staging(pre_native, session_id)
         native_path = ".yhc/transcripts/" + session_id + ".jsonl"
         require(any(e["path"] == native_path and e["kind"] == "file" for e in pre_native), "canonical_native_transcript_not_captured")
         proof = self.workspace.rpc("native_probe", session_id=session_id)
@@ -80,8 +78,9 @@ class RecoveryBundle:
             pause = self._paused(dict(record=pause_record, record_sha256=pause_sha256), proof, history)
         else:
             native_proof(proof, session_id, before["cwd"])
+        captured_history = require_portable_history(pre_native, session_id, proof, verified=True)
         entries = validate_entries(self.workspace.rpc("inventory"))
-        require_portable_history(entries, session_id)
+        require(require_portable_history(entries, session_id, proof, verified=True) == captured_history, "source_history_changed_during_native_load")
         require(any(e["path"] == native_path and e["kind"] == "file" for e in entries), "canonical_native_transcript_not_captured")
         if pause:
             checkpoint_path = pause["record"]["checkpoint_path"]
@@ -112,6 +111,8 @@ class RecoveryBundle:
                         can_resume_agent=False)
         if pause:
             manifest.update(version=2, protocol=PAUSED_PROTOCOL, paused_invocation=pause)
+        if captured_history:
+            manifest.update(version=3, protocol=HISTORY_PROTOCOL)
         write_report(path / "manifest.json", manifest)
         require((path / "manifest.json").stat().st_size <= MAX_BYTES, "bundle_manifest_too_large")
         seal_capsule(path, [p["file"] for p in payloads] + ["manifest.json"])
@@ -127,8 +128,10 @@ class RecoveryBundle:
         anchor = private_json(self._record("bundle", expected_digest))
         body = private_json(path / "manifest.json", sealed=True)
         require(digest(body) == expected_digest and isinstance(body, dict)
+                and type(body.get("version")) is int
                 and ((body.get("version") == 1 and body.get("protocol") == PROTOCOL and "paused_invocation" not in body)
-                     or (body.get("version") == 2 and body.get("protocol") == PAUSED_PROTOCOL and "paused_invocation" in body)),
+                     or (body.get("version") == 2 and body.get("protocol") == PAUSED_PROTOCOL and "paused_invocation" in body)
+                     or (body.get("version") == 3 and body.get("protocol") == HISTORY_PROTOCOL)),
                 "bundle_anchor_mismatch")
         require(anchor == dict(version=1, bundle_sha256=expected_digest, service_snapshot_sha256=body["service_snapshot_sha256"],
                                cohort_id=body["cohort_id"], barrier_id=body["barrier_id"]), "bundle_capture_record_mismatch")
@@ -146,7 +149,8 @@ class RecoveryBundle:
             native_proof(body["native_proof"], session_id, source["cwd"])
         accounting = usage_history(body["usage_history"], session_id)
         entries = validate_entries(body["entries"])
-        require_portable_history(entries, session_id)
+        history_state = require_portable_history(entries, session_id, body["native_proof"], verified=body["protocol"] == HISTORY_PROTOCOL)
+        require(body["protocol"] != HISTORY_PROTOCOL or history_state is not None, "v3_history_missing")
         files = [e for e in entries if e["kind"] == "file"]
         require(isinstance(body["payloads"], list) and len(files) == len(body["payloads"]), "bundle_payload_missing")
         blobs = {}
@@ -191,6 +195,14 @@ class RecoveryBundle:
             restored = self.workspace.rpc("finish", entries=body["entries"])
             require(restored == body["entries"], "workspace_restore_probe_mismatch")
             session_id = body["native_proof"]["session_id"]
+            history_import = None
+            if body["protocol"] == HISTORY_PROTOCOL:
+                source_history = body["native_proof"]["workspace_history"]
+                binding = target_binding(expected_digest, attempt, target)
+                history_import = self.workspace.rpc("history_migrate", session_id=session_id, source_proof=source_history,
+                                                    migration_id=attempt, binding_sha256=binding)
+                migration_receipt(history_import, source_history, binding, attempt, target["cwd"])
+                require(self.workspace.inventory() == target, "history_import_workspace_changed")
             loaded = self.workspace.rpc("native_probe", session_id=session_id)
             restored_pause = None
             if "paused_invocation" in body:
@@ -201,6 +213,8 @@ class RecoveryBundle:
                         "native_loaded_state_mismatch")
             require(loaded["process_nonce"] != body["native_proof"]["process_nonce"], "native_loader_process_reused")
             post_native = self.workspace.rpc("inventory")
+            if history_import:
+                verify_imported(loaded, source_history, history_import, post_native, session_id, target["cwd"], binding, attempt)
             require(user_files(post_native) == user_files(restored), "native_restore_changed_user_workspace")
             # Service activation is last. Every file/native/financial check has
             # already passed, and no Agent or provider is started by it.
@@ -217,6 +231,8 @@ class RecoveryBundle:
             if restored_pause:
                 receipt["paused_joint_proof"] = restored_pause["joint_proof"]
                 receipt["blocking_reasons"].insert(1, "tool_runtime_state_not_integrated")
+            if history_import:
+                receipt["history_migration"] = history_import
             write_report(self._record("bundle-receipt", expected_digest), receipt)
             return receipt
         except BaseException:
@@ -232,11 +248,11 @@ class RecoveryBundle:
     def prepare_dispatch(self, path, expected_digest, service_path):
         """Reobserve all joined components before a separately authorized launch."""
         body, _, accounting = self.load(path, expected_digest, service_path)
-        require(body["protocol"] == PAUSED_PROTOCOL and accounting["coverage_complete"] is True,
+        require(body["protocol"] in (PAUSED_PROTOCOL, HISTORY_PROTOCOL) and "paused_invocation" in body and accounting["coverage_complete"] is True,
                 "dispatch_requires_verified_paused_bundle")
         receipt = private_json(self._record("bundle-receipt", expected_digest))
         claim = private_json(self._record("bundle-restore", expected_digest))
-        require(receipt.get("status") == "restored_components_verified" and receipt.get("version") == 2
+        require(receipt.get("status") == "restored_components_verified" and receipt.get("version") == body["version"]
                 and receipt.get("bundle_sha256") == expected_digest
                 and receipt.get("service_snapshot_sha256") == body["service_snapshot_sha256"]
                 and receipt.get("cohort_id") == body["cohort_id"] and receipt.get("barrier_id") == body["barrier_id"]
@@ -259,6 +275,10 @@ class RecoveryBundle:
         require(digest(before) == receipt["post_native_tree_sha256"], "dispatch_workspace_changed")
         pause = body["paused_invocation"]
         native = self.workspace.rpc("native_probe", session_id=pause["record"]["session_id"])
+        if body["protocol"] == HISTORY_PROTOCOL:
+            verify_imported(native, body["native_proof"]["workspace_history"], receipt.get("history_migration"), before,
+                            pause["record"]["session_id"], target["cwd"],
+                            target_binding(expected_digest, receipt["attempt_id"], target), receipt["attempt_id"])
         checkpoint = self.workspace.rpc("usage_probe", checkpoint_path=pause["record"]["checkpoint_path"],
                                         segment_id=pause["record"]["segment_id"])
         handoff = cold_tool_handoff(pause["record"], pause["record_sha256"], native, checkpoint, body["usage_history"], target["cwd"])

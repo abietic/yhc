@@ -35,17 +35,19 @@ type ColdToolHandoff struct {
 }
 
 type ColdToolStateProof struct {
-	Version              int    `json:"version"`
-	Scope                string `json:"scope"`
-	SessionID            string `json:"session_id"`
-	NativeSHA256         string `json:"native_sha256"`
-	SourceSegmentID      string `json:"source_segment_id"`
-	NewSegmentID         string `json:"new_segment_id"`
-	GuardCount           int    `json:"guard_count"`
-	ReadGuardsRestored   bool   `json:"read_guards_restored"`
-	DispatchClaimed      bool   `json:"dispatch_claimed"`
-	DispatchMode         string `json:"dispatch_mode"`
-	HistoricalBudgetUsed bool   `json:"historical_budget_used"`
+	Version               int    `json:"version"`
+	Scope                 string `json:"scope"`
+	SessionID             string `json:"session_id"`
+	NativeSHA256          string `json:"native_sha256"`
+	SourceSegmentID       string `json:"source_segment_id"`
+	NewSegmentID          string `json:"new_segment_id"`
+	GuardCount            int    `json:"guard_count"`
+	ReadGuardsRestored    bool   `json:"read_guards_restored"`
+	DispatchClaimed       bool   `json:"dispatch_claimed"`
+	DispatchMode          string `json:"dispatch_mode"`
+	HistoricalBudgetUsed  bool   `json:"historical_budget_used"`
+	HistoryRestored       bool   `json:"history_restored,omitempty"`
+	HistorySemanticSHA256 string `json:"history_semantic_sha256,omitempty"`
 }
 
 // ReadColdToolHandoff reads one private regular file under a pinned directory.
@@ -137,15 +139,28 @@ func (s *SessionService) ResumeInfoWithColdToolHandoff(ctx context.Context, info
 		!reflect.DeepEqual(recoveryProofBlockers(resumed, eng.RuntimeItems(), eng.providerUsageSummary()), []string{"native_turn_incomplete"}) {
 		return nil, proof, ErrColdToolHandoff
 	}
+	history, origin, historyBlocker := eng.recoveryProofWorkspaceHistory()
+	if historyBlocker != "" || !reflect.DeepEqual(history, native.WorkspaceHistory) || !reflect.DeepEqual(origin, native.WorkspaceHistoryOrigin) || history != nil && origin == nil {
+		return nil, proof, ErrColdToolHandoff
+	}
 	// Revalidate file bytes after canonical loading and before consuming the
 	// durable launch claim. A fresh process must hydrate them again after death.
 	if _, err := guards.Snapshot(native.CWD); err != nil {
 		return nil, proof, ErrColdToolHandoff
 	}
+	if history != nil {
+		if err := eng.bindColdHistoryGuards(guards); err != nil {
+			return nil, proof, err
+		}
+	}
 	proof = ColdToolStateProof{
 		Version: 1, Scope: "cold_file_tool_state_restore", SessionID: native.SessionID, NativeSHA256: actualSHA,
 		SourceSegmentID: checkpoint.SegmentID, NewSegmentID: fresh.CallLedger.SegmentID, GuardCount: len(handoff.ReadGuards.Entries),
 		ReadGuardsRestored: true, DispatchClaimed: true, DispatchMode: "explicit_new_user_turn",
+	}
+	if history != nil {
+		proof.HistoryRestored = true
+		proof.HistorySemanticSHA256 = history.SemanticSHA256
 	}
 	if err := writeColdToolDispatchClaim(claimStore, proof); err != nil {
 		return nil, ColdToolStateProof{}, err

@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,20 +26,55 @@ func main() {
 
 func seed() error {
 	root, err := os.Getwd()
-	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready" && os.Args[2] != "--history-journal"))) {
+	if err != nil || (len(os.Args) != 2 && (len(os.Args) != 3 || (os.Args[2] != "--unbound-model" && os.Args[2] != "--tool-ready" && os.Args[2] != "--history-journal" && os.Args[2] != "--restored-history"))) {
 		return fmt.Errorf("fixture arguments")
 	}
-	if len(os.Args) == 3 && os.Args[2] == "--history-journal" {
+	if len(os.Args) == 3 && (os.Args[2] == "--history-journal" || os.Args[2] == "--restored-history") {
 		id := os.Args[1]
 		journal, err := filehistory.OpenRevisionJournal(root, filepath.Join(root, ".yhc", "transcripts", id+".workspace-history"), id)
 		if err != nil {
 			return err
 		}
-		if err := journal.RecordTurnStart("fixture-history-turn", id, time.Unix(1, 0).UTC()); err != nil {
-			_ = journal.Close()
+		defer journal.Close()
+		restore := os.Args[2] == "--restored-history"
+		if restore {
+			if err := os.WriteFile(filepath.Join(root, "side.txt"), []byte("operator original"), 0o600); err != nil {
+				return err
+			}
+		}
+		if err := journal.RecordTurnStartWithRestoreBoundary("fixture-history-turn", id, time.Unix(1, 0).UTC(), true, ""); err != nil {
 			return err
 		}
-		return journal.Close()
+		if restore {
+			revision, err := journal.Begin("fixture-history-turn", "fixture-history-write", "Write", "side.txt")
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(root, "side.txt"), []byte("operator changed"), 0o600); err != nil {
+				return err
+			}
+			if err := journal.Finish(revision, "succeeded"); err != nil {
+				return err
+			}
+		}
+		turns := journal.Snapshot().Turns
+		turn := turns[len(turns)-1]
+		turn.FinishedAt, turn.TerminalReason, turn.ToolCountsBounded = time.Unix(2, 0).UTC(), "completed", true
+		if restore {
+			turn.KnownToolRecords, turn.KnownToolsSucceeded = 1, 1
+		}
+		if err := journal.RecordTurnTerminal(turn); err != nil || !restore {
+			return err
+		}
+		op, err := journal.PrepareRestoreOperation("fixture-history-turn", "")
+		if err != nil {
+			return err
+		}
+		// This owned operator fixture exercises the real journal transaction;
+		// it does not claim interactive permission or TUI acceptance evidence.
+		op.ConfirmationID, op.PermissionRevision = "owned-fixture-confirmation", "owned-fixture-policy"
+		_, err = journal.ApplyRestoreOperation(context.Background(), op)
+		return err
 	}
 	write := func(name, text string, mode os.FileMode) error {
 		return os.WriteFile(filepath.Join(root, name), []byte(text), mode)

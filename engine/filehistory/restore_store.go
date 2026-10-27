@@ -165,6 +165,9 @@ func (j *RevisionJournal) SaveRestoreOperation(operation RestoreOperation) error
 	if j.closed {
 		return ErrJournalClosed
 	}
+	if err := j.coldRestoreMutationErrorLocked(); err != nil {
+		return err
+	}
 	if err := j.validRestoreOperation(operation); err != nil {
 		return err
 	}

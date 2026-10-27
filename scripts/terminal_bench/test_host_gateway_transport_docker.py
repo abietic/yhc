@@ -30,10 +30,21 @@ from scripts.terminal_bench.testdata.native_handoff import OUTPUT, verify_input
 @unittest.skipUnless(os.environ.get("YHC_HOST_GATEWAY_TRANSPORT_DOCKER_TEST") == "1"
                      and os.environ.get("YHC_NATIVE_RECOVERY_DOCKER_TEST") == "1", "explicit native and host-gateway Docker opt-in")
 class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
-    def check_gateway(self, scenario):
-        manifest, observed, _ = self.capture_joint(paused=True, environment_key=True, generated_session=True)
+    def check_gateway(self, scenario, *, restored_history=False):
+        manifest, observed, _ = self.capture_joint(paused=True, environment_key=True, generated_session=True, restored_history=restored_history)
         bundle = self.target_bundle()
         restored = bundle.restore(self.bundle_path, self.bundle_digest, self.snapshot, self.attempt)
+        self.assertEqual(manifest["version"], 3)
+        self.assertEqual(restored["history_migration"]["source"], manifest["native_proof"]["workspace_history"])
+        if restored_history:
+            before = manifest["native_proof"]["workspace_history"]
+            after = restored["native_proof"]["workspace_history"]
+            self.assertEqual(before["restore_state"], "completed")
+            self.assertEqual(before["semantic_sha256"], after["semantic_sha256"])
+            source_path = "/workspace/.yhc/transcripts/" + restored["history_migration"]["archive_directory"] + "/restore.json"
+            original = self.docker("exec", bundle.workspace.container, "/bin/cat", source_path).encode()
+            self.assertEqual(hashlib.sha256(original).hexdigest(), before["restore_sha256"])
+            self.assertEqual(self.docker("exec", bundle.workspace.container, "/bin/cat", "/workspace/side.txt"), "operator original")
         grant = grant_for(manifest, self.bundle_digest, self.attempt, int(time.time()))
         grant["binary_sha256"] = hashlib.sha256(Path(os.environ["YHC_NATIVE_RECOVERY_BINARY"]).read_bytes()).hexdigest()
         # Keep the exact source URL and opaque credential for native route binding.
@@ -45,7 +56,7 @@ class HostGatewayDockerTests(native_fixture.NativeColdDockerTests):
         plan["expires_unix"] = int(time.time()) + 2000
         cohort = CohortAdmission.create(self.control / "host-gateway-cohort", plan, digest(plan))
         before = cohort.inspect()
-        state = dict(requests=0, errors=[], admissions=[], launch=dict(checkpoint_path=".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]))
+        state = dict(case=scenario + ("-terminal" if restored_history else ""), requests=0, errors=[], admissions=[], launch=dict(checkpoint_path=".yhc/usage-checkpoints/cold-" + grant["dispatch_id"]))
         fixture = self
         def observe_failure_or_completion():
             evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
@@ -238,12 +249,13 @@ os.kill(found[0],signal.SIGKILL)
                              (original["memory"], original["durable"], original["next_random"]))
         evidence = os.environ.get("YHC_NATIVE_RECOVERY_PROOF_DIR")
         if evidence:
-            write_report(Path(evidence) / ("host-gateway-" + scenario + ".json"), dict(verification_complete=True,
+            write_report(Path(evidence) / ("host-gateway-" + state["case"] + ".json"), dict(verification_complete=True,
                 scope="production_transport_offline", session_id=self.session, result=result, cohort=cohort.inspect(),
                 observed=state, original_restore=restored, network_profile="none", services_preserved_after_dispatch=True,
                 real_provider_requests=0, real_credentials_verified=False))
 
     def test_production_host_gateway_known_cold_dispatch(self): self.check_gateway("known")
+    def test_completed_restore_transaction_cold_dispatch(self): self.check_gateway("known", restored_history=True)
     def test_production_host_gateway_reset_retains_closed_unknown_usage(self): self.check_gateway("reset")
     def test_production_host_gateway_budget_denial_preserves_claim(self): self.check_gateway("budget")
     def test_production_host_gateway_unready_precedes_claim(self): self.check_gateway("unready")
@@ -252,7 +264,7 @@ os.kill(found[0],signal.SIGKILL)
     def test_legacy_history_blocks_before_restore_claim_and_dispatch(self):
         # Recreate an anchored bundle from the old capturer. The real current
         # loader must not rely on an inode failing to be reused by Docker.
-        with mock.patch("scripts.terminal_bench.recovery_bundle.require_portable_history"):
+        with mock.patch("scripts.terminal_bench.recovery_bundle.require_portable_history", return_value=None):
             manifest, _, _ = self.capture_joint(paused=True, environment_key=True, generated_session=True, history_journal=True)
         bundle = self.target_bundle()
         plan = cohort_plan([manifest["usage_history"], history(str(uuid.uuid4()))], cohort=manifest["cohort_id"], cap="6")
@@ -283,7 +295,7 @@ os.kill(found[0],signal.SIGKILL)
 
 def load_tests(loader, tests, pattern):
     return unittest.TestSuite(HostGatewayDockerTests(name) for name in (
-        "test_production_host_gateway_known_cold_dispatch", "test_production_host_gateway_reset_retains_closed_unknown_usage",
+        "test_production_host_gateway_known_cold_dispatch", "test_completed_restore_transaction_cold_dispatch", "test_production_host_gateway_reset_retains_closed_unknown_usage",
         "test_production_host_gateway_budget_denial_preserves_claim", "test_production_host_gateway_unready_precedes_claim",
         "test_production_host_gateway_helper_eof_quarantines_workspace",
         "test_legacy_history_blocks_before_restore_claim_and_dispatch"))

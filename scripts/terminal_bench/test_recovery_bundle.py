@@ -233,12 +233,12 @@ class BundleTests(unittest.TestCase):
         extra["segments"].append(dict(ordinal=3, session_id=self.session, usage=more))
         self.assertEqual(usage_history(extra, self.session)["totals"]["total_tokens"], 42)
 
-    def test_existing_history_is_rejected_before_capture_native_probe(self):
+    def test_existing_history_without_owner_proof_is_rejected_at_capture(self):
         journal = self.source_root / ".yhc/transcripts" / (self.session + ".workspace-history")
         journal.mkdir(mode=0o700)
         with self.assertRaisesRegex(SnapshotError, "workspace_history_cold_migration_unverified"):
             self.capture()
-        self.assertNotIn("native_probe", self.source.calls)
+        self.assertEqual(self.source.calls.count("native_probe"), 1)
         self.assertFalse(self.path.exists())
         self.assertTrue(journal.is_dir())
 
@@ -248,7 +248,7 @@ class BundleTests(unittest.TestCase):
         (journal / "revisions.jsonl").write_text("owned legacy observation")
         # Construct the old capturer's anchored artifact. The current loader
         # must reject it even if an old/native proof would accept reused inodes.
-        with mock.patch("scripts.terminal_bench.recovery_bundle.require_portable_history"):
+        with mock.patch("scripts.terminal_bench.recovery_bundle.require_portable_history", return_value=None):
             root_digest = self.capture()
         manifest = (self.path / "manifest.json").read_bytes()
         bundle, workspace, _ = self.target()
