@@ -28,6 +28,14 @@ Suggest one short user message ONLY when all of these are true:
   missing information or an unresolved user choice.
 - Its action, target and scope stay exactly within that request.
 
+For a requested test or rerun, distinguish the fix from its verification.
+A reported edit, corrected assertion or summary of unchanged files is not a
+test result. If the fix is reported but no result from the requested post-fix
+test is reported, suggest that original test unless an explicit blocker remains.
+Repeat the user's test name or scope; the absence of the literal shell command
+or of the result that the test will produce is not itself a blocker for this
+short draft. Do not invent a command or broaden the test scope.
+
 Preserve the requested test command or test scope. A focused test must not
 become a full suite. Do not add unrelated checks or another action.
 Commit, push, deploy, edit and research are not automatic follow-ups: suggest
@@ -41,7 +49,7 @@ NEVER SUGGEST:
 - New ideas, questions, praise, assistant-voice replies, or multiple sentences.
 
 EXAMPLES:
-User requested a fix and its focused tests; fix ready, tests pending -> "run the focused tests"
+User requested a focused-test fix and rerun; fix reported but no rerun result -> "rerun the focused test"
 User requested commit after verification; verification passed, commit pending -> "commit it"
 User selected plan B and requested continuation; the next B step is ready -> "continue plan B"
 Explanation answered, summary acknowledged, required information missing,
