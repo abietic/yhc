@@ -145,6 +145,16 @@ dispatch with a 64-token output cap, and is disabled in Plan mode, while
 permission input is pending at dispatch admission, or while an unfinished Goal
 requires exact provider accounting.
 
+The project-owned [`GetSuggestionPrompt`](../../../engine/services/prompt_suggestion.go)
+asks the model to continue only an explicit, unfinished user request whose
+prerequisites are met, preserving its action, target and scope. Completed
+explanations or summaries, missing information and unresolved choices call for
+abstention. Commit, push, edit and research are not inferred from task completion.
+The prompt uses the existing `no suggestion` marker for abstention, which
+`FilterSuggestion` hides as meta text. These are model instructions, not a
+deterministic semantic authorization check; the filter still checks text shape
+and meta replies rather than proving that a candidate matches user intent.
+
 Prompt suggestions on an admitted DeepSeek route explicitly request
 `reasoning.effort=none`: the provider's
 [output limit includes reasoning tokens](https://api-docs.deepseek.com/api/create-response/),
