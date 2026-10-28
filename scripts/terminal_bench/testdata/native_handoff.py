@@ -143,9 +143,9 @@ def run(session_id, scenario, card, handoff=None):
             "invalid_fixture_session")
     require(scenario in ("known", "unknown", "denied", "unbound", "tool", "pause_tool", "crash_before_response", "crash_after_tool",
                         "cold_edit", "cold_race", "cold_unknown", "cold_denied", "cold_changed", "cold_checkpoint_open", "cold_repeated", "cold_crash", "cold_route_changed",
-                        "launcher_edit", "launcher_unknown", "pause_tool_env"), "invalid_fixture_scenario")
-    environment_key = scenario == "pause_tool_env"
-    if environment_key: scenario = "pause_tool"
+                        "launcher_edit", "launcher_unknown", "pause_tool_env", "resume_guard"), "invalid_fixture_scenario")
+    environment_key = scenario in ("pause_tool_env", "resume_guard")
+    if scenario == "pause_tool_env": scenario = "pause_tool"
     root = Path.cwd()
     require(str(root) == "/workspace" and Path("/opt/yhc/yhc").is_file(), "container_only_fixture")
     requests, errors, inputs, admissions = [], [], [], []
@@ -154,6 +154,11 @@ def run(session_id, scenario, card, handoff=None):
     cold = scenario.startswith("cold_") or external
     require(not cold or isinstance(handoff, dict), "cold_handoff_required")
     fixture_port = 0
+    if scenario == "resume_guard":
+        require(isinstance(handoff, dict) and set(handoff) == {"fixture_port"}
+                and type(handoff["fixture_port"]) is int and 0 < handoff["fixture_port"] < 65536,
+                "ordinary_fixture_route_required")
+        fixture_port = handoff["fixture_port"]
     if cold:
         require(set(handoff) == ({"handoff", "fixture_port", "checkpoint_path"} if external else {"handoff", "fixture_port"}) and type(handoff["fixture_port"]) is int
                 and 0 < handoff["fixture_port"] < 65536, "cold_fixture_route_required")

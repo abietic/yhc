@@ -235,6 +235,11 @@ func (j *RevisionJournal) ApplyRestoreOperation(ctx context.Context, op RestoreO
 	if err := j.saveRestoreOperationLocked(op); err != nil {
 		return op, err
 	}
+	if j.restoreAfterTerminalSave != nil {
+		if err := j.restoreAfterTerminalSave(); err != nil {
+			return op, err
+		}
+	}
 	if err := j.reconcileRestoreReceiptsLocked(op); err != nil {
 		return op, fmt.Errorf("files restored; history receipts are incomplete: %w", err)
 	}
@@ -254,7 +259,9 @@ func (j *RevisionJournal) partialRestoreLocked(op RestoreOperation, cause error)
 }
 
 // ReconcileRestoreReceipts records completed local transitions before accepting
-// a new model turn. It never changes a workspace file or resumes an operation.
+// a new model turn. Existing bindings and missing observed results must verify;
+// remaining owned siblings block admission. It never changes workspace files
+// or resumes an operation.
 func (j *RevisionJournal) ReconcileRestoreReceipts() error {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -273,8 +280,11 @@ func (j *RevisionJournal) ReconcileRestoreReceipts() error {
 	j.restoreLeaseHeld = true
 	defer func() { j.restoreLeaseHeld = false }()
 	current, stillFound, err := j.loadRestoreOperationLocked()
-	if err != nil || !stillFound || current.ID != op.ID || !terminalRestoreState(current.State) {
+	if err != nil || !stillFound || !reflect.DeepEqual(current, op) || !terminalRestoreState(current.State) {
 		return fmt.Errorf("restore operation changed before reconciliation")
+	}
+	if err := j.restoreSiblingsAbsent(current); err != nil {
+		return err
 	}
 	return j.reconcileRestoreReceiptsLocked(current)
 }
@@ -283,40 +293,55 @@ func (j *RevisionJournal) reconcileRestoreReceiptsLocked(op RestoreOperation) er
 	if err := j.verifyFreshRestoreJournalLocked(); err != nil {
 		return err
 	}
+	plan := restoreOperationPlan(op)
+	var pending []RevisionRecord
 	for index, path := range op.Paths {
-		// A rollback that ended at its original state adds no fictitious forward
-		// transition. Existing restore receipts, if any, must remain continuous.
-		id := fmt.Sprintf("restore-%s-%d-%s", op.ID, index, op.Direction)
-		if _, ok := j.records[id]; ok {
+		want, err := j.restoreReceiptRequirement(plan, op.Direction, index)
+		if err != nil {
+			return err
+		}
+		if _, ok := j.records[want.id]; ok || want.before == want.after {
 			continue
 		}
 		before, after := path.Original, path.Target
-		name := "WorkspaceRestore"
 		if op.Direction == "rollback" {
-			name = "WorkspaceRestoreRollback"
 			before, after = path.Target, path.Original
-			// Interrupted forward work may never have been published as a revision.
-			// Record the net effect from the last observed file state instead.
-			for n := len(j.order) - 1; n >= 0; n-- {
-				prior := j.records[j.order[n]]
-				if prior.Path == path.Path {
-					before = prior.After
-					break
-				}
-			}
 		}
-		if sameState(before, after) {
-			continue
+		actual, err := j.captureRestorePath(path.Path)
+		if err != nil || !sameState(actual, after) {
+			return fmt.Errorf("restore receipt target is unverified")
 		}
-		if len(j.order) >= maxLogicalRecords {
+		pending = append(pending, RevisionRecord{ID: want.id, SessionID: j.sessionID, TurnID: op.ID, ToolUseID: op.ID, ToolName: want.tool, Path: path.Path, Outcome: "succeeded", ParentExisted: true, Before: cloneRestoreState(before), After: cloneRestoreState(after)})
+	}
+	if len(j.order)+len(pending) > maxLogicalRecords {
+		return ErrJournalCapacity
+	}
+	bytesNeeded := j.bytes
+	stamp := time.Now().UTC()
+	for index := range pending {
+		pending[index].Sequence, pending[index].Timestamp = uint64(len(j.order)+index+1), stamp
+		frame := journalFrame{Version: 2, Type: "restore_result", Root: j.rootPath, SessionID: j.sessionID, Record: pending[index]}
+		encoded, err := j.encodeFrame(frame, j.frameSequence+uint64(index)+1)
+		if err != nil {
+			return err
+		}
+		bytesNeeded += int64(len(encoded) + 1)
+		if bytesNeeded > maxJournalBytes {
 			return ErrJournalCapacity
 		}
-		record := RevisionRecord{ID: id, SessionID: j.sessionID, TurnID: op.ID, ToolUseID: op.ID, ToolName: name, Path: path.Path, Outcome: "succeeded", Sequence: uint64(len(j.order) + 1), ParentExisted: true, Timestamp: time.Now().UTC(), Before: cloneRestoreState(before), After: cloneRestoreState(after)}
+	}
+	for _, record := range pending {
+		// All known conflicts/capacity were checked before publishing any fact.
+		// Repeat the bounded observation immediately before its append.
+		actual, err := j.captureRestorePath(record.Path)
+		if err != nil || !sameState(actual, record.After) {
+			return fmt.Errorf("restore receipt target changed")
+		}
 		if err := j.append("restore_result", record); err != nil {
 			return err
 		}
-		j.records[id] = cloneRecord(record)
-		j.order = append(j.order, id)
+		j.records[record.ID] = cloneRecord(record)
+		j.order = append(j.order, record.ID)
 	}
 	return nil
 }
