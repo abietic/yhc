@@ -410,7 +410,9 @@ jobs:
       - name: Run real Linux containment integration
         env:
           YHC_REQUIRE_LINUX_BWRAP: '1'
-        run: go test ./engine/containment -run '^TestBubblewrapLinuxIntegration$' -count=1
+        run: |
+          go test ./engine/containment -run '^TestBubblewrapLinuxIntegration$' -count=1
+          go test ./engine -run '^TestP511EngineBindsEachOwnerToItsNamedClass$' -count=1
 
   desktop:
     name: Desktop supply chain

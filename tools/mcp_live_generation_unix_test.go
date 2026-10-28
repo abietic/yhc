@@ -306,7 +306,9 @@ func TestUnexpectedClosePreservesOtherMCPServer(t *testing.T) {
 	}
 	waitForOwnedRefreshProcessGone(t, alphaProcess)
 	waitForOwnedRegistryCondition(t, func() bool {
-		return !registry.Resolve("mcp__alpha__old").Registered
+		// Registry removal precedes clearing the manager's tool inventory.
+		return !registry.Resolve("mcp__alpha__old").Registered &&
+			manager.ServerToolCount("alpha") == 0
 	})
 
 	if !registry.Resolve("mcp__beta__old").Registered {

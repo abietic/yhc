@@ -469,7 +469,7 @@ func TestP512PreToolRewriteRestartsPermissionAuthority(t *testing.T) {
 			prompts.Add(1)
 			return PermissionInteractionResult{Decision: PermissionAllowOnce}
 		})
-		if eng.ExecutionBindingMatrix().Guest().Availability() != containment.BindingAvailable {
+		if !darwinAutoProofAvailable(eng) {
 			t.Skip("complete Darwin Guest proof is unavailable")
 		}
 		outcome := executeRewrite(t, eng, map[string]any{"command": "go test ./engine"}, &executions)
