@@ -70,6 +70,11 @@ it fails closed when a workspace-local denied path crosses a symlink, but does
 not reserve absent names against later creation. These are write protections,
 not read secrecy. Permission mode cannot remove or widen them.
 
+Linux's fixed runtime read roots retain system aliases such as `/bin` and
+`/lib64` alongside their canonical targets, so the live namespace can resolve
+the fixed Bash path and ELF interpreters. These aliases remain read-only;
+extra user roots and toolchain/cache roots retain canonical path selection.
+
 On Darwin amd64/arm64, the default Guest binding is
 `workspace-write`/`degraded` through the fixed
 `/usr/bin/sandbox-exec` Seatbelt adapter. On Linux amd64/arm64 it uses fixed
