@@ -261,7 +261,7 @@ privacy:
       match_sha256: c08de3d9a24edf21cdc43beca44a7e136fa3fbb64eb7778e31d2db1074b1c55e
       purpose: build-metadata
     - path: Makefile
-      line: 342
+      line: 343
       rule_id: credential-assignment
       match_sha256: dda59792fb6824cc0ee170a9202eb02bd83dacac5ccfa96ba0e8954c5b9246a6
       purpose: build-metadata
@@ -5180,6 +5180,12 @@ privacy:
       line: 566
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
+      purpose: synthetic-security-fixture
+    # Fixed non-secret bearer header used by the stream-diagnostic privacy test.
+    - path: scripts/terminal_bench/test_http_stream.py
+      line: 42
+      rule_id: bearer-token
+      match_sha256: 4ccce59bc8ec6680263d9eb7275ef8697dc500ae362416108abccfeb98171c1e
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/testdata/ca.pem
       line: 2
