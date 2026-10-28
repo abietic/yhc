@@ -36,6 +36,7 @@ type SideQueryOptions struct {
 	ToolChoice           string
 	ForcedToolName       string
 	MaxOutputTokens      *int
+	Temperature          *float32
 	QuerySource          string
 	SessionID            string
 	ProviderUsage        ProviderUsageAdmitter
@@ -70,6 +71,7 @@ func SideQuery(ctx context.Context, chatModel model.BaseChatModel, opts SideQuer
 		ToolChoice:           opts.ToolChoice,
 		ForcedToolName:       opts.ForcedToolName,
 		MaxOutputTokens:      opts.MaxOutputTokens,
+		Temperature:          opts.Temperature,
 		QuerySource:          opts.QuerySource,
 		SessionID:            opts.SessionID,
 		ProviderUsage:        opts.ProviderUsage,

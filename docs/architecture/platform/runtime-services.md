@@ -179,9 +179,11 @@ and meta replies rather than proving that a candidate matches user intent.
 Prompt suggestions on an admitted DeepSeek route explicitly request
 `reasoning.effort=none`: the provider's
 [output limit includes reasoning tokens](https://api-docs.deepseek.com/api/create-response/),
-so thinking can otherwise consume the entire short suggestion budget. This is
-a per-call control; the main route's reasoning setting and argument-suggestion
-effort remain unchanged. Other providers keep their admitted effort. The shared
+so thinking can otherwise consume the entire short suggestion budget. These
+non-thinking Ghost calls also set `temperature=0` to narrow sampling variance;
+this is not a semantic correctness guarantee. Both are per-call controls: the
+main route and argument suggestions retain their reasoning and sampling settings.
+Other providers keep their admitted settings. The shared
 auxiliary suggestion boundary records usage and discards known token-truncated
 responses before text can become a candidate; it never retries to fill the gap.
 
