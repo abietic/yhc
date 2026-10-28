@@ -35,8 +35,9 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 				candidate = "continue plan B"
 			}
 			type request struct {
-				Model           string `json:"model"`
-				MaxOutputTokens int    `json:"max_output_tokens"`
+				Model           string   `json:"model"`
+				MaxOutputTokens int      `json:"max_output_tokens"`
+				Temperature     *float32 `json:"temperature"`
 				Input           []struct {
 					Role    string `json:"role"`
 					Content []struct {
@@ -146,6 +147,13 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 			}
 			if body.Model != "deepseek-flash" || body.MaxOutputTokens != 64 || len(body.Tools) != 0 || effort != tc.wantEffort {
 				t.Fatalf("suggestion wire model=%q max_output_tokens=%d tools=%d effort=%q, want %q", body.Model, body.MaxOutputTokens, len(body.Tools), effort, tc.wantEffort)
+			}
+			if tc.source == "prompt_suggestion_generation" {
+				if body.Temperature == nil || *body.Temperature != 0 {
+					t.Fatal("DeepSeek Ghost must send an explicit zero sampling temperature")
+				}
+			} else if body.Temperature != nil {
+				t.Fatal("argument suggestion inherited the Ghost sampling override")
 			}
 			if len(body.Input) == 0 || body.Input[0].Role != "system" || len(body.Input[0].Content) != 1 || body.Input[0].Content[0].Text != wantPrompt {
 				t.Fatal("provider request did not carry the selected suggestion policy")

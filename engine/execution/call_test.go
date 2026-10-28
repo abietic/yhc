@@ -37,6 +37,7 @@ func (m *captureCallOptionsModel) WithTools(tools []*schema.ToolInfo) (model.Too
 func TestCallModelForwardsModelAndMaxTokensIntoStreamOptions(t *testing.T) {
 	chatModel := &captureCallOptionsModel{}
 	maxTokens := 2048
+	temperature := float32(0)
 	messages := []*schema.Message{{Role: schema.User, Content: "hello"}}
 	systemPrompt := &schema.Message{Role: schema.System, Content: "You are helpful."}
 	tools := []*schema.ToolInfo{{Name: "Bash"}}
@@ -45,6 +46,7 @@ func TestCallModelForwardsModelAndMaxTokensIntoStreamOptions(t *testing.T) {
 		SystemPrompt:    systemPrompt,
 		Model:           "fallback-model",
 		MaxOutputTokens: &maxTokens,
+		Temperature:     &temperature,
 	})
 	if err != nil {
 		t.Fatalf("CallModel returned error: %v", err)
@@ -76,6 +78,9 @@ func TestCallModelForwardsModelAndMaxTokensIntoStreamOptions(t *testing.T) {
 		t.Fatalf("expected max-tokens option to be forwarded, got %#v", common.MaxTokens)
 		return
 	}
+	if common.Temperature == nil || *common.Temperature != 0 {
+		t.Fatal("explicit zero temperature was lost before streaming")
+	}
 }
 
 func TestCallModelOmitsEmptyModelAndUnsetMaxTokens(t *testing.T) {
@@ -97,6 +102,9 @@ func TestCallModelOmitsEmptyModelAndUnsetMaxTokens(t *testing.T) {
 	if common.MaxTokens != nil {
 		t.Fatalf("expected unset max tokens to be omitted, got %#v", common.MaxTokens)
 		return
+	}
+	if common.Temperature != nil {
+		t.Fatal("unset temperature unexpectedly overrides the model setting")
 	}
 }
 
