@@ -22,12 +22,18 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 	for _, tc := range []struct {
 		name, source, wantEffort string
 		evidence                 bool
+		selectedPlan             bool
 	}{
-		{"ghost", "prompt_suggestion_generation", "none", false},
-		{"ghost evidence", "prompt_suggestion_generation", "none", true},
-		{"argument suggestion", "command_argument_suggestion", "high", false},
+		{"ghost", "prompt_suggestion_generation", "none", false, false},
+		{"ghost evidence", "prompt_suggestion_generation", "none", true, false},
+		{"ghost selected plan", "prompt_suggestion_generation", "none", false, true},
+		{"argument suggestion", "command_argument_suggestion", "high", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			candidate := "run the focused tests"
+			if tc.selectedPlan {
+				candidate = "continue plan B"
+			}
 			type request struct {
 				Model           string `json:"model"`
 				MaxOutputTokens int    `json:"max_output_tokens"`
@@ -53,7 +59,8 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 				requests <- body
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = fmt.Fprint(w, "event: response.created\ndata: "+`{"type":"response.created","sequence_number":0,"response":{"id":"suggestion-bound","object":"response","status":"in_progress","model":"deepseek-flash"}}`+"\n\n")
-				_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: "+`{"type":"response.output_text.delta","sequence_number":1,"item_id":"suggestion-message","output_index":0,"content_index":0,"delta":"run the focused tests"}`+"\n\n")
+				text, _ := json.Marshal(candidate)
+				_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: "+`{"type":"response.output_text.delta","sequence_number":1,"item_id":"suggestion-message","output_index":0,"content_index":0,"delta":`+string(text)+"}\n\n")
 				_, _ = fmt.Fprint(w, "event: response.completed\ndata: "+`{"type":"response.completed","sequence_number":2,"response":{"id":"suggestion-bound","object":"response","status":"completed","model":"deepseek-flash","output":[],"usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":4,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":14}}}`+"\n\n")
 			}))
 			defer server.Close()
@@ -88,6 +95,20 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 				{Role: schema.User, Content: "Check the result."},
 				{Role: schema.Assistant, Content: "The focused package is unchanged otherwise."},
 			}
+			if tc.selectedPlan {
+				eng.messages = []*schema.Message{
+					{Role: schema.User, Content: "Use option B and continue that plan."},
+					{Role: schema.Assistant, Content: "Option B is selected."},
+					{Role: schema.User, Content: "Proceed."},
+					{Role: schema.Assistant, Content: "The first B step is ready."},
+				}
+				wantHistory = []*schema.Message{
+					{Role: schema.User, Content: "Use option B and continue that plan."},
+					{Role: schema.Assistant, Content: "Option B is selected."},
+					{Role: schema.User, Content: "Proceed."},
+					{Role: schema.Assistant, Content: "The first B step is ready."},
+				}
+			}
 			if tc.evidence {
 				eng.messages = []*schema.Message{
 					{Role: schema.System, Content: "Main task policy"},
@@ -115,7 +136,7 @@ func TestPromptSuggestionDeepSeekShortBudgetUsesNonThinkingWire(t *testing.T) {
 				wantPrompt = services.GetCommandArgumentSuggestionPrompt()
 				got, err = eng.generateAuxiliarySuggestionProvider(t.Context(), []string{"run the focused tests next"}, wantPrompt, tc.source)
 			}
-			if err != nil || got != "run the focused tests" {
+			if err != nil || got != candidate {
 				t.Fatalf("suggestion = %q, %v", got, err)
 			}
 			body := <-requests

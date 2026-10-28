@@ -160,9 +160,13 @@ position. Argument suggestions retain their dedicated input format.
 
 The project-owned [`GetSuggestionPrompt`](../../../engine/services/prompt_suggestion.go)
 asks the model to continue only an explicit, unfinished user request whose
-prerequisites are met, preserving its action, target and scope. Completed
-explanations or summaries, missing information and unresolved choices call for
-abstention. Commit, push, edit and research are not inferred from task completion.
+explicitly required prerequisites are reported complete or ready, preserving
+its action, target and scope. A draft stays at the user's level of detail: an
+already selected plan or target can retain its name without inventing internal
+steps. Omitted execution details alone do not block drafting that continuation.
+Completed explanations or summaries, reported missing required information and
+unresolved choices call for abstention. Commit, push, edit and research are not
+inferred from task completion.
 For an explicitly requested test after a fix, an edit or file summary does not
 count as a test result: the original test remains pending until a post-fix result
 is reported. A short draft may reuse the user's test name or scope without
