@@ -88,6 +88,7 @@ type CallModelOptions struct {
 	SessionID              string
 	SkipCacheWrite         bool
 	MaxOutputTokens        *int
+	Temperature            *float32 // nil inherits the model setting; zero is an explicit override.
 	TaskBudget             *TaskBudget
 	EffortValue            string
 	ProviderUsage          ProviderUsageAdmitter
@@ -144,6 +145,9 @@ func CallModel(
 	}
 	if opts.MaxOutputTokens != nil {
 		streamOpts = append(streamOpts, model.WithMaxTokens(*opts.MaxOutputTokens))
+	}
+	if opts.Temperature != nil {
+		streamOpts = append(streamOpts, model.WithTemperature(*opts.Temperature))
 	}
 	if toolChoice, allowedToolNames, ok := resolveToolChoice(opts.ToolChoice, opts.ForcedToolName); ok {
 		streamOpts = append(streamOpts, model.WithToolChoice(toolChoice, allowedToolNames...))

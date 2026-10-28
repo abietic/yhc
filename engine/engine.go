@@ -2954,6 +2954,10 @@ func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, c
 		// DeepSeek counts reasoning against the same small output budget. This
 		// per-call control leaves the admitted main route and its effort intact.
 		call.options.EffortValue = "none"
+		// Draft prediction should use a narrow sampler without changing the
+		// admitted model's sampling settings for main or argument calls.
+		temperature := float32(0)
+		call.options.Temperature = &temperature
 	}
 	if querySource == "prompt_suggestion_generation" {
 		call.options.Messages = promptSuggestionInputMessages(conversation)
