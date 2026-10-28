@@ -376,6 +376,16 @@ func (j *RevisionJournal) cleanupRestoreSiblings(op RestoreOperation) error {
 func (j *RevisionJournal) restoreSiblingsAbsent(op RestoreOperation) error {
 	for _, path := range op.Paths {
 		parent, err := j.openRestoreParent(path.Path)
+		if errors.Is(err, os.ErrNotExist) {
+			// Later ordinary work may remove an entire restored directory. A
+			// safely observed absent parent also has no restore-owned siblings.
+			if check := j.noSymlinkComponents(path.Path); check != nil {
+				return check
+			}
+			if _, check := j.root.Lstat(filepath.Dir(path.Path)); os.IsNotExist(check) {
+				continue
+			}
+		}
 		if err != nil {
 			return err
 		}

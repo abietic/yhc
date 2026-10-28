@@ -268,30 +268,7 @@ func decodeColdState(files map[string][]byte, root, rootIdentity, session string
 }
 
 func (s *coldState) verifyRestoreReceipts(op RestoreOperation) error {
-	for i, path := range op.Paths {
-		id := fmt.Sprintf("restore-%s-%d-%s", op.ID, i, op.Direction)
-		before, after, tool := path.Original, path.Target, "WorkspaceRestore"
-		if op.Direction == "rollback" {
-			before, after, tool = path.Target, path.Original, "WorkspaceRestoreRollback"
-			for _, key := range s.journal.order {
-				if key == id {
-					break
-				}
-				r := s.journal.records[key]
-				if r.Path == path.Path {
-					before = r.After
-				}
-			}
-		}
-		if sameState(before, after) {
-			continue
-		}
-		r, ok := s.journal.records[id]
-		if !ok || r.ToolName != tool || r.TurnID != op.ID || r.ToolUseID != op.ID || r.Path != path.Path || r.Outcome != "succeeded" || !sameState(r.Before, before) || !sameState(r.After, after) {
-			return fmt.Errorf("cold restore receipts incomplete")
-		}
-	}
-	return nil
+	return s.journal.verifyRestoreReceiptPlan(restoreOperationPlan(op), op.Direction)
 }
 
 func (s *coldState) semanticSHA() string {

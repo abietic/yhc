@@ -1,7 +1,7 @@
 # Verify a Workspace, Native Session and Usage After Cold Restore
 
 **Status:** current
-**Last verified:** 2026-10-27
+**Last verified:** 2026-10-28
 
 > **Ownership:** the operator-only file/native/usage recovery bundle, its
 > binding to cooperative service proofs, and explicitly funded benchmark dispatch
@@ -180,6 +180,19 @@ does not repair it. Missing receipts, owned siblings, damaged evolution or a
 missing origin also block cold proof. Metadata capacity is checked before file
 effects: exhausting the bounded chain preserves existing progress and requires
 operator intervention, rather than dropping older provenance.
+
+A terminal label alone also cannot admit an ordinary model turn or an effectful
+command. Reconciliation validates the operation/path/state binding of every
+existing receipt ID. A missing non-noop receipt requires matching actual file
+bytes and mode; logical-record and exact encoded-frame capacity are checked for
+the whole missing set before publishing any fact. Remaining restore-owned
+backups or temporary siblings block admission and are preserved. Reconciliation
+never replays transitions or cleans those files automatically.
+
+Once receipts and cleanup are complete, later ordinary editing remains allowed.
+A rollback's net receipt derives from immutable operation intent and verified
+forward receipts of that same operation, rather than later writes to the path.
+Native, cold and evolved-history verification share that binding rule.
 
 A later cold capture exports the newly advanced state, including its evolution;
 reusing an older import receipt cannot reset it. Normalization preserves that
@@ -706,7 +719,8 @@ python3 -m unittest scripts.terminal_bench.test_recovery_bundle.SessionIdentityT
 python3 -m unittest scripts.terminal_bench.test_paused_recovery
 python3 -m unittest scripts.terminal_bench.test_cohort_admission
 python3 -m unittest scripts.terminal_bench.test_history_state
-go test -race ./engine/filehistory -run '^TestColdHistory'
+go test -race ./engine/filehistory \
+  -run '^Test(ColdHistory|RestoreReceipt|RestoreRollbackReceipt)'
 go test ./engine/session ./engine ./cmd/yhc/cmd \
   -run 'Test(ValidateHistory|ResumeInfoWithRecoveryProof|RecoveryProof|SessionsResumeRecoveryProof|ColdHistory|ExecColdToolHandoff)'
 ```
@@ -749,6 +763,17 @@ process-cleanup checks run through
 `python3 -m unittest scripts.terminal_bench.test_host_gateway_transport` and
 `make test-provider-costs`. This proves offline wiring, not real funding,
 provider billing, benchmark reward or model quality.
+
+For terminal-save crash admission, also compile `engine/filehistory` as a Linux
+test binary matching the cached image and set
+`YHC_TERMINAL_RESTORE_TEST_BINARY` to it. With the native recovery binary/seed,
+private proof directory and `YHC_NATIVE_RECOVERY_DOCKER_TEST=1`, set
+`YHC_TERMINAL_RESTORE_DOCKER_TEST=1` and run
+`python3 -m unittest scripts.terminal_bench.test_terminal_restore_admission_docker`.
+The owned test process exits after actual terminal intent publication, before
+receipts and sibling cleanup. A fresh ordinary public CLI must make zero
+synthetic provider requests; old cold dispatch proof must also fail. Source
+usage, user files, artifacts and cooperative service state stay preserved.
 
 The positive fixture destroys original containers and volumes, checks Git
 staged/unstaged state and file metadata, loads committed tool history without

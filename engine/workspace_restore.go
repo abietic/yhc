@@ -489,5 +489,10 @@ func (e *QueryEngine) workspaceRestorePendingActionError() error {
 	if found && (operation.State == "applying" || operation.State == "partial") {
 		return fmt.Errorf("resolve interrupted workspace restore in /changes before model or workspace commands")
 	}
+	if found {
+		if err := journal.ReconcileRestoreReceipts(); err != nil {
+			return fmt.Errorf("resolve unverified completed workspace restore in /changes before model or workspace commands")
+		}
+	}
 	return nil
 }

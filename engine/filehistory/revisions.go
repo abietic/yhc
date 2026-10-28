@@ -100,6 +100,7 @@ type RevisionJournal struct {
 	restoreBeforeStorePublish func()
 	restoreBeforeInstall      func()
 	restoreAfterPath          func(int) error
+	restoreAfterTerminalSave  func() error
 	restorePreview            *restorePreviewAdmission
 	restoreLeaseHeld          bool
 	restoreSyncFile           func(*os.File) error
@@ -631,12 +632,9 @@ func (j *RevisionJournal) appendFrame(f journalFrame) error {
 	if err := j.checkRootIdentity(); err != nil {
 		return j.seal(err)
 	}
-	f.RootIdentity = j.rootIdentity
-	f.ColdMigrationID = j.coldMigrationID
-	f.FrameSequence = j.frameSequence + 1
-	b, err := json.Marshal(f)
-	if err != nil || len(b)+1 > maxFrameBytes {
-		return j.seal(fmt.Errorf("encode revision journal frame"))
+	b, err := j.encodeFrame(f, j.frameSequence+1)
+	if err != nil {
+		return j.seal(err)
 	}
 	if j.bytes+int64(len(b)+1) > maxJournalBytes {
 		j.warning = ErrJournalCapacity.Error()
@@ -679,6 +677,15 @@ func (j *RevisionJournal) appendFrame(f journalFrame) error {
 	j.bytes += int64(len(b) + 1)
 	j.frameSequence++
 	return nil
+}
+
+func (j *RevisionJournal) encodeFrame(f journalFrame, sequence uint64) ([]byte, error) {
+	f.RootIdentity, f.ColdMigrationID, f.FrameSequence = j.rootIdentity, j.coldMigrationID, sequence
+	b, err := json.Marshal(f)
+	if err != nil || len(b)+1 > maxFrameBytes {
+		return nil, fmt.Errorf("encode revision journal frame")
+	}
+	return b, nil
 }
 
 func (j *RevisionJournal) seal(err error) error {

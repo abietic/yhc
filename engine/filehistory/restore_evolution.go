@@ -227,27 +227,8 @@ func (s *coldState) verifyRestoreEvolution() error {
 		if !terminalRestoreState(state.State) {
 			continue
 		}
-		for i, path := range state.Plan.Paths {
-			before, after, tool := path.Original, path.Target, "WorkspaceRestore"
-			id := fmt.Sprintf("restore-%s-%d-%s", state.Plan.ID, i, state.Direction)
-			if state.Direction == "rollback" {
-				before, after, tool = path.Target, path.Original, "WorkspaceRestoreRollback"
-				for _, key := range s.journal.order {
-					if key == id {
-						break
-					}
-					if record := s.journal.records[key]; record.Path == path.Path {
-						before = restoreStateMetadata(record.After)
-					}
-				}
-			}
-			if before == after {
-				continue
-			}
-			r, ok := s.journal.records[id]
-			if !ok || r.ToolName != tool || r.TurnID != state.Plan.ID || r.ToolUseID != state.Plan.ID || r.Path != path.Path || r.Outcome != "succeeded" || restoreStateMetadata(r.Before) != before || restoreStateMetadata(r.After) != after {
-				return fmt.Errorf("restore evolution receipts incomplete")
-			}
+		if err := s.journal.verifyRestoreReceiptPlan(state.Plan, state.Direction); err != nil {
+			return err
 		}
 	}
 	return nil
