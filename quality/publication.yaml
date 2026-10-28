@@ -71,12 +71,17 @@ privacy:
       match_sha256: fb9d434a1f19473164d0a182992d786fbe4e3a00d1ba45a0249b67063160fb4b
       purpose: documentation-example
     - path: .github/workflows/ci.yml
-      line: 507
+      line: 415
+      rule_id: high-entropy-token
+      match_sha256: 29d5758ac600b25cd18aa8f23f1d8a654bd1df7c8bec505510e2c02807459e6d
+      purpose: build-metadata
+    - path: .github/workflows/ci.yml
+      line: 509
       rule_id: private-url
       match_sha256: 6e933093d6c8f35f796a55f6f914fbbfcc96af49132289b1b4cc2443fdf0fbd6
       purpose: build-metadata
     - path: .github/workflows/ci.yml
-      line: 508
+      line: 510
       rule_id: private-url
       match_sha256: b5ffadb5100a84d9aeb8ec88e078ffe7ca582ffccb31745315b9d30b4ab8f133
       purpose: build-metadata
