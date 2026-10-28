@@ -150,6 +150,14 @@ dispatch with a 64-token output cap, and is disabled in Plan mode, while
 permission input is pending at dispatch admission, or while an unfinished Goal
 requires exact provider accounting.
 
+Historical user and assistant text keeps its native speaker role in the
+suggestion request. Main-system text and tool results are sent as assistant-side
+evidence rather than suggestion policy, user messages, or live tool calls.
+Only the engine-owned outer role prefix is decoded, so role-looking text
+inside a message remains content. A separate final user message asks for the
+next-user draft, keeping the last assistant report out of the live request
+position. Argument suggestions retain their dedicated input format.
+
 The project-owned [`GetSuggestionPrompt`](../../../engine/services/prompt_suggestion.go)
 asks the model to continue only an explicit, unfinished user request whose
 prerequisites are met, preserving its action, target and scope. Completed

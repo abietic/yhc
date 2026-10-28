@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/services"
@@ -13,6 +14,30 @@ var (
 	errPromptSuggestionGoal       = errors.New("prompt suggestion is disabled while an unfinished Goal requires exact provider accounting")
 	errPromptSuggestionPermission = errors.New("prompt suggestion is disabled while permission input is pending")
 )
+
+func promptSuggestionInputMessages(conversation []string) []*schema.Message {
+	messages := make([]*schema.Message, 0, len(conversation))
+	for _, entry := range conversation {
+		// backgroundMessageStrings owns the outer role prefix. Decode it once;
+		// role-looking text inside the content remains literal historical text.
+		role, content := schema.Assistant, entry
+		if text, ok := strings.CutPrefix(entry, "user: "); ok {
+			role, content = schema.User, text
+		} else if text, ok := strings.CutPrefix(entry, "assistant: "); ok {
+			content = text
+		}
+		// Main system messages and tool results are historical evidence, not
+		// suggestion policy, user authorization, or live tool protocol items.
+		messages = append(messages, &schema.Message{Role: role, Content: content})
+	}
+	messages = append(messages, &schema.Message{
+		Role: schema.User,
+		Content: "Suggest the next user message for the preceding conversation. " +
+			"Apply SUGGESTION MODE to the historical user requests; this message is only the drafting task. " +
+			"Return only the short draft or no suggestion.",
+	})
+	return messages
+}
 
 // GeneratePromptSuggestionResult is the shared root-interactive contract. It
 // preserves route admission, tool-free dispatch, auxiliary accounting and
