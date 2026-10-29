@@ -9,6 +9,10 @@ shortened deadlines as shutdown_drain or downstream_drain. Terminal events
 are recorded only after the caller's independent protocol validation. Neither
 HTTP EOF nor a terminal observation proves closed usage or resumability.
 
+Connection setup errors also retain first-cause timing. A socket timeout in
+connect is labeled connect_timeout, not an expired response-stream deadline;
+it preserves the original exception and does not authorize reservation release.
+
 Body timestamps describe decoded HTTP body reads, including partial lines,
 not TCP packets. Only the latest 64 reads are retained, with full counters
 and an explicit dropped-event count. No body, URL, header or exception text
