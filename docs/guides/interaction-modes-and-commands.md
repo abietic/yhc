@@ -372,6 +372,8 @@ from `usage.complete`. Older logs remain valid without synthesized history.
 
 The [Harbor adapter](../../scripts/terminal_bench/yhc_agent.py) accepts optional
 agent arguments `--ak max_provider_calls=30 --ak max_total_tokens=200000`.
+For the opt-in evaluation controller's disconnected grading containers and
+failure classification, see [Isolated benchmark verification](benchmark-verification.md).
 An optional `--ak execution_timeout_sec=1740` passes `--timeout 1740s` to YHC;
 choose a duration below Harbor's outer timeout to leave shutdown time. All three
 controls default to disabled. Complete usage fills Harbor input,
