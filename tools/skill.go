@@ -142,6 +142,9 @@ func executeSkillWithRegistry(input string, registry *skills.SkillRegistry) (str
 	if err != nil {
 		return "", fmt.Errorf("skill: %w", err)
 	}
+	if skill.FilePath != "" {
+		content = skill.InvocationPrompt(content)
+	}
 
 	return content, nil
 }

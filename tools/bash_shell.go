@@ -110,14 +110,15 @@ func (s *PersistentShell) UpdateCWD() string {
 
 // ShellManager manages multiple persistent shell sessions.
 type ShellManager struct {
-	shells         map[string]*PersistentShell
-	mu             sync.RWMutex
-	defaultShell   string
-	policy         *containment.Snapshot
-	binding        *containment.Binding
-	bindingDigest  string
-	executionProof containment.ExecutionProof
-	start          func(*exec.Cmd) error
+	shells          map[string]*PersistentShell
+	backgroundOwner string
+	mu              sync.RWMutex
+	defaultShell    string
+	policy          *containment.Snapshot
+	binding         *containment.Binding
+	bindingDigest   string
+	executionProof  containment.ExecutionProof
+	start           func(*exec.Cmd) error
 	// captureRootIdentityForTest supplies a platform-neutral root identity
 	// oracle to white-box tests. Production uses the selected platform adapter.
 	captureRootIdentityForTest func(string) (containment.RootIdentity, error)
@@ -157,8 +158,9 @@ func (m *ShellManager) revalidateGuestRootIdentity(identity containment.RootIden
 // NewShellManager creates a new shell manager with no active shells.
 func NewShellManager() *ShellManager {
 	return &ShellManager{
-		shells:       make(map[string]*PersistentShell),
-		defaultShell: "default",
+		shells:          make(map[string]*PersistentShell),
+		backgroundOwner: uuid.NewString(),
+		defaultShell:    "default",
 	}
 }
 
@@ -188,7 +190,7 @@ func NewShellManagerWithGuestBinding(binding *containment.Binding) (*ShellManage
 	if err != nil {
 		return nil, err
 	}
-	return &ShellManager{shells: make(map[string]*PersistentShell), defaultShell: "default", policy: binding.Policy(), binding: binding, bindingDigest: binding.Digest(), executionProof: proof}, nil
+	return &ShellManager{shells: make(map[string]*PersistentShell), backgroundOwner: uuid.NewString(), defaultShell: "default", policy: binding.Policy(), binding: binding, bindingDigest: binding.Digest(), executionProof: proof}, nil
 }
 
 // BindGuestBinding atomically pins the first Guest binding and rejects replacement.
@@ -260,9 +262,10 @@ func NewShellManagerWithExecutionPolicy(policy *containment.Snapshot) *ShellMana
 		panic("tools: shell execution policy must be valid")
 	}
 	return &ShellManager{
-		shells:       make(map[string]*PersistentShell),
-		defaultShell: "default",
-		policy:       policy,
+		shells:          make(map[string]*PersistentShell),
+		backgroundOwner: uuid.NewString(),
+		defaultShell:    "default",
+		policy:          policy,
 	}
 }
 
@@ -724,11 +727,14 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	// Drain any existing stderr before our command
 	_, _ = shell.getStderrBuffer()
 
-	// Keep stderr merged with stdout as before. The terminal protocol carries
-	// both the persistent Bash CWD and exit status, so Guest execution never
-	// needs an unbounded follow-up pwd round trip.
-	wrappedCmd := fmt.Sprintf("echo '%s'; %s 2>&1; __eino_status=$?; printf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
-		startMarker, command, cwdMarker, endMarker)
+	// Parse command input separately from the protocol suffix. This preserves
+	// multiline option/alias changes and keeps trailing comments or heredoc
+	// delimiters from consuming protocol syntax. eval runs in the persistent
+	// shell and merges stderr for the complete command, without a subshell.
+	quotedCommand := "'" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'"
+	wrappedCmd := fmt.Sprintf("echo '%s'; builtin eval -- %s 2>&1\n__eino_status=$?\nprintf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
+		startMarker, quotedCommand, cwdMarker, endMarker)
+
 	if shell.binding != nil && containment.IsContainedAdapter(shell.binding.AdapterFamily()) {
 		if beforeSubmission := m.beforeGuestCommandSubmissionForTest; beforeSubmission != nil {
 			beforeSubmission()
@@ -984,6 +990,12 @@ func (m *ShellManager) KillAll() error {
 		shells = append(shells, shell)
 	}
 	m.shells = make(map[string]*PersistentShell)
+	backgroundShells.Range(func(key, value any) bool {
+		if value.(*backgroundShellEntry).owner == m.backgroundOwner {
+			backgroundShells.CompareAndDelete(key, value)
+		}
+		return true
+	})
 	m.mu.Unlock()
 
 	var firstErr error

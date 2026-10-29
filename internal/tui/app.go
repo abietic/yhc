@@ -68,6 +68,12 @@ const (
 	StatePlanApproval    // plan approval dialog (ExitPlanMode)
 	StateAskUser         // question picker dialog (AskUserQuestion)
 	StateAgentPicker     // searchable leader/sub-agent thread picker
+	StateContextManager  // attached context for the active draft
+	StateDiffContext     // captured Git file/hunk context selector
+	StateInputDelivery   // busy composer delivery choice
+	StateInputQueue      // pending input controls and delivery receipts
+	StateSideQuestion    // independent tool-free question
+	StateChangeReview    // captured changes and turn timeline
 )
 
 type InputMode int
@@ -110,24 +116,34 @@ type App struct {
 	renderEnvironment RenderEnvironment
 
 	// Components
-	textarea        textarea.Model
-	chat            *ChatView
-	dialog          *PermissionDialog
-	resume          *ResumeDialog
-	help            *HelpOverlay
-	search          *SearchOverlay
-	msgSelector     *MessageSelector
-	mcpApproval     *MCPApprovalDialog
-	modelPicker     *ModelPicker
-	backgroundTasks *BackgroundTasksPanel
-	agentWizard     *AgentWizard
-	mcpSettings     *MCPSettingsPanel
-	teamsPanel      *TeamsPanel
-	taskExplorer    *TaskExplorerPanel
-	commandPalette  *CommandPalette
-	planDialog      *PlanDialog
-	questionDialog  *QuestionDialog
-	agentPicker     *AgentThreadPicker
+	textarea             textarea.Model
+	chat                 *ChatView
+	dialog               *PermissionDialog
+	resume               *ResumeDialog
+	help                 *HelpOverlay
+	search               *SearchOverlay
+	msgSelector          *MessageSelector
+	mcpApproval          *MCPApprovalDialog
+	modelPicker          *ModelPicker
+	backgroundTasks      *BackgroundTasksPanel
+	agentWizard          *AgentWizard
+	mcpSettings          *MCPSettingsPanel
+	teamsPanel           *TeamsPanel
+	taskExplorer         *TaskExplorerPanel
+	commandPalette       *CommandPalette
+	sideQuestionDialog   *SideQuestionDialog
+	changeReviewPanel    *ChangeReviewPanel
+	changeReviewTarget   changeReviewTarget
+	workspaceRestoreUI   *workspaceRestoreUIState
+	sideQuestionRequest  *sideQuestionRequest
+	sideQuestionPalette  *commandPaletteSubmission
+	sideQuestionAnswerID string
+	planDialog           *PlanDialog
+	questionDialog       *QuestionDialog
+	agentPicker          *AgentThreadPicker
+	contextManager       composerContextManager
+	diffContext          composerDiffContext
+	diffContextSerial    uint64
 
 	// Streaming & Progress integration
 	streamingCtx    *ChatStreamingContext
@@ -153,6 +169,7 @@ type App struct {
 	// settles. Durable command events and non-TUI entrypoints remain unchanged.
 	commandPaletteSubmission       *commandPaletteSubmission
 	commandPaletteSubmissionSerial uint64
+	commandPaletteTarget           commandPaletteTarget
 	// pendingCommandPrompt is a presentation-level continuation requested by a
 	// completed engine-owned command (for example /plan <description>).
 	pendingCommandPrompt string
@@ -196,10 +213,15 @@ type App struct {
 	composerAdmissionPending   *composerAdmissionRequest
 	composerAdmissionSerial    uint64
 	composerSuggestion         composerSuggestionState
+	argumentCompletion         argumentCompletionState
 	composerSuggestionRequest  *composerSuggestionRequest
 	composerSuggestionSerial   uint64
 	composerSuggestionTurnSeen bool
 	queuedInputPreview         []threadQueuedInput
+	inputDeliveryChoice        inputDeliveryChoice
+	inputDeliveryReceipts      []inputDeliveryReceipt
+	inputDeliveryStarts        []inputDeliveryStart
+	inputQueueSelection        int
 	threadDetailTab            agentDetailTab
 	threadAttentionResponses   sync.Map
 	sessionViewSaveGeneration  uint64
@@ -375,33 +397,35 @@ func New(cfg Config) *App {
 		notificationAfter = defaultNotificationAfter
 	}
 	app := &App{
-		focus:             FocusEditor,
-		state:             initialState,
-		dialogs:           &appDialogStack{},
-		inputMode:         InputNormal,
-		permMode:          permission.ModeDefault,
-		commandHintIdx:    -1,
-		fileHintIdx:       -1,
-		mentionHintIdx:    -1,
-		commandRegistry:   cmdReg,
-		styles:            styles,
-		renderEnvironment: renderEnvironment,
-		statusLineHook:    cfg.StatusLineHook,
-		textarea:          ta,
-		chat:              newChatViewWithRenderEnvironment(renderEnvironment),
-		dialog:            NewPermissionDialog(styles),
-		resume:            NewResumeDialog(styles),
-		help:              NewHelpOverlay(styles, resolver),
-		search:            NewSearchOverlay(styles),
-		msgSelector:       NewMessageSelector(styles),
-		mcpApproval:       NewMCPApprovalDialog(styles),
-		modelPicker:       NewModelPicker(styles),
-		backgroundTasks:   NewBackgroundTasksPanel(styles),
-		mcpSettings:       NewMCPSettingsPanel(styles),
-		agentWizard:       NewAgentWizard(styles),
-		teamsPanel:        NewTeamsPanel(styles),
-		taskExplorer:      NewTaskExplorerPanel(styles),
-		commandPalette:    NewCommandPalette(styles),
+		focus:              FocusEditor,
+		state:              initialState,
+		dialogs:            &appDialogStack{},
+		inputMode:          InputNormal,
+		permMode:           permission.ModeDefault,
+		commandHintIdx:     -1,
+		fileHintIdx:        -1,
+		mentionHintIdx:     -1,
+		commandRegistry:    cmdReg,
+		styles:             styles,
+		renderEnvironment:  renderEnvironment,
+		statusLineHook:     cfg.StatusLineHook,
+		textarea:           ta,
+		chat:               newChatViewWithRenderEnvironment(renderEnvironment),
+		dialog:             NewPermissionDialog(styles),
+		resume:             NewResumeDialog(styles),
+		help:               NewHelpOverlay(styles, resolver),
+		search:             NewSearchOverlay(styles),
+		msgSelector:        NewMessageSelector(styles),
+		mcpApproval:        NewMCPApprovalDialog(styles),
+		modelPicker:        NewModelPicker(styles),
+		backgroundTasks:    NewBackgroundTasksPanel(styles),
+		mcpSettings:        NewMCPSettingsPanel(styles),
+		agentWizard:        NewAgentWizard(styles),
+		teamsPanel:         NewTeamsPanel(styles),
+		taskExplorer:       NewTaskExplorerPanel(styles),
+		commandPalette:     NewCommandPalette(styles),
+		sideQuestionDialog: NewSideQuestionDialog(styles),
+		changeReviewPanel:  NewChangeReviewPanel(styles),
 		planDialog: newPlanDialog(
 			styles,
 			resolver,
@@ -505,6 +529,11 @@ func (a *App) SetProgram(p *tea.Program) {
 
 // SetEngine sets the query engine after creation.
 func (a *App) SetEngine(eng *engine.QueryEngine) {
+	a.dismissChangeReview()
+	a.dismissSideQuestion()
+	a.removeDialog(StateDiffContext)
+	a.removeDialog(StateCommandPalette)
+	a.commandPalette.Close()
 	a.dismissComposerSuggestion()
 	a.engine = eng
 	if eng != nil {
@@ -881,11 +910,18 @@ func (a *App) Init() tea.Cmd {
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 	defer func() {
+		if pending := a.takeArgumentCompletionCmd(); pending != nil {
+			resultCmd = tea.Batch(resultCmd, pending)
+		}
 		resultCmd = batchNotificationCmd(
 			resultCmd,
 			a.reconcileNotificationExpiry(),
 		)
 	}()
+
+	if a.handleWorkspaceRestoreMessage(msg) {
+		return a, nil
+	}
 
 	var cmds []tea.Cmd
 
@@ -932,6 +968,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		idleActive := a.mascotAnim.IdleActive()
 		a.invalidateMascotIdle()
 		if a.width != msg.Width || a.height != msg.Height {
+			a.selection.clearExpandSelection()
 			a.renderEnvironment = a.renderEnvironment.withGeometry()
 			if a.threadViews != nil {
 				a.threadViews.SetRenderEnvironment(a.renderEnvironment)
@@ -964,6 +1001,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if a.quitting {
+			a.dismissChangeReview()
+			a.dismissSideQuestion()
+			a.removeDialog(StateDiffContext)
 			a.dismissComposerSuggestion()
 			a.stopMascotIdle()
 			a.invalidateSessionViewSave()
@@ -980,6 +1020,21 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case tea.PasteMsg:
+		if state, active := a.activeDialogState(); active && state == StateSideQuestion {
+			a.sideQuestionDialog.HandlePaste(msg.Content)
+			return a, nil
+		}
+		if state, active := a.activeDialogState(); active && state == StateCommandPalette {
+			if a.commandPaletteTargetMatches() {
+				a.commandPalette.HandlePaste(msg.Content)
+			}
+			return a, nil
+		}
+		// Only the top manager's search field may consume paste; the draft stays frozen.
+		if a.hasDialog(StateContextManager) {
+			cmd := a.updateComposerContextQuery(msg)
+			return a, cmd
+		}
 		// Modal editors consume paste through their own update paths below.
 		if _, modalActive := a.activeDialogState(); modalActive {
 			break
@@ -1179,8 +1234,16 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		}
 		return a, a.mascotAnim.TriggerIdle(a.mascotIdleSequence())
 
+	case sideQuestionResultMsg:
+		a.handleSideQuestionResult(msg)
+		a.updateLayout()
+		return a, nil
 	case composerSuggestionMsg:
 		a.handleComposerSuggestion(msg)
+		a.updateLayout()
+		return a, nil
+	case argumentCompletionMsg:
+		a.handleArgumentCompletion(msg)
 		a.updateLayout()
 		return a, nil
 
@@ -1219,6 +1282,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		}
 		if err := a.engine.SyncRuntimeItems(contextPkg.Background()); err != nil {
 			a.showNotification("Runtime input synchronization failed: "+err.Error(), NotifyError)
+		}
+		if a.isLeaderThreadView() {
+			a.hydrateQueuedInputPreview()
+			a.refreshInputDeliveryReceipts()
 		}
 		if !a.running {
 			if next := a.scheduleNextQueuedInput(); next != nil {
@@ -1423,12 +1490,17 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 			}
 			return a, nil
 		}
+		a.dismissChangeReview()
 		if a.engine != nil {
 			if err := a.resetAndRestoreSessionViews(); err != nil {
 				a.showNotification("Session view state was not restored: "+err.Error(), NotifyWarning)
 			}
 			a.hydrateQueuedInputPreview()
 			a.chat.AppendCompactSummary(msg.count)
+			summary := a.engine.ExecutionSummary()
+			if summary.LatestTurn != nil {
+				a.chat.AppendSystem("Resumed execution facts:\n" + renderExecutionRecap(summary))
+			}
 		}
 		if len(msg.warnings) > 0 {
 			a.showNotification(fmt.Sprintf("Session restored with %d warning(s)", len(msg.warnings)), NotifyWarning)
@@ -1462,6 +1534,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 
 	case composerMentionPayloadMsg:
 		a.handleMentionPayload(msg)
+		a.updateLayout()
+		return a, nil
+	case composerDiffContextMsg:
+		a.handleComposerDiffContext(msg)
 		a.updateLayout()
 		return a, nil
 
@@ -1592,6 +1668,13 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, resultCmd tea.Cmd) {
 		cmd := a.planDialog.Update(msg)
 		a.updateLayout()
 		return a, cmd
+	}
+
+	if state, active := a.activeDialogState(); active && (state == StateContextManager || state == StateDiffContext || state == StateInputDelivery || state == StateInputQueue || state == StateCommandPalette || state == StateSideQuestion || state == StateChangeReview) {
+		if state == StateContextManager {
+			cmds = append(cmds, a.updateComposerContextQuery(msg))
+		}
+		return a, tea.Batch(cmds...)
 	}
 
 	// Update textarea
@@ -1766,7 +1849,16 @@ func (a *App) renderHintSection() string {
 		hints = a.renderCommandHints()
 	}
 	if hints == "" {
+		hints = a.renderArgumentHints()
+	}
+	if hints == "" {
 		hints = a.renderFileHints()
+	}
+	if hints == "" {
+		hints = a.renderComposerSuggestionFeedback()
+	}
+	if hints == "" {
+		hints = a.renderComposerContextPreview()
 	}
 	queued := a.renderQueuedInputRows()
 	if a.layout.mode == layoutModeCompact && hints != "" {
@@ -1863,6 +1955,10 @@ func (a *App) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Ctrl+C remains non-rebindable. History search consumes it as local
 	// cancellation before the active-turn interrupt path.
 	if msg.String() == "ctrl+c" {
+		if !a.running && a.hasComposerSuggestionActivity() {
+			a.dismissComposerSuggestion()
+			return nil
+		}
 		if a.historySearch.Active {
 			a.cancelHistorySearch()
 			return nil
@@ -1909,11 +2005,6 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 		a.showNotification("Wait for the current composer submission to finish", NotifyWarning)
 		return nil
 	}
-	if a.composerSuggestionRequest != nil {
-		// Any interaction makes an in-flight prediction stale. A visible result
-		// has its own explicit accept/dismiss path below.
-		a.dismissComposerSuggestion()
-	}
 	if handled, cmd := a.handleVimEditorKey(msg); handled {
 		a.dismissComposerSuggestion()
 		return tea.Batch(cmd, a.ensureMentionIndex())
@@ -1952,21 +2043,28 @@ func (a *App) handleEditorKey(msg tea.KeyPressMsg) tea.Cmd {
 	if a.visibleComposerSuggestion() != "" && msg.Code == tea.KeyRight {
 		return a.acceptComposerSuggestion()
 	}
+	if a.argumentGhost() != "" && msg.Code == tea.KeyRight {
+		a.acceptArgumentCompletion()
+		return nil
+	}
 	if handled, cmd := a.resolveEditorKeyAction(msg); handled {
-		if a.hasComposerSuggestionActivity() {
-			a.dismissComposerSuggestion()
-		}
 		return cmd
+	}
+	if msg.String() == "backspace" && a.removeComposerContext() {
+		a.dismissComposerSuggestion()
+		return nil
 	}
 
 	switch {
 	case msg.String() == "shift+up":
+		a.dismissComposerSuggestion()
 		if a.selection.HasSelection() {
 			a.selection.ExtendUp(a.chat)
 			return nil
 		}
 
 	case msg.String() == "shift+down":
+		a.dismissComposerSuggestion()
 		if a.selection.HasSelection() {
 			a.selection.ExtendDown(a.chat)
 			return nil
@@ -2038,14 +2136,18 @@ func (a *App) sendMessage() tea.Cmd {
 		return a.sendActiveAgentThreadMessage(value)
 	}
 
-	// Busy Enter queues/steers. Ctrl+C remains the explicit cancellation path.
+	// Busy input requires an explicit, durable delivery choice.
 	if a.running {
-		return a.beginComposerAdmission(snapshot, true)
+		a.openInputDeliveryChoice()
+		return nil
 	}
 	return a.beginComposerAdmission(snapshot, false)
 }
 
 func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unparam
+	if evt.Type == engine.EventToolResult || evt.Type == engine.EventTerminal {
+		defer a.refreshChangeReview()
+	}
 	attemptID := ""
 	if evt.ModelAttempt != nil {
 		attemptID = evt.ModelAttempt.AttemptID
@@ -2439,6 +2541,8 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 		}
 
 	case engine.EventTerminal:
+		a.appendExecutionCompletionRecap(evt)
+		a.refreshInputDeliveryReceipts()
 		assistantSeen := a.composerSuggestionTurnSeen
 		a.composerSuggestionTurnSeen = false
 		a.chat.FinishAssistant()
@@ -2499,6 +2603,7 @@ func (a *App) handleEngineEvent(evt engine.QueryEvent) tea.Cmd { //nolint:unpara
 
 	case engine.EventCommandLifecycle:
 		if evt.CommandLifecycle != nil {
+			a.refreshInputDeliveryReceipts()
 			if evt.CommandLifecycle.Phase == "started" {
 				a.hookStatus = "Processing queued command..."
 				threadID := evt.ThreadID
@@ -3176,7 +3281,7 @@ func (a *App) renderStatus() string {
 
 	// Key hints
 	if a.running {
-		submitLabel := "queue"
+		submitLabel := "steer/queue"
 		if !a.isLeaderThreadView() {
 			submitLabel = "send"
 		}
@@ -4076,19 +4181,16 @@ func (a *App) updateCommandHints() {
 	}
 	value := strings.TrimLeftFunc(a.textarea.Value(), unicode.IsSpace)
 	query := strings.TrimPrefix(value, "/")
-	commandName, argumentText, hasArgumentSeparator := splitSlashCommandInput(query)
+	commandName, _, hasArgumentSeparator := splitSlashCommandInput(query)
 	if hasArgumentSeparator {
-		cmd := a.commandForInput(commandName)
 		a.commandHints = nil
 		a.commandHintIdx = -1
-		if commandSupportsFileHints(cmd) {
-			a.updateFileHints(lastCommandArgument(argumentText))
-		} else {
-			a.fileHints = nil
-			a.fileHintIdx = -1
-		}
+		a.fileHints = nil
+		a.fileHintIdx = -1
+		a.updateArgumentCompletion(false)
 		return
 	}
+	a.cancelArgumentCompletion()
 
 	// Standard command name matching
 	cmdQuery := strings.ToLower(commandName)
@@ -4125,58 +4227,6 @@ func (a *App) acceptCommandHint() {
 	a.textarea.CursorEnd()
 	a.commandHintIdx = -1
 	a.updateCommandHints()
-}
-
-// updateFileHints populates file path completions based on the partial path typed.
-func (a *App) updateFileHints(partial string) {
-	a.fileHints = nil
-	a.fileHintIdx = -1
-
-	// Determine directory to list and prefix to match
-	dir := "."
-	prefix := partial
-	if partial != "" {
-		if d := filepath.Dir(partial); d != "." && d != "" {
-			dir = d
-			prefix = filepath.Base(partial)
-		}
-	}
-
-	// Resolve relative to CWD
-	if !filepath.IsAbs(dir) {
-		if cwd := a.cwd(); cwd != "" {
-			dir = filepath.Join(cwd, dir)
-		}
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-
-	lowerPrefix := strings.ToLower(prefix)
-	var hints []string
-	for _, e := range entries {
-		name := e.Name()
-		// Skip hidden files unless user typed a dot
-		if strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".") {
-			continue
-		}
-		if lowerPrefix == "" || strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
-			if e.IsDir() {
-				name += "/"
-			}
-			hints = append(hints, name)
-		}
-	}
-	sort.Strings(hints)
-
-	// Limit to reasonable count
-	const maxFileHints = 50
-	if len(hints) > maxFileHints {
-		hints = hints[:maxFileHints]
-	}
-	a.fileHints = hints
 }
 
 // acceptFileHint fills the selected file path into the textarea.
@@ -4621,6 +4671,12 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 			return nil
 		}
 	}
+	if canonicalName == "changes" || canonicalName == "recap" {
+		return a.dispatchHistoryView(value, cmdCtx, paletteSubmission, false)
+	}
+	if canonicalName == "btw" {
+		return a.dispatchSideQuestion(value, cmdCtx, paletteSubmission, false)
+	}
 	if tuiCommandAvailable &&
 		(commandName == "exit" || commandName == "quit") &&
 		len(commandArgs) == 0 {
@@ -4658,7 +4714,11 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 		return nil
 	}
 	if tuiCommandAvailable && commandName == "queue" {
-		a.handleQueueSlashCommand(value)
+		if len(commandArgs) == 0 {
+			a.openInputQueue()
+		} else {
+			a.handleQueueSlashCommand(value)
+		}
 		a.commitCommandPaletteLocalSubmission(paletteSubmission)
 		return nil
 	}
@@ -4720,6 +4780,14 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 			)
 		}
 		if err == nil && result != nil {
+			if result.Action == commands.ActionAttachDiff {
+				source, _ := result.Data["source"].(commands.DiffContextSource)
+				cmd := a.openComposerDiffContext(source)
+				if cmd != nil {
+					a.commitCommandPaletteLocalSubmission(paletteSubmission)
+				}
+				return cmd
+			}
 			if result.Action == commands.ActionCopy {
 				text, _ := result.Data["text"].(string)
 				cmd := a.requestClipboardCopy(ClipboardCallerActionCopy, text)
@@ -4833,6 +4901,13 @@ func (a *App) sendSlashCommand(value string) tea.Cmd {
 }
 
 func (a *App) sendShellCommand(command string) tea.Cmd {
+	owner := a.engine
+	release, leaseErr := owner.BeginExternalWorkspaceWrite()
+	if leaseErr != nil {
+		a.showNotification(leaseErr.Error(), NotifyWarning)
+		return nil
+	}
+
 	if a.state == StateWelcome {
 		a.state = StateChat
 	}
@@ -4847,8 +4922,12 @@ func (a *App) sendShellCommand(command string) tea.Cmd {
 	inputJSON, _ := jsonPkg.Marshal(input)
 	a.chat.AppendToolStart(toolID, "Bash", string(inputJSON))
 	return func() tea.Msg {
+		defer release()
 		bash := tools.BashTool()
-		ctx := contextPkg.Background()
+		ctx, contextErr := owner.ExternalWorkspaceShellContext(contextPkg.Background())
+		if contextErr != nil {
+			return shellResultMsg{toolID: toolID, command: command, result: contextErr.Error(), isError: true}
+		}
 		var result string
 		var err error
 		if bash.ExecuteCtx != nil {
@@ -5024,6 +5103,10 @@ func (a *App) openHelpOverlay() {
 // openCommandPalette opens the searchable command palette overlay (Ctrl+K).
 func (a *App) openCommandPalette() {
 	a.commandPalette.ShowFor(a.commandRegistry, a.commandCapabilityContext())
+	a.commandPaletteTarget = commandPaletteTarget{engine: a.engine, registry: a.commandRegistry, view: a.activeThreadViewID(), revision: a.composerRevision}
+	if a.engine != nil {
+		a.commandPaletteTarget.thread = a.engine.ThreadID()
+	}
 	a.pushDialog(StateCommandPalette)
 }
 
@@ -5032,6 +5115,7 @@ func (a *App) commandCapabilityContext() *commands.CommandContext {
 		"terminal_capabilities": a.terminalDiagnostics(),
 		"terminal_clipboard":    a.terminalCaps.Interactive,
 		"interactive_tui":       true,
+		"leader_view":           a.isLeaderThreadView(),
 	}
 	if a.engine != nil {
 		ctx := a.engine.CommandContext()
@@ -5145,6 +5229,8 @@ func (a *App) propagateStyles() {
 	a.mcpSettings.SetRenderEnvironment(a.renderEnvironment)
 	a.teamsPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.commandPalette.SetRenderEnvironment(a.renderEnvironment)
+	a.sideQuestionDialog.SetRenderEnvironment(a.renderEnvironment)
+	a.changeReviewPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.planDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.questionDialog.SetRenderEnvironment(a.renderEnvironment)
 	a.agentPicker.SetRenderEnvironment(a.renderEnvironment)
@@ -5166,6 +5252,8 @@ func (a *App) projectModalRenderEnvironment() {
 	a.search.SetRenderEnvironment(a.renderEnvironment)
 	a.modelPicker.SetRenderEnvironment(a.renderEnvironment)
 	a.commandPalette.SetRenderEnvironment(a.renderEnvironment)
+	a.sideQuestionDialog.SetRenderEnvironment(a.renderEnvironment)
+	a.changeReviewPanel.SetRenderEnvironment(a.renderEnvironment)
 	a.agentPicker.SetRenderEnvironment(a.renderEnvironment)
 	a.expandSearch.SetRenderEnvironment(a.renderEnvironment)
 	a.help.SetRenderEnvironment(a.renderEnvironment)
@@ -5548,6 +5636,8 @@ func (a *App) enterExpandView() {
 }
 
 func (a *App) enterExpandContent(content string, returnDialog AppState) {
+	a.selection.Clear()
+	a.selection.clearExpandSelection()
 	a.expandContent = content
 	a.expandLines = strings.Split(a.expandContent, "\n")
 	a.expandOffset = 0
@@ -5559,6 +5649,7 @@ func (a *App) enterExpandContent(content string, returnDialog AppState) {
 }
 
 func (a *App) leaveExpandView() {
+	a.selection.clearExpandSelection()
 	returnDialog := a.expandReturnDialog
 	a.expandReturnDialog = 0
 	a.expandConversation = false
@@ -5640,6 +5731,7 @@ func (a *App) toggleExpandRawProjection() {
 	if !a.expandConversation {
 		return
 	}
+	a.selection.clearExpandSelection()
 	a.expandRaw = !a.expandRaw
 	if a.expandRaw {
 		a.expandContent = a.chat.RenderAllRaw(a.width)

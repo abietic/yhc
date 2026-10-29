@@ -11,6 +11,7 @@ import (
 	promptctx "github.com/abietic/yhc/engine/context"
 	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/internal/providerorigin"
+	"github.com/abietic/yhc/engine/prefetch"
 	"github.com/abietic/yhc/engine/recovery"
 )
 
@@ -145,6 +146,10 @@ func runCanonicalModelRound(
 		EffortValue:      modelEffort,
 		ProviderUsage:    input.deps.ProviderUsage,
 	}
+	if cap := input.params.modelOutputTokenLimit; cap > 0 &&
+		(callOpts.MaxOutputTokens == nil || *callOpts.MaxOutputTokens > cap) {
+		callOpts.MaxOutputTokens = &cap
+	}
 	if input.usageLogicalRoundID != "" {
 		callOpts.UsageLogicalRoundID = input.usageLogicalRoundID
 	} else if input.deps.ProviderUsage != nil {
@@ -183,10 +188,12 @@ func runCanonicalModelRound(
 	if input.providerMessagesForCall != nil {
 		messagesForCall = input.providerMessagesForCall
 	}
+	messagesForCall = prefetch.ProjectSkillToolResults(messagesForCall)
 	preparedMessagesForCall := promptctx.PrependUserContext(
 		messagesForCall,
 		input.userContext,
 	)
+	preparedMessagesForCall = prependRunBudgetPolicy(modelCtx, preparedMessagesForCall, input.params.RunUsage)
 	preparedMessagesForCall = normalizeMessagesForAPI(preparedMessagesForCall)
 	immutablePreparedMessages, cloneErr := cloneModelRequestMessages(
 		preparedMessagesForCall,
@@ -586,17 +593,20 @@ func runCanonicalModelRound(
 				DeferExecution: true,
 			},
 		)
+		var pendingToolResults []QueryEvent
 		streamResult, streamErr := execution.ProcessStream(
 			modelCtx,
 			callResult.StreamReader,
 			streamingExecutor,
 			func(event execution.QueryEvent) {
-				input.yield(
-					coordinator.annotate(
-						toEngineQueryEvent(event),
-						activeAttempt,
-					),
-				)
+				projected := coordinator.annotate(toEngineQueryEvent(event), activeAttempt)
+				if projected.Type == EventToolResult {
+					// A deferred collector only yields rejected calls. Classify
+					// their history eligibility before exposing the diagnostic.
+					pendingToolResults = append(pendingToolResults, projected)
+					return
+				}
+				input.yield(projected)
 			},
 		)
 		streamingExecutor.Discard()
@@ -605,6 +615,14 @@ func runCanonicalModelRound(
 				callResult.ProviderUsageCall,
 				streamErr,
 			)
+		}
+		var usageErr error
+		if streamErr == nil {
+			usageErr = execution.CompleteStreamProviderUsage(callResult.ProviderUsageCall, streamResult)
+		}
+		for _, event := range pendingToolResults {
+			event.modelRoundRejected = streamErr != nil || usageErr != nil
+			input.yield(event)
 		}
 		streamFailure := execution.ClassifyModelFailure(streamErr)
 		nextCandidate, canSwitch = coordinator.nextSwitchCandidate(
@@ -661,21 +679,24 @@ func runCanonicalModelRound(
 				},
 			)
 			input.yield(QueryEvent{
-				Type: EventAssistant,
-				AssistantMessage: &schema.Message{
-					Role:    schema.Assistant,
+				modelRoundRejected: true,
+				Type:               EventAttachment,
+				AttachmentMessage: &schema.Message{
+					Role:    schema.User,
 					Content: "Stream error: " + streamErr.Error(),
-					Extra:   map[string]any{"api_error": true},
+					Extra: map[string]any{
+						"is_meta":         true,
+						"attachment_kind": "provider_stream_error",
+						"level":           "error",
+						"api_error":       true,
+					},
 				},
 			})
 			terminal := Terminal{Reason: TerminalModelError, Err: streamErr}
 			result.terminal = &terminal
 			return result
 		}
-		if usageErr := execution.CompleteProviderUsage(
-			callResult.ProviderUsageCall,
-			streamResult.AssistantMessages,
-		); usageErr != nil {
+		if usageErr != nil {
 			if activeAttempt != nil {
 				coordinator.emit(
 					input.yield,
@@ -695,7 +716,8 @@ func runCanonicalModelRound(
 				return result
 			}
 			input.yield(QueryEvent{
-				Type: EventAttachment,
+				modelRoundRejected: true,
+				Type:               EventAttachment,
 				AttachmentMessage: &schema.Message{
 					Role:    schema.User,
 					Content: "Provider usage error: " + usageErr.Error(),

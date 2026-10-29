@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,9 +23,10 @@ func (r *Registry) SetSkillRegistry(registry *skills.SkillRegistry) {
 }
 
 type commandRegistrySnapshot struct {
-	commands map[string]*Command
-	order    []string
-	removed  map[string]*RemovedCommand
+	commands   map[string]*Command
+	order      []string
+	removed    map[string]*RemovedCommand
+	generation uint64
 }
 
 // commandSnapshot seals static commands before projecting one skill snapshot.
@@ -32,7 +34,7 @@ type commandRegistrySnapshot struct {
 // the same immutable skill bytes that supplied its metadata.
 func (r *Registry) commandSnapshot() commandRegistrySnapshot {
 	r.mu.RLock()
-	snapshot := commandRegistrySnapshot{commands: make(map[string]*Command, len(r.commands)), order: append([]string(nil), r.order...), removed: make(map[string]*RemovedCommand, len(r.removed))}
+	snapshot := commandRegistrySnapshot{commands: make(map[string]*Command, len(r.commands)), order: append([]string(nil), r.order...), removed: make(map[string]*RemovedCommand, len(r.removed)), generation: r.promptGeneration.Revision}
 	for key, cmd := range r.commands {
 		snapshot.commands[key] = cmd
 	}
@@ -77,8 +79,13 @@ func (r *Registry) commandSnapshot() commandRegistrySnapshot {
 func skillCommand(skill *skills.Skill, name string) *Command {
 	commandName := "skill:" + name
 	args := make([]ArgDef, 0, len(skill.Args))
+	completion := make([]ArgumentCompletion, 0, len(skill.Args))
 	for _, arg := range skill.Args {
 		args = append(args, ArgDef{Name: arg.Name, Type: "string", Required: arg.Required && arg.Default == "", Default: arg.Default, Description: arg.Description})
+		completion = append(completion, ArgumentCompletion{Choices: append([]string(nil), arg.Choices...), Default: arg.Default, Source: arg.Completion, Suggest: arg.Suggest})
+	}
+	if len(skill.Args) == 0 {
+		completion = []ArgumentCompletion{{Suggest: true, Rest: true}}
 	}
 	hint := strings.TrimSpace(skill.ArgumentHint)
 	if hint == "" {
@@ -88,11 +95,15 @@ func skillCommand(skill *skills.Skill, name string) *Command {
 		hint = "[arguments]"
 	}
 	return &Command{
-		Name: commandName, Description: skill.Description, Usage: "/" + commandName + " " + hint,
-		Source: "skill:" + skill.Source, Trust: CommandTrustConfigured,
+		Completion: completion,
+		Name:       commandName, Description: skill.Description, Usage: "/" + commandName + " " + hint,
+		Source: "skill:" + skill.Source, SourcePath: skill.FilePath, Trust: CommandTrustConfigured,
 		Category: CommandCategoryExtensions, DiscoveryTier: DiscoveryTierSecondary, DisplayOrder: 8100, PhaseScope: PhaseScopeIdleOnly,
 		Kind: CommandKindPromptWorkflow, Entrypoints: EntrypointsTUI | EntrypointsPlain,
 		Availability: AvailabilitySupported, SideEffect: SideEffectNone, ResultKind: ResultKindPrompt, ExecutionOwner: ExecutionOwnerEntrypoint,
+		ModelInvocation: ModelInvocationPrompt,
+		operationArgs:   args,
+		definitionToken: fmt.Sprintf("%x", sha256.Sum256([]byte(skill.FilePath+"\x00"+skill.Content+"\x00"+skill.ArgumentHint+"\x00"+fmt.Sprintf("%#v", skill.Args)))),
 		// Skill.Render owns required/default validation by declared position. The
 		// command's free-form Usage is a hint, not a second validation schema.
 		Execute: func(ctx context.Context, cmdCtx *CommandContext) (*CommandResult, error) {
@@ -120,11 +131,7 @@ func skillCommand(skill *skills.Skill, name string) *Command {
 			}
 			// Keep the expansion ordinary prompt text even for injected skills
 			// without a file path whose body starts with a slash command.
-			heading := "Skill: " + skill.Name
-			if skill.FilePath != "" {
-				heading += "\nSource: " + skill.FilePath
-			}
-			output = heading + "\n\n" + output
+			output = skill.InvocationPrompt(output)
 			return &CommandResult{Action: ActionPrompt, Output: output, Data: map[string]any{"skill": skill.Name}}, nil
 		},
 	}

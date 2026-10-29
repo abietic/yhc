@@ -1,7 +1,7 @@
 # Compaction
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-18
 
 > **Ownership:** canonical ProjectGraph preparation/reconciliation ordering;
 > `engine/compact` transformations
@@ -21,9 +21,12 @@ pipeline or its retry counters.
 
 1. Keep messages after the latest compact boundary.
 2. Apply the general tool-result budget.
-3. Run snip compaction and emit its boundary when material.
-4. Run microcompaction.
-5. Apply staged context collapses.
+3. Resolve the preparation-time runtime model. Run snip only with at least 40
+   messages and at that model's auto-compact threshold; emit a boundary when
+   the transformation is material.
+4. Run microcompaction: keep the existing idle-time clearing policy, then trim
+   consumed history only at the preparation-time model's auto-compact threshold.
+5. Apply staged context collapses at 80% of that model's auto-compact threshold.
 6. Run pre-compact hooks and optional auto-compaction.
 7. On auto-compaction, run post-compact hooks, build post-compact messages,
    clean up, and re-inject file/plan context.
@@ -56,6 +59,37 @@ model call because it is stateful and records newly persisted replacements.
   silently disable hard-limit enforcement.
 - The summary model is optional. Without a usable summary path, cheap
   transformations and terminal recovery still apply.
+- Deterministic automatic compaction, reactive prompt-too-long recovery, and
+  stateless overflow drain retain every real user request in the active history
+  with its original role, text, and order. They also retain the recent tail,
+  expanding it to include owners of retained tool results. Historical metadata
+  is not pinned as a request, and retired history is not reloaded. Provider
+  compatibility normalization may still combine adjacent user messages while
+  retaining their text in order. Model-backed summaries keep their existing
+  policy.
+- These deterministic transformations decline when the result would not reduce
+  estimated tokens. Large user requests therefore establish an irreducible
+  context floor; hard-limit enforcement can terminate instead of dropping
+  requirements to report recovery.
+- Microcompaction does not normalize whitespace in message content or reasoning:
+  indentation and spaces inside literals carry meaning. Explicit policies for
+  long tool results, thinking blocks, and media remain bounded transformations.
+- Standard microcompaction uses the same model context capacity and configured
+  threshold overrides as auto-compaction. Below that threshold, it preserves
+  old tool output and reasoning rather than rewriting cached prefixes every
+  round. Under pressure, its savings target is the excess over that threshold;
+  the latest unconsumed tool round and signed reasoning remain protected. The
+  separate per-result budget, idle-time clearing, and overflow recovery still
+  apply; preserving a prefix does not disable those bounds.
+- Preparation resolves the runtime model, including existing Plan selection,
+  before measuring pressure. Dispatch still re-evaluates that existing policy
+  after context transformations; the pressure gate does not pin a route or
+  change Plan's context-dependent model selection.
+- Snip's message-count minimum alone cannot trigger history rewriting. Snip,
+  microcompaction, and collapse all receive the preparation-time model and
+  honor the existing context-window and threshold overrides. Unknown models
+  retain the conservative capacity fallback. Explicit `Snip` and overflow
+  drain remain available independently of the proactive pressure gate.
 
 ## Small example
 
@@ -78,9 +112,14 @@ physical prompt records or repeat the boundary.
 - [`ApplyToolResultBudget`](../../../engine/compact/budget.go)
 - [`SnipCompactIfNeeded`](../../../engine/compact/snip.go)
 - [`Microcompact`](../../../engine/compact/micro.go)
-- [`ApplyCollapsesIfNeeded`](../../../engine/compact/collapse.go)
+- [`ApplyCollapsesWithState`](../../../engine/compact/collapse.go) owns the
+  model-aware production collapse projection.
 - [`SanitizeMediaForCompaction`](../../../engine/compact/strip.go)
 - [`AutoCompact`](../../../engine/compact/auto.go)
+- [`splitDeterministicContext`](../../../engine/compact/requirements.go) owns
+  request retention and complete recent tool groups.
+- [Deterministic compaction restart test](../../../engine/query_compact_requirements_test.go)
+  checks durable request retention through the next provider call.
 - [`BuildPostCompactMessages`](../../../engine/compact/auto.go)
 - [`ApplyPostCompact`](../../../engine/compact/post_compact.go)
 

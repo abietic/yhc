@@ -37,6 +37,10 @@ func TestNormalizeProvider(t *testing.T) {
 		{"agenticgemini", ProviderAgenticGemini},
 		{"deepseek", ProviderAgenticDeepSeek},
 		{"agenticdeepseek", ProviderAgenticDeepSeek},
+		{"glm", ProviderAgenticGLM},
+		{"zhipu", ProviderAgenticGLM},
+		{"zai", ProviderAgenticGLM},
+		{"agenticglm", ProviderAgenticGLM},
 		{"qwen", ProviderAgenticQwen},
 		{"dashscope", ProviderAgenticQwen},
 		{"agenticqwen", ProviderAgenticQwen},
@@ -170,6 +174,29 @@ func TestResolveConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "GLM canonical ZAI key and defaults",
+			input: ResolveInput{
+				Explicit: Config{Provider: "glm"},
+				Getenv: getenvMap(map[string]string{
+					"ZAI_API_KEY": "glm-key",
+				}),
+			},
+			want: ResolvedConfig{
+				Config: Config{
+					Provider: ProviderAgenticGLM,
+					Model:    "glm-5.3-flash",
+					APIKey:   "glm-key",
+					BaseURL:  "https://open.bigmodel.cn/api/paas/v4",
+				},
+				Sources: ResolutionSources{
+					Provider: "explicit",
+					Model:    "provider-default",
+					APIKey:   "env:ZAI_API_KEY",
+					BaseURL:  "provider-default",
+				},
+			},
+		},
+		{
 			name: "explicit model infers provider and overrides lower-priority PROV",
 			input: ResolveInput{
 				Explicit: Config{
@@ -289,7 +316,7 @@ func TestResolveConfig(t *testing.T) {
 			want: ResolvedConfig{
 				Config: Config{
 					Provider: ProviderAgenticDeepSeek,
-					Model:    "deepseek-v4-flash",
+					Model:    "deepseek-flash",
 					APIKey:   "stored-deepseek-key",
 					BaseURL:  "https://api.deepseek.com",
 				},
@@ -315,7 +342,7 @@ func TestResolveConfig(t *testing.T) {
 			want: ResolvedConfig{
 				Config: Config{
 					Provider: ProviderAgenticDeepSeek,
-					Model:    "deepseek-v4-flash",
+					Model:    "deepseek-flash",
 					APIKey:   "deepseek-key",
 					BaseURL:  "https://deepseek.example",
 				},

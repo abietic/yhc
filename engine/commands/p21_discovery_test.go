@@ -39,7 +39,9 @@ func TestP21DiscoveryMetadataSnapshot(t *testing.T) {
 		"usage=Runtime/secondary/2050/idle-only",
 		"context=Runtime/secondary/2060/idle-only",
 		"config=Runtime/secondary/2070/idle-only",
+		"settings=Runtime/secondary/2075/idle-only",
 		"diff=Workspace/primary/80/idle-only",
+		"attach-diff=Workspace/secondary/4040/idle-only",
 		"copy=UI/secondary/7020/idle-only",
 		"init=Workspace/secondary/4010/idle-only",
 		"permissions=Safety/primary/60/idle-only",
@@ -64,6 +66,9 @@ func TestP21DiscoveryMetadataSnapshot(t *testing.T) {
 		"key" + "bindings=UI/secondary/7050/any",
 		"search=UI/secondary/7060/idle-only",
 		"reload-plugins=Extensions/secondary/6030/idle-only",
+		"btw=Session/secondary/1040/any",
+		"changes=Workspace/secondary/4050/any",
+		"recap=Session/secondary/1050/any",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("discovery metadata:\n got %v\nwant %v", got, want)

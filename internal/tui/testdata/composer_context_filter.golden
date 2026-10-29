@@ -1,0 +1,220 @@
+== 40 searching ==
+  ────────────────────────────────────
+   Attached context (4)
+   Attachments: ~152 tokens
+   Window: unavailable
+   Last input: unavailable
+   Search: 共享
+   Type: Files | 2 marked
+   Sort: Draft | s cycle
+   [x] 1. @共享.go  [File] ~39t
+   [x] 2. @共享_test.go  [File] ~38t
+   1-2 of 2 matches
+   ~39 tokens
+   17 B | source
+   1 | first line
+   2 | second
+   Full text attached
+   Tab type | Ctrl+A matches
+   Enter/Esc list | Up/Down select
+   Ctrl+C close
+== 40 marked ==
+  ────────────────────────────────────
+   Attached context (4)
+   Attachments: ~152 tokens
+   Window: unavailable
+   Last input: unavailable
+   Search: 共享
+   Type: Files | 2 marked
+   Sort: Draft | s cycle
+   [x] 1. @共享.go  [File] ~39t
+   [x] 2. @共享_test.go  [File] ~38t
+   1-2 of 2 matches
+   ~39 tokens
+   17 B | source
+   1 | first line
+   2 | second
+   Full text attached
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 40 empty ==
+  ────────────────────────────────────
+   Attached context (4)
+   Attachments: ~152 tokens
+   Window: unavailable
+   Last input: unavailable
+   Search: no matches
+   Type: Files | 0 marked
+   Sort: Draft | s cycle
+   No matching context
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 80 searching ==
+  ────────────────────────────────────────────────────────────────────────────
+   Attached context (4)
+   Attachments: ~152 tokens
+   Window: unavailable
+   Last input: unavailable
+   Search: 共享
+   Type: Files | 2 marked
+   Sort: Draft | s cycle
+   [x] 1. @共享.go  [File] ~39t
+   [x] 2. @共享_test.go  [File] ~38t
+   1-2 of 2 matches
+   ~39 tokens
+   17 B | source
+   1 | first line
+   2 | second
+   Full text attached
+   Tab type | Ctrl+A matches
+   Enter/Esc list | Up/Down select
+   Ctrl+C close
+== 80 marked ==
+  ────────────────────────────────────────────────────────────────────────────
+   Attached context (4)
+   Attachments: ~152 tokens
+   Window: unavailable
+   Last input: unavailable
+   Search: 共享
+   Type: Files | 2 marked
+   Sort: Draft | s cycle
+   [x] 1. @共享.go  [File] ~39t
+   [x] 2. @共享_test.go  [File] ~38t
+   1-2 of 2 matches
+   ~39 tokens
+   17 B | source
+   1 | first line
+   2 | second
+   Full text attached
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 80 empty ==
+  ────────────────────────────────────────────────────────────────────────────
+   Attached context (4)
+   Attachments: ~152 tokens
+   Window: unavailable
+   Last input: unavailable
+   Search: no matches
+   Type: Files | 0 marked
+   Sort: Draft | s cycle
+   No matching context
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 120 searching ==
+                     ──────────────────────────────────────────────────────────────────────────────
+                      Attached context (4)
+                      Attachments: ~152 tokens
+                      Window: unavailable
+                      Last input: unavailable
+                      Search: 共享
+                      Type: Files | 2 marked
+                      Sort: Draft | s cycle
+                      [x] 1. @共享.go  [File] ~39t
+                      [x] 2. @共享_test.go  [File] ~38t
+                      1-2 of 2 matches
+                      ~39 tokens
+                      17 B | source
+                      1 | first line
+                      2 | second
+                      Full text attached
+                      Tab type | Ctrl+A matches
+                      Enter/Esc list | Up/Down select
+                      Ctrl+C close
+== 120 marked ==
+                     ──────────────────────────────────────────────────────────────────────────────
+                      Attached context (4)
+                      Attachments: ~152 tokens
+                      Window: unavailable
+                      Last input: unavailable
+                      Search: 共享
+                      Type: Files | 2 marked
+                      Sort: Draft | s cycle
+                      [x] 1. @共享.go  [File] ~39t
+                      [x] 2. @共享_test.go  [File] ~38t
+                      1-2 of 2 matches
+                      ~39 tokens
+                      17 B | source
+                      1 | first line
+                      2 | second
+                      Full text attached
+                      / search | Tab type | d diff
+                      Space mark | Ctrl+A matches
+                      Del remove | Enter locate
+                      Esc close | ctrl+z undo
+== 120 empty ==
+                     ──────────────────────────────────────────────────────────────────────────────
+                      Attached context (4)
+                      Attachments: ~152 tokens
+                      Window: unavailable
+                      Last input: unavailable
+                      Search: no matches
+                      Type: Files | 0 marked
+                      Sort: Draft | s cycle
+                      No matching context
+                      / search | Tab type | d diff
+                      Space mark | Ctrl+A matches
+                      Del remove | Enter locate
+                      Esc close | ctrl+z undo
+== 180 searching ==
+                                                   ──────────────────────────────────────────────────────────────────────────────
+                                                    Attached context (4)
+                                                    Attachments: ~152 tokens
+                                                    Window: unavailable
+                                                    Last input: unavailable
+                                                    Search: 共享
+                                                    Type: Files | 2 marked
+                                                    Sort: Draft | s cycle
+                                                    [x] 1. @共享.go  [File] ~39t
+                                                    [x] 2. @共享_test.go  [File] ~38t
+                                                    1-2 of 2 matches
+                                                    ~39 tokens
+                                                    17 B | source
+                                                    1 | first line
+                                                    2 | second
+                                                    Full text attached
+                                                    Tab type | Ctrl+A matches
+                                                    Enter/Esc list | Up/Down select
+                                                    Ctrl+C close
+== 180 marked ==
+                                                   ──────────────────────────────────────────────────────────────────────────────
+                                                    Attached context (4)
+                                                    Attachments: ~152 tokens
+                                                    Window: unavailable
+                                                    Last input: unavailable
+                                                    Search: 共享
+                                                    Type: Files | 2 marked
+                                                    Sort: Draft | s cycle
+                                                    [x] 1. @共享.go  [File] ~39t
+                                                    [x] 2. @共享_test.go  [File] ~38t
+                                                    1-2 of 2 matches
+                                                    ~39 tokens
+                                                    17 B | source
+                                                    1 | first line
+                                                    2 | second
+                                                    Full text attached
+                                                    / search | Tab type | d diff
+                                                    Space mark | Ctrl+A matches
+                                                    Del remove | Enter locate
+                                                    Esc close | ctrl+z undo
+== 180 empty ==
+                                                   ──────────────────────────────────────────────────────────────────────────────
+                                                    Attached context (4)
+                                                    Attachments: ~152 tokens
+                                                    Window: unavailable
+                                                    Last input: unavailable
+                                                    Search: no matches
+                                                    Type: Files | 0 marked
+                                                    Sort: Draft | s cycle
+                                                    No matching context
+                                                    / search | Tab type | d diff
+                                                    Space mark | Ctrl+A matches
+                                                    Del remove | Enter locate
+                                                    Esc close | ctrl+z undo

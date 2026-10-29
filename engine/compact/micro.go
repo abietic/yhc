@@ -15,12 +15,13 @@ type MicrocompactResult struct {
 	CompactionInfo *MicrocompactInfo
 }
 
-// Microcompact runs cache-safe tool result compaction BEFORE auto-compact.
-// Mirrors query.ts:413-425 and microCompact.ts microcompactMessages.
-// Priority: time-based MC (short-circuit) → standard micro-compact.
+// Microcompact runs bounded history trimming before auto-compaction. Idle-time
+// clearing retains its own policy; standard trimming requires context pressure
+// at the preparation-time model's existing auto-compact threshold.
 func Microcompact(
 	messages []*schema.Message,
 	querySource string,
+	modelName string,
 ) *MicrocompactResult {
 	// Skip for compact queries to avoid double-compacting.
 	if querySource == "compact" {
@@ -40,8 +41,14 @@ func Microcompact(
 		}
 	}
 
-	// Priority 2: Standard micro-compaction with a large target (trim everything possible).
-	result := MicroCompact(messages, 1<<31-1)
+	// Rewriting an already-sent tool result or reasoning block invalidates its
+	// cached prefix and removes useful history. Do so only to relieve pressure,
+	// using the same model capacity and user overrides as auto-compaction.
+	targetTokensToFree := EstimateTokenCount(messages) - GetAutoCompactThreshold(modelName) + 1
+	if targetTokensToFree <= 0 {
+		return &MicrocompactResult{Messages: messages}
+	}
+	result := MicroCompact(messages, targetTokensToFree)
 	if !result.Applied {
 		return &MicrocompactResult{
 			Messages:       messages,

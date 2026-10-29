@@ -417,11 +417,23 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /v1/sessions", s.handleCreateSession)
 	api.HandleFunc("GET /v1/sessions/{session_id}", s.handleGetSession)
 	api.HandleFunc("DELETE /v1/sessions/{session_id}", s.handleDeleteSession)
+	api.HandleFunc("GET /v1/settings", s.handleGetSettings)
+	api.HandleFunc("PATCH /v1/settings", s.handleUpdateSettings)
+	api.HandleFunc("GET /v1/permission-settings", s.handleGetPermissionSettings)
+	api.HandleFunc("PATCH /v1/permission-settings", s.handleUpdatePermissionSettings)
 	api.HandleFunc("GET /v1/sessions/{session_id}/snapshot", s.handleSnapshot)
+	api.HandleFunc("GET /v1/sessions/{session_id}/tasks", s.handleTaskExplorer)
+	api.HandleFunc("GET /v1/sessions/{session_id}/mcp-inventory", s.handleMCPInventory)
+	api.HandleFunc("GET /v1/sessions/{session_id}/goal", s.handleGetGoal)
+	api.HandleFunc("POST /v1/sessions/{session_id}/goal/control", s.handleControlGoal)
+	api.HandleFunc("GET /v1/sessions/{session_id}/agent-execution-detail", s.handleAgentExecutionDetail)
+	api.HandleFunc("GET /v1/sessions/{session_id}/agent-transcript", s.handleAgentTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/transcript", s.handleTranscriptPage)
 	api.HandleFunc("GET /v1/sessions/{session_id}/review-diff", s.handleReviewDiff)
 	api.HandleFunc("GET /v1/sessions/{session_id}/execution-settings", s.handleGetExecutionSettings)
 	api.HandleFunc("PATCH /v1/sessions/{session_id}/execution-settings", s.handleUpdateExecutionSettings)
+	api.HandleFunc("POST /v1/sessions/{session_id}/command-completions", s.handleCommandCompletion)
+	api.HandleFunc("POST /v1/sessions/{session_id}/prompt-suggestion", s.handlePromptSuggestion)
 	api.HandleFunc("GET /v1/sessions/{session_id}/queued-prompts", s.handleQueuedPrompts)
 	api.HandleFunc("POST /v1/sessions/{session_id}/queued-prompts", s.handleQueuePrompt)
 	api.HandleFunc("DELETE /v1/sessions/{session_id}/queued-prompts/{queue_id}", s.handleCancelQueuedPrompt)
@@ -703,18 +715,31 @@ func (s *Server) handleWebAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 var webAssetPaths = map[string]string{
-	"/":                     "assets/index.html",
-	"/activity.mjs":         "assets/activity.mjs",
-	"/app.mjs":              "assets/app.mjs",
-	"/catalog.mjs":          "assets/catalog.mjs",
-	"/layout.mjs":           "assets/layout.mjs",
-	"/markdown.mjs":         "assets/markdown.mjs",
-	"/provider_setup.mjs":   "assets/provider_setup.mjs",
-	"/state.mjs":            "assets/state.mjs",
-	"/styles.css":           "assets/styles.css",
-	"/transport.mjs":        "assets/transport.mjs",
-	"/vendor/marked.esm.js": "assets/vendor/marked.esm.js",
-	"/view_models.mjs":      "assets/view_models.mjs",
+	"/":                           "assets/index.html",
+	"/activity.mjs":               "assets/activity.mjs",
+	"/app.mjs":                    "assets/app.mjs",
+	"/catalog.mjs":                "assets/catalog.mjs",
+	"/command_completion.mjs":     "assets/command_completion.mjs",
+	"/prompt_suggestion.mjs":      "assets/prompt_suggestion.mjs",
+	"/layout.mjs":                 "assets/layout.mjs",
+	"/settings_view.mjs":          "assets/settings_view.mjs",
+	"/mcp_inventory.mjs":          "assets/mcp_inventory.mjs",
+	"/goal.mjs":                   "assets/goal.mjs",
+	"/permission_settings.mjs":    "assets/permission_settings.mjs",
+	"/timeline_view.mjs":          "assets/timeline_view.mjs",
+	"/task_explorer.mjs":          "assets/task_explorer.mjs",
+	"/agent_execution_detail.mjs": "assets/agent_execution_detail.mjs",
+	"/agent_conversation.mjs":     "assets/agent_conversation.mjs",
+	"/session_creation.mjs":       "assets/session_creation.mjs",
+	"/replay.mjs":                 "assets/replay.mjs",
+	"/markdown.mjs":               "assets/markdown.mjs",
+	"/provider_setup.mjs":         "assets/provider_setup.mjs",
+	"/workbench_home.mjs":         "assets/workbench_home.mjs",
+	"/state.mjs":                  "assets/state.mjs",
+	"/styles.css":                 "assets/styles.css",
+	"/transport.mjs":              "assets/transport.mjs",
+	"/vendor/marked.esm.js":       "assets/vendor/marked.esm.js",
+	"/view_models.mjs":            "assets/view_models.mjs",
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -805,6 +830,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessions[owned.id] = owned
+	owned.server = s
 	owned.startRuntimeInputPump()
 	s.mu.Unlock()
 	s.settleWorkspaceHandle(handle, true)

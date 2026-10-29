@@ -176,7 +176,11 @@ func runCanonicalRoundPreparation(
 		nil,
 		nil,
 	)
-	snipResult := compact.SnipCompactIfNeeded(messagesForQuery)
+	modelName := ""
+	if toolUseContext != nil && toolUseContext.Options != nil {
+		modelName = getRuntimeMainLoopModel(toolUseContext.Options, messagesForQuery)
+	}
+	snipResult := compact.SnipCompactIfNeeded(messagesForQuery, modelName)
 	messagesForQuery = snipResult.Messages
 	snipTokensFreed := snipResult.TokensFreed
 	if snipResult.BoundaryMessage != nil {
@@ -188,29 +192,26 @@ func runCanonicalRoundPreparation(
 	microResult := compact.Microcompact(
 		messagesForQuery,
 		string(input.params.QuerySource),
+		modelName,
 	)
 	messagesForQuery = microResult.Messages
-	collapseResult := compact.ApplyCollapsesIfNeeded(
+	collapseResult := compact.ApplyCollapsesWithState(
 		messagesForQuery,
 		string(input.params.QuerySource),
+		modelName,
+		nil,
 	)
 	messagesForQuery = collapseResult.Messages
 	fullSystemPrompt := promptctx.AppendSystemContext(
 		input.params.SystemPrompt,
 		input.params.SystemContext,
 	)
-	modelName := ""
-	if toolUseContext != nil && toolUseContext.Options != nil {
-		modelName = toolUseContext.Options.MainLoopModel
-	}
-
 	preCompactCancelled := false
 	if input.params.modelCompactionGuard != nil {
 		preCompactCancelled = input.params.modelCompactionGuard(modelName) != nil
 	}
 	if input.hookExecutor != nil {
-		tokenEstimate := compact.EstimateTokenCount(messagesForQuery) -
-			snipTokensFreed
+		tokenEstimate := compact.EstimateTokenCount(messagesForQuery)
 		preHookResult := input.hookExecutor.ExecutePreCompact(
 			ctx,
 			len(messagesForQuery),
@@ -986,14 +987,14 @@ func runCanonicalAfterToolRound(
 		})
 		toolResults = append(toolResults, attachment)
 	}
-	for _, message := range input.memoryPrefetch.Collect() {
+	for _, message := range input.memoryPrefetch.CollectMissing(input.messagesForQuery) {
 		input.yield(QueryEvent{
 			Type:              EventAttachment,
 			AttachmentMessage: message,
 		})
 		toolResults = append(toolResults, message)
 	}
-	for _, message := range input.skillPrefetch.Collect() {
+	for _, message := range input.skillPrefetch.CollectMissing(input.messagesForQuery) {
 		input.yield(QueryEvent{
 			Type:              EventAttachment,
 			AttachmentMessage: message,

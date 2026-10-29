@@ -82,12 +82,19 @@ type providerLane struct {
 	Steps       []providerStep `json:"steps"`
 }
 type envelope struct {
-	SchemaVersion  int    `json:"schema_version"`
-	Status         string `json:"status"`
-	Output         string `json:"output,omitempty"`
-	SessionID      string `json:"session_id"`
-	TerminalReason string `json:"terminal_reason"`
-	ExitCode       int    `json:"exit_code"`
+	Usage          json.RawMessage `json:"usage,omitempty"`
+	SchemaVersion  int             `json:"schema_version"`
+	Status         string          `json:"status"`
+	Output         string          `json:"output,omitempty"`
+	SessionID      string          `json:"session_id"`
+	TerminalReason string          `json:"terminal_reason"`
+	ExitCode       int             `json:"exit_code"`
+	Error          *envelopeError  `json:"error,omitempty"`
+}
+
+type envelopeError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func TestYHCModuleCommandAndArtifactIdentity(t *testing.T) {
@@ -419,6 +426,7 @@ type provider struct {
 	wantTools []string
 	n         int
 	laneN     map[string]int
+	sequence  uint64
 	journal   []journal
 	prior     map[string]priorObservation
 	server    *httptest.Server
@@ -427,9 +435,17 @@ type provider struct {
 }
 
 func newProvider(t *testing.T, p providerScript, tools []string) *provider {
+	return newProviderWithHandler(t, p, tools, nil)
+}
+
+func newProviderWithHandler(t *testing.T, p providerScript, tools []string, wrap func(http.Handler) http.Handler) *provider {
 	x := &provider{t: t, script: p, wantTools: append([]string(nil), tools...), laneN: make(map[string]int), prior: make(map[string]priorObservation), started: make(chan struct{})}
 	sort.Strings(x.wantTools)
-	x.server = httptest.NewServer(http.HandlerFunc(x.serve))
+	var handler http.Handler = http.HandlerFunc(x.serve)
+	if wrap != nil {
+		handler = wrap(handler)
+	}
+	x.server = httptest.NewServer(handler)
 	return x
 }
 
@@ -517,12 +533,18 @@ func (p *provider) serve(w http.ResponseWriter, r *http.Request) {
 	if step.Kind == "tool_call" {
 		item := map[string]any{"type": "function_call", "id": "item-" + step.CallID, "call_id": step.CallID, "name": step.Tool, "arguments": string(step.Arguments), "status": "completed"}
 		p.event(w, "response.output_item.added", map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item})
+		p.event(w, "response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
 	} else {
 		p.event(w, "response.output_text.delta", map[string]any{"type": "response.output_text.delta", "item_id": fmt.Sprintf("msg-%d", id), "output_index": 0, "content_index": 0, "delta": step.Text})
 		item := map[string]any{"type": "message", "id": fmt.Sprintf("msg-%d", id), "role": "assistant", "status": "completed", "content": []any{map[string]any{"type": "output_text", "text": step.Text, "annotations": []any{}}}}
 		p.event(w, "response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
 	}
-	p.event(w, "response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp-%d", id), "object": "response", "status": "completed", "model": q.Model, "output": []any{}, "usage": map[string]int{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}})
+	usage := map[string]any{
+		"input_tokens": 1, "output_tokens": 1, "total_tokens": 2,
+		"input_tokens_details":  map[string]int{"cached_tokens": 0},
+		"output_tokens_details": map[string]int{"reasoning_tokens": 0},
+	}
+	p.event(w, "response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp-%d", id), "object": "response", "status": "completed", "model": q.Model, "output": []any{}, "usage": usage}})
 }
 
 func (p *provider) takeStep(got []string) (string, providerStep, int, bool) {
@@ -613,7 +635,13 @@ func (p *provider) priorObservationSnapshot(callID string) (int, bool) {
 	return observation.count, ok && observation.consistent
 }
 
-func (p *provider) event(w http.ResponseWriter, n string, v any) {
+func (p *provider) event(w http.ResponseWriter, n string, v map[string]any) {
+	// Native DeepSeek requires ordered event envelopes and completed tool items.
+	// Keep one fixture protocol valid for both production Responses adapters.
+	p.mu.Lock()
+	v["sequence_number"] = p.sequence
+	p.sequence++
+	p.mu.Unlock()
 	b, _ := json.Marshal(v)
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", n, b)
 }
@@ -971,11 +999,11 @@ func assertDurableForegroundAgentCompletion(t *testing.T, sessionID, transcriptD
 	}
 }
 
-func runScenarioData(t *testing.T, s scenario, p providerScript, files map[string]string) {
+func runScenarioData(t *testing.T, s scenario, p providerScript, files map[string]string, extra ...string) {
 	t.Helper()
 	rawScenario, _ := json.Marshal(s)
 	rawScript, _ := json.Marshal(p)
-	runScenario(t, string(rawScenario), string(rawScript), files)
+	runScenario(t, string(rawScenario), string(rawScript), files, extra...)
 }
 
 func runFixtureScenario(t *testing.T, id string) {
@@ -1037,7 +1065,7 @@ func loadFixtureFiles(root string, manifest fixtureManifest) (map[string]string,
 	return files, nil
 }
 
-func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]string) {
+func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]string, extra ...string) {
 	t.Helper()
 	s, err := loadScenario([]byte(rawScenario))
 	if err != nil {
@@ -1057,9 +1085,9 @@ func runScenario(t *testing.T, rawScenario, rawScript string, files map[string]s
 	binary := e2eBinary(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.TimeoutMillis)*time.Millisecond)
 	defer cancel()
-	out, err := runInvocation(ctx, t, binary, root, repo, s, provider.server.URL)
+	out, err := runInvocation(ctx, t, binary, root, repo, s, provider.server.URL, extra...)
 	if err != nil {
-		t.Fatalf("%s: binary failed", s.ID)
+		t.Fatalf("%s: binary failed: %v provider_requests=%d", s.ID, err, provider.requestCount())
 	}
 	if out.ExitCode != s.Expected.ExitCode || out.Status != s.Expected.Status || out.TerminalReason != s.Expected.TerminalReason {
 		t.Fatalf("%s: envelope mismatch", s.ID)
@@ -1160,16 +1188,59 @@ func runInvocation(ctx context.Context, t *testing.T, binary, root, repo string,
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + filepath.Join(root, "home"), "XDG_CONFIG_HOME=" + filepath.Join(root, "cfg"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "TMPDIR=" + filepath.Join(root, "tmp"), "CLAUDE_TRANSCRIPT_DIR=" + filepath.Join(root, "transcripts"), "NO_PROXY=127.0.0.1,localhost", "GOTOOLCHAIN=local"}
 	var stdout, stderr limitedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := ownedprocess.Run(ctx, cmd)
-	if err != nil {
-		return envelope{}, err
-	}
+	started := time.Now()
+	processErr := ownedprocess.Run(ctx, cmd)
 	var out envelope
-	if err := strictJSON(stdout.Bytes(), &out); err != nil {
-		return envelope{}, err
+	decodeErr := strictJSON(stdout.Bytes(), &out)
+	if processErr != nil {
+		// Failed CLI runs can still publish a complete classified result. Keep
+		// that result without hiding the original process error or trusting a
+		// malformed/partial envelope. Diagnostics still exclude output bodies.
+		if decodeErr != nil {
+			out = envelope{}
+		}
+		return out, newInvocationError("process", processErr, started, &stdout, &stderr)
+	}
+	if decodeErr != nil {
+		return envelope{}, newInvocationError("envelope", decodeErr, started, &stdout, &stderr)
 	}
 	return out, nil
 }
+
+// Preserve error identity for callers, but keep process output and decoder
+// details out of test logs: either can contain fixture or provider content.
+type invocationError struct {
+	cause       error
+	phase       string
+	elapsed     time.Duration
+	stdoutBytes int
+	stderrBytes int
+}
+
+func newInvocationError(phase string, cause error, started time.Time, stdout, stderr *limitedBuffer) *invocationError {
+	return &invocationError{
+		cause:       cause,
+		phase:       phase,
+		elapsed:     time.Since(started),
+		stdoutBytes: len(stdout.Bytes()),
+		stderrBytes: len(stderr.Bytes()),
+	}
+}
+
+func (e *invocationError) Error() string {
+	code := ownedprocess.Code(e.cause)
+	if code == "" {
+		code = "unclassified"
+		if e.phase == "envelope" {
+			code = "invalid_envelope"
+		}
+	}
+	return fmt.Sprintf("phase=%s code=%s deadline=%t canceled=%t elapsed_ms=%d stdout_bytes=%d stderr_bytes=%d",
+		e.phase, code, errors.Is(e.cause, context.DeadlineExceeded), errors.Is(e.cause, context.Canceled),
+		e.elapsed.Milliseconds(), e.stdoutBytes, e.stderrBytes)
+}
+
+func (e *invocationError) Unwrap() error { return e.cause }
 
 func workingTreeStatus(t *testing.T, repo string) []string {
 	t.Helper()

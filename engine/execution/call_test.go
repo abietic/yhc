@@ -37,6 +37,7 @@ func (m *captureCallOptionsModel) WithTools(tools []*schema.ToolInfo) (model.Too
 func TestCallModelForwardsModelAndMaxTokensIntoStreamOptions(t *testing.T) {
 	chatModel := &captureCallOptionsModel{}
 	maxTokens := 2048
+	temperature := float32(0)
 	messages := []*schema.Message{{Role: schema.User, Content: "hello"}}
 	systemPrompt := &schema.Message{Role: schema.System, Content: "You are helpful."}
 	tools := []*schema.ToolInfo{{Name: "Bash"}}
@@ -45,6 +46,7 @@ func TestCallModelForwardsModelAndMaxTokensIntoStreamOptions(t *testing.T) {
 		SystemPrompt:    systemPrompt,
 		Model:           "fallback-model",
 		MaxOutputTokens: &maxTokens,
+		Temperature:     &temperature,
 	})
 	if err != nil {
 		t.Fatalf("CallModel returned error: %v", err)
@@ -76,6 +78,9 @@ func TestCallModelForwardsModelAndMaxTokensIntoStreamOptions(t *testing.T) {
 		t.Fatalf("expected max-tokens option to be forwarded, got %#v", common.MaxTokens)
 		return
 	}
+	if common.Temperature == nil || *common.Temperature != 0 {
+		t.Fatal("explicit zero temperature was lost before streaming")
+	}
 }
 
 func TestCallModelOmitsEmptyModelAndUnsetMaxTokens(t *testing.T) {
@@ -97,6 +102,9 @@ func TestCallModelOmitsEmptyModelAndUnsetMaxTokens(t *testing.T) {
 	if common.MaxTokens != nil {
 		t.Fatalf("expected unset max tokens to be omitted, got %#v", common.MaxTokens)
 		return
+	}
+	if common.Temperature != nil {
+		t.Fatal("unset temperature unexpectedly overrides the model setting")
 	}
 }
 
@@ -578,6 +586,14 @@ func TestCallModelLowersProviderReasoningEffortThroughTypedOptions(t *testing.T)
 			field:        "ThinkingConfig",
 			want:         "HIGH",
 		},
+		{
+			name:         "glm max",
+			provider:     providerAgenticGLM,
+			effort:       "max",
+			typeFragment: "agenticglm.callOptions",
+			field:        "reasoningEffort",
+			want:         "max",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -623,6 +639,7 @@ func TestCallModelLowersDeepSeekV4ReasoningToResponsesOption(t *testing.T) {
 		effort string
 	}{
 		{effort: "none"},
+		{effort: "low"},
 		{effort: "high"},
 		{effort: "max"},
 	} {
@@ -658,7 +675,8 @@ func TestCallModelRejectsUnsupportedEffortBeforeProviderUse(t *testing.T) {
 		provider string
 		effort   string
 	}{
-		{provider: providerAgenticDeepSeek, effort: "low"},
+		{provider: providerAgenticDeepSeek, effort: "medium"},
+		{provider: providerAgenticGLM, effort: "none"},
 		{provider: providerAgenticQwen, effort: "low"},
 		{provider: providerAgenticGemini, effort: "medium"},
 		{provider: providerAgenticArk, effort: "xhigh"},
@@ -774,6 +792,9 @@ func extractReasoningOptionValue(
 			field.Type(),
 			unsafe.Pointer(field.UnsafeAddr()),
 		).Elem()
+		if field.Kind() == reflect.String {
+			return field.String(), true
+		}
 		if field.IsNil() {
 			continue
 		}

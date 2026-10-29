@@ -822,24 +822,27 @@ func (e *QueryEngine) commitGoalTerminalEvents(
 	}
 
 	fixedClock := func() time.Time { return at }
-	goalEvent, accepted := e.decorateRuntimeEventWithIdentityLocked(
+	goalEvent, err := e.decorateRuntimeEventWithIdentityLocked(
 		turnID,
 		identity,
 		fixedClock,
 		goalLifecycleQueryEvent(GoalLifecycleTurnFinished, next),
 	)
-	if !accepted {
+	if err != nil {
 		return QueryEvent{}, QueryEvent{}, fmt.Errorf(
-			"goal turn-finished projection was rejected",
+			"goal turn-finished projection was rejected: %w", err,
 		)
 	}
-	terminalEvent, accepted := e.decorateRuntimeEventWithIdentityLocked(
+	terminalEvent, err := e.decorateRuntimeEventWithIdentityLocked(
 		turnID,
 		identity,
 		fixedClock,
 		terminal,
 	)
-	if !accepted || terminalEvent.Sequence != terminalSequence {
+	if err != nil {
+		return QueryEvent{}, QueryEvent{}, fmt.Errorf("goal terminal projection was rejected: %w", err)
+	}
+	if terminalEvent.Sequence != terminalSequence {
 		return QueryEvent{}, QueryEvent{}, fmt.Errorf(
 			"goal terminal projection sequence mismatch",
 		)

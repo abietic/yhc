@@ -1,7 +1,7 @@
 # Configuration and Providers
 
 **Status:** current
-**Last verified:** 2026-08-26
+**Last verified:** 2026-10-05
 
 > **Ownership:** production configuration sources, precedence, provider selection, and runtime settings
 
@@ -49,16 +49,14 @@ These fields are consumed by at least one CLI or ACP composition path:
 not consume them. Provider, model, base URL, max-turn, prompt, and permission
 fields are resolved by the composition roots described below.
 
-`prompt_suggestions` defaults to `true` and is consumed only by the root TUI.
-After an eligible completed turn it permits one extra request through the
-current provider/model route to predict the next prompt. The request receives a
-bounded current-conversation snapshot, has no tools, and is not stored in the
-conversation or transcript. It is capped at one provider dispatch and 64 output
-tokens; only a content-free auxiliary usage record is persisted.
-Provider-reported usage therefore survives Session restore but does not replace
-the active conversation's context-window reading. It can still incur provider
-charges. Set it to `false` at user or project level to disable both the ghost
-and the extra request.
+`prompt_suggestions` defaults to `true`. The root TUI may predict the next prompt
+after an eligible turn; Desktop/Web offers explicit **Suggest next step** for an
+empty draft in a live idle session. **Use** inserts the candidate into the draft;
+Send is separate. Both use the current provider/model and may incur charges.
+Set the user or project preference to `false` to suppress requests. Re-enabling
+a startup-disabled session requires a new session. Request limits, accounting
+and cancellation belong to
+[interactive prompt suggestions](../architecture/platform/runtime-services.md#interactive-prompt-suggestions).
 
 `goal.enabled` defaults to true in supported production composition roots. It
 exposes commands in saved-root TUI or Plain Sessions and also gates dedicated
@@ -141,6 +139,91 @@ inspection process has no active conversation, `session.transcript` is also
 `skipped`; use the in-session `/doctor` command when transcript health is part
 of the diagnosis.
 
+## Edit persistent defaults
+
+`/settings` is an idle-only TUI command for non-secret user or project
+defaults. It is distinct from read-only `/config` and from the current
+session's `/model` or `/permissions` controls. A saved default applies to new
+sessions; it does not change an already running session or claim that a
+provider connection has been tested.
+
+```text
+/settings user
+/settings project max_turns 0
+/settings project reduced_motion false
+/settings project model "openai:gpt-4o"
+/settings project model null
+```
+
+The provider-free CLI uses the same store:
+
+```bash
+yhc config settings --scope project
+yhc config set max_turns 0 --scope project
+yhc config reset max_turns --scope project
+```
+
+The nine editable keys are `provider`, `model`, `model_profile`,
+`api_base_url`, `max_turns`, `permission_mode`, `theme`, `reduced_motion`,
+and `prompt_suggestions`. Each snapshot distinguishes the selected scope's
+stored value, the merged file value, and its `default`, `user`, or `project`
+source. Flags and environment may still override those file values at launch.
+An explicit project `false` overrides user `true`; `null` removes an override.
+Profiles are select-only existing user-owned entries and cannot coexist with
+legacy provider/model/endpoint selection. Credentials and permission bypass
+are not editable through this surface.
+
+The AppServer exposes schema metadata and scope-bound snapshots through
+`GET /v1/settings`; updates use `PATCH /v1/settings`. Writes require the
+observed revision, serialize with permission-document writes through one OS
+lock, preserve unknown keys, and install a synced temporary file atomically.
+Stale revisions, unsafe paths, contention, invalid values, and caller
+cancellation fail without committing a replacement document. HTTP clients
+must still obey the AppServer's existing authentication and workspace boundary.
+
+Implementation: [`workbench_settings.go`](../../engine/config/workbench_settings.go),
+[`cmd_settings.go`](../../engine/commands/cmd_settings.go), and
+[`settings.go`](../../server/appserver/settings.go).
+
+### Model Config tool
+
+Config edits the same non-secret defaults. It remains a write tool subject to
+normal permissions even for reads, and is unavailable in Plan mode or when
+denied/disabled. Its default scope is **project**, resolved from the active
+engine's workspace, not a model-supplied path. Select `user` explicitly for
+user-wide defaults; TUI/CLI editor commands instead default to user scope.
+
+Example tool arguments (each is a separate invocation, not a slash command):
+
+```json
+{"action":"list","scope":"project"}
+{"setting":"max_turns","value":0,"scope":"project"}
+{"setting":"reduced_motion","value":false,"scope":"user"}
+{"setting":"max_turns","value":null,"scope":"project"}
+```
+
+String-form boolean/integer JSON such as `"false"` and `"0"` remains accepted
+for older callers. Legacy `action/key/value` works for supported fields;
+`permissions.defaultMode` and `provider.baseURL` are aliases for
+`permission_mode` and `api_base_url`. Native JSON integers must stay within
+the safe transport range (up to 9,007,199,254,740,991); larger integers require
+string-form JSON and remain subject to shared setting validation.
+
+Reads return stored/effective values, source, scope, apply=`new_session`, and
+revision. Supply that revision to update the version you inspected. A stale
+write fails: read again, inspect the change, then explicitly retry. A reset
+removes only the selected override, and current-session execution settings
+stay unchanged. Caller cancellation before the final commit also leaves the
+document unchanged.
+
+Config cannot read or edit credentials, permission-rule arrays, hooks,
+compaction or memory. Old `.yhc/settings.json` files remain intact without
+automatic migration or deletion, and `YHC_CONFIG_DIR` no longer selects the
+live Config store. After review, reapply desired supported defaults through
+the shared editor. The explicit state importer retains its historical format
+and does not make those files production defaults. Standalone `serve mcp`
+does not expose this tool.
+
 ## Provider environment variables
 
 | Provider | Key variables | Base URL variable |
@@ -149,12 +232,35 @@ of the diagnosis.
 | OpenAI | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | Gemini | `GOOGLE_API_KEY`, `GEMINI_API_KEY` | `GOOGLE_BASE_URL` |
 | DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
+| GLM | `ZAI_API_KEY`, `ZHIPUAI_API_KEY` | `ZAI_BASE_URL` |
 | Qwen | `DASHSCOPE_API_KEY`, `QWEN_API_KEY` | `QWEN_BASE_URL` |
 | Ark | `ARK_API_KEY` | `ARK_BASE_URL` |
 
 Generic variables are `PROV`, `PROV_MODEL`, `PROV_API_KEY`, `PROV_BASE_URL`,
 and `PROV_FALLBACK_MODEL`. When `PROV` is set, generic key/base-URL values apply
 only to that selected provider.
+
+## Kimi K3
+
+Set `MOONSHOT_API_KEY` to a standard Kimi API key, then select the provider
+explicitly:
+
+```bash
+yhc --provider kimi --model kimi-k3
+```
+
+`KIMI_API_KEY` is a secondary key source; `PROV_API_KEY` keeps its usual higher
+priority. `KIMI_BASE_URL` overrides the default API root. Use an endpoint that
+matches the key's platform; YHC does not automatically change regions or select
+a Coding Plan. Optional `--provider-preflight` sends an authenticated GET to the API root's
+`/models` endpoint, with no model generation.
+
+The initial adapter supports text, function tools, plain reasoning replay and
+`low/high/max` effort. It uses a conservative context bound and caps output at
+131,072 tokens; media and other Kimi model IDs are not enabled. The exact
+[provider contract](../architecture/platform/model-providers.md) owns the limits
+and evidence boundary. Kimi pricing remains unknown in the built-in catalog;
+no Kimi price card or strict cost-reservation guarantee is supplied.
 
 ## CLI flags
 
@@ -165,6 +271,7 @@ only to that selected provider.
 | `--mouse` | Root TUI and `resume`; use `--mouse=false` to disable |
 | `-p`/`--print`, `--plain`, `--resume`, `--output-format` | Root interaction/compatibility selection |
 | `--resume`, `--output-format` | `exec` session selection and text/JSON/JSONL output |
+| `--max-provider-calls`, `--max-total-tokens` | Optional `exec` invocation limits; both default to `0` (off); [usage semantics](interaction-modes-and-commands.md#invocation-usage-and-optional-limits) |
 | `--output-format` | Scoped independently to `sessions`, `config`, `doctor`, `mcp`, and `plugins` administration trees |
 
 No runtime flag is persistent. Put it after the command that consumes it, such
@@ -183,13 +290,22 @@ unchanged. Client construction for a newly selected valid route remains lazy.
 `/effort [level]` is shown only when the resolved active model metadata and its
 adapter share at least one exact reasoning value. Run `/effort` to see the
 current model's choices; the list is not a global enum. For example, DeepSeek
-V4 Pro, Flash, and Flash Vision Exp currently expose `default`, `none`, `high`,
-and `max`. The three explicit values are sent unchanged as DeepSeek Responses
+Flash and V4 Pro expose `default`, `none`, `low`, `high`, and `max`.
+The four explicit values are sent unchanged as DeepSeek Responses
 `reasoning.effort`.
 
-DeepSeek defaults to `deepseek-v4-flash`; the former `deepseek-chat` and
-`deepseek-reasoner` compatibility names passed their announced deprecation date
-on 2026-07-24. Select `deepseek-v4-flash-vision-exp` for ordered image input.
+DeepSeek defaults to `deepseek-flash` (V4.1 Flash), which supports both text
+and ordered image input with a 1M context window (1,048,576 tokens) and a
+384K maximum output (393,216 tokens), as returned by the official
+[Models API](https://api-docs.deepseek.com/api/list-models/). Select it with
+`/model deepseek-flash`, then use `/effort max` if needed. The
+[official model catalog](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+still lists `deepseek-v4-pro` as a text-only model. The retired
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` names remain accepted
+compatibility routes with current Flash capabilities; existing configurations
+and Sessions continue to work, but the model picker recommends the current
+API names. The former `deepseek-chat` and `deepseek-reasoner` compatibility
+names passed their announced deprecation date on 2026-07-24.
 The dedicated SDK also supports DeepSeek Files API upload, listing, retrieval,
 and deletion for reusable image `file_id` input. Its external canary is
 explicitly opt-in and billable:
@@ -198,13 +314,83 @@ explicitly opt-in and billable:
 DEEPSEEK_API_KEY='replace-me' make test-deepseek-live
 ```
 
-The canary uploads a small one-hour image, submits it to the vision model, and
-deletes it before succeeding. Ordinary `make test` never enables this external
+The canary checks Flash text and inline/file-ID images, uploads a small
+one-hour image and deletes it before succeeding, and exercises image streaming
+with `none` and `max` effort. Ordinary `make test` never enables this external
 operation.
 
-That experimental model supports URL and base64 images through the normal YHC
-multimodal input path; other DeepSeek models reject image input before provider
-dispatch.
+Flash supports URL and base64 images through the normal YHC multimodal input
+path. V4 Pro and unknown DeepSeek models reject image input before provider
+dispatch. Transport failures include a bounded `reason` such as `timeout`,
+`dns`, `tls`, or `connection_reset` without exposing the endpoint or credentials.
+A timeout or connection failure is terminal for that attempt; it does not
+silently change models or drop the picture. With the standard Go transport,
+default DeepSeek clients allow up to 30 seconds for TLS establishment, still bounded by request timeouts and
+cancellation; this does not retry a billable request or fix an unavailable
+network. A history-snip notice reports a
+separate local context transformation, not the cause of a network failure.
+
+GLM defaults to the exact `glm-5.3-flash` model and accepts the public aliases
+`glm`, `zhipu`, and `zai`. The supported mainstream models are
+`glm-5.3`, `glm-5.3-flash`, and `glm-5.3-flashx`; `glm5.3` is a
+metadata alias for `glm-5.3`. All expose `default`, `low`, `high`, and `max`
+reasoning choices; the three explicit values are sent unchanged to GLM's
+native `reasoning_effort` field. For a local source run:
+
+```bash
+ZAI_API_KEY='replace-me' make run PROV=glm PROV_MODEL=glm-5.3-flash
+```
+
+The flagship `glm-5.3` is text-only; Flash and FlashX support ordered text,
+image, video, and file input. A text-only per-call model override cannot
+bypass media rejection. The
+Files client implements bounded `agent` and `user_data` upload, listing, and
+deletion. Use `user_data` with a supported document format for reusable Chat
+Completions `file_id` input; `agent` resources belong to the separate Agent API.
+The external canary makes five model calls: Flash is capped at 256 output tokens;
+the two text-only family probes are capped at 512 with deterministic sampling.
+streaming text, inline vision, and DOCX upload-to-model-to-delete on Flash,
+then one text request each to 5.3 and FlashX. It performs no model fallback
+or retry:
+
+```bash
+GLM_LIVE_USAGE_PATH=/tmp/glm-usage.json make test-glm-live
+```
+
+Set `GLM_LIVE_CASES=family` to run only the two short 5.3/FlashX arithmetic
+probes when diagnosing model access; it skips the already verified multimodal
+and Files lifecycle and still records every attempted call.
+
+Export `ZAI_API_KEY` or `ZHIPUAI_API_KEY` securely before running the canary;
+do not put a real key in command text. The optional usage path must not
+already exist. It stores only per-model call/token counts, never credentials,
+prompts, reasoning text, responses, or remote file IDs. Failed calls and absent
+terminal usage remain explicitly incomplete. Ordinary repository tests never
+enable the billable canary.
+
+Generate an offline cost estimate using the shared Terminal Bench reporter:
+
+```bash
+make test-provider-costs
+python3 -m scripts.terminal_bench.report_costs \
+  --statistics /tmp/glm-usage.json \
+  --rates scripts/terminal_bench/rates/glm-2026-10-05-cny.json \
+  --settlement-currency CNY --output /tmp/glm-costs.json
+```
+
+The dated rate card records the official standard API prices in CNY. Cache
+hits are a subset of input; reasoning tokens are a subset of output, so
+neither is charged twice. Missing usage, absent or mismatched actual-response
+model identity, unknown model prices, and mixed-model
+routes do not become a complete bill. Optional display-currency conversion
+requires a caller-supplied dated FX snapshot with a source; native prices are
+never overwritten. This reports only supplied calls, not account-wide quota,
+Coding Plan consumption, resource-package deductions, or actual settlement.
+No undocumented GLM balance endpoint is used. Existing DeepSeek benchmark
+statistics and caller-supplied price cards use the same reporter. Legacy
+statistics without route identity keep their token totals but remain unpriced;
+continuation aggregation preserves all known model routes rather than pricing
+only the final segment.
 
 This controls provider request reasoning, not the local continuation token
 budget. The selected value is checkpointed with the active model binding. An
@@ -235,7 +421,7 @@ tools; control those with permission rules or MCP configuration.
 | `YHC_DISABLE_ACP_COMMAND_UPDATES` | Disable ACP command-list notifications without changing dispatch |
 | `YHC_DISABLE_AUTO_MEMORY` | Disable automatic persistent memory |
 | `YHC_REMOTE_MEMORY_DIR` | Select the remote-memory base directory |
-| `YHC_CONFIG_DIR` | Override the user configuration directory |
+| `YHC_CONFIG_DIR` | Override memory/config-home and user keybinding roots; does not redirect shared settings |
 | `YHC_MEMORY_PATH_OVERRIDE` | Select one validated absolute automatic-memory path |
 | `YHC_TEAM_MEMORY_DIR` | Select one validated absolute team-memory path |
 | `YHC_SESSION_CATALOG` | Override the session-root catalog path |

@@ -1,7 +1,7 @@
 # Desktop Workbench Architecture
 
 **Status:** current
-**Last verified:** 2026-08-30
+**Last verified:** 2026-10-11
 
 > **Ownership:** current Desktop composition, session activation ordering,
 > runtime-queue ownership, renderer/server trust boundaries, and user-visible
@@ -45,6 +45,33 @@ sequenceDiagram
 
 ## Session ordering
 
+### Read-only command candidates
+
+`POST /v1/sessions/{session_id}/command-completions` reads only an already-live
+session. It accepts a bounded draft and rune cursor; missing sessions are not
+attached. `QueryEngine.CompleteCommandInput` delegates to
+`Registry.CompleteInputFor` with the app-server entrypoint, using the same
+capability admission, argument metadata and dispatch quoting as TUI. The
+app-server serializes this local snapshot with turn admission and session close.
+Busy or pending-decision state suppresses candidates. Completion does not
+dispatch a command, invoke a provider or append runtime/transcript data.
+
+Static choices, model/effort inventory and MCP names are supported sources;
+path scanning, session discovery and model-generated suggestions are excluded.
+The renderer fences results to the session, draft, rune cursor, selection and
+runtime state. IME composition suspends the menu. Explicit acceptance applies
+only the engine-produced edit and never submits it; a later Send still
+revalidates live capabilities.
+
+`insertCompletionEdit` inserts plain text through Chromium's native textarea
+editing path, preserving Undo/Redo. The normal input handler synchronizes
+history edits to the session draft. If native insertion is unavailable and has
+not changed the input, `setRangeText` is a compatibility fallback without an
+undo guarantee. A cancelled `beforeinput` is not bypassed, and an already-applied
+native edit is not inserted twice.
+
+### Activation ordering
+
 The server distinguishes durable discovery from activation. Durable session
 listing and transcript paging use the existing session/transcript owners
 without constructing an engine. [`admitDurableSession`](../../server/appserver/durable_sessions.go)
@@ -65,6 +92,43 @@ unchanged, refreshes durable discovery, and grants first-send attach authority
 only after the server returns one exact canonical resumable row. Cancelled or
 failed import never constructs a live engine; a catalog-verification failure
 keeps the explicit import retry available.
+
+### Task Explorer and execution detail are read-only
+
+The Task Explorer reads only the current, owned live session. It projects work
+items and execution rows, then requires the exact `agent_id`, generation,
+`execution_session_id`, and `thread_id` quartet before showing one execution's
+detail. A missing, replay-only, pre-dispatch, or mismatched identity is not
+retargeted to a different Agent.
+
+Terminal output is the only explicitly requested full-output payload and is
+bounded to 64 KiB; other returned metadata text is separately bounded. A child
+conversation can be opened only from a complete execution session/thread
+identity; it is a read-only durable transcript page, with a post-I/O revision
+fence, at most 32 messages per page, and a total 256-item display window.
+Neither view controls an Agent, switches the parent session, nor changes the
+parent draft, selection, or Undo history.
+
+### MCP inventory is observation, not administration
+
+The MCP panel reads the current owned session's inventory snapshot: server
+state, exposed tools, diagnostics, and revision. Its route uses the existing
+session manager and does not load configuration. It cannot authorize a new
+connection, toggle a server, or refresh/restart MCP runtime state.
+
+### Goal is a QueryEngine lifecycle projection
+
+Goal controls create, start, pause, resume, edit budget, continue, or clear one
+Goal through the existing `QueryEngine` lifecycle. Lifecycle mutations are bound
+to the observed Goal ID and revision and require an owned idle session;
+conflicts do not retry a different state. During an active Goal turn, Pause uses
+the existing immediate-cancel boundary; runtime aftercare determines the final
+status. Creation and resume may request an explicit initial turn only after the
+durable transition succeeds; clearing requires explicit renderer confirmation.
+
+Token budget, active-time accounting, and usage coverage belong to the existing
+Goal owner. The newer upstream-cost reservation is a headless flag concern and
+is not injected into Desktop; this panel does not claim a cost UI.
 
 ## Trust and privacy boundary
 
@@ -109,6 +173,47 @@ fields.
 
 ## Renderer projections
 
+Workspace creation errors are owned by the creation attempt, not the selected
+conversation. `showSessionCreationError` publishes a global banner before a
+session exists. Successful creation clears only that banner's publication
+identity before hydration; cancellation, failed credentials and backend loss
+leave it available. A newer unrelated banner survives. After creation, history
+and activation errors carry the created session's identity.
+
+Workspace handles belong to one backend lifetime. Successful provider setup
+replaces that backend, so `retryAfterProviderSetup` retires the pending handle
+and re-enters single-flight native selection. Cancellation creates no session;
+fresh selection obtains a new capability. Provider submission and session
+creation exclude each other in both controls and handlers. This never retains
+a renderer path, extends an old handle or sends a turn.
+
+The shared Desktop/Web renderer defaults to navigation plus conversation;
+Activity and Changes are optional. Narrow navigation/inspector drawers are
+mutually exclusive modal regions with inert backgrounds, Escape and focus
+return. An expanded wide inspector is non-modal. Empty Web state offers browsing,
+not a local workspace picker; a healthy backend with no session is Connected,
+not Offline. The composer is hidden until a session can use it.
+
+Settings use the shared Go schema and transaction service rather than a second
+configuration loader. User scope works without a session; project scope is
+resolved from a host-owned live session. The editor keeps revision-bound drafts,
+choice-only catalogs, explicit model-conflict confirmation and reversible
+override deletion. Its category/search filters preserve input nodes and drafts.
+Credentials are not part of the settings snapshot. See the
+[experience contract](workbench-experience.md) and
+[settings service](../guides/configuration-and-providers.md#edit-persistent-defaults).
+
+The optional preload `apiResult` channel carries public HTTP errors as plain
+data, preserving `message`, bounded `code` and HTTP `status` across contextBridge.
+The renderer constructs its own Error so a settings 409 remains a conflict.
+It shares the original operation allowlist and trusted-sender check; neither
+channel admits renderer-supplied workspace creation. Unknown host/network
+errors return fixed guidance, not stack/cause details. The legacy `api`
+success and rejection behavior remains compatible.
+
+Current execution effort choices come from `QueryEngine.ReasoningEffortOptions`,
+the same runtime owner used by TUI, rather than an AppServer provider table.
+
 The renderer keeps a bounded session state and reconciles snapshots with SSE.
 Messages are rendered with the locally vendored Marked parser into an explicit
 allowlist of DOM nodes. Links are restricted to safe HTTP(S) destinations and
@@ -144,7 +249,7 @@ and return the active composer to idle. An unowned cancellation or a stop
 request rejected before it produces a terminal remains an error.
 
 When a reconnect cursor falls behind the bounded event log,
-[`recoverReplayGap`](../../internal/webui/assets/app.mjs#L2054) uses
+[`recoverReplayGap`](../../internal/webui/assets/app.mjs) uses
 [`synchronizeReplayGap`](../../internal/webui/assets/replay.mjs#L1) to apply
 the server snapshot before refreshing durable transcript history. The snapshot
 advances the event cursor and restores live interactions, Activity, and turn
@@ -163,6 +268,15 @@ server activity entries to stable lifecycle language such as turn started,
 command running, or question waiting. It rejects invalid category/state pairs;
 the Activity panel therefore remains an operator summary, while raw stream
 debugging stays outside the normal UI.
+
+### Submitted draft ownership
+
+Ordinary Send has separate draft ownership: a late accepted response clears
+only its original session's untouched submitted draft. Every subsequent edit
+revokes that authority, including editing back to the same text. Closing a
+durable session preserves its latest draft at completion, not a captured older
+copy; replies from that closed send cannot clear it. These UI protections do
+not add ordinary-Send idempotency or change runtime queue admission.
 
 ### Busy-turn prompt queue
 
@@ -427,24 +541,77 @@ provider/tool dialect.
 - [`handleBackendExit` and `bootstrapApp`](../../internal/webui/assets/app.mjs)
   register the crash listener before asynchronous bootstrap and apply global
   control admission.
-- [`QueryEngine.EnqueueUserInputWithID`](../../engine/queued_input.go#L263)
+- [`QueryEngine.EnqueueUserInputWithID`](../../engine/queued_input.go)
   owns retry-stable text admission; the admission receipt in
   [`RuntimeInputCoordinator`](../../engine/input_coordinator.go) preserves
   exact acknowledgement across settlement and restart, while
-  [`RuntimeInputConflictError`](../../engine/input_coordinator.go#L74) keeps
+  [`RuntimeInputConflictError`](../../engine/input_coordinator.go) keeps
   identity reuse fail closed.
 - [`session.enqueuePrompt`](../../server/appserver/runtime_queue.go#L114) and
   [`session.startNextRuntimeItemLocked`](../../server/appserver/runtime_queue.go#L295)
   own Desktop queue projection and serialized idle admission without taking
   engine settlement authority.
-- [`send`](../../internal/webui/assets/app.mjs#L1640) and
-  [`canQueuePrompt`](../../internal/webui/assets/state.mjs#L1320) own the
+- [`send`](../../internal/webui/assets/app.mjs) and
+  [`canQueuePrompt`](../../internal/webui/assets/state.mjs) own the
   retry-stable renderer request and active-Turn-only control projection.
 - [`unpacked_lifecycle_smoke.cjs`](../../desktop/scripts/unpacked_lifecycle_smoke.cjs)
   owns the isolated loopback fixture, canonical preseed, public snapshot
   oracle, identity-checked crash, and no-restart automation boundary.
 - [`createBackendStopCoordinator`](../../desktop/lifecycle.cjs) owns intentional
   provider-replacement and quit shutdown; it does not provide crash restart.
+
+- [`Registry.CompleteInputFor`](../../engine/commands/input_completion.go) owns
+  entrypoint-specific candidates and shared argument edits;
+  [`QueryEngine.CompleteCommandInput`](../../engine/command_completion.go) binds
+  them to live capabilities.
+- [`handleCommandCompletion`](../../server/appserver/command_completion.go)
+  owns bounded live-session HTTP admission;
+  [`mountCommandCompletion`](../../internal/webui/assets/command_completion.mjs)
+  owns transient keyboard, IME and request-fenced presentation.
+
+- [`Server.handleTaskExplorer`](../../server/appserver/task_explorer.go) owns
+  the current-owned-session snapshot; [`Server.handleAgentExecutionDetail`](../../server/appserver/agent_execution_detail.go)
+  verifies the exact execution lineage and applies the terminal-output bound.
+- [`Server.handleAgentTranscriptPage`](../../server/appserver/agent_transcript_page.go)
+  owns the bounded child-conversation projection; the renderer's
+  [`createAgentConversationView`](../../internal/webui/assets/agent_conversation.mjs)
+  preserves parent reading state while that projection is open.
+
+- [`Server.handleMCPInventory`](../../server/appserver/mcp_inventory.go) projects
+  the owned session's existing MCP snapshot only; [`createMCPInventoryView`](../../internal/webui/assets/mcp_inventory.mjs)
+  renders that observation without a connection-management control.
+- [`Server.permissionSettingsContext`](../../server/appserver/permission_settings.go)
+  binds workspace-rule edits to an owned session instead of a renderer path;
+  [`permission.RuleSettingsPatchContext`](../../engine/permission/settings.go)
+  owns the revision-bound atomic file update.
+- [`QueryEngine.ApplyPermissionRuleSettings`](../../engine/permission_settings.go)
+  serializes the shared execution-control check with persistence and refuses to
+  turn a pending interaction or Plan approval into a broader permission.
+  Its persist-to-install path and file-watcher reloads share one engine-owned
+  mutex from disk read through cache installation, so an older watcher read
+  cannot overwrite a newly applied rule. Watcher shutdown and MCP lifecycle
+  waits remain outside that mutex.
+- [`backendRequest`](../../desktop/main.cjs) and the
+  [browser transport](../../internal/webui/assets/transport.mjs) apply the same
+  15-second deadline to permission reads and writes through JSON-body completion.
+  The [permission controller](../../internal/webui/assets/permission_settings.mjs)
+  retires the old revision after conflicts or uncertain writes; only an explicit
+  Reload with draft-discard confirmation permits editing a fresh snapshot.
+
+- [`QueryEngine.ApplyGoalControl`](../../engine/goal_control.go) maps typed
+  revision-bound controls to the existing Goal lifecycle; [`Server.handleGoal`](../../server/appserver/goal.go)
+  owns owned-session admission and explicit turn start after a saved transition.
+- [`renderEmptyState`](../../internal/webui/assets/app.mjs) and
+  [`homeConfigurationSummary`](../../internal/webui/assets/workbench_home.mjs)
+  own Home's view-only projection; [`createSession`](../../internal/webui/assets/app.mjs)
+  reaches native workspace selection before the existing session-creation path.
+
+- [`canClearSubmittedDraft`](../../internal/webui/assets/state.mjs) owns the
+  renderer's draft-clearing fence, not Turn execution or retry idempotency.
+- [`retryAfterProviderSetup` and `showSessionCreationError`](../../internal/webui/assets/app.mjs)
+  own fresh workspace selection and creation-banner identity;
+  [`TestWorkspaceHandleBelongsToOneServerLifetime`](../../server/appserver/workspace_handle_test.go)
+  checks old capabilities remain inadmissible after backend replacement.
 
 Related owners: [entrypoints and transports](platform/entrypoints-and-transports.md),
 [sessions](state/sessions.md), [model providers](platform/model-providers.md),

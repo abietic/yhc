@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-08-09
+**Last verified:** 2026-09-29
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -21,6 +21,14 @@ independent, reproducible answer to four questions:
 `make test` remains the ordinary full-suite gate. The focused targets below add
 risk-specific evidence; none of them replaces the four repository gates in
 [`verification.md`](verification.md).
+
+The full-suite target defaults to four concurrent Go packages, using
+`TEST_PACKAGE_PARALLEL=4`. This bounds process-launch contention, including
+macOS loader delays that can consume a PTY or real-binary scenario's deadline
+before its program starts. Tests, coverage, and per-scenario deadlines remain
+unchanged. Use `make test TEST_PACKAGE_PARALLEL=1` on a constrained host; CI uses
+that setting. This explicit `-p` setting takes precedence over `GOFLAGS=-p=...`
+for the full-suite invocation. It does not change concurrency inside a package.
 
 ## Evidence Layers
 
@@ -104,11 +112,113 @@ turn a collision into a pass.
 packs. It invokes the built binary against a local scripted provider and checks
 independent file hashes, Git status, and prior tool-result assertions. Its
 Make target also executes the selected engine, ACP, permission-race, and PTY
-seams. The real-binary pack owns six bounded scenarios: permission rejection,
-read/edit/test execution, malformed tool input, streamed cancellation,
-write-based session resume, and typed-overload fallback. Each claim is limited
-to its scenario's independent oracle; a green run is not live-provider or
-Computer Use evidence.
+seams. The real-binary pack covers permission rejection, read/edit/test execution,
+malformed tool input, streamed cancellation, write-based session resume,
+interrupted-stream cold recovery, and typed-overload fallback. The cold-recovery
+scenario truncates or resets a native DeepSeek stream, or supplies a completed
+terminal without usable usage, after an earlier committed write. It then starts a
+fresh CLI process with an explicit new invocation allowance.
+It checks exact prior tool results, unchanged files, discarded partial calls, and
+separate known/unknown usage segments. Synthetic successful receipts include
+explicit zero cache and reasoning counts so strict accounting reaches the fault
+instead of stopping at an invalid control response. Each claim is limited to its
+scenario's independent oracle; a green run is not live-provider or Computer Use
+evidence.
+
+## Offline Verification Fixture Calibration
+
+The `keyed-store-v1` fixture under `scripts/evaluation/testdata/` combines
+independent progress, same-key exclusion, detached byte slices, and panic
+rollback/release. Its opt-in calibration accepts independently written Mutex,
+channel, and snapshot-read controls, rejects eleven single-fault mutations and the original
+buggy fixture, and demonstrates that final-state-only tests miss coarse
+serialization. Its progress checks include queued same-key readers and writers
+alongside another key. It also checks that an update waits for its transform
+and that a blocked transform cannot publish its input mutations. A same-key
+read may wait or return the previous committed value; neither behavior is
+required exclusively:
+
+```bash
+EINO_VERIFICATION_CALIBRATION=1 go test ./scripts/evaluation \
+  -run '^TestKeyedStoreVerificationCalibration$' -count=1 -v -timeout=4m
+```
+
+This runs repository-owned Go fixtures with the race detector through the
+existing owned-process runner. It makes no model calls and is separate from
+the P43 `eval-baseline` scenario. It calibrates the oracle, not YHC's task
+success or a model's generated tests. Compile errors, missing/unfinished test
+events, interruption, and truncated output are incomplete evidence and cannot
+count as detected mutations. Update acknowledgment uses a `testing/synctest`
+clock and a blocked callback. Same-key exclusion and intermediate visibility
+include bounded 200 ms observations; these are not exhaustive scheduling
+proofs. The visibility check runs outside a fake-clock bubble because a
+contended Mutex is not durably blocked in `synctest`.
+
+Only `fixture/` and `task.md` may enter an independent agent workspace. Keep
+`grader/` and `controls/` outside it. Future live evaluations must freeze their
+own model/binary, inputs, budget, and independent grading conditions. The
+calibration runner executes only trusted repository fixtures; it is not an OS
+sandbox for submitted code and must not be used to run untrusted agent tests.
+
+The independent `bounded-map-v1` fixture adds bounded parallel work, queued
+progress, input-ordered results, first-error cancellation, joining started
+callbacks, and preserving caller input. Pool and semaphore controls are accepted;
+single-fault controls distinguish unbounded work, completion-order results,
+missing cancellation/join, discarded errors, and changed input. The sequential
+starter passes its public example but fails the concurrency contract:
+
+```bash
+EINO_VERIFICATION_CALIBRATION=1 go test ./scripts/evaluation \
+  -run '^TestBoundedMapVerificationCalibration$' -count=1 -v -timeout=4m
+```
+
+These checks reuse the owned-process runner and `-race`. The grader uses
+`testing/synctest` and channel barriers rather than scheduling sleeps. Callbacks
+are required to cooperate with cancellation; this does not prove termination of
+arbitrary callback code. As with the keyed-store fixture, only `task.md` and
+`fixture/` belong in a future independent agent workspace. Calibration tests the
+oracle against repository-owned implementations, without invoking an agent or
+changing the production verification role.
+
+## Offline Harness Diagnostics
+
+The local operator-artifact adapters in
+[`compare_runs.py`](../../scripts/terminal_bench/compare_runs.py) compare DSH and
+YHC scoreboards with their closed per-call gateway ledgers. Supply explicit
+immutable run directories; do not read a run while its writer is still active:
+
+```bash
+python3 -m scripts.terminal_bench.compare_runs \
+  --run "$YHC_RUN_ROOT" --run "$DSH_RUN_ROOT" \
+  --output build/evaluation/harness-comparison.json \
+  --markdown build/evaluation/harness-comparison.md
+```
+
+The report retains unknown reservations, derives cache ratio from summed known
+input/cache token counters including the first request, and keeps unavailable
+thinking counters separate from zero. An unstarted plan has no reward; synthetic
+preflight controls cannot form a recorded DSH/YHC pair. Missing per-call evidence
+stays summary-only, and contradictory counters are rejected. Request-duration
+sums do not imply wall time or tool time: absent tool-time, Edit-rejection, and
+compaction evidence remains unavailable. Neither scoreboards nor generated
+reports are provider bills, recovery proofs, or stability estimates.
+
+[`prefix_audit.py`](../../scripts/terminal_bench/prefix_audit.py) reads captured
+request JSON only from the explicitly supplied wire directory:
+
+```bash
+python3 -m scripts.terminal_bench.prefix_audit \
+  --wire "$WIRE_ROOT" --output build/evaluation/prefix-audit.json
+```
+
+It distinguishes append-only message history, changes to static instructions or
+tool definitions, and JSON representation differences. Missing request bodies
+break adjacency. Canonical JSON and byte prefixes are not provider tokenization
+or cache keys; the audit does not predict cache-hit tokens or claim that a field
+change caused a cache miss. Reports export identifiers, counters, structural
+positions and digests, without request text, tool arguments, or thinking text.
+Keep raw input artifacts private. Both commands refuse to replace existing
+reports and make no network, model, funding, or agent-dispatch calls.
 
 ## Persisted Iteration Evidence
 
@@ -127,9 +237,14 @@ additional, diff-bound record:
   to `evidence_ready` only when every applicable gate is complete.
 - Evidence and bounded per-target logs live under
   `build/iteration/<diff-digest>/`; a pass removes its temporary log.
-- The first executed failure is immutable: a retry cannot overwrite it. A
+- The first executed failure is immutable within an attempt: a retry cannot overwrite it. A
   `blocked` placeholder with no execution result may be replaced when that
   target first actually runs.
+
+Explicit environment-recovery attempts and recorded command-budget overrides
+are owned by the [verification guide](verification.md#recover-an-environment-blocked-verification-attempt).
+They preserve the previous failure and rerun all required checks; they do not
+establish the cause of a flaky test or replace defect diagnosis.
 
 `docs-check` is `not_applicable` in iteration evidence when `.reference` is
 absent, while `docs-check-ci` still runs. `coverage.json` is an advisory

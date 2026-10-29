@@ -15,6 +15,7 @@ import (
 	openaischema "github.com/cloudwego/eino/schema/openai"
 
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
+	"github.com/abietic/yhc/engine/provider/agenticglm"
 )
 
 // isolatedEnv sets HOME to a temp directory and clears all environment
@@ -38,6 +39,9 @@ func isolatedEnv(t *testing.T) {
 		"GEMINI_API_KEY",
 		"DEEPSEEK_API_KEY",
 		"DEEPSEEK_BASE_URL",
+		"ZAI_API_KEY",
+		"ZHIPUAI_API_KEY",
+		"ZAI_BASE_URL",
 		"DASHSCOPE_API_KEY",
 		"QWEN_API_KEY",
 		"QWEN_BASE_URL",
@@ -62,6 +66,7 @@ func TestNewChatModelMissingAPIKey(t *testing.T) {
 	ctx := context.Background()
 	providers := []Provider{
 		ProviderAgenticDeepSeek,
+		ProviderAgenticGLM,
 		ProviderAgenticClaude,
 		ProviderAgenticGemini,
 		ProviderAgenticOpenAI,
@@ -169,6 +174,11 @@ func TestAgenticFinishReasonBridge(t *testing.T) {
 		{
 			name:    "deepseek finish reason",
 			message: &schema.AgenticMessage{ResponseMeta: &schema.AgenticResponseMeta{Extension: &agenticdeepseek.ResponseMetaExtension{FinishReason: "length"}}},
+			want:    "length",
+		},
+		{
+			name:    "glm finish reason",
+			message: &schema.AgenticMessage{ResponseMeta: &schema.AgenticResponseMeta{Extension: &agenticglm.ResponseMetaExtension{FinishReason: "length"}}},
 			want:    "length",
 		},
 		{

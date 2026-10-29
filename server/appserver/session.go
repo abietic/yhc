@@ -111,6 +111,7 @@ type session struct {
 	lastError      string
 
 	engine      SessionEngine
+	server      *Server // immutable before runtime pump admission
 	lease       *sessionLease
 	events      *eventLog
 	activity    *activityLog
@@ -120,12 +121,13 @@ type session struct {
 	rootCancel  context.CancelFunc
 	runtimeWake chan struct{}
 
-	activeTurnID          string
-	activePrompt          string
-	activeCancel          context.CancelFunc
-	immediateCancelTurnID string
-	runtimeDrainBlocked   bool
-	closed                bool
+	activeTurnID            string
+	activePrompt            string
+	activeCancel            context.CancelFunc
+	promptSuggestionRequest *promptSuggestionRequest
+	immediateCancelTurnID   string
+	runtimeDrainBlocked     bool
+	closed                  bool
 }
 
 func newSession(
@@ -408,6 +410,14 @@ func truncateSnapshotText(value string, maxRunes int) string {
 }
 
 func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
+	s.turnAdmissionMu.Lock()
+	defer s.turnAdmissionMu.Unlock()
+	return s.startTurnLocked(input)
+}
+
+// startTurnLocked joins Goal persistence and initial admission. Caller owns
+// turnAdmissionMu; there is no window for another turn or session close.
+func (s *session) startTurnLocked(input StartTurnRequest) (StartTurnResponse, error) {
 	prompt, err := validatePromptText(input.Prompt)
 	if err != nil {
 		return StartTurnResponse{}, err
@@ -419,8 +429,6 @@ func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
 		return StartTurnResponse{}, fmt.Errorf("client_turn_id must be a UUID: %w", err)
 	}
 
-	s.turnAdmissionMu.Lock()
-	defer s.turnAdmissionMu.Unlock()
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -431,6 +439,7 @@ func (s *session) startTurn(input StartTurnRequest) (StartTurnResponse, error) {
 		return StartTurnResponse{}, errSessionBusy
 	}
 	turnCtx, cancel := context.WithCancel(s.rootCtx)
+	s.cancelPromptSuggestionLocked()
 	s.activeTurnID = turnID
 	s.activePrompt = prompt
 	s.activeCancel = cancel
@@ -1059,6 +1068,11 @@ func queryEventData(event engine.QueryEvent, ownedImmediateCancel bool) json.Raw
 		return marshalEventData(event.ClassifierStatus)
 	case engine.EventPlanStateTransition:
 		return marshalEventData(event.PlanStateTransition)
+	case engine.EventGoalLifecycle:
+		if event.GoalLifecycle != nil {
+			return marshalEventData(map[string]any{"phase": event.GoalLifecycle.Phase, "goal": projectGoalSnapshot(&event.GoalLifecycle.Goal)})
+		}
+		return marshalEventData(map[string]any{})
 	default:
 		return marshalEventData(map[string]any{
 			"transcript_entry_id": event.TranscriptEntryID,

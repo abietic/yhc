@@ -54,17 +54,21 @@ func TryReactiveCompact(messages []*schema.Message, querySource, reason string) 
 	out := make([]*schema.Message, 0, len(preserved)+2)
 	out = append(out, boundary, summary)
 	out = append(out, preserved...)
+	if EstimateTokenCount(out) >= EstimateTokenCount(messages) {
+		return nil
+	}
 	return &BasicReactiveResult{Messages: out}
 }
 
 func buildReactivePreservedTail(messages []*schema.Message, reason string) []*schema.Message {
-	preserved := make([]*schema.Message, 0, 3)
-	for i := len(messages) - 1; i >= 0 && len(preserved) < 2; i-- {
-		msg := sanitizeReactiveMessage(messages[i], reason)
+	_, kept := splitDeterministicContext(messages, 2)
+	preserved := make([]*schema.Message, 0, len(kept))
+	for _, candidate := range kept {
+		msg := sanitizeReactiveMessage(candidate, reason)
 		if msg == nil {
 			continue
 		}
-		preserved = append([]*schema.Message{msg}, preserved...)
+		preserved = append(preserved, msg)
 	}
 	return preserved
 }

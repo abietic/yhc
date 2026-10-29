@@ -46,43 +46,50 @@ func tokenize(input string) ([]string, error) {
 	inSingle := false
 	inDouble := false
 	escaped := false
+	tokenStarted := false
 
 	for i := 0; i < len(input); i++ {
 		ch := input[i]
 
 		if escaped {
 			current.WriteByte(ch)
+			tokenStarted = true
 			escaped = false
 			continue
 		}
 
 		if ch == '\\' && inDouble {
 			escaped = true
+			tokenStarted = true
 			continue
 		}
 
 		if ch == '"' && !inSingle {
 			inDouble = !inDouble
+			tokenStarted = true
 			continue
 		}
 
 		if ch == '\'' && !inDouble {
 			inSingle = !inSingle
+			tokenStarted = true
 			continue
 		}
 
 		if ch == ' ' && !inSingle && !inDouble {
-			if current.Len() > 0 {
+			if tokenStarted {
 				tokens = append(tokens, current.String())
 				current.Reset()
+				tokenStarted = false
 			}
 			continue
 		}
 
 		current.WriteByte(ch)
+		tokenStarted = true
 	}
 
-	if current.Len() > 0 {
+	if tokenStarted {
 		tokens = append(tokens, current.String())
 	}
 

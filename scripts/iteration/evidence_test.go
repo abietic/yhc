@@ -151,7 +151,7 @@ func TestRenderPrivacyMarkersNeverEscapeDiffSource(t *testing.T) {
 			t.Fatalf("rendered output leaked %s", marker)
 		}
 	}
-	digest := sha256.Sum256([]byte(private))
+	digest := sha256.Sum256([]byte("yhc-iteration-diff-v2\x00" + strings.Repeat("a", 40) + "\x00" + private))
 	for _, want := range []string{
 		"docs/contributing/verification.md",
 		"docs-check-ci",

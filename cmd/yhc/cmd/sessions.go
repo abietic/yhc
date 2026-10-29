@@ -49,12 +49,13 @@ type sessionListOutput struct {
 }
 
 type sessionResumeOutput struct {
-	SessionID     string   `json:"session_id"`
-	ThreadID      string   `json:"thread_id,omitempty"`
-	CWD           string   `json:"cwd,omitempty"`
-	MessageCount  int      `json:"message_count"`
-	TokenEstimate int      `json:"token_estimate"`
-	Warnings      []string `json:"warnings,omitempty"`
+	SessionID     string                       `json:"session_id"`
+	ThreadID      string                       `json:"thread_id,omitempty"`
+	CWD           string                       `json:"cwd,omitempty"`
+	MessageCount  int                          `json:"message_count"`
+	TokenEstimate int                          `json:"token_estimate"`
+	Warnings      []string                     `json:"warnings,omitempty"`
+	RecoveryProof *engine.SessionRecoveryProof `json:"recovery_proof,omitempty"`
 }
 
 type sessionRenameOutput struct {
@@ -104,7 +105,7 @@ func newSessionsCommand() *cobra.Command {
 			return renderSessionAdministrationUsage(
 				cmd,
 				"sessions",
-				usageErrorf("sessions requires one of: list, resume, rename, export, fork, delete, recover-workboard"),
+				usageErrorf("sessions requires one of: list, resume, rename, export, fork, delete, recover-workboard, recover-history"),
 			)
 		},
 	}
@@ -122,6 +123,7 @@ func newSessionsCommand() *cobra.Command {
 		newSessionsForkCommand(options),
 		newSessionsDeleteCommand(options),
 		newSessionsRecoverWorkBoardCommand(options),
+		newSessionsRecoverHistoryCommand(options),
 	)
 	return command
 }
@@ -314,7 +316,8 @@ func newSessionsListCommand(options *sessionsCommandOptions) *cobra.Command {
 }
 
 func newSessionsResumeCommand(options *sessionsCommandOptions) *cobra.Command {
-	return &cobra.Command{
+	var recoveryProof bool
+	command := &cobra.Command{
 		Use:   "resume <session-id>",
 		Short: "Restore a session without starting a TUI",
 		Args:  sessionAdministrationArgs("sessions.resume", exactArgs(1)),
@@ -343,7 +346,16 @@ func newSessionsResumeCommand(options *sessionsCommandOptions) *cobra.Command {
 					return err
 				},
 				func(ctx context.Context, service *engine.SessionService) (sessionAdministrationOutput, error) {
-					resumed, err := service.ResumeInfo(ctx, source)
+					var resumed *enginesession.ResumedSession
+					var proof *engine.SessionRecoveryProof
+					var err error
+					if recoveryProof {
+						var recovered engine.SessionRecoveryProof
+						resumed, recovered, err = service.ResumeInfoWithRecoveryProof(ctx, source)
+						proof = &recovered
+					} else {
+						resumed, err = service.ResumeInfo(ctx, source)
+					}
 					if err != nil {
 						return sessionAdministrationOutput{}, fmt.Errorf("resume session: %w", err)
 					}
@@ -354,6 +366,7 @@ func newSessionsResumeCommand(options *sessionsCommandOptions) *cobra.Command {
 						MessageCount:  len(resumed.Messages),
 						TokenEstimate: resumed.TokenEstimate,
 						Warnings:      append([]string(nil), resumed.Warnings...),
+						RecoveryProof: proof,
 					}
 					return sessionAdministrationOutput{
 						text: fmt.Sprintf(
@@ -369,6 +382,8 @@ func newSessionsResumeCommand(options *sessionsCommandOptions) *cobra.Command {
 			)
 		},
 	}
+	command.Flags().BoolVar(&recoveryProof, "recovery-proof", false, "Include canonical administration restore proof in JSON output")
+	return command
 }
 
 func newSessionsRenameCommand(options *sessionsCommandOptions) *cobra.Command {

@@ -18,9 +18,12 @@ import (
 const (
 	// DefaultBaseURL is the official DeepSeek API origin.
 	DefaultBaseURL = "https://api.deepseek.com"
-	// VisionModel is the only official DeepSeek Responses model that consumes
-	// image input rather than replacing it with placeholder text.
-	VisionModel = "deepseek-v4-flash-vision-exp"
+	// FlashModel is the current official text-and-image DeepSeek API model.
+	FlashModel = "deepseek-flash"
+	// VisionModel names the current image-capable Flash model.
+	//
+	// Deprecated: use FlashModel. Vision is no longer a separate model.
+	VisionModel = FlashModel
 
 	defaultMaxSSEEventBytes = 16 << 20
 	maxResponseBytes        = 32 << 20
@@ -92,6 +95,11 @@ type Config struct {
 	// HTTPClient takes precedence over Timeout when supplied.
 	HTTPClient *http.Client
 	Timeout    time.Duration
+
+	// OptimizeImageTransport enables bounded attempt-local preparation of large
+	// auto-detail inline PNGs. Canonical messages and explicit high/original
+	// detail are unchanged. Direct SDK callers retain exact encoding by default.
+	OptimizeImageTransport bool
 
 	// MaxTokens keeps source compatibility with eino-ext's Config. It maps to
 	// Responses max_output_tokens. New code may use MaxOutputTokens instead;
@@ -194,6 +202,19 @@ type APIError struct {
 	Code       string
 	Message    string
 	RequestID  string
+
+	finalUsage    *schema.TokenUsage
+	responseModel string
+}
+
+// FinalProviderUsage returns a detached receipt only when a failed terminal
+// response supplied every required usage counter. Error text is not evidence.
+func (e *APIError) FinalProviderUsage() (*schema.TokenUsage, string) {
+	if e == nil || e.finalUsage == nil {
+		return nil, ""
+	}
+	usage := *e.finalUsage
+	return &usage, e.responseModel
 }
 
 func (e *APIError) Error() string {
@@ -249,11 +270,12 @@ func (e *ProtocolError) Error() string {
 }
 
 type transportError struct {
-	err error
+	err   error
+	phase transportPhase
 }
 
 func (e *transportError) Error() string {
-	return "agenticdeepseek: DeepSeek Responses transport failed"
+	return "agenticdeepseek: DeepSeek API transport failed: reason=" + transportReason(e.err) + " phase=" + e.phase.code()
 }
 
 func (e *transportError) Unwrap() error {

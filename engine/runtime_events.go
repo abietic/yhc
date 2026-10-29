@@ -102,6 +102,9 @@ func (e *turnEventEmitter) Emit(evt QueryEvent) bool {
 			})
 			return delivered
 		}
+		// The Goal commit already reduced this pair. Observe its accepted
+		// terminal without applying the canonical reducer a second time.
+		e.engine.recordExecutionTurnEvent(terminalEvent)
 		e.events <- goalEvent
 		e.events <- terminalEvent
 		return true
@@ -142,6 +145,7 @@ func (e *turnEventEmitter) emitOneLocked(evt QueryEvent) (QueryEvent, bool, bool
 	if !reducerAccepted {
 		return evt, false, false
 	}
+	e.engine.recordExecutionTurnEvent(evt)
 	if evt.Type == EventTerminal && evt.TerminalInfo != nil {
 		_ = e.engine.persistSessionCheckpoint(string(evt.TerminalInfo.Reason))
 	}
@@ -230,12 +234,13 @@ func (e *QueryEngine) decorateRuntimeEventWithIdentity(
 ) (QueryEvent, bool) {
 	e.runtimeMu.Lock()
 	defer e.runtimeMu.Unlock()
-	return e.decorateRuntimeEventWithIdentityLocked(
+	decorated, err := e.decorateRuntimeEventWithIdentityLocked(
 		turnID,
 		identity,
 		clock,
 		evt,
 	)
+	return decorated, err == nil
 }
 
 func (e *QueryEngine) decorateRuntimeEventWithIdentityLocked(
@@ -243,7 +248,7 @@ func (e *QueryEngine) decorateRuntimeEventWithIdentityLocked(
 	identity RuntimeEventEnvelope,
 	clock func() time.Time,
 	evt QueryEvent,
-) (QueryEvent, bool) {
+) (QueryEvent, error) {
 	sequence := e.runtimeSequences[identity.ThreadID]
 	if e.runtimeState != nil {
 		// A shared child QueryEngine can advance the same thread between
@@ -272,11 +277,11 @@ func (e *QueryEngine) decorateRuntimeEventWithIdentityLocked(
 			if e.runtimeStateErr == nil {
 				e.runtimeStateErr = err
 			}
-			return evt, false
+			return evt, err
 		}
 	}
 	e.runtimeSequences[identity.ThreadID] = sequence
-	return evt, true
+	return evt, nil
 }
 
 func runtimeEventCausationID(evt QueryEvent) string {

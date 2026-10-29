@@ -48,8 +48,10 @@ var providerPriority = []Provider{
 	ProviderAgenticOpenAI,
 	ProviderAgenticGemini,
 	ProviderAgenticDeepSeek,
+	ProviderAgenticGLM,
 	ProviderAgenticQwen,
 	ProviderAgenticArk,
+	ProviderAgenticKimi,
 }
 
 var providerAliases = map[string]Provider{
@@ -63,6 +65,13 @@ var providerAliases = map[string]Provider{
 	"agenticgemini":   ProviderAgenticGemini,
 	"deepseek":        ProviderAgenticDeepSeek,
 	"agenticdeepseek": ProviderAgenticDeepSeek,
+	"glm":             ProviderAgenticGLM,
+	"zhipu":           ProviderAgenticGLM,
+	"zai":             ProviderAgenticGLM,
+	"agenticglm":      ProviderAgenticGLM,
+	"kimi":            ProviderAgenticKimi,
+	"moonshot":        ProviderAgenticKimi,
+	"agentickimi":     ProviderAgenticKimi,
 	"qwen":            ProviderAgenticQwen,
 	"dashscope":       ProviderAgenticQwen,
 	"agenticqwen":     ProviderAgenticQwen,
@@ -77,7 +86,7 @@ func NormalizeProvider(value Provider) (Provider, error) {
 	if provider, ok := providerAliases[normalized]; ok {
 		return provider, nil
 	}
-	return "", fmt.Errorf("unknown provider %q (supported: anthropic/claude, openai, google/gemini, deepseek, qwen, ark)", value)
+	return "", fmt.Errorf("unknown provider %q (supported: anthropic/claude, openai, google/gemini, deepseek, glm/zhipu/zai, kimi/moonshot, qwen, ark)", value)
 }
 
 // ResolveConfig resolves one provider configuration with deterministic priority:
@@ -134,6 +143,7 @@ func ResolveConfig(input ResolveInput) (ResolvedConfig, error) {
 	}
 
 	detectedProvider := providerFromModel(modelValue)
+	desktopEndpoint := ""
 	if providerValue == "" && detectedProvider != "" {
 		providerValue = detectedProvider
 		providerSource = modelSource + ":model"
@@ -145,6 +155,13 @@ func ResolveConfig(input ResolveInput) (ResolvedConfig, error) {
 			return ResolvedConfig{}, err
 		}
 		providerRank = 1
+	}
+	if providerValue == "" {
+		if fallback, available := desktopFallbackRoute(input, getenv, aliases); available {
+			providerValue, providerSource, providerRank = fallback.Provider, "desktop-profile-fallback", 1
+			modelValue, modelSource, modelRank = fallback.Model, "desktop-profile-fallback", 1
+			desktopEndpoint = fallback.BaseURL
+		}
 	}
 	if providerValue == "" {
 		return ResolvedConfig{}, fmt.Errorf("provider could not be determined; set --provider, PROV, a provider-qualified model, or a provider API key")
@@ -168,6 +185,26 @@ func ResolveConfig(input ResolveInput) (ResolvedConfig, error) {
 	if modelValue == "" || strings.EqualFold(modelValue, "default") {
 		modelValue = providerEnv.DefaultModel
 		modelSource = "provider-default"
+	}
+
+	genericBaseURL := genericProviderValue(getenv, "PROV_BASE_URL", providerValue)
+	baseURL, baseURLSource := firstValueNoRank(
+		input.Explicit.BaseURL, "explicit",
+		genericBaseURL, "env:PROV_BASE_URL",
+		input.Configured.BaseURL, "config",
+	)
+	if baseURL == "" && providerEnv.BaseURLEnvVar != "" {
+		if value := strings.TrimSpace(getenv(providerEnv.BaseURLEnvVar)); value != "" {
+			baseURL = value
+			baseURLSource = "env:" + providerEnv.BaseURLEnvVar
+		}
+	}
+	if baseURL == "" && desktopEndpoint != "" {
+		baseURL, baseURLSource = desktopEndpoint, "desktop-profile-fallback"
+	}
+	if baseURL == "" {
+		baseURL = providerEnv.DefaultBaseURL
+		baseURLSource = "provider-default"
 	}
 
 	genericAPIKey := genericProviderValue(getenv, "PROV_API_KEY", providerValue)
@@ -202,25 +239,13 @@ func ResolveConfig(input ResolveInput) (ResolvedConfig, error) {
 		}
 	}
 	if apiKey == "" {
-		return ResolvedConfig{}, fmt.Errorf("API key required for %s; checked --api-key, PROV_API_KEY, %s, and credential store",
-			providerValue, strings.Join(providerSpecificEnvNames(providerEnv.APIKeyEnvVars), ", "))
-	}
-
-	genericBaseURL := genericProviderValue(getenv, "PROV_BASE_URL", providerValue)
-	baseURL, baseURLSource := firstValueNoRank(
-		input.Explicit.BaseURL, "explicit",
-		genericBaseURL, "env:PROV_BASE_URL",
-		input.Configured.BaseURL, "config",
-	)
-	if baseURL == "" && providerEnv.BaseURLEnvVar != "" {
-		if value := strings.TrimSpace(getenv(providerEnv.BaseURLEnvVar)); value != "" {
-			baseURL = value
-			baseURLSource = "env:" + providerEnv.BaseURLEnvVar
+		if fallback := desktopFallbackCredential(getenv, providerValue, baseURL); fallback != "" {
+			apiKey, apiKeySource = fallback, "env:"+desktopCredentialEnv
 		}
 	}
-	if baseURL == "" {
-		baseURL = providerEnv.DefaultBaseURL
-		baseURLSource = "provider-default"
+	if apiKey == "" {
+		return ResolvedConfig{}, fmt.Errorf("API key required for %s; checked --api-key, PROV_API_KEY, %s, and credential store",
+			providerValue, strings.Join(providerSpecificEnvNames(providerEnv.APIKeyEnvVars), ", "))
 	}
 
 	maxTokens := input.Explicit.MaxTokens
@@ -274,6 +299,10 @@ func providerFromModel(modelName string) Provider {
 		return ProviderAgenticGemini
 	case enginemodel.ProviderDeepSeek:
 		return ProviderAgenticDeepSeek
+	case enginemodel.ProviderGLM:
+		return ProviderAgenticGLM
+	case enginemodel.ProviderKimi:
+		return ProviderAgenticKimi
 	case enginemodel.ProviderQwen:
 		return ProviderAgenticQwen
 	case enginemodel.ProviderArk:
@@ -293,6 +322,10 @@ func providerID(provider Provider) enginemodel.ProviderID {
 		return enginemodel.ProviderGoogle
 	case ProviderAgenticDeepSeek:
 		return enginemodel.ProviderDeepSeek
+	case ProviderAgenticGLM:
+		return enginemodel.ProviderGLM
+	case ProviderAgenticKimi:
+		return enginemodel.ProviderKimi
 	case ProviderAgenticQwen:
 		return enginemodel.ProviderQwen
 	case ProviderAgenticArk:

@@ -1,7 +1,7 @@
 # Query Engine
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-14
 
 > **Ownership:** `engine.QueryEngine` for session lifetime and durable kernel
 > validation, Plan/Goal lifecycle serialization, and Session checkpoints; the
@@ -30,6 +30,40 @@ selector. Direct `Query` calls use the same ProjectGraph owner. TUI, plain, head
 ACP, and child Agents use the `QueryEngine` boundary. See
 [`architecture/runtime/README.md`](README.md) for the runtime index and
 [`architecture/README.md`](../README.md) for entrypoints.
+
+## Behavior verification guidance
+
+Default CLI identity and the built-in `general-purpose` and `verification`
+child prompts share the behavior-verification policy owned by
+[`prompt_builder.go`](../../../engine/context/prompt_builder.go). For changes
+to behavior, it asks for requirement-to-check mapping, supported non-default
+configuration checks, intermediate-state and progress checks for concurrency,
+and explicit verified/failed/unverified reporting. Checks derive expected
+results from the user contract rather than the changed implementation.
+This guides model behavior; it does not mechanically prove task completion,
+automatically start another model, or override custom root prompts. Existing
+tool permissions and invocation budgets still govern any selected checks.
+
+## Completion and evaluation boundary
+
+The normal ProjectGraph completion boundary applies Stop hooks and configured
+token continuation before returning `TerminalCompleted`. It does not launch an
+automatic checker, change reasoning effort, require a second model report, or
+maintain a separate verification cursor. Task verification remains part of the
+solver's normal tool workflow. `SubmitMessageWithMetadata` preserves the admitted
+user task; historical checker metadata has no execution authority.
+
+The headless and Harbor entrypoints use this same solver path. Harbor may set
+explicit invocation budgets and resume an existing Session with a finite grant;
+it does not add a completion gate or feed grader results back into the solver.
+The task verifier determines benchmark reward independently of YHC's runtime
+terminal reason. A completed query is not a guarantee that tests or a benchmark
+will pass. Existing permissions, cancellation, Goal, and Session recovery
+remain authoritative.
+
+The former independent-check configuration and CLI flags are removed. Old
+Session history and metadata are retained but do not restore that execution
+policy. Resume uses an explicit ordinary user request.
 
 ## Durable Goal State And Projection
 

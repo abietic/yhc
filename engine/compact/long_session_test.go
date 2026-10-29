@@ -146,11 +146,17 @@ func TestLongSessionTokenCountStaysWithinLimitsAfterCompaction(t *testing.T) {
 			result.PostCompactTokenCount, actualPostTokens)
 	}
 
-	// Post-compact should be significantly smaller than pre-compact
-	reductionRatio := float64(actualPostTokens) / float64(result.PreCompactTokenCount)
-	if reductionRatio > 0.5 {
-		t.Fatalf("expected significant reduction, but ratio is %.2f (pre=%d, post=%d)",
-			reductionRatio, result.PreCompactTokenCount, actualPostTokens)
+	// User requirements set the irreducible floor; do not meet an arbitrary
+	// compression ratio by deleting them.
+	var requirements []string
+	for _, message := range messages {
+		if message.Role == schema.User && !isMetaMessage(message) {
+			requirements = append(requirements, message.Content)
+		}
+	}
+	assertRequirementOrder(t, postMessages, requirements...)
+	if actualPostTokens >= result.PreCompactTokenCount || actualPostTokens > GetEffectiveContextWindowSize("") {
+		t.Fatalf("expected a smaller context within the window, pre=%d post=%d", result.PreCompactTokenCount, actualPostTokens)
 	}
 }
 

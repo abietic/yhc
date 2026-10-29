@@ -370,18 +370,26 @@ func TestPermissionBrokerDuplicateEqualObservation(t *testing.T) {
 	request := permissionBrokerTestRequest("duplicate")
 	broker.observeEvent(request, "turn-duplicate")
 	broker.observeEvent(request, "turn-duplicate")
-	first := waitForBrokerResult(context.Background(), broker, request)
-	second := waitForBrokerResult(context.Background(), broker, request)
-	waitForPermissionWaiter(t, broker, request.ToolUseID, func(waiter *permissionWaiter) bool {
-		return waiter.eventObserved && waiter.callbackObserved
-	})
+	first := broker.prepare(request)
+	second := broker.prepare(request)
+	if first == nil || second == nil {
+		t.Fatalf("equal duplicate prepare returned nil: first=%p second=%p", first, second)
+	}
+	if first != second {
+		t.Fatalf("equal duplicate prepare returned distinct waiters: first=%p second=%p", first, second)
+	}
 
 	if broker.resolve(request.ToolUseID, permissionResolution(engine.PermissionAllowOnce)) != interactionResolveAccepted {
 		t.Fatal("equal duplicate did not remain idempotent")
 	}
-	for index, resultCh := range []<-chan engine.PermissionInteractionResult{first, second} {
-		if result := receiveBrokerResult(t, resultCh); result.Decision != engine.PermissionAllowOnce {
-			t.Fatalf("result %d = %#v", index, result)
+	for index, waiter := range []*permissionWaiter{first, second} {
+		select {
+		case <-waiter.done:
+		default:
+			t.Fatalf("waiter %d was not settled", index)
+		}
+		if waiter.result.Decision != engine.PermissionAllowOnce {
+			t.Fatalf("result %d = %#v", index, waiter.result)
 		}
 	}
 	if broker.resolve(request.ToolUseID, permissionResolution(engine.PermissionDeny)) != interactionResolveNotFound {

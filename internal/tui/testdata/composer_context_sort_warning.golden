@@ -1,0 +1,218 @@
+== 40x12 partial-near ==
+  ────────────────────────────────────
+   Attached context (4)
+   Warn: partial est. >=80% window
+   Search:
+   Type: All | 1 marked
+   Sort: Tokens high | s cycle
+   [x] 1. [large]  [Paste... ~110000t
+   [ ] 2. [Output #1]  [Output] ~41t
+   1-2 of 4 matches
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Esc close
+== 40x12 over ==
+  ────────────────────────────────────
+   Attached context (4)
+   Alert: attached est. >=100% window
+   Search:
+   Type: All | 1 marked
+   Sort: Tokens high | s cycle
+   [x] 1. [large]  [Paste... ~128001t
+   [ ] 2. [Output #1]  [Output] ~41t
+   1-2 of 4 matches
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Esc close
+== 40x24 partial-near ==
+  ────────────────────────────────────
+   Attached context (4)
+   Attachments: ~110073 tokens (parti
+   Window: 128.0k | 86.0% known
+   Last input: 32.0k tokens
+   * Generic image estimate
+   Warn: partial est. >=80% window
+   Search:
+   Type: All | 1 marked
+   Sort: Tokens high | s cycle
+   [x] 1. [large]  [Paste... ~110000t
+   [ ] 2. [Output #1]  [Output] ~41t
+   [ ] 3. [Image #1]  [Image] ~32t*
+   [ ] 4. @pending  [File] pending
+   1-4 of 4 matches
+   ~110000 tokens | 85.9% of window
+   440000 B | pasted text
+   1 | xxxxxxxxxxxxxxxxxxxxxxxxxxx...
+   Preview clipped; full text kept
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 40x24 over ==
+  ────────────────────────────────────
+   Attached context (4)
+   Attachments: ~128110 tokens*
+   Window: 128.0k | 100.1% attached
+   Last input: 32.0k tokens
+   * Generic image estimate
+   Alert: attached est. >=100% window
+   Search:
+   Type: All | 1 marked
+   Sort: Tokens high | s cycle
+   [x] 1. [large]  [Paste... ~128001t
+   [ ] 2. [Output #1]  [Output] ~41t
+   [ ] 3. @pending  [File] ~36t
+   [ ] 4. [Image #1]  [Image] ~32t*
+   1-4 of 4 matches
+   ~128001 tokens | 100.0% of window
+   512004 B | pasted text
+   1 | xxxxxxxxxxxxxxxxxxxxxxxxxxx...
+   Preview clipped; full text kept
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 80x24 partial-near ==
+  ────────────────────────────────────────────────────────────────────────────
+   Attached context (4)
+   Attachments: ~110073 tokens (partial)*
+   Window: 128.0k | 86.0% known
+   Last input: 32.0k tokens
+   * Generic image estimate
+   Warn: partial est. >=80% window
+   Search:
+   Type: All | 1 marked
+   Sort: Tokens high | s cycle
+   [x] 1. [large]  [Pasted text] ~110000t
+   [ ] 2. [Output #1]  [Output] ~41t
+   [ ] 3. [Image #1]  [Image] ~32t*
+   [ ] 4. @pending  [File] pending
+   1-4 of 4 matches
+   ~110000 tokens | 85.9% of window
+   440000 B | pasted text
+   1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+   Preview clipped; full text kept
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 80x24 over ==
+  ────────────────────────────────────────────────────────────────────────────
+   Attached context (4)
+   Attachments: ~128110 tokens*
+   Window: 128.0k | 100.1% attached
+   Last input: 32.0k tokens
+   * Generic image estimate
+   Alert: attached est. >=100% window
+   Search:
+   Type: All | 1 marked
+   Sort: Tokens high | s cycle
+   [x] 1. [large]  [Pasted text] ~128001t
+   [ ] 2. [Output #1]  [Output] ~41t
+   [ ] 3. @pending  [File] ~36t
+   [ ] 4. [Image #1]  [Image] ~32t*
+   1-4 of 4 matches
+   ~128001 tokens | 100.0% of window
+   512004 B | pasted text
+   1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+   Preview clipped; full text kept
+   / search | Tab type | d diff
+   Space mark | Ctrl+A matches
+   Del remove | Enter locate
+   Esc close | ctrl+z undo
+== 120x24 partial-near ==
+                     ──────────────────────────────────────────────────────────────────────────────
+                      Attached context (4)
+                      Attachments: ~110073 tokens (partial)*
+                      Window: 128.0k | 86.0% known
+                      Last input: 32.0k tokens
+                      * Generic image estimate
+                      Warn: partial est. >=80% window
+                      Search:
+                      Type: All | 1 marked
+                      Sort: Tokens high | s cycle
+                      [x] 1. [large]  [Pasted text] ~110000t
+                      [ ] 2. [Output #1]  [Output] ~41t
+                      [ ] 3. [Image #1]  [Image] ~32t*
+                      [ ] 4. @pending  [File] pending
+                      1-4 of 4 matches
+                      ~110000 tokens | 85.9% of window
+                      440000 B | pasted text
+                      1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+                      Preview clipped; full text kept
+                      / search | Tab type | d diff
+                      Space mark | Ctrl+A matches
+                      Del remove | Enter locate
+                      Esc close | ctrl+z undo
+== 120x24 over ==
+                     ──────────────────────────────────────────────────────────────────────────────
+                      Attached context (4)
+                      Attachments: ~128110 tokens*
+                      Window: 128.0k | 100.1% attached
+                      Last input: 32.0k tokens
+                      * Generic image estimate
+                      Alert: attached est. >=100% window
+                      Search:
+                      Type: All | 1 marked
+                      Sort: Tokens high | s cycle
+                      [x] 1. [large]  [Pasted text] ~128001t
+                      [ ] 2. [Output #1]  [Output] ~41t
+                      [ ] 3. @pending  [File] ~36t
+                      [ ] 4. [Image #1]  [Image] ~32t*
+                      1-4 of 4 matches
+                      ~128001 tokens | 100.0% of window
+                      512004 B | pasted text
+                      1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+                      Preview clipped; full text kept
+                      / search | Tab type | d diff
+                      Space mark | Ctrl+A matches
+                      Del remove | Enter locate
+                      Esc close | ctrl+z undo
+== 180x24 partial-near ==
+                                                   ──────────────────────────────────────────────────────────────────────────────
+                                                    Attached context (4)
+                                                    Attachments: ~110073 tokens (partial)*
+                                                    Window: 128.0k | 86.0% known
+                                                    Last input: 32.0k tokens
+                                                    * Generic image estimate
+                                                    Warn: partial est. >=80% window
+                                                    Search:
+                                                    Type: All | 1 marked
+                                                    Sort: Tokens high | s cycle
+                                                    [x] 1. [large]  [Pasted text] ~110000t
+                                                    [ ] 2. [Output #1]  [Output] ~41t
+                                                    [ ] 3. [Image #1]  [Image] ~32t*
+                                                    [ ] 4. @pending  [File] pending
+                                                    1-4 of 4 matches
+                                                    ~110000 tokens | 85.9% of window
+                                                    440000 B | pasted text
+                                                    1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+                                                    Preview clipped; full text kept
+                                                    / search | Tab type | d diff
+                                                    Space mark | Ctrl+A matches
+                                                    Del remove | Enter locate
+                                                    Esc close | ctrl+z undo
+== 180x24 over ==
+                                                   ──────────────────────────────────────────────────────────────────────────────
+                                                    Attached context (4)
+                                                    Attachments: ~128110 tokens*
+                                                    Window: 128.0k | 100.1% attached
+                                                    Last input: 32.0k tokens
+                                                    * Generic image estimate
+                                                    Alert: attached est. >=100% window
+                                                    Search:
+                                                    Type: All | 1 marked
+                                                    Sort: Tokens high | s cycle
+                                                    [x] 1. [large]  [Pasted text] ~128001t
+                                                    [ ] 2. [Output #1]  [Output] ~41t
+                                                    [ ] 3. @pending  [File] ~36t
+                                                    [ ] 4. [Image #1]  [Image] ~32t*
+                                                    1-4 of 4 matches
+                                                    ~128001 tokens | 100.0% of window
+                                                    512004 B | pasted text
+                                                    1 | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+                                                    Preview clipped; full text kept
+                                                    / search | Tab type | d diff
+                                                    Space mark | Ctrl+A matches
+                                                    Del remove | Enter locate
+                                                    Esc close | ctrl+z undo

@@ -6,7 +6,6 @@ import {
   executionForDisplay,
   prioritizeSessionRows,
   providerSetupProjection,
-  shouldDeferWorkspaceForProvider,
 } from '../../internal/webui/assets/provider_setup.mjs';
 
 test('pending workspace survives failure, clears on success, and retries exactly once', async () => {
@@ -89,21 +88,6 @@ test('provider projection contains public setup metadata only', () => {
   });
   assert.equal(JSON.stringify(projection).includes('must-not-escape'), false);
   assert.equal(JSON.stringify(projection).includes('apiKey'), false);
-});
-
-test('desktop defers workspace creation only when no managed or ambient launch is ready', () => {
-  const missing = providerSetupProjection('desktop', {
-    configured: false,
-    launchReady: false,
-  });
-  const ambient = providerSetupProjection('desktop', {
-    configured: false,
-    launchReady: true,
-  });
-
-  assert.equal(shouldDeferWorkspaceForProvider('desktop', missing), true);
-  assert.equal(shouldDeferWorkspaceForProvider('desktop', ambient), false);
-  assert.equal(shouldDeferWorkspaceForProvider('web', missing), false);
 });
 
 test('web projection offers host guidance rather than provider setup', () => {

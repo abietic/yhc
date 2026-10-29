@@ -8,10 +8,13 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"path"
 	"strings"
+	"sync/atomic"
 
+	"github.com/abietic/yhc/engine/internal/providerdiag"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
@@ -30,15 +33,16 @@ type Model struct {
 	endpoint   string
 	apiKey     string
 
-	model            string
-	maxOutputTokens  *int
-	temperature      *float32
-	topP             *float32
-	topLogProbs      *int
-	reasoningEffort  ReasoningEffort
-	textFormat       *TextFormat
-	userID           string
-	maxSSEEventBytes int
+	model                  string
+	maxOutputTokens        *int
+	temperature            *float32
+	topP                   *float32
+	topLogProbs            *int
+	reasoningEffort        ReasoningEffort
+	textFormat             *TextFormat
+	userID                 string
+	maxSSEEventBytes       int
+	optimizeImageTransport bool
 }
 
 // New creates a dedicated DeepSeek Responses AgenticModel. It performs only
@@ -106,21 +110,22 @@ func New(_ context.Context, config *Config) (*Model, error) {
 
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: config.Timeout}
+		httpClient = newDefaultHTTPClient(config.Timeout)
 	}
 	return &Model{
-		httpClient:       httpClient,
-		endpoint:         endpoint,
-		apiKey:           apiKey,
-		model:            modelID,
-		maxOutputTokens:  cloneInt(maxOutputTokens),
-		temperature:      cloneFloat32(config.Temperature),
-		topP:             cloneFloat32(config.TopP),
-		topLogProbs:      cloneInt(config.TopLogProbs),
-		reasoningEffort:  config.ReasoningEffort,
-		textFormat:       cloneTextFormat(textFormat),
-		userID:           config.UserID,
-		maxSSEEventBytes: maxEventBytes,
+		httpClient:             httpClient,
+		endpoint:               endpoint,
+		apiKey:                 apiKey,
+		model:                  modelID,
+		maxOutputTokens:        cloneInt(maxOutputTokens),
+		temperature:            cloneFloat32(config.Temperature),
+		topP:                   cloneFloat32(config.TopP),
+		topLogProbs:            cloneInt(config.TopLogProbs),
+		reasoningEffort:        config.ReasoningEffort,
+		textFormat:             cloneTextFormat(textFormat),
+		userID:                 config.UserID,
+		maxSSEEventBytes:       maxEventBytes,
+		optimizeImageTransport: config.OptimizeImageTransport,
 	}, nil
 }
 
@@ -135,6 +140,11 @@ func (m *Model) Generate(
 	req, err := buildResponseRequest(input, common, specific, false)
 	if err != nil {
 		return nil, err
+	}
+	if m.optimizeImageTransport {
+		if err := optimizeResponseImages(ctx, req); err != nil {
+			return nil, err
+		}
 	}
 	body, err := marshalRequest(req)
 	if err != nil {
@@ -192,14 +202,23 @@ func (m *Model) Stream(
 	if err != nil {
 		return nil, err
 	}
+	if m.optimizeImageTransport {
+		if err := optimizeResponseImages(ctx, req); err != nil {
+			return nil, err
+		}
+	}
 	body, err := marshalRequest(req)
 	if err != nil {
 		return nil, err
 	}
+	return m.streamRequest(ctx, input, common.Tools, req, body, false)
+}
+
+func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessage, tools []*schema.ToolInfo, req *responseRequest, body []byte, bounded bool) (out *schema.StreamReader[*schema.AgenticMessage], err error) {
 	config := callbackConfig(req)
 	ctx = callbacks.OnStart(ctx, &model.AgenticCallbackInput{
 		Messages: input,
-		Tools:    common.Tools,
+		Tools:    tools,
 		Config:   config,
 	})
 	defer func() {
@@ -208,18 +227,27 @@ func (m *Model) Stream(
 		}
 	}()
 
-	response, err := m.do(ctx, body, true) //nolint:bodyclose // parser goroutine owns and closes a successful stream body
+	response, err := m.doRequest(ctx, body, true, bounded) //nolint:bodyclose // parser goroutine owns and closes a successful stream body
 	if err != nil {
+		observeDiagnosticError(ctx, err)
 		return nil, err
+	}
+	observeDiagnosticHeaders(ctx, response)
+	if observer := providerdiag.FromContext(ctx); observer != nil {
+		response.Body = &diagnosticBody{ReadCloser: response.Body, observer: observer}
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
-		return nil, m.decodeAPIError(response)
+		err := m.decodeAPIError(response)
+		observeDiagnosticError(ctx, err)
+		return nil, err
 	}
 	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if parseErr != nil || mediaType != "text/event-stream" {
 		response.Body.Close()
-		return nil, &ProtocolError{ReasonCode: "stream_content_type_invalid"}
+		err := &ProtocolError{ReasonCode: "stream_content_type_invalid"}
+		observeDiagnosticError(ctx, err)
+		return nil, err
 	}
 
 	callbackReader, callbackWriter := schema.Pipe[*model.AgenticCallbackOutput](1)
@@ -228,10 +256,12 @@ func (m *Model) Stream(
 		defer callbackWriter.Close()
 		defer func() {
 			if recover() != nil {
-				callbackWriter.Send(nil, &ProtocolError{ReasonCode: "stream_parser_panic"})
+				err := &ProtocolError{ReasonCode: "stream_parser_panic"}
+				observeDiagnosticError(ctx, err)
+				callbackWriter.Send(nil, err)
 			}
 		}()
-		parseErr := parseResponseStream(response.Body, m.maxSSEEventBytes, func(message *schema.AgenticMessage) bool {
+		parseErr := parseResponseStreamObserved(response.Body, m.maxSSEEventBytes, providerdiag.FromContext(ctx), func(message *schema.AgenticMessage) bool {
 			return callbackWriter.Send(&model.AgenticCallbackOutput{
 				Message:    message,
 				Config:     config,
@@ -239,6 +269,7 @@ func (m *Model) Stream(
 			}, nil)
 		})
 		if parseErr != nil {
+			observeDiagnosticError(ctx, parseErr)
 			callbackWriter.Send(nil, parseErr)
 		}
 	}()
@@ -260,6 +291,74 @@ func (m *Model) Stream(
 		},
 	)
 	return out, nil
+}
+
+type diagnosticBody struct {
+	io.ReadCloser
+	observer *providerdiag.Observer
+}
+
+func (r *diagnosticBody) Read(p []byte) (int, error) {
+	r.observer.Transport("body")
+	n, err := r.ReadCloser.Read(p)
+	if r.observer != nil {
+		r.observer.Body(n)
+	}
+	return n, err
+}
+
+func observeDiagnosticHeaders(ctx context.Context, response *http.Response) {
+	if observer := providerdiag.FromContext(ctx); observer != nil && response != nil {
+		observer.Headers(response.StatusCode, providerdiag.HashIdentifier(requestID(response.Header)))
+	}
+}
+
+func observeDiagnosticError(ctx context.Context, err error) {
+	observer := providerdiag.FromContext(ctx)
+	if observer == nil || err == nil {
+		return
+	}
+	var transport *transportError
+	var protocol *ProtocolError
+	var api *APIError
+	if errors.As(err, &transport) {
+		observer.Transport(diagnosticPhase(transport.phase))
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+		observer.Terminate("canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		observer.Terminate("deadline_exceeded")
+	case transport != nil:
+		observer.Terminate("transport_error")
+	case errors.As(err, &protocol):
+		observer.Terminate("protocol_error")
+	case errors.As(err, &api):
+		observer.Terminate("api_error")
+	default:
+		observer.Terminate("protocol_error")
+	}
+}
+
+func diagnosticPhase(phase transportPhase) string {
+	switch phase {
+	case transportPhaseDNS:
+		return "dns"
+	case transportPhaseConnect:
+		return "connect"
+	case transportPhaseTLS:
+		return "tls"
+	case transportPhaseUpload:
+		return "upload"
+	case transportPhaseRequestSent:
+		return "request_sent"
+	case transportPhaseHeaders:
+		return "headers"
+	case transportPhaseBody:
+		return "body"
+	default:
+		return ""
+	}
 }
 
 // GetType identifies the provider transport used by Eino callbacks.
@@ -290,6 +389,31 @@ func (m *Model) options(opts ...model.Option) (*model.Options, *callOptions) {
 }
 
 func (m *Model) do(ctx context.Context, body []byte, stream bool) (*http.Response, error) {
+	return m.doRequest(ctx, body, stream, false)
+}
+
+func (m *Model) doRequest(ctx context.Context, body []byte, stream, bounded bool) (*http.Response, error) {
+	var phase atomic.Uint32
+	setPhase := func(value transportPhase) {
+		for previous := phase.Load(); uint32(value) > previous; previous = phase.Load() {
+			if phase.CompareAndSwap(previous, uint32(value)) {
+				return
+			}
+		}
+	}
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		DNSStart:          func(httptrace.DNSStartInfo) { setPhase(transportPhaseDNS) },
+		ConnectStart:      func(string, string) { setPhase(transportPhaseConnect) },
+		TLSHandshakeStart: func() { setPhase(transportPhaseTLS) },
+		GotConn:           func(httptrace.GotConnInfo) { setPhase(transportPhaseUpload) },
+		WroteHeaders:      func() { setPhase(transportPhaseUpload) },
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			if info.Err == nil {
+				setPhase(transportPhaseRequestSent)
+			}
+		},
+		GotFirstResponseByte: func() { setPhase(transportPhaseHeaders) },
+	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, &ProtocolError{ReasonCode: "request_build_failed"}
@@ -301,16 +425,25 @@ func (m *Model) do(ctx context.Context, body []byte, stream bool) (*http.Respons
 	} else {
 		req.Header.Set("Accept", "application/json")
 	}
-	response, err := m.httpClient.Do(req)
+	client := m.httpClient
+	if bounded {
+		// Disable body replay and redirect-driven second requests. Opaque custom
+		// transports were rejected when preparing this exact wire body.
+		req.GetBody = nil
+		copied := *client
+		copied.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &copied
+	}
+	response, err := client.Do(req)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, &transportError{err: ctxErr}
+			return nil, &transportError{err: ctxErr, phase: transportPhase(phase.Load())}
 		}
 		var urlErr *url.Error
 		if errors.As(err, &urlErr) && urlErr.Err != nil {
 			err = urlErr.Err
 		}
-		return nil, &transportError{err: err}
+		return nil, &transportError{err: err, phase: transportPhase(phase.Load())}
 	}
 	return response, nil
 }

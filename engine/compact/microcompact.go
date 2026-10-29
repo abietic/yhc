@@ -6,8 +6,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+
+	enginemessages "github.com/abietic/yhc/engine/messages"
 )
 
 // MicroCompactResult holds the outcome of a fine-grained micro-compaction pass.
@@ -20,11 +23,12 @@ type MicroCompactResult struct {
 // MicroCompact applies targeted trimming to individual messages to reduce
 // context size without full compaction. It targets:
 // - Long tool results (truncate to first/last N chars with "..." separator)
-// - Repeated whitespace in content
 // - Large base64 image data (replace with placeholder)
 // - Very long assistant reasoning (trim middle)
 //
 // Strategies are applied in order until targetTokensToFree is reached.
+// The latest assistant tool round has not yet been consumed by a subsequent
+// assistant response, so opportunistic trimming leaves that entire suffix intact.
 // The input slice is never mutated; a new slice is returned.
 func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroCompactResult {
 	if len(messages) == 0 || targetTokensToFree <= 0 {
@@ -36,7 +40,8 @@ func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroComp
 	}
 
 	totalFreed := 0
-	current := cloneMessages(messages)
+	protectedStart := unconsumedToolRoundStart(messages)
+	current := cloneMessages(messages[:protectedStart])
 
 	// Strategy 1: Trim long tool results
 	if totalFreed < targetTokensToFree {
@@ -59,18 +64,27 @@ func MicroCompact(messages []*schema.Message, targetTokensToFree int) *MicroComp
 		totalFreed += freed
 	}
 
-	// Strategy 4: Compress whitespace
-	if totalFreed < targetTokensToFree {
-		var freed int
-		current, freed = CompressWhitespace(current)
-		totalFreed += freed
-	}
-
 	return &MicroCompactResult{
-		Messages:    current,
+		Messages:    append(current, cloneMessages(messages[protectedStart:])...),
 		TokensFreed: totalFreed,
 		Applied:     totalFreed > 0,
 	}
+}
+
+// unconsumedToolRoundStart returns the latest assistant's index when it calls
+// tools, or len(messages) once a later assistant has consumed those results.
+// Protecting the whole round also covers parallel results and slow tools whose
+// owning assistant timestamp predates the idle-compaction threshold.
+func unconsumedToolRoundStart(messages []*schema.Message) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if msg := messages[i]; msg != nil && msg.Role == schema.Assistant {
+			if len(msg.ToolCalls) > 0 {
+				return i
+			}
+			break
+		}
+	}
+	return len(messages)
 }
 
 // TrimLongToolResults truncates tool results longer than maxLen characters.
@@ -181,145 +195,84 @@ func StripBase64Images(messages []*schema.Message) ([]*schema.Message, int) {
 	return result, totalFreed
 }
 
-// TrimLongThinking trims very long ReasoningContent on assistant messages.
-// If ReasoningContent exceeds maxLen, the middle is replaced with a separator
-// keeping the first and last portions. Returns the modified messages and
-// an estimate of tokens freed.
+// TrimLongThinking trims unsigned reasoning in the representation sent to the
+// provider and updates its flat mirror. Stream deltas are joined before trimming
+// each logical block. Messages containing signed blocks remain intact: private
+// continuation bindings may cover the entire message, including unsigned siblings.
 func TrimLongThinking(messages []*schema.Message, maxLen int) ([]*schema.Message, int) {
 	if maxLen <= 0 {
 		maxLen = 4000
 	}
-
-	const separator = "\n...[reasoning truncated]...\n"
-
+	result := append([]*schema.Message(nil), messages...)
 	totalFreed := 0
-	result := make([]*schema.Message, len(messages))
-
 	for i, msg := range messages {
 		if msg == nil || msg.Role != schema.Assistant {
-			result[i] = msg
 			continue
 		}
-
-		reasoning := msg.ReasoningContent
-		if len(reasoning) <= maxLen {
-			result[i] = msg
+		parts, err := enginemessages.ConcatAssistantOutputParts(msg.AssistantGenMultiContent)
+		if err != nil {
 			continue
 		}
-
-		// Keep first 40% and last 40% of maxLen
-		keepHead := maxLen * 2 / 5
-		keepTail := maxLen * 2 / 5
-		if keepHead+keepTail >= len(reasoning) {
-			result[i] = msg
-			continue
-		}
-
-		truncated := reasoning[:keepHead] + separator + reasoning[len(reasoning)-keepTail:]
-		freed := roughTextTokens(reasoning) - roughTextTokens(truncated)
-		if freed < 0 {
-			freed = 0
-		}
-		totalFreed += freed
-
-		clone := *msg
-		clone.ReasoningContent = truncated
-		if msg.Extra != nil {
-			clone.Extra = make(map[string]any, len(msg.Extra))
-			for k, v := range msg.Extra {
-				clone.Extra[k] = v
+		hasReasoning, signed := false, false
+		for _, part := range parts {
+			if part.Type == schema.ChatMessagePartTypeReasoning {
+				hasReasoning = true
+				if part.Reasoning == nil || part.Reasoning.Signature != "" {
+					signed = true
+				}
 			}
 		}
-		if len(msg.ToolCalls) > 0 {
-			clone.ToolCalls = append([]schema.ToolCall(nil), msg.ToolCalls...)
+		if signed {
+			continue
+		}
+		before, after := msg.ReasoningContent, trimReasoningText(msg.ReasoningContent, maxLen)
+		var trimmedParts []schema.MessageOutputPart
+		if hasReasoning {
+			trimmedParts = append([]schema.MessageOutputPart(nil), parts...)
+			var original, trimmed strings.Builder
+			for j, part := range parts {
+				if part.Type != schema.ChatMessagePartTypeReasoning {
+					continue
+				}
+				reasoning := *part.Reasoning
+				original.WriteString(reasoning.Text)
+				reasoning.Text = trimReasoningText(reasoning.Text, maxLen)
+				trimmed.WriteString(reasoning.Text)
+				trimmedParts[j].Reasoning = &reasoning
+			}
+			before, after = original.String(), trimmed.String()
+		}
+		if before == after {
+			continue
+		}
+		clone := *msg
+		clone.ReasoningContent = after
+		if hasReasoning {
+			clone.AssistantGenMultiContent = trimmedParts
 		}
 		result[i] = &clone
+		totalFreed += max(0, roughTextTokens(before)-roughTextTokens(after))
 	}
-
 	return result, totalFreed
 }
 
-// multiNewlinePattern matches runs of 3+ newlines.
-var multiNewlinePattern = regexp.MustCompile(`\n{3,}`)
-
-// multiSpacePattern matches runs of 3+ spaces (not newlines).
-var multiSpacePattern = regexp.MustCompile(`[^\S\n]{3,}`)
-
-// CompressWhitespace normalizes excessive whitespace in all messages.
-// It collapses runs of 3+ newlines to 2 newlines, and runs of 3+ spaces
-// to a single space. Returns the modified messages and an estimate of
-// tokens freed.
-func CompressWhitespace(messages []*schema.Message) ([]*schema.Message, int) {
-	totalFreed := 0
-	result := make([]*schema.Message, len(messages))
-
-	for i, msg := range messages {
-		if msg == nil {
-			result[i] = msg
-			continue
-		}
-
-		contentChanged := false
-		newContent := msg.Content
-		reasoningChanged := false
-		newReasoning := msg.ReasoningContent
-
-		if newContent != "" {
-			compressed := compressWS(newContent)
-			if compressed != newContent {
-				contentChanged = true
-				newContent = compressed
-			}
-		}
-
-		if newReasoning != "" {
-			compressed := compressWS(newReasoning)
-			if compressed != newReasoning {
-				reasoningChanged = true
-				newReasoning = compressed
-			}
-		}
-
-		if !contentChanged && !reasoningChanged {
-			result[i] = msg
-			continue
-		}
-
-		originalTokens := roughTextTokens(msg.Content) + roughTextTokens(msg.ReasoningContent)
-		newTokens := roughTextTokens(newContent) + roughTextTokens(newReasoning)
-		freed := originalTokens - newTokens
-		if freed < 0 {
-			freed = 0
-		}
-		totalFreed += freed
-
-		clone := *msg
-		if contentChanged {
-			clone.Content = newContent
-		}
-		if reasoningChanged {
-			clone.ReasoningContent = newReasoning
-		}
-		if msg.Extra != nil {
-			clone.Extra = make(map[string]any, len(msg.Extra))
-			for k, v := range msg.Extra {
-				clone.Extra[k] = v
-			}
-		}
-		if len(msg.ToolCalls) > 0 {
-			clone.ToolCalls = append([]schema.ToolCall(nil), msg.ToolCalls...)
-		}
-		result[i] = &clone
+func trimReasoningText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
 	}
-
-	return result, totalFreed
-}
-
-// compressWS collapses runs of 3+ newlines to 2, and runs of 3+ spaces to 1.
-func compressWS(s string) string {
-	s = multiNewlinePattern.ReplaceAllString(s, "\n\n")
-	s = multiSpacePattern.ReplaceAllString(s, " ")
-	return s
+	const separator = "\n...[reasoning truncated]...\n"
+	head, tail := maxLen*2/5, len(text)-maxLen*2/5
+	// Keep valid UTF-8 even when a byte budget splits a multibyte rune.
+	for head > 0 && !utf8.RuneStart(text[head]) {
+		head--
+	}
+	for tail < len(text) && !utf8.RuneStart(text[tail]) {
+		tail++
+	}
+	if head+len(separator)+len(text)-tail >= len(text) {
+		return text
+	}
+	return text[:head] + separator + text[tail:]
 }
 
 // Snip performs the lightweight pre-compact pass that trims obvious
@@ -474,6 +427,11 @@ func TimeBasedMicrocompact(messages []*schema.Message, querySource string) *Micr
 	}
 	for _, id := range compactableIDs[startKeep:] {
 		keepSet[id] = true
+	}
+	if start := unconsumedToolRoundStart(messages); start < len(messages) {
+		for _, call := range messages[start].ToolCalls {
+			keepSet[call.ID] = true
+		}
 	}
 
 	// Build clear set.

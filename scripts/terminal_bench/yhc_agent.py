@@ -1,0 +1,570 @@
+"""Run the production YHC agent inside a Harbor task's Linux environment.
+
+Only the agent binary, optional ripgrep and public CA bundle, and task
+instruction are uploaded. Host settings, credentials files, repository contents, and
+verifier/oracle data are never copied.
+"""
+
+import asyncio
+import hashlib
+import json
+import re
+import shlex
+import shutil
+import ssl
+import tempfile
+import time
+import uuid
+from decimal import Decimal, localcontext
+from pathlib import Path, PurePosixPath
+
+from harbor.agents.installed.base import BaseInstalledAgent, NonZeroAgentExitCodeError
+from harbor.agents.installed.base import with_prompt_template
+from harbor.environments.base import BaseEnvironment
+from harbor.models.agent.context import AgentContext
+
+from scripts.terminal_bench.usage import sum_usage, validated_usage
+from scripts.terminal_bench.native_cost import decimal_amount, validate_price_card
+from scripts.terminal_bench.recovery import continuation_report, observe_environment
+
+
+def read_result(path: Path) -> dict:
+    """Require a versioned stream with exactly one closing terminal record."""
+    result = None
+    with path.open(encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if (not isinstance(record, dict) or record.get("schema_version") != 1
+                    or result is not None):
+                raise ValueError("Invalid YHC lifecycle stream or record after result")
+            if record.get("type") == "result":
+                result = record.get("result")
+                if (not isinstance(result, dict)
+                        or not isinstance(result.get("status"), str)
+                        or type(result.get("exit_code")) is not int):
+                    raise ValueError("Invalid YHC terminal result")
+                if result["status"] == "completed" and (
+                        result["exit_code"] != 0 or result.get("error") is not None
+                        or result.get("terminal_reason") not in (
+                            None, "completed", "stop_hook_prevented", "hook_stopped")):
+                    # Reason remains optional for command-only/older v1 results;
+                    # an explicit cancellation, error, or unknown reason is not
+                    # allowed to masquerade as a successful closure.
+                    raise ValueError("Completed YHC result contradicts terminal fields")
+            elif record.get("type") != "event" or not isinstance(record.get("event"), dict):
+                raise ValueError("Unknown YHC lifecycle record")
+    if result is None:
+        raise ValueError("YHC lifecycle stream has no terminal result")
+    return result
+
+
+def parse_continuation_budgets(value: object) -> list[dict]:
+    """Each grant is explicit and finite; there is no automatic unlimited top-up."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError as exc:
+            raise ValueError("continuation_budgets must be a JSON list") from exc
+    if not isinstance(value, list) or len(value) > 16:
+        raise ValueError("continuation_budgets must be a list of at most 16 grants")
+    grants = []
+    keys = {"max_provider_calls", "max_total_tokens", "max_estimated_cost"}
+    for grant in value:
+        if not isinstance(grant, dict) or set(grant) - keys:
+            raise ValueError("Each continuation grant only accepts provider, token and estimated-cost limits")
+        cost = grant.get("max_estimated_cost", "0")
+        decimal_amount(cost)
+        grant = {key: grant.get(key, 0) for key in sorted(keys - {"max_estimated_cost"})}
+        if any(type(limit) is not int or not 0 <= limit <= 2**63 - 1 for limit in grant.values()) or not (any(grant.values()) or Decimal(cost) > 0):
+            raise ValueError("Each continuation grant must have a positive finite int64 limit")
+        if Decimal(cost) > 0:
+            grant["max_estimated_cost"] = cost
+        grants.append(grant)
+    return grants
+
+
+def inspect_linux_binary(path: Path) -> tuple[str, str]:
+    """Identify an uploaded executable before provisioning an environment."""
+    with path.open("rb") as binary:
+        header = binary.read(20)
+        if header[:6] != b"\x7fELF\x02\x01" or len(header) < 20:
+            raise ValueError("Uploaded executable must be a Linux 64-bit little-endian ELF binary")
+        arch = {62: "x86_64", 183: "aarch64"}.get(int.from_bytes(header[18:20], "little"))
+        if arch is None:
+            raise ValueError("Unsupported ELF architecture; use linux-amd64 or linux-arm64")
+        binary.seek(0)
+        return arch, hashlib.file_digest(binary, "sha256").hexdigest()
+
+
+class YHCAgent(BaseInstalledAgent):
+    """Harbor 0.22 installed agent, sharing the TUI's QueryEngine traversal."""
+
+    def __init__(self, logs_dir: Path, model_name: str | None = None,
+                 binary_path: str = "build/linux-amd64/yhc", provider: str | None = None,
+                 max_turns: int = 0, ripgrep_path: str | None = None,
+                 ca_bundle_path: str | None = None, max_provider_calls: int = 0,
+                 max_total_tokens: int = 0, execution_timeout_sec: int = 0,
+                 price_card_path: str | None = None, max_estimated_cost: str = "0",
+                 reserve_cost_before_dispatch: bool = False,
+                 max_output_tokens_per_call: int = 0,
+                 max_total_estimated_cost: str = "0",
+                 continuation_budgets: list | str | None = None,
+                 **kwargs):
+        if any(key.startswith("verification_") or key == "resume_verification" for key in kwargs):
+            raise ValueError("Independent completion verification was removed; use the ordinary YHC agent")
+        super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
+        if not model_name or not model_name.strip():
+            raise ValueError("YHC requires --model provider/model (or --ak provider=...)")
+        if type(max_turns) is not int or max_turns < 0:
+            raise ValueError("max_turns must be a nonnegative integer; 0 is unlimited")
+        for name, value in (("max_provider_calls", max_provider_calls),
+                            ("max_total_tokens", max_total_tokens)):
+            if type(value) is not int or not 0 <= value <= 2**63 - 1:
+                raise ValueError(f"{name} must be a nonnegative int64; 0 disables")
+        if type(execution_timeout_sec) is not int or not 0 <= execution_timeout_sec <= 9223372036:
+            raise ValueError("execution_timeout_sec must be nonnegative and fit Go time.Duration")
+        self.execution_timeout_sec = execution_timeout_sec
+        self.max_provider_calls = max_provider_calls
+        self.max_total_tokens = max_total_tokens
+        decimal_amount(max_estimated_cost)
+        self.max_estimated_cost = max_estimated_cost
+        if type(reserve_cost_before_dispatch) is not bool:
+            raise ValueError("reserve_cost_before_dispatch must be a bool")
+        if (type(max_output_tokens_per_call) is not int
+                or not 0 <= max_output_tokens_per_call <= 2**63 - 1):
+            raise ValueError("max_output_tokens_per_call must be a nonnegative int64; 0 disables")
+        decimal_amount(max_total_estimated_cost)
+        self.reserve_cost_before_dispatch = reserve_cost_before_dispatch
+        self.max_output_tokens_per_call = max_output_tokens_per_call
+        self.max_total_estimated_cost = max_total_estimated_cost
+        self._total_estimated_spent = Decimal(0)
+        self.price_card = None
+        if price_card_path:
+            data = Path(price_card_path).expanduser().read_bytes()
+            if len(data) > 65536:
+                raise ValueError("Public price card must be at most 64 KiB")
+            self.price_card = validate_price_card(json.loads(data))
+        self.continuation_budgets = parse_continuation_budgets(continuation_budgets)
+        if (Decimal(max_estimated_cost) > 0 or any("max_estimated_cost" in grant for grant in self.continuation_budgets)) and self.price_card is None:
+            raise ValueError("Estimated-cost limits require an explicit public native price card")
+        if self.continuation_budgets and not (max_provider_calls or max_total_tokens or Decimal(max_estimated_cost) > 0):
+            raise ValueError("continuation_budgets requires a finite initial usage limit")
+        strict = self.reserve_cost_before_dispatch
+        if max_output_tokens_per_call and not strict:
+            raise ValueError("max_output_tokens_per_call requires pre-dispatch reservation")
+        if strict and (Decimal(max_estimated_cost) <= 0 or not max_output_tokens_per_call
+                       or self.price_card is None or self.price_card["window"] != "upper_bound"):
+            raise ValueError("Pre-dispatch reservation requires a positive estimated-cost limit, output bound, and upper-bound price card")
+        if strict and any(not route.get("api_model") for route in self.price_card["routes"]):
+            raise ValueError("Pre-dispatch reservation requires api_model on every priced route")
+        if Decimal(max_total_estimated_cost) > 0 and not strict:
+            raise ValueError("max_total_estimated_cost requires pre-dispatch reservation")
+        if Decimal(max_total_estimated_cost) > 0 and self.price_card is None:
+            raise ValueError("max_total_estimated_cost requires an explicit public native price card")
+        if strict:
+            for grant in self.continuation_budgets:
+                if Decimal(grant.get("max_estimated_cost", "0")) <= 0 and Decimal(max_total_estimated_cost) <= 0:
+                    raise ValueError("Pre-dispatch continuation requires an explicit cost grant or total envelope")
+        self._segment_session = None
+        self._segment_timeout = None
+        self._segment_limits = None
+        self.binary_path = Path(binary_path).expanduser().resolve(strict=True)
+        self.arch, self.binary_sha256 = inspect_linux_binary(self.binary_path)
+        self.ripgrep_path = Path(ripgrep_path).expanduser().resolve(strict=True) if ripgrep_path else None
+        self.ripgrep_sha256 = None
+        if self.ripgrep_path:
+            rg_arch, self.ripgrep_sha256 = inspect_linux_binary(self.ripgrep_path)
+            if rg_arch != self.arch:
+                raise ValueError("ripgrep_path architecture must match the YHC binary")
+        self.ca_bundle_path = Path(ca_bundle_path).expanduser().resolve(strict=True) if ca_bundle_path else None
+        self.ca_bundle_sha256 = None
+        if self.ca_bundle_path:
+            bundle = self.ca_bundle_path.read_bytes()
+            if b"PRIVATE KEY" in bundle or b"-----BEGIN CERTIFICATE-----" not in bundle:
+                raise ValueError("ca_bundle_path must contain public PEM certificates only")
+            try:
+                trust = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                trust.load_verify_locations(cadata=bundle.decode("ascii"))
+            except (UnicodeError, ssl.SSLError) as exc:
+                raise ValueError("ca_bundle_path is not a valid public PEM certificate bundle") from exc
+            if not trust.cert_store_stats()["x509"]:
+                raise ValueError("ca_bundle_path contains no certificates")
+            self.ca_bundle_sha256 = hashlib.sha256(bundle).hexdigest()
+        self.provider = provider
+        self.max_turns = max_turns
+        self.remote_dir = f"/installed-agent/yhc-{uuid.uuid4().hex}"
+        self.remote_binary = f"{self.remote_dir}/yhc"
+        self.remote_prompt = f"{self.remote_dir}/instruction.txt"
+        self.remote_pid = str(self.environment_logs_dir / "yhc.pid")
+        self.state_dir_provisioned = False
+        self._recovery_report = None
+        self.execution_env()  # Fail before provisioning when credentials are absent.
+
+    @staticmethod
+    def name() -> str:
+        return "yhc"
+
+    def version(self) -> str:
+        # Identify the actual uploaded artifact, including uncommitted local builds.
+        return f"sha256:{self.binary_sha256}"
+
+    def execution_env(self) -> dict[str, str]:
+        key = self._get_env("YHC_BENCH_API_KEY", "PROV_API_KEY")
+        if not key:
+            raise ValueError("Set YHC_BENCH_API_KEY (or PROV_API_KEY) before running Harbor")
+        env = {"PROV_API_KEY": key}
+        base_url = self._get_env("YHC_BENCH_BASE_URL", "PROV_BASE_URL")
+        if base_url:
+            env["PROV_BASE_URL"] = base_url
+        if self.ca_bundle_path:
+            env["SSL_CERT_FILE"] = self.remote_dir + "/ca-certificates.crt"
+        return env
+
+    def execution_command(self) -> str:
+        argv = [self.remote_binary, "exec", "-", "--output-format", "jsonl",
+                "--model", self.model_name, "--max-turns", str(self.max_turns),
+                "-y", "--sandbox", "danger-full-access"]
+        if self._segment_session:
+            argv += ["--resume", self._segment_session]
+        if self.execution_timeout_sec:
+            argv += ["--timeout", self._segment_timeout or f"{self.execution_timeout_sec}s"]
+        limits = self._segment_limits or {"max_provider_calls": self.max_provider_calls,
+                                          "max_total_tokens": self.max_total_tokens,
+                                          "max_estimated_cost": self.max_estimated_cost}
+        limits = dict(limits)
+        if Decimal(self.max_total_estimated_cost) > 0:
+            with localcontext() as ctx:
+                ctx.prec = 90
+                remaining = Decimal(self.max_total_estimated_cost) - self._total_estimated_spent
+                if remaining <= 0:
+                    raise ValueError("Total estimated-cost envelope exhausted before dispatch")
+                explicit = Decimal(limits.get("max_estimated_cost", "0"))
+                limits["max_estimated_cost"] = str(min(explicit, remaining) if explicit > 0 else remaining)
+        for name, value in limits.items():
+            if value and (name != "max_estimated_cost" or Decimal(value) > 0):
+                argv += ["--" + name.replace("_", "-"), str(value)]
+        if self.price_card is not None:
+            argv += ["--price-card", self.remote_dir + "/price-card.json"]
+        if self.reserve_cost_before_dispatch:
+            argv += ["--reserve-cost-before-dispatch", "--max-output-tokens-per-call",
+                     str(self.max_output_tokens_per_call)]
+        if self.provider:
+            argv += ["--provider", self.provider]
+        path_setup = f'export PATH={shlex.quote(self.remote_dir)}:"$PATH"; ' if self.ripgrep_path else ""
+        # The shell becomes YHC via exec, so $$ identifies only this invocation.
+        # Restrict the PID file without changing the agent's inherited umask.
+        pid_setup = f"(umask 077; printf '%s\\n' \"$$\" > {shlex.quote(self.remote_pid)}) && "
+        return (f"{path_setup}{pid_setup}exec {shlex.join(argv)} < {shlex.quote(self.remote_prompt)}"
+                f" > {shlex.quote(str(self.environment_logs_dir / 'yhc.jsonl'))}"
+                f" 2> {shlex.quote(str(self.environment_logs_dir / 'yhc.stderr.log'))}")
+
+    def _strict_segment_cost(self, usage: dict | None, limit: Decimal, *, allow_retained: bool = False) -> dict | None:
+        """Accept only one exact upper-bound receipt for the dispatched segment."""
+        if (usage is None or "cost" not in usage or "cost_segments" in usage
+                or not allow_retained and usage.get("cost_complete") is not True):
+            return None
+        cost = usage["cost"]
+        reservation = cost.get("reservation")
+        if (cost.get("limit_mode") != "pre_dispatch_reservation" or cost.get("price_card") != self.price_card
+                or not isinstance(reservation, dict)):
+            return None
+        if (reservation.get("outstanding_amount") != "0.000000000000"
+                or not allow_retained and reservation.get("retained_amount") != "0.000000000000"
+                or reservation.get("bound_violations") != 0):
+            return None
+        with localcontext() as ctx:
+            ctx.prec = 90
+            if (Decimal(cost["known_estimated_amount"]) + Decimal(reservation["retained_amount"]) > limit
+                    or Decimal(reservation.get("peak_exposure_amount", "-1")) > limit):
+                return None
+        return cost
+
+    async def install(self, environment: BaseEnvironment) -> None:
+        arch = await self.exec_as_agent(environment, command="uname -m")
+        if (arch.stdout or "").strip() != self.arch:
+            raise ValueError(f"YHC binary architecture {self.arch} does not match task environment")
+        if not self.ripgrep_path:
+            await self.check_ripgrep(environment, "rg")
+        await self.exec_as_root(environment, command=f"mkdir -m 755 {shlex.quote(self.remote_dir)}")
+        await environment.upload_file(self.binary_path, self.remote_binary)
+        if self.price_card is not None:
+            with tempfile.TemporaryDirectory(prefix="yhc-public-price-") as directory:
+                card = Path(directory) / "price-card.json"
+                card.write_text(json.dumps(self.price_card), encoding="utf-8")
+                await environment.upload_file(card, self.remote_dir + "/price-card.json")
+            await self.exec_as_root(environment, command=f"chmod 644 {shlex.quote(self.remote_dir + '/price-card.json')}")
+        await self.exec_as_root(environment, command=f"chmod 755 {shlex.quote(self.remote_binary)}")
+        if self.ripgrep_path:
+            remote_rg = self.remote_dir + "/rg"
+            await environment.upload_file(self.ripgrep_path, remote_rg)
+            await self.exec_as_root(environment, command=f"chmod 755 {shlex.quote(remote_rg)}")
+            await self.check_ripgrep(environment, remote_rg)
+        if self.ca_bundle_path:
+            remote_ca = self.remote_dir + "/ca-certificates.crt"
+            await environment.upload_file(self.ca_bundle_path, remote_ca)
+            await self.exec_as_root(environment, command=f"chmod 644 {shlex.quote(remote_ca)}")
+        # Keep the task's cwd, HOME, user, and installed software intact.
+        await self.exec_as_agent(environment, command=f"mkdir -p {shlex.quote(str(self.environment_logs_dir))}")
+        await self.exec_as_agent(environment, command=f"{shlex.quote(self.remote_binary)} version")
+        await self.prepare_project_state(environment)
+
+    async def prepare_project_state(self, environment: BaseEnvironment) -> None:
+        # YHC persists its session and WorkBoard under cwd/.yhc. Some tasks
+        # expose writable source subdirectories inside a root-owned cwd.
+        # Provision only a missing private state directory, never re-own an
+        # existing path or relax permissions on task files or their parent.
+        probe = await environment.exec(command=(
+            "if [ -L .yhc ]; then exit 1; fi; "
+            "if [ -e .yhc ]; then test -d .yhc && test -w .yhc && test -x .yhc; "
+            "else test -w . && test -x .; fi"), timeout_sec=15)
+        if probe.return_code == 0:
+            return
+        identity = await self.exec_as_agent(environment, command=(
+            "if [ -e .yhc ] || [ -L .yhc ]; then "
+            "echo 'YHC state path already exists and is not a writable directory' >&2; exit 1; fi; "
+            "pwd -P && id -u && id -g"))
+        fields = (identity.stdout or "").splitlines()
+        if (len(fields) != 3 or not PurePosixPath(fields[0]).is_absolute()
+                or "\x00" in fields[0]
+                or not all(value.isascii() and value.isdecimal() for value in fields[1:])):
+            raise ValueError("Cannot identify task cwd and user for YHC state provisioning")
+        cwd, uid, gid = fields
+        state_dir = shlex.quote(str(PurePosixPath(cwd) / ".yhc"))
+        # mkdir without -p must succeed before chown. Existing paths, including
+        # links created after the probe, therefore fail without ownership changes.
+        await self.exec_as_root(environment, command=(
+            f"mkdir -m 700 -- {state_dir} && chown -h -- {uid}:{gid} {state_dir}"))
+        await self.exec_as_agent(environment, command=(
+            f"test ! -L {state_dir} && test -d {state_dir} && "
+            f"test -w {state_dir} && test -x {state_dir}"))
+        self.state_dir_provisioned = True
+
+    async def check_ripgrep(self, environment: BaseEnvironment, executable: str) -> None:
+        # exec_as_agent raises on nonzero status before a missing-dependency
+        # diagnostic can be attached. Probe directly as the same default user.
+        probe = await environment.exec(command=f"{shlex.quote(executable)} --version", timeout_sec=15)
+        if probe.return_code != 0:
+            raise ValueError("YHC Grep requires executable ripgrep; provide a matching Linux ripgrep_path")
+
+    @with_prompt_template
+    async def run(self, instruction: str, environment: BaseEnvironment,
+                  context: AgentContext) -> None:
+        self._segment_session = None
+        self._segment_timeout = None
+        self._segment_limits = None
+        self._total_estimated_spent = Decimal(0)
+        # These observations stay in host memory, outside task-writable mounts.
+        # Inventory is required only for the opt-in continuation path. Ordinary
+        # independent runs do not need Docker access from the adapter process.
+        runtime_before = await observe_environment(environment) if self.continuation_budgets else None
+        self._recovery_report = continuation_report(
+            runtime_before, None, session_identified=False, usage_complete=False,
+            grant_available=bool(self.continuation_budgets))
+        await self.upload_instruction(instruction, environment)
+        deadline = time.monotonic() + self.execution_timeout_sec if self.execution_timeout_sec else None
+        segment = 0
+        segment_usages = []
+        while True:
+            # A previous admission check is not permission to retry after a
+            # cancelled/unknown next invocation or a later environment restart.
+            self._recovery_report = continuation_report(
+                runtime_before, None, session_identified=bool(self._segment_session),
+                usage_complete=False, grant_available=segment < len(self.continuation_budgets))
+            if deadline is not None:
+                remaining_ms = int((deadline - time.monotonic()) * 1000)
+                if remaining_ms <= 0:
+                    raise asyncio.TimeoutError("YHC invocation deadline exhausted before continuation")
+                self._segment_timeout = f"{remaining_ms}ms"
+            # Keep context empty between segments, so Harbor's post-run hook can
+            # harvest a final cancelled stream after bounded process cleanup.
+            try:
+                execution = await environment.exec(command=self.execution_command(), env=self.execution_env())
+            except asyncio.CancelledError:
+                try:
+                    await asyncio.wait_for(self.interrupt_execution(environment), timeout=6)
+                except (Exception, asyncio.CancelledError):
+                    self.logger.warning("YHC cancellation cleanup did not complete; usage may be partial")
+                raise
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="yhc-result-") as directory:
+                local_result = Path(directory) / "yhc.jsonl"
+                await environment.download_file(str(self.environment_logs_dir / "yhc.jsonl"), local_result)
+                shutil.copyfile(local_result, self.logs_dir / "yhc.jsonl")
+            result = read_result(self.logs_dir / "yhc.jsonl")
+            usage = validated_usage(result.get("usage"))
+            session_id = result.get("session_id")
+            error = result.get("error")
+            if self._segment_session and session_id != self._segment_session:
+                self.populate_context_post_run(context)
+                raise ValueError("YHC continuation changed session identity")
+            if usage is not None:
+                # Reconcile invocation identities before settling this receipt
+                # or consuming another grant; post-run aggregation is too late.
+                if sum_usage([*segment_usages, usage]) is None:
+                    self.populate_context_post_run(context)
+                    raise ValueError("YHC continuation usage cannot be reconciled across segments")
+                segment_usages.append(usage)
+            active_limits = self._segment_limits or {"max_estimated_cost": self.max_estimated_cost}
+            with localcontext() as ctx:
+                ctx.prec = 90
+                limit = Decimal(active_limits.get("max_estimated_cost", "0"))
+                if Decimal(self.max_total_estimated_cost) > 0:
+                    remaining = Decimal(self.max_total_estimated_cost) - self._total_estimated_spent
+                    limit = min(limit, remaining) if limit > 0 else remaining
+                strict_cost = self._strict_segment_cost(usage, limit) if self.reserve_cost_before_dispatch else None
+                strict_usage = not self.reserve_cost_before_dispatch or strict_cost is not None
+                if strict_cost is not None:
+                    self._total_estimated_spent += Decimal(strict_cost["known_estimated_amount"])
+                over_total = (Decimal(self.max_total_estimated_cost) > 0
+                              and self._total_estimated_spent > Decimal(self.max_total_estimated_cost))
+            can_continue = (
+                execution.return_code == result["exit_code"] == 1
+                and result["status"] == "failed"
+                and result.get("terminal_reason") == "run_budget_exceeded"
+                and isinstance(error, dict) and error.get("code") == "run_budget_exceeded"
+                and usage is not None and usage["complete"] and strict_usage
+                and (Decimal(self.max_estimated_cost if self._segment_limits is None else self._segment_limits.get("max_estimated_cost", "0")) == 0
+                     or usage.get("cost_complete") is True)
+                and isinstance(session_id, str) and bool(session_id.strip())
+                and segment < len(self.continuation_budgets)
+                and (Decimal(self.max_total_estimated_cost) == 0
+                     or self._total_estimated_spent < Decimal(self.max_total_estimated_cost))
+            )
+            runtime_after = await observe_environment(environment) if can_continue else None
+            self._recovery_report = continuation_report(
+                runtime_before, runtime_after,
+                session_identified=isinstance(session_id, str) and bool(session_id.strip()),
+                usage_complete=usage is not None and usage["complete"] and strict_usage,
+                grant_available=can_continue)
+            if can_continue and not self._recovery_report["live_runtime_continuity"]:
+                self.populate_context_post_run(context)
+                raise NonZeroAgentExitCodeError(
+                    "YHC continuation blocked: complete service runtime continuity is unverified; "
+                    "retaining a session or containers does not establish cold recovery")
+            if not can_continue:
+                self.populate_context_post_run(context)
+                if self.reserve_cost_before_dispatch and not strict_usage:
+                    # Harbor grades ordinary agent failures, but aborts on a
+                    # harness ValueError. A bounded unknown receipt still fails
+                    # execution and cannot consume a continuation grant.
+                    bounded_unknown_failure = (
+                        execution.return_code == result["exit_code"] == 1
+                        and result["status"] == "failed"
+                        and result.get("terminal_reason") == "run_usage_unknown"
+                        and isinstance(error, dict) and error.get("code") == "run_usage_unknown"
+                        and usage is not None and usage["unknown_calls"] > 0
+                        and usage["in_flight"] == usage["untracked_calls"] == 0
+                        and self._strict_segment_cost(usage, limit, allow_retained=True) is not None
+                        and Decimal(usage["cost"]["reservation"]["retained_amount"]) > 0
+                    )
+                    if not bounded_unknown_failure:
+                        raise ValueError("YHC strict reservation receipt is incomplete or exceeds its dispatched limit")
+                if over_total:
+                    raise ValueError("YHC strict reservation receipt exceeds the total estimated-cost envelope")
+                if execution.return_code != 0:
+                    raise NonZeroAgentExitCodeError(
+                        f"YHC exited with code {execution.return_code}; inspect yhc.jsonl and segment logs")
+                if result["exit_code"] != 0 or result["status"] != "completed":
+                    raise ValueError("YHC process exit and terminal result disagree")
+                return
+            # Archive before starting the next process: yhc.jsonl always contains
+            # the latest segment, and previous usage/history is never overwritten.
+            archive = f"yhc.segment-{segment:04d}"
+            shutil.copyfile(self.logs_dir / "yhc.jsonl", self.logs_dir / f"{archive}.jsonl")
+            source = shlex.quote(str(self.environment_logs_dir / "yhc.jsonl"))
+            target = shlex.quote(str(self.environment_logs_dir / f"{archive}.jsonl"))
+            stderr = shlex.quote(str(self.environment_logs_dir / "yhc.stderr.log"))
+            saved_stderr = shlex.quote(str(self.environment_logs_dir / f"{archive}.stderr.log"))
+            # Mounted logs may already contain the local copy; mv replaces it
+            # with the identical source. Task workspace and .yhc stay in place.
+            await self.exec_as_agent(environment, command=(
+                f"mv -- {source} {target} && "
+                f"if [ -f {stderr} ]; then mv -- {stderr} {saved_stderr}; fi"))
+            (self.logs_dir / "yhc.jsonl").unlink(missing_ok=True)
+            self._segment_session = session_id
+            self._segment_limits = self.continuation_budgets[segment]
+            segment += 1
+            await self.upload_instruction(
+                "Continue the original task using the existing session and workspace. "
+                "The previous invocation stopped at its usage budget. A new finite allowance "
+                "is now authorized. Inspect saved progress, retain completed work, and finish "
+                "remaining steps; do not repeat completed side effects.", environment)
+
+    async def upload_instruction(self, instruction: str, environment: BaseEnvironment) -> None:
+        with tempfile.TemporaryDirectory(prefix="yhc-instruction-") as directory:
+            prompt = Path(directory) / "instruction.txt"
+            prompt.write_text(instruction, encoding="utf-8")
+            await environment.upload_file(prompt, self.remote_prompt)
+        await self.exec_as_root(environment, command=f"chmod 644 {shlex.quote(self.remote_prompt)}")
+
+    async def interrupt_execution(self, environment: BaseEnvironment) -> None:
+        # Refuse missing/invalid PID files and processes using another executable.
+        # No host process or arbitrary task process may be selected for signalling.
+        command = (
+            f"read -r yhc_pid < {shlex.quote(self.remote_pid)} || exit 0; "
+            "case \"$yhc_pid\" in ''|*[!0-9]*) exit 0;; esac; "
+            "[ \"$yhc_pid\" -gt 1 ] || exit 0; "
+            f"[ \"/proc/$yhc_pid/exe\" -ef {shlex.quote(self.remote_binary)} ] || exit 0; "
+            "kill -INT \"$yhc_pid\" 2>/dev/null || exit 0; "
+            f"while [ \"/proc/$yhc_pid/exe\" -ef {shlex.quote(self.remote_binary)} ]; "
+            "do sleep 0.1; done"
+        )
+        await environment.exec(command=command, timeout_sec=5)
+
+    def populate_context_post_run(self, context: AgentContext) -> None:
+        context.n_input_tokens = None
+        context.n_output_tokens = None
+        context.n_cache_tokens = None
+        metadata = {"binary_sha256": self.binary_sha256}
+        if self._recovery_report is not None:
+            metadata["recovery"] = self._recovery_report
+        if self.ripgrep_sha256:
+            metadata["ripgrep_sha256"] = self.ripgrep_sha256
+        if self.ca_bundle_sha256:
+            metadata["ca_bundle_sha256"] = self.ca_bundle_sha256
+        if self.state_dir_provisioned:
+            metadata["state_dir_provisioned"] = True
+        try:
+            result = read_result(self.logs_dir / "yhc.jsonl")
+            archives = sorted(self.logs_dir.glob("yhc.segment-*.jsonl"))
+            segments = []
+            for path in [*archives, self.logs_dir / "yhc.jsonl"]:
+                try:
+                    saved = read_result(path)
+                    segments.append({"log": path.name, "usage": validated_usage(saved.get("usage")),
+                                     "session_id": saved.get("session_id"),
+                                     "terminal_reason": saved.get("terminal_reason")})
+                except (OSError, ValueError):
+                    segments.append({"log": path.name, "usage": None})
+            usage = sum_usage([segment["usage"] for segment in segments])
+            if archives:
+                metadata["continuation"] = {"segments": len(segments), "history": segments,
+                                            "authorized_grants": self.continuation_budgets}
+            if usage is not None:
+                metadata["usage"] = usage
+                if usage["complete"]:
+                    context.n_input_tokens = usage["prompt_tokens"]
+                    context.n_output_tokens = usage["completion_tokens"]
+                    context.n_cache_tokens = usage["cached_prompt_tokens"]
+            metadata.update({key: result[key] for key in (
+                "status", "exit_code", "terminal_reason", "session_id") if key in result})
+        except (OSError, ValueError):
+            metadata["status"] = "incomplete_stream"
+            # Preserve settled prior segments even if the latest process was killed.
+            archives = sorted(self.logs_dir.glob("yhc.segment-*.jsonl"))
+            if archives:
+                history = []
+                for path in archives:
+                    try:
+                        saved = read_result(path)
+                        history.append({"log": path.name, "usage": validated_usage(saved.get("usage"))})
+                    except (OSError, ValueError):
+                        history.append({"log": path.name, "usage": None})
+                metadata["continuation"] = {"segments": len(archives) + 1, "history": history,
+                                            "usage_complete": False}
+        context.metadata = {**(context.metadata or {}), "yhc": metadata}
+        # Incomplete usage remains metadata-only; never infer a currency cost.

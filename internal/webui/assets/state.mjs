@@ -1,4 +1,5 @@
 import { replayTranscriptFenceMatches } from './replay.mjs';
+import { canReadTaskExplorer, normalizeTaskExplorerSnapshot } from './task_explorer.mjs';
 
 export const BACKEND_UNAVAILABLE_NOTICE =
   'Backend stopped unexpectedly. Restart YHC to reconnect.';
@@ -33,6 +34,10 @@ const privatePathKeys = new Set([
   'workspace_' + 'path',
 ]);
 const MAX_SETTLED_TURNS = 64;
+const tasksDefaults = (tasks = {}) => ({
+  status: tasks.status || 'idle', requestID: tasks.requestID || 0,
+  snapshot: tasks.snapshot || null, error: tasks.error || '', stale: tasks.stale === true,
+});
 
 function withoutPrivatePaths(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -42,6 +47,7 @@ function withoutPrivatePaths(value) {
 export function reducer(state, action) {
   if (!backendAvailable(state) && ![
     'SESSION_SELECT',
+    'WORKBENCH_HOME',
     'SESSION_DRAFT',
   ].includes(action.type)) {
     return state;
@@ -53,6 +59,10 @@ export function reducer(state, action) {
       return upsertSession(state, action.session);
     case 'SESSION_SELECT':
       return state.sessions[action.id] ? { ...state, activeID: action.id } : state;
+    case 'WORKBENCH_HOME':
+      // Empty string is an explicit presentation selection; null means no
+      // selection yet. Neither closes, cancels or detaches a runtime session.
+      return { ...state, activeID: '' };
     case 'SESSION_REMOVE':
       return removeSession(state, action.id);
     case 'SESSION_NOTICE':
@@ -85,6 +95,12 @@ export function reducer(state, action) {
       return settleReview(state, action, false);
     case 'SESSION_REVIEW_FAILED':
       return settleReview(state, action, true);
+    case 'SESSION_TASKS_LOADING':
+      return beginTasks(state, action);
+    case 'SESSION_TASKS_SUCCESS':
+      return settleTasks(state, action, false);
+    case 'SESSION_TASKS_FAILED':
+      return settleTasks(state, action, true);
     case 'EXECUTION_SETTINGS_LOADING':
       return beginExecutionSettings(state, action);
     case 'EXECUTION_SETTINGS_SUCCESS':
@@ -222,6 +238,7 @@ function projectBackendUnavailableSession(session) {
       requestID: 0,
       error: '',
     },
+    tasks: tasksDefaults(),
     execution: executionDefaults({
       ...session.execution,
       status: 'idle',
@@ -279,6 +296,7 @@ function sessionDefaults(session) {
   )].slice(-MAX_SETTLED_TURNS);
   return {
     ...normalized,
+    tasks: canReadTaskExplorer(normalized) ? tasksDefaults(publicSession.tasks) : tasksDefaults(),
     import_required: Boolean(normalized.import_required),
     queuedPrompts: queuedPromptQueue(normalized.queuedPrompts),
     queuedPromptRevision: Math.max(0, queueProjectionRevision(normalized.queuedPromptRevision)),
@@ -526,7 +544,7 @@ function applyDurableSessionPage(state, rows) {
   }
   return {
     ...state,
-    activeID: state.activeID || firstID || null,
+    activeID: state.activeID ?? (firstID || null),
     sessions,
   };
 }
@@ -537,6 +555,7 @@ function upsertSession(state, incoming) {
   const session = sessionDefaults({
     ...current,
     ...incoming,
+    tasks: current?.tasks,
     review: {
       ...(current?.review || {}),
       ...(incoming.review || {}),
@@ -544,7 +563,7 @@ function upsertSession(state, incoming) {
   });
   return {
     ...state,
-    activeID: state.activeID || session.id,
+    activeID: state.activeID ?? session.id,
     sessions: { ...state.sessions, [session.id]: session },
   };
 }
@@ -559,6 +578,34 @@ function beginReview(state, action) {
       ignoreWhitespace: Boolean(action.ignoreWhitespace),
       error: '',
     },
+  }));
+}
+
+function beginTasks(state, action) {
+  if (!canReadTaskExplorer(state.sessions[action.id], backendAvailable(state)) ||
+      !Number.isSafeInteger(action.requestID) || action.requestID <= 0) return state;
+  return updateSession(state, action.id, (session) => ({
+    ...session,
+    tasks: tasksDefaults({ ...session.tasks, status: 'loading', requestID: action.requestID, error: '', stale: false }),
+  }));
+}
+
+function settleTasks(state, action, failed) {
+  const current = state.sessions[action.id];
+  if (!canReadTaskExplorer(current, backendAvailable(state)) ||
+      current.tasks.status !== 'loading' || current.tasks.requestID !== action.requestID) return state;
+  let snapshot = current.tasks.snapshot;
+  let error = failed ? String(action.error || 'Task overview failed.') : '';
+  if (!failed) {
+    try { snapshot = normalizeTaskExplorerSnapshot(action.response, action.id); }
+    catch (failure) { error = failure.message; }
+  }
+  return updateSession(state, action.id, (session) => ({
+    ...session,
+    tasks: tasksDefaults({
+      status: error ? 'error' : 'ready', requestID: 0, snapshot,
+      error: [...error].slice(0, 512).join(''), stale: session.tasks.stale || Boolean(error && snapshot),
+    }),
   }));
 }
 
@@ -733,6 +780,7 @@ function applySnapshot(state, id, snapshot) {
       [id]: sessionDefaults({
         ...current,
         ...snapshot.session,
+        tasks: tasksDefaults({ ...current.tasks, stale: Boolean(current.tasks.snapshot) || current.tasks.status === 'loading' }),
         cursor: Number(snapshot.event_cursor || 0),
         messages: mergeMessages(retained, snapshotMessages),
         interactions,
@@ -935,7 +983,7 @@ function applyEvent(state, event) {
   ) {
     return {
       ...state,
-      activeID: state.activeID || event.session_id,
+      activeID: state.activeID ?? event.session_id,
       sessions: { ...state.sessions, [event.session_id]: next },
     };
   }
@@ -951,6 +999,7 @@ function applyEvent(state, event) {
       next.activation = 'detached';
       next.queuedPrompts = [];
       next.queuedPromptRevision = 0;
+      next.tasks = tasksDefaults();
       break;
     case 'user_message':
       next.messages = [
@@ -1062,9 +1111,14 @@ function applyEvent(state, event) {
     default:
       break;
   }
+  if (['tool_result', 'task_progress', 'agent_lifecycle', 'task_lifecycle', 'turn.accepted',
+    'terminal', 'turn.finished'].includes(event.type) ||
+    (event.type === 'activity' && ['task', 'agent', 'tool'].includes(data.kind))) {
+    next.tasks = tasksDefaults({ ...next.tasks, stale: Boolean(next.tasks.snapshot) || next.tasks.status === 'loading' });
+  }
   return {
     ...state,
-    activeID: state.activeID || event.session_id,
+    activeID: state.activeID ?? event.session_id,
     sessions: { ...state.sessions, [event.session_id]: next },
   };
 }
@@ -1117,6 +1171,16 @@ export function sameQueueAttempt(current, expected) {
     typeof current.clientQueueID === 'string' && current.clientQueueID &&
     current.clientQueueID === expected.clientQueueID &&
     current.prompt === expected.prompt,
+  );
+}
+
+// An admission reply owns only the untouched draft captured for that attempt.
+// Editing invalidates the caller's token, even if the text is later restored.
+export function canClearSubmittedDraft(currentAttempt, submittedAttempt, draft) {
+  return Boolean(
+    submittedAttempt && currentAttempt === submittedAttempt &&
+    typeof submittedAttempt.prompt === 'string' && submittedAttempt.prompt !== '' &&
+    typeof draft === 'string' && draft.trim() === submittedAttempt.prompt,
   );
 }
 

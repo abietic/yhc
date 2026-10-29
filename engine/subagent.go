@@ -14,6 +14,7 @@ import (
 	"github.com/abietic/yhc/engine/compact"
 	"github.com/abietic/yhc/engine/containment"
 	promptctx "github.com/abietic/yhc/engine/context"
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/internal/workboard"
 	"github.com/abietic/yhc/engine/memdir"
@@ -82,6 +83,8 @@ type SubAgentExecutor struct {
 	ExecutionBindings *containment.Bindings
 	SkillRegistry     *skills.SkillRegistry
 	WebFetchModel     model.BaseChatModel
+	RunUsage          *execution.RunUsage
+	RunDeadline       time.Time
 	WorktreeService   *worktree.Service
 
 	agentDefinitionsMu       sync.RWMutex
@@ -770,7 +773,8 @@ type BuiltInAgentDef struct {
 	OmitClaudeMd bool
 	// MaxTurns is the default max turns for this agent type.
 	MaxTurns int
-	// ReadOnly marks this agent as having no file mutation capabilities.
+	// ReadOnly selects a restricted role tool surface. Explicit Tools may include
+	// Bash; inherited execution permissions and containment still apply.
 	ReadOnly bool
 	// SystemPrompt is populated for custom agents. Built-ins use their dynamic
 	// role prompt for compatibility with the existing implementation.
@@ -841,9 +845,12 @@ var BuiltInAgentDefs = map[string]BuiltInAgentDef{
 		Name: "verification",
 		WhenToUse: "Use this agent to verify that implementation work is correct before reporting completion. " +
 			"Invoke after non-trivial tasks (3+ file edits, backend/API changes, infrastructure changes). " +
-			"Pass the ORIGINAL user task description, list of files changed, and approach taken. " +
+			"Pass the ORIGINAL user task with all follow-up constraints, list of files changed, and approach taken. " +
 			"The agent runs builds, tests, linters, and checks to produce a PASS/FAIL/PARTIAL verdict with evidence.",
-		Tools:           nil, // all tools
+		// Verification needs to inspect and exercise the implementation. Bash is
+		// deliberately included for builds and tests; ReadOnly denotes the role's
+		// restricted tool surface, not an OS-level filesystem restriction.
+		Tools:           []string{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
 		DisallowedTools: []string{"Agent", "ExitPlanMode", "Edit", "Write", "NotebookEdit"},
 		OmitClaudeMd:    false,
 		MaxTurns:        0,
@@ -969,16 +976,12 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 	scopedTools = withAgentSkillToolDescription(scopedTools, skillRegistry)
 	childRules, _ := permission.LoadPermissionRules(cwd)
 	childRules = append(childRules, toolSelectionDenyRules(e.ToolRegistry, e.ToolSelection)...)
-	promptTools := filterPlanModelVisibleTools(
-		assembleModelVisibleTools(
-			e.ToolRegistry,
-			scopedTools,
-			e.ToolSelection,
-			e.SimpleTools,
-			permission.NewRulesEngine(childRules),
-		),
-		permMode == permission.ModePlan,
+	promptTools := assembleModelVisibleTools(
 		e.ToolRegistry,
+		filterPlanModelVisibleTools(scopedTools, permMode == permission.ModePlan, e.ToolRegistry),
+		e.ToolSelection,
+		e.SimpleTools,
+		permission.NewRulesEngine(childRules),
 	)
 
 	// Build system prompt for the sub-agent.
@@ -1051,6 +1054,8 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 		AgentGeneration:             opts.Generation,
 		goalBinding:                 cloneGoalExecutionIdentity(goalBinding),
 		goalUsageReporter:           goalUsageReporter,
+		RunUsage:                    e.RunUsage,
+		RunDeadline:                 e.RunDeadline,
 		RuntimeState:                e.RuntimeState,
 		CustomSystemPrompt:          systemPrompt,
 		MaxTurns:                    maxTurns,
@@ -1169,16 +1174,6 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 		_ = eng.transcript.Flush()
 	}
 
-	if terminal != nil && terminal.Reason != TerminalCompleted && terminal.Reason != TerminalMaxTurns {
-		if terminal.Reason == TerminalAbortedStreaming || terminal.Reason == TerminalAbortedTools {
-			return nil, context.Canceled
-		}
-		if terminal.Err != nil {
-			return nil, fmt.Errorf("subagent: query ended with %s: %w", terminal.Reason, terminal.Err)
-		}
-		return nil, fmt.Errorf("subagent: query ended with %s", terminal.Reason)
-	}
-
 	result := resultBuilder.String()
 	if result == "" {
 		// Fall back to last assistant message from the engine.
@@ -1194,13 +1189,28 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 		result = "(sub-agent produced no output)"
 	}
 
-	return &tools.AgentExecResult{
+	partial := &tools.AgentExecResult{
 		Result:     result,
 		TurnCount:  turnCount,
 		TokensUsed: progress.TokenCount(),
 		ToolsUsed:  usedList,
 		Messages:   messages,
-	}, nil
+	}
+	// A stopped query is not necessarily a completed task. Preserve findings
+	// and resume history even when the caller must treat execution as failed.
+	if terminal == nil {
+		return partial, fmt.Errorf("subagent: query ended without a terminal event")
+	}
+	if terminal.Reason != TerminalCompleted {
+		if terminal.Reason == TerminalAbortedStreaming || terminal.Reason == TerminalAbortedTools {
+			return partial, context.Canceled
+		}
+		if terminal.Err != nil {
+			return partial, fmt.Errorf("subagent: query ended with %s: %w", terminal.Reason, terminal.Err)
+		}
+		return partial, fmt.Errorf("subagent: query ended with %s", terminal.Reason)
+	}
+	return partial, nil
 }
 
 func (e *SubAgentExecutor) childExecutionPolicy(
@@ -1277,7 +1287,8 @@ func (e *SubAgentExecutor) resolvePermissionMode(opts tools.AgentExecOptions) pe
 
 // buildScopedTools returns the filtered tool list based on allowed tool names,
 // disallowed tools from the agent definition, and the agent type.
-// Read-only agent types get a restricted set; DisallowedTools are always removed.
+// Read-only agent types get their role's restricted tool surface; DisallowedTools
+// are always removed. A caller-provided allowlist can only narrow that surface.
 func (e *SubAgentExecutor) buildScopedTools(allowedTools []string, agentType string) []*schema.ToolInfo {
 	// Goal tools are root-turn authorities intercepted by the parent
 	// QueryEngine. They must not enter a child allowlist or system prompt even
@@ -1297,7 +1308,9 @@ func (e *SubAgentExecutor) buildScopedTools(allowedTools []string, agentType str
 	// Always disallow Agent to prevent infinite recursion.
 	disallowed["Agent"] = struct{}{}
 
-	// Read-only agent types only get non-mutating tools.
+	// Read-only agent types use their declared role surface. This does not imply
+	// OS-level read-only access: Explore, Plan, and verification need Bash for
+	// safe inspection and (for verification) ordinary build and test commands.
 	if e.isReadOnlyAgentType(agentType) {
 		readOnlyTools := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
 		// If the definition has a specific tools list, use that instead.
@@ -1307,6 +1320,19 @@ func (e *SubAgentExecutor) buildScopedTools(allowedTools []string, agentType str
 		allowed := make(map[string]struct{}, len(readOnlyTools))
 		for _, name := range readOnlyTools {
 			allowed[name] = struct{}{}
+		}
+		// An explicit parent scope is an additional capability boundary. Never
+		// widen it merely because a read-only role has a broader default surface.
+		if len(allowedTools) > 0 {
+			callerAllowed := make(map[string]struct{}, len(allowedTools))
+			for _, name := range allowedTools {
+				callerAllowed[strings.TrimSpace(name)] = struct{}{}
+			}
+			for name := range allowed {
+				if _, ok := callerAllowed[name]; !ok {
+					delete(allowed, name)
+				}
+			}
 		}
 		filtered := make([]*schema.ToolInfo, 0, len(readOnlyTools))
 		for _, t := range allTools {

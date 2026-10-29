@@ -165,8 +165,10 @@ func SuggestProvider() (model.ProviderID, string) {
 		model.ProviderOpenAI,
 		model.ProviderGoogle,
 		model.ProviderDeepSeek,
+		model.ProviderGLM,
 		model.ProviderQwen,
 		model.ProviderArk,
+		model.ProviderKimi,
 	}
 
 	for _, p := range priority {

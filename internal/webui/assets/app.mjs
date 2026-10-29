@@ -8,6 +8,7 @@ import {
   buildQuestionResolution,
   buildRepeatedToolResolution,
   canImportDurableSession,
+  canClearSubmittedDraft,
   canEditDraft,
   canQueuePrompt,
   canSubmitTurn,
@@ -38,7 +39,6 @@ import {
   executionForDisplay,
   prioritizeSessionRows,
   providerSetupProjection,
-  shouldDeferWorkspaceForProvider,
 } from './provider_setup.mjs';
 import {
   activateCreatedSession,
@@ -50,6 +50,15 @@ import {
   synchronizeReplayGap,
 } from './replay.mjs';
 import { createTransport } from './transport.mjs';
+import { mountCommandCompletion, insertCompletionEdit } from './command_completion.mjs';
+import { createPromptSuggestion } from './prompt_suggestion.mjs';
+import { createGoalView } from './goal.mjs';
+import { createTimelineRenderer } from './timeline_view.mjs';
+import { canReadTaskExplorer, createTaskExplorerView } from './task_explorer.mjs';
+import { createAgentExecutionDetailView, executionDetailEligibility } from './agent_execution_detail.mjs';
+import { createAgentConversationView } from './agent_conversation.mjs';
+import { applyAppearance, createSettingsView } from './settings_view.mjs';
+import { homeConfigurationSummary, recentWorkbenchSessions } from './workbench_home.mjs';
 import {
   buildIdentityViewModel,
   interactionViewModel,
@@ -63,6 +72,7 @@ const streams = new Map();
 const transcriptLoads = new Set();
 const attachAttempts = new Map();
 const queueAttempts = new Map();
+const turnDraftAttempts = new Map();
 let state = initialState();
 let transport;
 let surface = '';
@@ -72,15 +82,136 @@ let inspectorView = 'activity';
 let openSheetKind = null;
 let sheetTrigger = null;
 let reviewRequestID = 0;
+let taskRequestID = 0;
 let executionRequestID = 0;
 let catalog;
 let catalogSearchTimer = null;
 let historyExpanded = false;
 let providerSetup = providerSetupProjection('', {});
 let providerSetupBusy = false;
+let workbenchNoticeReceipt = null;
+let sessionCreationNoticeReceipt = null;
+let sharedSettings = null;
+let settingsProjectionRequest = 0;
+let interactionSignature = '';
+const primaryModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 const $ = (id) => document.getElementById(id);
 const timeline = $('timeline');
+const timelineRenderer = createTimelineRenderer(timeline, renderMessage);
+const goalView = createGoalView({
+  root: $('goal-panel'), api,
+  context: () => {
+    const session = activeSession(state);
+    return { sessionID: session?.id, live: session?.live === true,
+      backendReady: backendAvailable(state), activeTurnID: session?.active_turn_id || '',
+      parentView: !agentConversationView.isOpen() };
+  },
+  confirm: (copy, operation) => requestConfirmation(
+    operation === 'reload' ? '丢弃 Goal 草稿？' : '清除 Goal？', copy,
+    operation === 'reload' ? '丢弃' : '清除'),
+});
+let parentReadingState = null;
+const agentConversationView = createAgentConversationView({
+  document, read: payload => api('getAgentTranscript', payload),
+  onToggle: (open, target) => {
+    if (open) {
+      parentReadingState = { sessionID: target.sessionID, scrollTop: timeline.scrollTop,
+        selectionStart: $('prompt').selectionStart, selectionEnd: $('prompt').selectionEnd,
+        direction: $('prompt').selectionDirection };
+      commandCompletion.dismiss(); promptSuggestion.dismiss(); closeSheet(false);
+    } else if (parentReadingState?.sessionID === state.activeID) {
+      const retained = parentReadingState;
+      requestAnimationFrame(() => {
+        if (state.activeID === retained.sessionID && !agentConversationView.isOpen()) timeline.scrollTop = retained.scrollTop;
+      });
+    }
+    queueMicrotask(render);
+  },
+  returnFocus: target => {
+    if (state.activeID !== target.sessionID) { $('navigation-toggle').focus(); return; }
+    render();
+    const input = $('prompt');
+    input.focus({ preventScroll: true });
+    if (parentReadingState?.sessionID === target.sessionID) {
+      input.setSelectionRange(parentReadingState.selectionStart, parentReadingState.selectionEnd, parentReadingState.direction);
+    }
+  },
+});
+const taskExplorerView = createTaskExplorerView({
+  document, list: $('task-list'), status: $('task-status'), summary: $('task-summary'),
+  refresh: $('refresh-tasks'), search: $('task-search'), kind: $('task-kind'),
+  onInspect: row => agentDetailView.select(row), inspectionReason: executionDetailEligibility,
+});
+const agentDetailView = createAgentExecutionDetailView({
+  document, root: $('execution-detail'), overview: $('task-overview'),
+  read: payload => api('getAgentExecutionDetail', payload), returnFocus: target => taskExplorerView.focusExecution(target),
+  openConversation: target => agentConversationView.open(target),
+});
+const commandCompletion = mountCommandCompletion({
+  input: $('prompt'), popup: $('command-completion'), status: $('command-completion-status'),
+  request: payload => api('completeCommand', payload),
+  onEdit: updateDraft,
+  snapshot: () => {
+    const current = activeSession(state);
+    const input = $('prompt');
+    return {
+      sessionID: current?.id, input: input.value,
+      cursor: [...input.value.slice(0, input.selectionStart)].length,
+      selectionEnd: [...input.value.slice(0, input.selectionEnd)].length,
+      enabled: !agentConversationView.isOpen() && backendAvailable(state) && current?.live && canSubmitTurn(current) && !document.querySelector('dialog[open]') && !openSheetKind,
+      fence: JSON.stringify([current?.cursor, current?.execution, current?.active_turn_id]),
+    };
+  },
+});
+const settingsView = createSettingsView({
+  api,
+  context: () => ({
+    sessionID: activeSession(state)?.live ? state.activeID : undefined,
+    backendReady: backendAvailable(state),
+    activeTurn: Boolean(activeSession(state)?.active_turn_id),
+    workspace: activeSession(state)?.workspace_label,
+    manageCredentials: providerSetup.setupAvailable,
+    legacyProfile: providerSetup.configured,
+  }),
+  confirmDiscard: () => requestConfirmation('Discard unsaved settings?', 'Your saved configuration will stay unchanged.', 'Discard changes'),
+  confirmModelSelection: ({ scope, selectedLabel, conflictLabels }) => requestConfirmation(
+    'Replace model overrides?',
+    'Save ' + selectedLabel + ' and remove ' + conflictLabels.join(', ') + ' overrides from ' + (scope === 'project' ? 'Workspace overrides' : 'User defaults') + '? Other scopes and current sessions will stay unchanged.',
+    'Replace overrides and save',
+  ),
+  onSaved: (snapshot) => {
+    settingsProjectionRequest++;
+    sharedSettings = snapshot;
+    applyAppearance(snapshot);
+    render();
+  },
+  manageCredentials: () => openProviderDialog(),
+});
+function promptSuggestionSnapshot() {
+  const current = activeSession(state);
+  return {
+    sessionID: current?.id,
+    input: $('prompt').value,
+    enabled: !agentConversationView.isOpen() && backendAvailable(state) && current?.live && canSubmitTurn(current) && current.status === 'idle' &&
+      current.execution?.permissionMode !== 'plan' && sharedSettings?.fields?.prompt_suggestions?.effective_value === true &&
+      !document.querySelector('dialog[open]') && !openSheetKind,
+    fence: JSON.stringify([current?.cursor, current?.execution, current?.active_turn_id]),
+  };
+}
+function paintPromptSuggestion(value) {
+  $('prompt-suggestion').hidden = !promptSuggestionSnapshot().enabled || $('prompt').value !== '';
+  $('suggest-prompt').disabled = value.busy;
+  $('suggest-prompt').hidden = Boolean(value.text);
+  $('accept-suggestion').hidden = !value.text;
+  $('accept-suggestion').textContent = value.text ? `Use “${value.text}”` : '';
+  $('dismiss-suggestion').hidden = value.busy || (!value.text && !value.status);
+  $('suggestion-note').hidden = Boolean(value.text) || value.busy;
+  $('suggestion-status').textContent = value.status;
+}
+const promptSuggestion = createPromptSuggestion({
+  snapshot: promptSuggestionSnapshot, request: payload => api('promptSuggestion', payload), publish: paintPromptSuggestion,
+});
 const sessionList = $('session-list');
 const activity = $('activity');
 const pendingWorkspace = createPendingWorkspaceRetry(createSessionForWorkspace);
@@ -101,11 +232,16 @@ function timelinePosition() {
 
 function dispatch(action, scrollMode = 'preserve') {
   const before = timelinePosition();
+  const previousLiveID = activeSession(state)?.live ? state.activeID : '';
   state = reducer(state, action);
+  if (before.activeID !== state.activeID ||
+      previousLiveID !== (activeSession(state)?.live ? state.activeID : '')) {
+    void refreshSharedSettings();
+  }
   if (persistenceEnabled) persist();
   render();
   if (before.activeID !== state.activeID || scrollMode === 'bottom') {
-    timeline.scrollTop = timeline.scrollHeight;
+    timeline.scrollTop = activeSession(state) ? timeline.scrollHeight : 0;
     return;
   }
   if (scrollMode === 'prepend') {
@@ -142,6 +278,20 @@ function api(operation, payload) {
   return transport.api(operation, payload);
 }
 
+async function refreshSharedSettings() {
+  if (!transport) return;
+  const request = ++settingsProjectionRequest;
+  const sessionID = activeSession(state)?.live ? state.activeID : undefined;
+  try {
+    const snapshot = await api('getSettings', { scope: 'user', sessionID });
+    if (request !== settingsProjectionRequest) return;
+    sharedSettings = snapshot;
+    applyAppearance(snapshot);
+    renderProviderSetup();
+    if (!activeSession(state)) renderEmptyState();
+  } catch { /* Do not interrupt conversation when preferences are unavailable. */ }
+}
+
 function element(tag, className, text) {
   const value = document.createElement(tag);
   if (className) value.className = className;
@@ -149,11 +299,11 @@ function element(tag, className, text) {
   return value;
 }
 
-function projectSheetRegion(region, hidden, expanded, inert = hidden) {
+function projectSheetRegion(region, hidden, expanded, inert = hidden, modal = true) {
   region.classList.toggle('sheet-open', expanded);
   region.setAttribute('aria-hidden', String(hidden));
   region.inert = inert;
-  if (expanded) {
+  if (expanded && modal) {
     region.setAttribute('role', 'dialog');
     region.setAttribute('aria-modal', 'true');
   } else {
@@ -179,6 +329,7 @@ function renderSheets() {
     projection.inspectorHidden,
     projection.inspectorExpanded,
     projection.inspectorInert,
+    projection.backdropVisible,
   );
   $('conversation').inert = projection.conversationInert;
   $('navigation-toggle').setAttribute(
@@ -191,18 +342,26 @@ function renderSheets() {
   );
   $('sheet-backdrop').hidden = !projection.backdropVisible;
   document.body.classList.toggle('sheet-open', projection.backdropVisible);
+  document.querySelector('.workbench').classList.toggle('inspector-open', projection.inspectorExpanded);
+  if (projection.inspectorHidden && agentDetailView.isOpen()) agentDetailView.close();
 }
 
 function openSheet(kind, trigger) {
+  if (openSheetKind === kind) { closeSheet(); return; }
   const nextKind = normalizeOpenSheet(window.innerWidth, kind);
   if (!nextKind) return;
   openSheetKind = nextKind;
   sheetTrigger = trigger || document.activeElement;
   renderSheets();
+  renderTasks(activeSession(state));
   const close = nextKind === 'navigation'
     ? $('navigation-close')
     : $('inspector-close');
-  requestAnimationFrame(() => close.focus());
+  // Visibility transitions begin on the first painted frame. Focus after that
+  // frame, and never steal focus if the sheet was closed in the meantime.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (openSheetKind === nextKind) close.focus();
+  }));
 }
 
 function closeSheet(returnFocus = true) {
@@ -235,17 +394,22 @@ function handleViewportResize() {
 
 function render() {
   const current = activeSession(state);
+  $('workbench-home').setAttribute('aria-current', current ? 'false' : 'page');
   const backendReady = backendAvailable(state);
+  settingsView.updateContext();
   $('open-web').disabled = !backendReady;
   renderSheets();
   renderProviderSetup();
   renderSessionCreationControls();
   renderSessionList();
   renderActivity(current);
+  renderTasks(current);
+  agentConversationView.render(current, backendReady);
   renderReview(current);
   renderInteraction(current);
   renderLegacyImport(current);
   renderQueuedPrompts(current);
+  goalView.updateContext();
 
   const loadEarlier = $('load-earlier');
   loadEarlier.hidden = !current?.transcriptHasMore;
@@ -256,14 +420,17 @@ function render() {
     : 'Load earlier';
 
   if (!current) {
-    timeline.replaceChildren($('empty-state').content.cloneNode(true));
+    if (!timeline.querySelector('.empty')) {
+      timelineRenderer.reset();
+      timeline.replaceChildren($('empty-state').content.cloneNode(true));
+    }
     renderEmptyState();
-    $('session-title').textContent = 'New session';
-    $('session-path').textContent = 'Choose a workspace';
-    $('status').textContent = 'Offline';
+    $('session-title').textContent = 'Your workspace';
+    $('session-path').textContent = surface === 'web' ? 'Browser companion' : 'YHC';
+    $('status').textContent = !surface ? 'Connecting' : backendReady ? 'Connected' : 'Offline';
     $('status').className = 'status';
     $('turn-state').textContent = backendReady
-      ? 'Create a session to begin.'
+      ? (surface === 'web' ? 'Choose a session from the sidebar.' : 'Open a workspace to begin.')
       : BACKEND_UNAVAILABLE_NOTICE;
     $('prompt').value = '';
     $('prompt').disabled = true;
@@ -271,10 +438,14 @@ function render() {
     $('send').querySelector('span').textContent = 'Send';
     $('cancel').disabled = true;
     renderExecutionControls(null);
+    $('composer').hidden = true;
+    commandCompletion.dismiss();
+    promptSuggestion.dismiss();
     return;
   }
 
   const busy = ['running', 'stopping'].includes(current.status);
+  $('composer').hidden = false;
   $('session-title').textContent = current.title || 'Untitled';
   $('session-path').textContent = current.workspace_label || 'Workspace unavailable';
   $('status').textContent = backendReady ? (current.status || 'idle') : 'Offline';
@@ -282,21 +453,24 @@ function render() {
   $('turn-state').textContent = (!backendReady ? BACKEND_UNAVAILABLE_NOTICE : current.notice) ||
     (!current.live
       ? (current.resumable
-        ? 'Select this saved session to resume it.'
+        ? 'Send a message to continue this saved session.'
         : 'This catalog entry cannot be resumed in Desktop.')
       : (busy ? 'Agent is working.' : 'Ready'));
   if ($('prompt').value !== (current.draft || '')) {
     $('prompt').value = current.draft || '';
   }
-  $('prompt').disabled = !backendReady || !canEditDraft(current);
+  $('prompt').disabled = agentConversationView.isOpen() || !backendReady || !canEditDraft(current);
   const queueAdmission = canQueuePrompt(current);
-  $('send').disabled = !backendReady || !(canSubmitTurn(current) || canQueuePrompt(current));
+  $('send').disabled = agentConversationView.isOpen() || !backendReady || !(canSubmitTurn(current) || canQueuePrompt(current));
   $('send').querySelector('span').textContent = queueAdmission ? 'Queue' : 'Send';
-  $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (⌘⏎)`;
-  $('cancel').disabled = !backendReady || !current.active_turn_id;
+  $('send').title = `${queueAdmission ? 'Queue' : 'Send'} (${primaryModifier}⏎)`;
+  $('cancel').disabled = agentConversationView.isOpen() || !backendReady || !current.active_turn_id;
   renderExecutionControls(current);
+  commandCompletion.refresh();
+  paintPromptSuggestion(promptSuggestion.current());
 
   if (current.messages.length === 0) {
+    timelineRenderer.reset();
     timeline.replaceChildren(element(
       'div',
       'session-empty',
@@ -304,10 +478,10 @@ function render() {
         ? BACKEND_UNAVAILABLE_NOTICE
         : current.live
         ? 'This session is ready. Describe the change you want to make.'
-        : 'Select a resumable session or create a new workspace session.',
+        : 'Read your saved history, then send a message to continue.',
     ));
   } else {
-    timeline.replaceChildren(...current.messages.map(renderMessage));
+    timelineRenderer.render(current.id, current.messages);
   }
 }
 
@@ -356,7 +530,8 @@ function renderSessionCreationControls() {
   const creating = sessionCreation.busy();
   const button = $('new-session');
   const label = button.querySelector('span');
-  button.disabled = creating || !backendAvailable(state);
+  button.hidden = surface === 'web';
+  button.disabled = creating || providerSetupBusy || !backendAvailable(state);
   button.setAttribute('aria-busy', String(creating));
   if (label) label.textContent = creating ? 'Creating session…' : 'New session';
 }
@@ -372,8 +547,7 @@ function option(value, label, selected = false, disabled = false) {
 
 function modelLabel(model) {
   const display = model?.display_name || model?.selector || 'Unnamed model';
-  const details = [model?.provider, model?.api_model].filter(Boolean).join(' · ');
-  return details ? `${display} — ${details}` : display;
+  return display;
 }
 
 function renderExecutionControls(session) {
@@ -385,6 +559,9 @@ function renderExecutionControls(session) {
   const rebind = $('model-rebind');
   const execution = executionForDisplay(session);
   $('execution-controls').hidden = !session;
+  $('execution-scope').textContent = session?.active_turn_id
+    ? 'Session controls unlock when the agent finishes. You can queue your next message now.'
+    : 'Applies to this session · Set defaults in Settings';
   const controlled = backendAvailable(state) && Boolean(session?.live) &&
     !session.active_turn_id &&
     !['running', 'stopping', 'offline', 'restoring', 'saved'].includes(session.status) &&
@@ -400,7 +577,7 @@ function renderExecutionControls(session) {
   ));
   const safeModes = execution?.permissionModeOptions || [];
   const permissionOptions = safeModes.map((value) => option(
-    value, value, value === execution?.permissionMode,
+    value, ({default:'Ask before actions',plan:'Plan only',acceptEdits:'Allow edits',dontAsk:'No prompts',auto:'Auto review'})[value] || value, value === execution?.permissionMode,
   ));
   if (execution?.permissionMode && !safeModes.includes(execution.permissionMode)) {
     permissionOptions.unshift(option(
@@ -436,7 +613,7 @@ function renderProviderSetup() {
   const hostGuidance = $('provider-host-guidance');
   const backendReady = backendAvailable(state);
   settings.hidden = !providerSetup.setupAvailable;
-  settings.disabled = providerSetupBusy || !backendAvailable(state);
+  settings.disabled = providerSetupBusy || sessionCreation.busy() || !backendReady;
   const settingsLabel = providerSetup.configured
     ? 'Change provider'
     : 'Configure provider';
@@ -462,11 +639,15 @@ function renderProviderSetup() {
   } else if (!surface) {
     $('provider-status').textContent = 'Starting…';
     $('provider-detail').textContent = 'Checking local provider setup.';
+  } else if (sharedSettings?.fields?.provider?.effective_value || sharedSettings?.fields?.model_profile?.effective_value) {
+    $('provider-status').textContent = sharedSettings.fields.model_profile?.effective_value ||
+      providerDisplayName(sharedSettings.fields.provider.effective_value);
+    $('provider-detail').textContent = 'Shared defaults · runtime validates credentials on session creation.';
   } else if (providerSetup.configured) {
-    $('provider-status').textContent = providerDisplayName(providerSetup.provider);
+    $('provider-status').textContent = 'Desktop credentials saved';
     $('provider-detail').textContent = [
-      providerSetup.model || 'default',
-      providerSetup.baseURL,
+      providerDisplayName(providerSetup.provider),
+      'Fallback only',
     ].filter(Boolean).join(' · ');
   } else if (providerSetup.errorCode === 'stored_profile_unavailable') {
     $('provider-status').textContent = 'Profile unavailable';
@@ -481,12 +662,13 @@ function renderProviderSetup() {
       : 'Secure operating-system storage is unavailable.';
   }
 
-  $('provider-save').disabled = !backendReady || providerSetupBusy ||
-    providerSetup.submitDisabled;
+  $('provider-save').disabled = !backendReady || providerSetupBusy || sessionCreation.busy() ||
+    providerSetup.submitDisabled || Object.values(state.sessions).some((session) => session.live);
+  $('provider-live-warning').hidden = !Object.values(state.sessions).some((session) => session.live);
   $('provider-cancel').disabled = providerSetupBusy;
   for (const control of $('provider-form').elements) {
     if (!['provider-save', 'provider-cancel'].includes(control.id)) {
-      control.disabled = !backendReady || providerSetupBusy ||
+      control.disabled = !backendReady || providerSetupBusy || sessionCreation.busy() ||
         providerSetup.submitDisabled;
     }
   }
@@ -499,32 +681,70 @@ function renderEmptyState() {
   if (!providerButton || !workspaceButton || !copy) return;
 
   const backendReady = backendAvailable(state);
+  timeline.querySelector('#empty-title').textContent = 'Your workbench';
   providerButton.hidden = !providerSetup.setupAvailable;
-  providerButton.disabled = !backendReady;
-  providerButton.textContent = providerSetup.configured
-    ? 'Review provider setup'
-    : 'Configure provider';
-  providerButton.className = providerSetup.launchReady ? 'quiet' : 'primary';
+  providerButton.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
+  providerButton.textContent = providerSetup.configured ? 'Manage credentials' : 'Add credentials';
+  providerButton.className = 'quiet';
   workspaceButton.hidden = surface === 'web';
-  workspaceButton.disabled = !backendReady || sessionCreation.busy();
+  workspaceButton.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
   workspaceButton.setAttribute('aria-busy', String(sessionCreation.busy()));
   workspaceButton.textContent = sessionCreation.busy()
     ? 'Creating session…'
     : 'Open workspace';
-  workspaceButton.className = providerSetup.launchReady || providerSetup.hostGuidance
-    ? 'primary'
-    : 'quiet';
-  copy.textContent = !backendReady
-    ? BACKEND_UNAVAILABLE_NOTICE
-    : surface === 'web'
-    ? 'Select a saved session to read its history or attach your next request.'
-    : (providerSetup.hostGuidance
-      ? 'Open a workspace on this host to start a coding session.'
-    : (providerSetup.launchReady
-      ? 'Your provider is ready. Open a folder to start coding.'
-      : 'Connect a model provider, then open a folder to start coding.'));
+  workspaceButton.className = 'primary';
+  copy.textContent = !backendReady ? BACKEND_UNAVAILABLE_NOTICE
+    : 'Continue a session or open a workspace. Browsing saved history does not start the agent.';
   providerButton.onclick = () => openProviderDialog();
   workspaceButton.onclick = () => beginSessionCreation();
+
+  const summary = homeConfigurationSummary(surface, sharedSettings?.fields, providerSetup);
+  $('home-model-title').textContent = summary.title;
+  $('home-model-detail').textContent = summary.detail;
+  $('home-model-selection').replaceChildren(...summary.entries.map(entry => {
+    const row = element('div', 'home-model-entry');
+    const value = element('dd', '', entry.value);
+    value.append(element('small', 'home-source', entry.source));
+    row.append(element('dt', '', entry.label), value);
+    return row;
+  }));
+  const defaults = timeline.querySelector('[data-home-action="settings"]');
+  defaults.disabled = !backendReady || providerSetupBusy || sessionCreation.busy();
+  defaults.onclick = () => void settingsView.open(defaults);
+  $('home-start-title').textContent = surface === 'web' ? 'Continue on this host' : 'Open your project';
+  $('home-start-detail').textContent = surface === 'web'
+    ? 'Folders can only be opened in the Desktop App. Choose a session to read its history or send your next request.'
+    : 'Choose a local folder. The runtime resolves its project overrides and credentials before opening the session.';
+  const browse = trigger => {
+    if (window.innerWidth < 760) openSheet('navigation', trigger);
+    else $('session-filter').focus();
+  };
+  const browseButton = timeline.querySelector('[data-home-action="browse"]');
+  browseButton.hidden = surface !== 'web';
+  browseButton.onclick = () => browse(browseButton);
+  const all = timeline.querySelector('[data-home-action="all-sessions"]');
+  all.onclick = () => browse(all);
+  const catalogState = catalog?.snapshot();
+  const recent = recentWorkbenchSessions(Object.values(state.sessions));
+  $('home-session-status').textContent = catalogState?.error ||
+    (catalogState?.loading ? 'Loading saved sessions…' : recent.length ? '' : 'No sessions yet. Open a workspace to begin, or browse sessions on the host.');
+  const focused = document.activeElement?.dataset.homeSessionId;
+  $('home-sessions').replaceChildren(...recent.map(session => {
+    const row = element('button', 'home-session');
+    row.type = 'button';
+    row.dataset.homeSessionId = session.id;
+    row.append(element('strong', '', session.title || 'Untitled'));
+    row.append(element('span', 'home-session-project', session.workspace_label || 'Workspace unavailable'));
+    row.append(element('small', 'home-session-state', session.attention ? 'Needs attention'
+      : session.live ? ({running: 'Working', stopping: 'Stopping', restoring: 'Opening'})[session.status] || 'Live session'
+      : 'Saved history'));
+    row.onclick = () => { selectSession(session.id).catch(showError); };
+    return row;
+  }));
+  if (focused) {
+    const row = [...$('home-sessions').children].find(item => item.dataset.homeSessionId === focused);
+    (row || all).focus({ preventScroll: true });
+  }
 }
 
 function sessionDotClass(session) {
@@ -535,6 +755,9 @@ function sessionDotClass(session) {
 }
 
 function renderSessionList() {
+  const focusedRow = document.activeElement?.closest?.('[data-session-id]');
+  const focusedSessionID = focusedRow?.dataset.sessionId;
+  const focusedRole = document.activeElement?.classList.contains('session-close') ? '.session-close' : '.session-select';
   const query = $('session-filter').value;
   const matching = Object.values(state.sessions)
     .filter((session) => sessionMatchesQuery(
@@ -552,13 +775,15 @@ function renderSessionList() {
       'div',
       `session-row ${session.id === state.activeID ? 'active' : ''}`,
     );
+    row.dataset.sessionId = session.id;
     const select = element('button', 'session-select');
     select.type = 'button';
+    select.setAttribute('aria-current', session.id === state.activeID ? 'page' : 'false');
     select.append(element('strong', '', session.title || 'Untitled'));
     select.append(element(
       'small',
       '',
-      [session.status, session.workspace_label].filter(Boolean).join(' · ') || 'Unavailable',
+      [session.workspace_label, ({idle:'Ready',saved:'Saved',running:'Working',stopping:'Stopping',restoring:'Opening'})[session.status] || session.status].filter(Boolean).join(' · ') || 'Unavailable',
     ));
     if (session.attention) {
       select.append(element('span', 'attention', 'Needs attention'));
@@ -581,6 +806,13 @@ function renderSessionList() {
     }
     return row;
   }));
+  if (!projection.visible.length) sessionList.append(element('p', 'session-list-empty', query ? 'No matching sessions.' : 'Your sessions will appear here.'));
+  if (focusedSessionID) {
+    const replacement = [...sessionList.children].find((row) => row.dataset.sessionId === focusedSessionID);
+    const focusTarget = replacement?.querySelector(focusedRole) ||
+      replacement?.querySelector('.session-select') || $('session-filter');
+    focusTarget.focus({ preventScroll: true });
+  }
 
   const history = $('toggle-session-history');
   history.hidden = Boolean(query) || compact.hiddenCount === 0;
@@ -724,6 +956,16 @@ function renderReview(current) {
   }).join('\n\n');
 }
 
+function renderTasks(current) {
+  taskExplorerView.render(current, backendAvailable(state));
+  agentDetailView.render(current, backendAvailable(state), inspectorView === 'tasks' &&
+    !sheetProjection(window.innerWidth, openSheetKind).inspectorHidden);
+  if (inspectorView === 'tasks') {
+    const snapshot = canReadTaskExplorer(current, backendAvailable(state)) ? current?.tasks?.snapshot : null;
+    $('activity-count').textContent = String(snapshot ? snapshot.work_items.length + snapshot.executions.length : 0);
+  }
+}
+
 function formatReviewTime(value) {
   const timestamp = Date.parse(value || '');
   if (!Number.isFinite(timestamp)) return 'just now';
@@ -735,23 +977,38 @@ function formatReviewTime(value) {
 }
 
 function showInspectorView(view) {
-  inspectorView = view === 'review' ? 'review' : 'activity';
-  const reviewSelected = inspectorView === 'review';
-  $('activity-view').hidden = reviewSelected;
-  $('review-view').hidden = !reviewSelected;
-  $('activity-tab').classList.toggle('active', !reviewSelected);
-  $('activity-tab').setAttribute('aria-selected', String(!reviewSelected));
-  $('review-tab').classList.toggle('active', reviewSelected);
-  $('review-tab').setAttribute('aria-selected', String(reviewSelected));
+  inspectorView = ['activity', 'tasks', 'review'].includes(view) ? view : 'activity';
+  for (const name of ['activity', 'tasks', 'review']) {
+    const selected = inspectorView === name;
+    $(`${name}-view`).hidden = !selected;
+    $(`${name}-tab`).classList.toggle('active', selected);
+    $(`${name}-tab`).setAttribute('aria-selected', String(selected));
+    $(`${name}-tab`).tabIndex = selected ? 0 : -1;
+  }
   render();
   const current = activeSession(state);
   if (
-    reviewSelected &&
+    inspectorView === 'review' &&
     backendAvailable(state) &&
     current?.live &&
     !['offline', 'restoring', 'saved'].includes(current.status)
   ) {
     void loadReview();
+  }
+  if (inspectorView === 'tasks') void loadTasks();
+}
+
+async function loadTasks() {
+  const current = activeSession(state);
+  if (!canReadTaskExplorer(current, backendAvailable(state)) || current.tasks.status === 'loading') return;
+  agentDetailView.close();
+  const requestID = ++taskRequestID;
+  dispatch({ type: 'SESSION_TASKS_LOADING', id: current.id, requestID });
+  try {
+    const response = await api('getTaskExplorer', { sessionID: current.id });
+    dispatch({ type: 'SESSION_TASKS_SUCCESS', id: current.id, requestID, response });
+  } catch (error) {
+    dispatch({ type: 'SESSION_TASKS_FAILED', id: current.id, requestID, error: error.message });
   }
 }
 
@@ -838,9 +1095,26 @@ function setInteractionDraft(sessionID, requestID, patch, rerender = false) {
     return;
   }
   state = reducer(state, action);
+  if (sessionID === state.activeID && Object.hasOwn(patch, 'error')) {
+    $('interaction-error').hidden = !patch.error;
+    $('interaction-error').textContent = patch.error || '';
+  }
+  interactionSignature = currentInteractionSignature(activeSession(state));
+}
+
+function currentInteractionSignature(session) {
+  const pending = activeInteraction(session);
+  const activeDraft = pending ? interactionDraft(session, pending.request_id || pending.requestID) : null;
+  return JSON.stringify([session?.id, pending, activeDraft, backendAvailable(state)]);
 }
 
 function renderInteraction(session) {
+  const queueSize = Math.max(0, (session?.interactions?.length || 0) - 1);
+  $('interaction-queue').hidden = queueSize === 0;
+  $('interaction-queue').textContent = `${queueSize} more waiting`;
+  const signature = currentInteractionSignature(session);
+  if (signature === interactionSignature) return;
+  interactionSignature = signature;
   const pending = activeInteraction(session);
   const panel = $('interaction-panel');
   panel.hidden = !pending;
@@ -853,7 +1127,6 @@ function renderInteraction(session) {
 
   const interaction = interactionViewModel(pending);
   const draft = interactionDraft(session, interaction.requestID);
-  const queueSize = Math.max(0, (session.interactions?.length || 0) - 1);
   $('interaction-kind').textContent = interaction.kind.replaceAll('_', ' ');
   $('interaction-queue').hidden = queueSize === 0;
   $('interaction-queue').textContent = `${queueSize} more waiting`;
@@ -1412,6 +1685,7 @@ function providerSetupMessage(reason = '') {
 }
 
 function openProviderDialog(reason = '') {
+  if (sessionCreation.busy()) return;
   if (!backendAvailable(state)) {
     $('turn-state').textContent = BACKEND_UNAVAILABLE_NOTICE;
     return;
@@ -1421,8 +1695,8 @@ function openProviderDialog(reason = '') {
       'Provider setup is managed by the Desktop App or host process.';
     return;
   }
-  const providers = new Set(['anthropic', 'openai', 'google', 'deepseek', 'qwen', 'ark']);
-  $('provider-select').value = providers.has(providerSetup.provider)
+  const providerSelect = $('provider-select');
+  providerSelect.value = [...providerSelect.options].some(option => option.value === providerSetup.provider)
     ? providerSetup.provider
     : 'openai';
   $('provider-model').value = providerSetup.model || 'default';
@@ -1460,13 +1734,18 @@ function providerConfigurationFailure(error) {
 
 async function retryAfterProviderSetup() {
   if (backendAvailable(state) && pendingWorkspace.pending()) {
-    await sessionCreation.begin(() => pendingWorkspace.retry());
+    // Successful provider setup replaced the backend. Its predecessor's
+    // process-local workspace capability cannot be retried in this process.
+    // Re-enter normal native selection; never retain a renderer path or
+    // silently register the previous folder against the replacement backend.
+    pendingWorkspace.clear();
+    await sessionCreation.begin();
   }
 }
 
 async function configureProvider(event) {
   event.preventDefault();
-  if (!backendAvailable(state) || providerSetupBusy ||
+  if (!backendAvailable(state) || providerSetupBusy || sessionCreation.busy() ||
     !providerSetup.setupAvailable) return;
   const apiKeyInput = $('provider-api-key');
   let apiKey = apiKeyInput.value;
@@ -1479,7 +1758,7 @@ async function configureProvider(event) {
   providerSetupBusy = true;
   $('provider-dialog-status').textContent = 'Encrypting provider profile and restarting backend…';
   $('provider-dialog-status').classList.remove('error');
-  renderProviderSetup();
+  render();
   let configured = false;
   try {
     const status = await transport.configureProvider(submission);
@@ -1501,7 +1780,10 @@ async function configureProvider(event) {
   try {
     await retryAfterProviderSetup();
   } catch (error) {
-    openProviderDialog(`Provider saved, but the session could not start: ${error.message}`);
+    showSessionCreationError(sessionScopedError(
+      new Error(`Provider saved. Session could not start: ${error.message}`),
+      error?.yhcSessionID,
+    ));
   }
 }
 
@@ -1519,34 +1801,25 @@ async function createSessionForWorkspace(workspace) {
     activate(created) {
       prepareSessionHydration(created, '', false);
       dispatch({ type: 'SESSION_SELECT', id: created.id }, 'bottom');
+      clearSessionCreationNotice();
     },
     async hydrate(created) {
       await hydratePreparedSession(created);
       if (inspectorView === 'review' && state.activeID === created.id) {
         await loadReview();
       }
+      if (inspectorView === 'tasks' && state.activeID === created.id) await loadTasks();
     },
-  });
+  }).catch(error => { throw sessionScopedError(error, summary.id); });
 }
 
 async function createSession() {
   if (!backendAvailable(state)) return null;
   const workspace = await selectWorkspace();
   if (!workspace) return;
-  if (shouldDeferWorkspaceForProvider(surface, providerSetup)) {
-    pendingWorkspace.defer(workspace);
-    openProviderDialog();
-    return null;
-  }
-  try {
-    return await pendingWorkspace.attempt(workspace);
-  } catch (error) {
-    if (surface === 'desktop') {
-      openProviderDialog(`The session could not start: ${error.message}`);
-      return null;
-    }
-    throw error;
-  }
+  // Only the runtime can resolve project settings and host credentials.
+  // Missing Desktop vault metadata must never block a valid shared setup.
+  return pendingWorkspace.attempt(workspace);
 }
 
 async function loadExecutionSettings(sessionID, mutation = null) {
@@ -1593,6 +1866,7 @@ async function selectSession(id) {
     startStream(id);
   }
   if (inspectorView === 'review') await loadReview();
+  if (inspectorView === 'tasks') await loadTasks();
 }
 
 async function closeSession(session) {
@@ -1612,8 +1886,11 @@ async function closeSession(session) {
   }
   attachAttempts.delete(session.id);
   queueAttempts.delete(session.id);
+  turnDraftAttempts.delete(session.id);
   stopStream(session.id);
-  const retained = retainedClosedDescriptor(session);
+  const latest = state.sessions[session.id];
+  if (!latest) return;
+  const retained = retainedClosedDescriptor(latest);
   if (retained) {
     dispatch({
       type: 'SESSION_UPSERT',
@@ -1629,16 +1906,21 @@ function updateDraft(value) {
   if (!current) return;
   attachAttempts.delete(current.id);
   queueAttempts.delete(current.id);
+  turnDraftAttempts.delete(current.id);
   state = reducer(state, {
     type: 'SESSION_DRAFT',
     id: current.id,
     draft: value,
   });
   if (persistenceEnabled) persist();
+  promptSuggestion.dismiss();
 }
 
 async function send(event) {
   event.preventDefault();
+  if (agentConversationView.isOpen()) return;
+  commandCompletion.dismiss();
+  promptSuggestion.dismiss();
   const current = activeSession(state);
   const prompt = $('prompt').value.trim();
   if (!current || !prompt ||
@@ -1678,16 +1960,23 @@ async function send(event) {
       }
       return;
     }
+    if (turnDraftAttempts.has(current.id)) return;
+    const attempt = { prompt, clientTurnID: crypto.randomUUID() };
+    turnDraftAttempts.set(current.id, attempt);
     try {
       await api('startTurn', {
         sessionID: current.id,
-        prompt,
-        clientTurnID: crypto.randomUUID(),
+        prompt: attempt.prompt,
+        clientTurnID: attempt.clientTurnID,
       });
+      if (canClearSubmittedDraft(turnDraftAttempts.get(current.id), attempt, state.sessions[current.id]?.draft)) {
+        dispatch({ type: 'SESSION_DRAFT', id: current.id, draft: '' });
+      }
     } catch (error) {
       throw sessionScopedError(error, current.id);
+    } finally {
+      if (turnDraftAttempts.get(current.id) === attempt) turnDraftAttempts.delete(current.id);
     }
-    dispatch({ type: 'SESSION_DRAFT', id: current.id, draft: '' });
     return;
   }
 
@@ -2043,6 +2332,7 @@ async function synchronizeSession(summary, draft = '', durable = true) {
 
 async function restore() {
   const saved = readPersisted();
+  if (saved.activeID === '') dispatch({ type: 'WORKBENCH_HOME' });
   const descriptorsByID = new Map(
     saved.sessions.map((descriptor) => [descriptor.id, descriptor]),
   );
@@ -2235,6 +2525,10 @@ function handleEventStream(payload) {
     if (['terminal', 'turn.finished'].includes(payload.event.type)) {
       void loadExecutionSettings(payload.sessionID);
     }
+    if (payload.sessionID === state.activeID &&
+      ['goal.updated', 'terminal', 'turn.finished'].includes(payload.event.type)) {
+      void goalView.refresh();
+    }
     return;
   }
   if (payload.kind === 'error') {
@@ -2252,6 +2546,9 @@ function showError(error) {
     ? error.yhcSessionID
     : '';
   if (scopedID && !state.sessions[scopedID]) return;
+  if (!scopedID || scopedID === state.activeID) {
+    publishWorkbenchNotice(error.message);
+  }
   const current = scopedID
     ? state.sessions[scopedID]
     : activeSession(state);
@@ -2264,6 +2561,37 @@ function showError(error) {
   } else {
     $('turn-state').textContent = error.message;
   }
+}
+
+function publishWorkbenchNotice(message) {
+  // A new publication owns a new receipt, even for the same Error or text.
+  workbenchNoticeReceipt = {};
+  $('workbench-notice-copy').textContent = message;
+  $('workbench-notice').hidden = false;
+  return workbenchNoticeReceipt;
+}
+
+function showSessionCreationError(error) {
+  if (typeof error?.yhcSessionID === 'string' && error.yhcSessionID) {
+    showError(error);
+    return;
+  }
+  sessionCreationNoticeReceipt = publishWorkbenchNotice(error.message);
+}
+
+function dismissWorkbenchNotice() {
+  workbenchNoticeReceipt = null;
+  sessionCreationNoticeReceipt = null;
+  $('workbench-notice').hidden = true;
+  $('workbench-notice-copy').textContent = '';
+}
+
+function clearSessionCreationNotice() {
+  if (backendAvailable(state) && sessionCreationNoticeReceipt &&
+    workbenchNoticeReceipt === sessionCreationNoticeReceipt) {
+    dismissWorkbenchNotice();
+  }
+  sessionCreationNoticeReceipt = null;
 }
 
 function sessionScopedError(error, sessionID) {
@@ -2288,6 +2616,12 @@ async function bootstrapApp() {
     throw new Error('Backend protocol mismatch');
   }
   surface = info.surface;
+  $('settings-shortcut').textContent = primaryModifier + ',';
+  $('send').querySelector('kbd').textContent = primaryModifier + '⏎';
+  try {
+    sharedSettings = await api('getSettings', { scope: 'user' });
+    applyAppearance(sharedSettings);
+  } catch { /* Settings can be retried from their panel. */ }
   const buildIdentity = buildIdentityViewModel(info);
   const buildIdentityNode = $('build-identity');
   buildIdentityNode.hidden = !buildIdentity.visible;
@@ -2324,14 +2658,20 @@ async function bootstrapApp() {
 }
 
 function beginSessionCreation() {
-  if (surface === 'web' || !backendAvailable(state)) return;
+  if (surface === 'web' || providerSetupBusy || !backendAvailable(state)) return;
   const creation = sessionCreation.begin();
   if (openSheetKind === 'navigation') closeSheet();
-  creation.catch(showError);
+  creation.catch(showSessionCreationError);
 }
 
 $('new-session').onclick = () => beginSessionCreation();
 $('provider-settings').onclick = () => openProviderDialog();
+$('workbench-home').onclick = () => {
+  if (openSheetKind === 'navigation') closeSheet();
+  dispatch({ type: 'WORKBENCH_HOME' }, 'bottom');
+};
+$('settings-open').onclick = (event) => void settingsView.open(event.currentTarget);
+$('workbench-notice-dismiss').onclick = () => dismissWorkbenchNotice();
 $('toggle-session-history').onclick = () => {
   historyExpanded = !historyExpanded;
   renderSessionList();
@@ -2366,12 +2706,31 @@ $('load-earlier').onclick = () => {
   }
 };
 $('activity-tab').onclick = () => showInspectorView('activity');
+$('tasks-tab').onclick = () => showInspectorView('tasks');
+$('refresh-tasks').onclick = () => void loadTasks();
+$('task-search').oninput = () => { agentDetailView.close(); renderTasks(activeSession(state)); };
+$('task-kind').onchange = () => { agentDetailView.close(); renderTasks(activeSession(state)); };
 $('review-tab').onclick = () => showInspectorView('review');
 $('refresh-review').onclick = () => void loadReview();
 $('ignore-whitespace').onchange = () => void loadReview();
 $('prompt').oninput = () => updateDraft($('prompt').value);
+$('suggest-prompt').onclick = () => void promptSuggestion.request();
+$('dismiss-suggestion').onclick = () => { promptSuggestion.dismiss(); $('prompt').focus(); };
+$('accept-suggestion').onclick = () => {
+  const text = promptSuggestion.accept();
+  if (!text) return;
+  const input = $('prompt');
+  insertCompletionEdit(input, text, 0, 0);
+  updateDraft(input.value);
+};
 $('prompt').onkeydown = (event) => {
-  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+  if (commandCompletion.keydown(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (!event.isComposing && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
     $('composer').requestSubmit();
   }
 };
@@ -2425,7 +2784,19 @@ $('confirm-dialog').oncancel = (event) => {
 };
 document.addEventListener('keydown', (event) => {
   const dialogOpen = $('provider-dialog').open ||
-    $('confirm-dialog').open;
+    $('confirm-dialog').open || settingsView.isOpen();
+  if (!dialogOpen && (event.metaKey || event.ctrlKey) && event.key === ',') {
+    event.preventDefault();
+    const trigger = sheetTrigger || document.activeElement;
+    closeSheet(false);
+    void settingsView.open(trigger);
+  }
+  if (!dialogOpen && event.key === 'Escape' && agentDetailView.isOpen()) {
+    event.preventDefault(); event.stopPropagation(); agentDetailView.close(true); return;
+  }
+  if (!dialogOpen && event.key === 'Escape' && !openSheetKind && agentConversationView.isOpen()) {
+    event.preventDefault(); event.stopPropagation(); agentConversationView.close(true); return;
+  }
   if (
     shouldCloseSheetOnEscape(event.key, dialogOpen, openSheetKind) &&
     closeSheet()
@@ -2433,6 +2804,19 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     event.stopPropagation();
   }
+});
+const inspectorTabs = ['activity', 'tasks', 'review'];
+inspectorTabs.forEach((view, index) => {
+  $(`${view}-tab`).onkeydown = (event) => {
+    let target;
+    if (event.key === 'ArrowLeft') target = (index + inspectorTabs.length - 1) % inspectorTabs.length;
+    if (event.key === 'ArrowRight') target = (index + 1) % inspectorTabs.length;
+    if (event.key === 'Home') target = 0;
+    if (event.key === 'End') target = inspectorTabs.length - 1;
+    if (target !== undefined) {
+      event.preventDefault(); showInspectorView(inspectorTabs[target]); $(`${inspectorTabs[target]}-tab`).focus();
+    }
+  };
 });
 window.addEventListener('resize', handleViewportResize);
 

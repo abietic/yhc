@@ -150,8 +150,8 @@ is:
 
 The classifier receives `e.config.ChatModel`, not a reviewer-specific model
 route
-([`engine.go`](../../../../engine/engine.go#L2958)). It receives no
-reviewer-specific deadline. Production populates only `ChatModel`; the
+([`ClassifyToolUse` call in `engine.go`](../../../../engine/engine.go)). It receives no
+reviewer-specific deadline. Production populates `ChatModel` and shared provider-usage accounting; the
 classifier's allow, deny, environment, and project-context configuration fields
 are not populated at that call site.
 

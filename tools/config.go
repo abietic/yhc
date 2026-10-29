@@ -1,365 +1,233 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
+	"sort"
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 
-	"github.com/abietic/yhc/internal/identity"
-	"github.com/abietic/yhc/internal/statepath"
+	engineconfig "github.com/abietic/yhc/engine/config"
 )
 
-// SupportedConfigSettings lists the known config settings with their types.
-// Reference: src/tools/ConfigTool/supportedSettings.ts
-var SupportedConfigSettings = map[string]ConfigSettingDef{
-	"model":                   {Type: "string", Desc: "The default model to use"},
-	"theme":                   {Type: "string", Desc: "UI theme", Options: []string{"dark", "light", "auto"}},
-	"permissions.defaultMode": {Type: "string", Desc: "Default permission mode", Options: []string{"default", "acceptEdits", "bypassPermissions", "plan", "auto"}},
-	"permissions.allow":       {Type: "array", Desc: "Allowed permission rules"},
-	"permissions.deny":        {Type: "array", Desc: "Denied permission rules"},
-	"compact.threshold":       {Type: "number", Desc: "Token threshold for auto-compaction"},
-	"compact.strategy":        {Type: "string", Desc: "Compaction strategy", Options: []string{"auto", "manual"}},
-	"hooks.preToolUse":        {Type: "array", Desc: "Pre-tool-use hook commands"},
-	"hooks.postToolUse":       {Type: "array", Desc: "Post-tool-use hook commands"},
-	"memory.enabled":          {Type: "boolean", Desc: "Enable memory system"},
-	"provider":                {Type: "string", Desc: "LLM provider name"},
-	"provider.apiKey":         {Type: "string", Desc: "Provider API key"},
-	"provider.baseURL":        {Type: "string", Desc: "Provider base URL"},
-}
+// SupportedConfigSettings describes the shared editor schema, not the legacy
+// state importer. Execution derives its allowlist from the settings owner.
+var SupportedConfigSettings = sharedConfigDefinitions()
 
-// ConfigSettingDef describes a known config setting.
+// ConfigSettingDef describes one field from the shared settings owner.
 type ConfigSettingDef struct {
-	Type    string // "string", "boolean", "number", "array"
+	Type    string
 	Desc    string
-	Options []string // Valid values (empty = any value)
+	Options []string
 }
 
-// ConfigTool returns a tool that reads and writes agent configuration settings.
-//
-// Reference: src/tools/ConfigTool/ConfigTool.ts (467 lines)
-// Supports both the reference schema (setting/value) and legacy schema (action/key/value).
+func sharedConfigDefinitions() map[string]ConfigSettingDef {
+	result := make(map[string]ConfigSettingDef)
+	for key, field := range engineconfig.SettingsSchema() {
+		result[key] = ConfigSettingDef{Type: field.Type, Desc: field.Description, Options: field.Options}
+	}
+	return result
+}
+
+// ConfigTool uses the same non-secret, persisted defaults as TUI/Desktop/Web.
+// The execution host supplies the project directory; input never supplies paths.
+// Changes do not rebind an already running session's model or permission mode.
 func ConfigTool() ToolImpl {
+	keys := make([]string, 0)
+	for key := range engineconfig.SettingsSchema() {
+		keys = append(keys, key)
+	}
+	keys = append(keys, "permissions.defaultMode", "provider.baseURL")
+	sort.Strings(keys)
+	// ParameterInfo cannot describe a scalar union. Use Eino's JSON Schema
+	// form so canonical admission accepts bool/int/null, not only SDK dispatch.
+	parameters, _ := schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+		"setting":  {Type: schema.String, Desc: "Shared setting key: " + strings.Join(keys, ", ") + ". Omitted only for action=list."},
+		"key":      {Type: schema.String, Desc: "Legacy alias for setting; conflicting keys are rejected."},
+		"scope":    {Type: schema.String, Desc: "Storage scope: user or project; defaults to project."},
+		"action":   {Type: schema.String, Desc: "Optional operation: get, set or list; otherwise inferred from value presence."},
+		"revision": {Type: schema.String, Desc: "Optional revision from a previous read; stale writes fail without retry."},
+	}).ToJSONSchema()
+	parameters.Properties.Set("value", &jsonschema.Schema{
+		Description: "New string, boolean or integer value. Native integers are limited to 9007199254740991. Boolean/integer JSON text is also accepted and preserves larger integers exactly. Omit to read; JSON null resets the override.",
+		AnyOf:       []*jsonschema.Schema{{Type: "string"}, {Type: "boolean"}, {Type: "integer"}, {Type: "null"}},
+	})
 	return ToolImpl{
 		Info: &schema.ToolInfo{
-			Name: "Config",
-			Desc: `Read or write agent configuration settings. Provide a setting key to get its current value. Provide both setting and value to change it.
-
-Supported settings: model, theme, permissions.defaultMode, permissions.allow, permissions.deny, compact.threshold, compact.strategy, hooks.preToolUse, hooks.postToolUse, memory.enabled, provider, provider.apiKey, provider.baseURL`,
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"setting": {Type: schema.String, Desc: "The setting key (e.g., 'model', 'permissions.defaultMode')", Required: true},
-				"value":   {Type: schema.String, Desc: "The new value. Omit to get current value."},
-			}),
+			Name:        "Config",
+			Desc:        "Read or change shared non-secret defaults for new sessions. Scope defaults to project; select user explicitly for user-wide defaults. Omit value to read; null removes an override. List returns only editable settings and a revision. Credentials, permission rules, hooks, compaction and memory use their dedicated configuration owners. Current-session execution settings are unchanged.",
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(parameters),
 		},
 		ValidateInput: validateConfigInput,
 		Execute:       executeConfig,
+		ExecuteCtx:    executeConfigContext,
+	}
+}
+
+type configRequest struct {
+	setting, action, scope, revision string
+	value                            json.RawMessage
+}
+
+func invalidConfigRequest() error {
+	return fmt.Errorf("%w: Config requires a shared setting, user/project scope, and a compatible operation", engineconfig.ErrSettingsInvalid)
+}
+
+func parseConfigRequest(input string) (configRequest, error) {
+	if len(input) > 16<<10 {
+		return configRequest{}, invalidConfigRequest()
+	}
+	object, err := decodeStrictJSONObject([]byte(input))
+	if err != nil {
+		return configRequest{}, invalidConfigRequest()
+	}
+	request := configRequest{scope: "project"}
+	var key string
+	for name, raw := range object {
+		var target *string
+		switch name {
+		case "setting":
+			target = &request.setting
+		case "key":
+			target = &key
+		case "action":
+			target = &request.action
+		case "scope":
+			target = &request.scope
+		case "revision":
+			target = &request.revision
+		case "value":
+			request.value = raw
+			continue
+		default:
+			return configRequest{}, invalidConfigRequest()
+		}
+		if isJSONNull(raw) || json.Unmarshal(raw, target) != nil {
+			return configRequest{}, invalidConfigRequest()
+		}
+	}
+	request.setting, key = canonicalConfigKey(request.setting), canonicalConfigKey(key)
+	if key != "" && request.setting != "" && key != request.setting {
+		return configRequest{}, invalidConfigRequest()
+	}
+	if request.setting == "" {
+		request.setting = key
+	}
+	if request.action == "" {
+		request.action = "get"
+		if request.value != nil {
+			request.action = "set"
+		}
+	}
+	if request.scope != "user" && request.scope != "project" {
+		return configRequest{}, invalidConfigRequest()
+	}
+	if request.action == "list" {
+		// Preserve the old list placeholder without interpreting it as a key.
+		if (request.setting != "" && request.setting != "_") || request.value != nil || request.revision != "" {
+			return configRequest{}, invalidConfigRequest()
+		}
+		return request, nil
+	}
+	field, supported := engineconfig.SettingsSchema()[request.setting]
+	if !supported {
+		return configRequest{}, fmt.Errorf("%w: Config supports only shared non-secret defaults; configure credentials, permission rules, hooks, compaction and memory through their dedicated owners", engineconfig.ErrSettingsInvalid)
+	}
+	if request.action != "get" && request.action != "set" || request.action == "get" && (request.value != nil || request.revision != "") || request.action == "set" && request.value == nil {
+		return configRequest{}, invalidConfigRequest()
+	}
+	// String-shaped model parameters remain compatible for boolean/integer
+	// fields; the shared service remains the sole business-validation owner.
+	if request.action == "set" && field.Type != "string" && !isJSONNull(request.value) {
+		var text string
+		if json.Unmarshal(request.value, &text) == nil {
+			request.value = json.RawMessage(strings.TrimSpace(text))
+		} else if field.Type == "integer" {
+			// Canonical tool admission represents native JSON numbers as
+			// float64. Reject unsafe integers at both entrypoints rather than
+			// silently saving a rounded value; string form stays exact.
+			const maxSafeInteger = 1<<53 - 1
+			var number int64
+			if json.Unmarshal(request.value, &number) == nil && (number > maxSafeInteger || number < -maxSafeInteger) {
+				return configRequest{}, fmt.Errorf("%w: Config native integers exceed the safe transport range; use string-form JSON for an exact integer", engineconfig.ErrSettingsInvalid)
+			}
+		}
+	}
+	return request, nil
+}
+
+func canonicalConfigKey(key string) string {
+	switch key {
+	case "permissions.defaultMode":
+		return "permission_mode"
+	case "provider.baseURL":
+		return "api_base_url"
+	default:
+		return key
 	}
 }
 
 func validateConfigInput(input map[string]any) error {
-	setting, _ := input["setting"].(string)
-	if setting == "" {
-		// Try legacy 'key' field
-		setting, _ = input["key"].(string)
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return invalidConfigRequest()
 	}
-	if strings.TrimSpace(setting) == "" {
-		return fmt.Errorf("'setting' is required")
-	}
-	return nil
+	_, err = parseConfigRequest(string(encoded))
+	return err
 }
 
 func executeConfig(input string) (string, error) {
-	var params struct {
-		Setting string           `json:"setting"`
-		Value   *json.RawMessage `json:"value,omitempty"`
-		// Legacy fields
-		Action string `json:"action"`
-		Key    string `json:"key"`
-	}
-	if err := json.Unmarshal([]byte(input), &params); err != nil {
-		return "", fmt.Errorf("invalid Config input: %w", err)
-	}
+	return executeConfigContext(context.Background(), input)
+}
 
-	// Support legacy action/key schema
-	setting := params.Setting
-	if setting == "" {
-		setting = params.Key
+func executeConfigContext(ctx context.Context, input string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-
-	configDir, err := resolveConfigDir()
+	request, err := parseConfigRequest(input)
 	if err != nil {
-		return "", fmt.Errorf("resolve config directory: %w", err)
+		return "", err
 	}
-
-	// Legacy "list" action
-	if params.Action == "list" {
-		return listConfig(configDir)
+	project, err := effectiveExecutionCWD(ctx)
+	if err != nil {
+		return "", engineconfig.ErrSettingsUnsafePath
 	}
-
-	if setting == "" {
-		return "", fmt.Errorf("'setting' is required")
+	snapshot, err := engineconfig.SettingsSnapshot(project, request.scope)
+	if err != nil {
+		return "", err
 	}
-
-	// GET operation (no value provided)
-	if params.Value == nil && params.Action != "set" {
-		val, err := getConfigValue(configDir, setting)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if request.action == "set" {
+		revision := request.revision
+		if revision == "" {
+			revision = snapshot.Revision
+		}
+		snapshot, err = engineconfig.SettingsPatchContext(ctx, project, request.scope, revision, map[string]json.RawMessage{request.setting: request.value})
 		if err != nil {
 			return "", err
 		}
-		result := map[string]any{
-			"success":   true,
-			"operation": "get",
-			"setting":   setting,
-			"value":     val,
-		}
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return string(data), nil
 	}
-
-	// SET operation
-	var valueStr string
-	if params.Value != nil {
-		valueStr = string(*params.Value)
-		// Unquote string values
-		var s string
-		if err := json.Unmarshal(*params.Value, &s); err == nil {
-			valueStr = s
-		}
+	result := map[string]any{
+		"success": true, "operation": request.action, "scope": request.scope,
+		"revision": snapshot.Revision, "apply": "new_session",
 	}
-
-	// Validate against known settings
-	if def, known := SupportedConfigSettings[setting]; known {
-		if def.Type == "boolean" {
-			lower := strings.ToLower(strings.TrimSpace(valueStr))
-			if lower != "true" && lower != "false" {
-				return "", fmt.Errorf("%s requires true or false", setting)
-			}
-		}
-		if len(def.Options) > 0 {
-			valid := false
-			for _, opt := range def.Options {
-				if strings.EqualFold(opt, valueStr) {
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				return "", fmt.Errorf("invalid value %q for %s. Options: %s", valueStr, setting, strings.Join(def.Options, ", "))
-			}
-		}
-	}
-
-	result, err := setConfigValue(configDir, setting, valueStr)
-	if err != nil {
-		return "", err
-	}
-	output := map[string]any{
-		"success":   true,
-		"operation": "set",
-		"setting":   setting,
-		"newValue":  result,
-	}
-	data, _ := json.MarshalIndent(output, "", "  ")
-	return string(data), nil
-}
-
-func resolveConfigDir() (configDirResolution, error) {
-	pair := identity.RuntimeEnvConfigDir.Pair()
-	value, _, present := identity.LookupEnv(pair)
-	if present && value != "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return configDirResolution{}, errors.New("config root is unavailable")
-		}
-		defaults, err := statepath.ProjectRoots(cwd)
-		if err != nil {
-			return configDirResolution{}, errors.New("config root is unavailable")
-		}
-		selection, err := statepath.ResolveOverride(pair, defaults)
-		if err != nil {
-			return configDirResolution{}, errors.New("config root is invalid")
-		}
-		return configDirResolution{path: selection.Effective}, nil
-	}
-
-	defaults, err := defaultConfigRoots()
-	if err != nil {
-		return configDirResolution{}, err
-	}
-	selection, err := statepath.ResolveOverride(pair, defaults)
-	if err != nil {
-		return configDirResolution{}, errors.New("config root is invalid")
-	}
-	return configDirResolution{
-		path:             selection.Effective,
-		canonicalDefault: true,
-	}, nil
-}
-
-func defaultConfigRoots() (statepath.Roots, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return statepath.Roots{}, errors.New("config root is unavailable")
-	}
-	projectRoots, err := statepath.ProjectRoots(cwd)
-	if err != nil {
-		return statepath.Roots{}, errors.New("config root is unavailable")
-	}
-	if exists, err := safeConfigRootExists(projectRoots.Canonical); err != nil {
-		return statepath.Roots{}, err
-	} else if exists {
-		return projectRoots, nil
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return statepath.Roots{}, errors.New("config root is unavailable")
-	}
-	userRoots, err := statepath.UserRoots(home)
-	if err != nil {
-		return statepath.Roots{}, errors.New("config root is unavailable")
-	}
-	if _, err := safeConfigRootExists(userRoots.Canonical); err != nil {
-		return statepath.Roots{}, err
-	}
-	return userRoots, nil
-}
-
-func safeConfigRootExists(path string) (bool, error) {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return false, errors.New("config root is invalid")
-	}
-	return true, nil
-}
-
-func listConfig(configDir configDirResolution) (string, error) {
-	store, exists, err := openConfigStore(configDir, false)
-	if err != nil {
-		return "", err
-	}
-	if !exists {
-		return "{}", nil
-	}
-	defer store.Close() //nolint:errcheck
-	data, exists, err := store.readSettings()
-	if err != nil {
-		return "", fmt.Errorf("read settings: %w", err)
-	}
-	if !exists {
-		return "{}", nil
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return string(data), nil
-	}
-	pretty, _ := json.MarshalIndent(raw, "", "  ")
-	return string(pretty), nil
-}
-
-func getConfigValue(configDir configDirResolution, key string) (any, error) {
-	store, exists, err := openConfigStore(configDir, false)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, fmt.Errorf("key %q not found (no settings file)", key)
-	}
-	defer store.Close() //nolint:errcheck
-	data, exists, err := store.readSettings()
-	if err != nil {
-		return nil, fmt.Errorf("read settings: %w", err)
-	}
-	if !exists {
-		return nil, fmt.Errorf("key %q not found (no settings file)", key)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse settings: %w", err)
-	}
-	val := getNestedValue(raw, strings.Split(key, "."))
-	if val == nil {
-		return nil, fmt.Errorf("key %q not found", key)
-	}
-	return val, nil
-}
-
-func setConfigValue(configDir configDirResolution, key, value string) (any, error) {
-	store, _, err := openConfigStore(configDir, true)
-	if err != nil {
-		return nil, fmt.Errorf("open config directory: %w", err)
-	}
-	defer store.Close() //nolint:errcheck
-	return setConfigValueInStore(store, key, value)
-}
-
-func setConfigValueInStore(store *pinnedConfigStore, key, value string) (any, error) {
-	var raw map[string]any
-	data, exists, err := store.readSettings()
-	if err != nil {
-		return nil, fmt.Errorf("read settings: %w", err)
-	}
-	if exists {
-		if err := json.Unmarshal(data, &raw); err != nil {
-			raw = make(map[string]any)
-		}
+	if request.action == "list" {
+		result["fields"] = snapshot.Fields
 	} else {
-		raw = make(map[string]any)
+		field := snapshot.Fields[request.setting]
+		result["setting"], result["value"], result["field"] = request.setting, field.EffectiveValue, field
+		if request.action == "set" {
+			result["newValue"] = field.StoredValue
+		}
 	}
-
-	var parsedValue any
-	if err := json.Unmarshal([]byte(value), &parsedValue); err != nil {
-		parsedValue = value
-	}
-
-	setNestedValue(raw, strings.Split(key, "."), parsedValue)
-
-	encoded, err := json.MarshalIndent(raw, "", "  ")
+	encoded, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("encode settings: %w", err)
+		return "", invalidConfigRequest()
 	}
-	if err := store.writeSettings(encoded); err != nil {
-		return nil, fmt.Errorf("write settings: %w", err)
-	}
-	return parsedValue, nil
-}
-
-func getNestedValue(m map[string]any, keys []string) any {
-	if len(keys) == 0 {
-		return nil
-	}
-	val, ok := m[keys[0]]
-	if !ok {
-		return nil
-	}
-	if len(keys) == 1 {
-		return val
-	}
-	nested, ok := val.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return getNestedValue(nested, keys[1:])
-}
-
-func setNestedValue(m map[string]any, keys []string, value any) {
-	if len(keys) == 0 {
-		return
-	}
-	if len(keys) == 1 {
-		m[keys[0]] = value
-		return
-	}
-	nested, ok := m[keys[0]].(map[string]any)
-	if !ok {
-		nested = make(map[string]any)
-		m[keys[0]] = nested
-	}
-	setNestedValue(nested, keys[1:], value)
+	return string(encoded), nil
 }

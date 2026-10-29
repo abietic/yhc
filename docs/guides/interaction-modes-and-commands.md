@@ -1,7 +1,7 @@
 # Interaction Modes and Commands
 
 **Status:** current
-**Last verified:** 2026-08-26
+**Last verified:** 2026-10-26
 
 > **Ownership:** supported entrypoint selection and user-visible command projection differences
 
@@ -48,6 +48,512 @@ reasoning, provider responses, raw noncanonical tool events, or an interactive
 approval channel. Consumers should branch on `schema_version`, `type`, and
 `event.kind`, ignore unknown additive fields, and treat the single `result`
 record as process closure.
+
+### Attach selected file lines in the TUI
+
+Type a file mention with an inclusive line range, for example
+`Explain @engine/prompt_suggestion.go#1-20`, then press Tab to attach the
+selected candidate. `#20` selects one line; `@file:path#20-80` also works.
+The source must be a regular UTF-8 text file no larger than 5 MiB. Invalid or
+out-of-bounds ranges report an error and never attach the whole file instead.
+
+Keep the cursor on or immediately after the reference to see its selected
+lines, byte size and a short preview. A clipped preview still submits the
+complete selected range. In the standard editor, Backspace at the reference
+end removes the attachment; Ctrl+Z restores it. The attachment retains the
+content captured when it loaded, even if the file later changes. Remove and
+reattach to capture a newer version. History recall restores only the visible
+reference. See the [composer contract](../architecture/tui/contracts/composer.md#file-line-ranges).
+
+### Attach selected terminal output in the TUI
+
+With an ordinary prompt draft, drag over the relevant output in the chat and
+press **Alt+A** to
+attach that selection to the draft. Mouse tracking is enabled by default;
+Shift+drag uses the terminal's own selection and does not create a YHC
+selection. For longer output, press **Ctrl+O**, select text in the current
+expanded transcript and press Alt+A to return with the snippet attached.
+Help and `/keybindings` show the configured `selection:attachContext` binding.
+
+The `[Output #N]` reference retains the selected text when the source later
+changes. Move the cursor onto or immediately after it to preview the captured
+bytes. Preview clipping affects display only. Backspace at the reference end
+removes the attachment; Ctrl+Z restores it in the standard editor. Press Enter
+separately when ready to send the draft.
+
+A selection can contain up to 5 MiB; oversized or changed selections give a
+reason and preserve the draft. Select again after resizing or changing the
+expanded projection. History recall restores a visible reference and marks
+its output body as not restored. See the
+[composer contract](../architecture/tui/contracts/composer.md#selected-terminal-output).
+
+### Attach a Git file or hunk in the TUI
+
+Run **`/attach-diff`** from an empty leader draft, or press **d** outside the
+search field in **Alt+C** to keep the current draft. Left/Right cycles **all**
+(HEAD to worktree), **staged** (HEAD to index) and **unstaged** (index to
+worktree). `/attach-diff staged` opens a specific source directly.
+
+Up/Down selects a file; **Tab** switches between that file and its individual
+hunks. **Enter** attaches the highlighted file patch or one hunk, including
+its file headers, as `[Diff #N]`. **Esc** cancels without editing the draft.
+The selector shows a short preview; the attachment keeps the complete captured
+patch even if Git or the file changes later. Send the draft separately.
+
+Capture is read-only and bounded to 5 MiB; binary, malformed and oversized
+diffs cannot be attached. Untracked files use `@file` instead. Without a HEAD,
+choose staged or unstaged explicitly. Selection is available in an idle,
+editable leader draft and performs no model call. It does not stage, apply or
+revert changes. The existing `/diff` remains a display command.
+
+### Manage attached context in the TUI
+
+Press **Alt+C** in an ordinary prompt draft to view all its attached context.
+The list includes file ranges, whole files, terminal-output snippets, Skills,
+MCP resources, large pasted text, images and Git diffs. Up/Down selects an item and shows
+its captured preview and size. Long previews are clipped while the full
+captured content remains attached; images show metadata. Loading items update
+when their existing read finishes.
+
+Press **/** to search names, paths and sources (case-insensitive). **Enter** or
+**Esc** leaves the search field and keeps the query. **Tab** cycles attachment
+types; **Shift+Tab** cycles backwards. Search and type filters combine, and
+search does not inspect attachment bodies.
+
+Outside the search field, press **s** to cycle draft order, highest token use
+first, and lowest token use first. Ties retain draft order; loading or
+unavailable estimates stay at the end. Sorting preserves the highlighted
+attachment and marks, and changes only the list. Reopening resets to draft
+order.
+
+Press **Space** to mark individual attachments or **Ctrl+A** to toggle all
+current matches, including offscreen rows. Changing the search or type clears
+marks. **Delete** or **Backspace** removes the marked set; with no marks, it
+removes the highlighted item. If any target is still loading, the whole batch
+waits. Outside the search field, **Ctrl+Z** restores the entire batch with its
+captured content in one step.
+
+**Enter** outside search closes the list and positions the cursor at the
+highlighted reference; **Esc** closes the list, and **Ctrl+C** closes even while
+searching. Closing does not submit the draft. Search, type and marks reset on
+reopening. Send the draft separately when ready. The entry and undo bindings
+are configurable; Help and `/keybindings` show `chat:manageContext`.
+
+Each row shows an approximate token count (`~123t`); selecting a text attachment
+shows its share of the known model context window. The summary counts **all** attached
+content, including items hidden by filters. Loading items show `pending`, and
+the total is marked partial until their content is available. Removal and undo
+refresh the estimate.
+
+When attachment estimates reach **80%** of the known model window, the panel
+shows a warning; at **100%** it shows an alert. Partial totals are identified,
+and hidden attachments still count. These thresholds use unrounded estimates.
+Remove large items to reduce the total; undo restores their estimate and any
+warning. Compact views prioritize the warning and list controls.
+
+Counts use the engine's rough text heuristic over complete captured content,
+including file/output context metadata. Images carry a generic estimate marked
+`*`; their actual provider cost may differ substantially. `Window` is model
+capacity, and `Last input` is the latest provider-reported input use. These are
+separate values, not remaining space or a forecast of the next request. Shared
+message overhead, ordinary draft text, history, instructions and tools are not
+in the attachment total. A warning concerns attachment estimates alone, and
+does not block sending or trigger compaction. No warning does not guarantee
+that the full request fits. Unknown capacity/usage shows unavailable; child
+views do not inherit the leader's numbers. Compact terminal views may omit summary
+rows. Inspecting the panel performs no new file reads or provider calls.
+
+The list manages the current draft. Switching Agent threads closes it before
+showing the next draft, and recalled text references have no attachment body
+to list. See the
+[composer contract](../architecture/tui/contracts/composer.md#attached-context-manager).
+
+### Steer a running task or queue the next turn
+
+While the leader task is running, type a follow-up and press Enter. Select
+**Steer now** to apply it at the next safe point, or **Next turn** to wait for
+the active task to end. Tab or arrow keys switch the choice; Enter submits and
+Esc keeps the draft. Running tools finish before steering takes effect. If the
+task ends first, the input starts a fresh invocation.
+
+Pending rows show the input ID, delivery mode and state. Open `/queue` for
+recent delivery receipts: use Up/Down to select, `e` to restore a pending input
+for editing, and `d` to withdraw it. Editing requires an empty composer and
+completed attachment loading. Submit the edited draft again to choose its
+new delivery mode. Once the engine claims an input, editing and withdrawal are
+unavailable. A stale panel refreshes ownership before applying either action.
+
+The panel distinguishes pending, claimed and transcript-confirmed delivered
+input. Editing and withdrawal appear only after the engine acknowledges the
+removal. Unknown or unavailable means delivery evidence is incomplete.
+`/queue list`, `/queue edit <id|last>` and `/queue remove <id|last|all>` remain
+available. Pending input and its chosen mode survive restart; recent completed
+receipts are view-local. See the [runtime input contract](../architecture/tui/contracts/busy-queue.md).
+
+### Review captured changes and execution facts
+
+Use **`/changes`** to browse this session's captured Write/Edit operations by
+turn. Up/Down selects a row; Enter collapses a turn or opens a file. In a file
+preview, Tab moves between hunks, Space marks a hunk, and **a** adds the marked
+hunks to the ordinary draft. With no marks, **a** adds the complete capture.
+Esc returns to the list, then closes it. Submit the draft separately when ready.
+Opening from the command palette preserves an existing draft and attachments. See [guarded file restore](#guarded-file-restore) for an explicitly authorized disk change.
+
+The view uses recorded before/after text, including failed tools that changed
+a file. It does not read a new Git diff. Unsupported, pending and uncaptured
+operations show their limitations; Bash, child and external effects are outside
+this capture. Each file is limited to 1 MiB of UTF-8 text. Adding captured
+context preserves its original bytes and can be undone with Ctrl+Z.
+
+Use **`/recap`** for a factual execution summary: last observed turn outcome,
+retained tool counts, current tasks, accepted input and file coverage. Task
+completion, cancellation and execution termination remain separate. A missing
+verification receipt is shown explicitly. Completion and resume display a
+compact version when facts are available. Inspection makes no model call.
+See the [session contract](../architecture/tui/contracts/sessions.md#captured-changes-and-execution-facts).
+
+### Ask a side question
+
+Use `/btw <question>` to ask about the conversation and current tool progress
+while the leader task continues. `/btw` without arguments opens a question
+editor. The command palette supports the same form and preserves the current
+draft. Asking makes one tool-free call to the current model and may incur
+provider usage. Pending permissions, Plan approval, unfinished Goals, and
+unavailable models explain why a question cannot run.
+
+The answer uses the bounded snapshot captured when you ask; it does not track
+later changes. Esc cancels or closes the answer. Enter on an answer explicitly
+adds its question and answer to your normal message draft; sending that draft
+is a separate action. Side questions are ephemeral and are not restored with
+a session. Closing the panel or changing engine/thread discards their local
+presentation. See the [side question contract](../architecture/tui/contracts/composer.md#side-questions).
+
+### Request a next-step suggestion
+
+In the TUI, leave the leader input empty and press `Ctrl+Space`. YHC shows
+progress, then a suggested next prompt or a short explanation such as an early
+conversation, disabled suggestions, or a timed-out request. Suggestions need
+at least two assistant messages. `Tab` or Right Arrow copies a candidate into
+the draft; press Enter separately to send it. Enter with an unaccepted ghost
+only dismisses it. Typing, Escape, or Ctrl+C cancels the pending request or
+dismisses its feedback.
+
+The same shortcut still requests argument completion inside a supported slash
+command. It follows the configurable `chat:argumentSuggest` binding shown in
+Help and `/keybindings`. Desktop/Web uses the existing **Suggest next step**
+button with the same result categories. These helper requests may incur
+provider usage; they use the current model and do not run tools. See the
+[composer contract](../architecture/tui/contracts/composer.md#next-prompt-ghost)
+and [runtime service boundary](../architecture/platform/runtime-services.md#interactive-prompt-suggestions).
+
+### Completion and evaluation
+
+`exec` uses the same solver traversal as the TUI and ACP. The solver can inspect,
+edit, and test through its normal tools; completion does not start an automatic
+second checker or change reasoning effort. Benchmark reward comes from the
+external task verifier.
+
+The former `--verification-*` and `--resume-verification` flags and Harbor
+`verification_*` options are removed and rejected. Update old evaluation
+commands before running them. Existing Session files remain available; use
+`--resume <session-id>` with an explicit request to continue the original task.
+Optional budgets and ordinary progress-preserving resume are unchanged. See
+the [completion boundary](../architecture/runtime/query-engine.md#completion-and-evaluation-boundary).
+
+### Invocation usage and optional limits
+
+After engine execution, ordinary `exec` reports current-invocation usage: JSON and the final
+JSONL `result` contain `usage`; text mode prints a numeric summary on stderr.
+Resuming a session starts a fresh counter. TUI, plain mode, ACP, and `goal run`
+do not automatically enable this invocation collector.
+
+Both budget controls are **off by default** (`0`). Enable either or both:
+
+```bash
+yhc exec "inspect the failing tests" --output-format json \
+  --max-provider-calls 30 --max-total-tokens 200000
+```
+
+`--max-provider-calls` limits admitted YHC provider calls across the main loop,
+children, compaction, retries/fallbacks, WebFetch AI and engine-owned auxiliary
+calls. Reservations proven not dispatched are refunded. This counts YHC client
+entries, not HTTP attempts hidden inside a third-party SDK, external hook/MCP
+traffic, or a currency amount.
+
+`--max-total-tokens` checks accumulated provider-reported tokens before admitting
+the next call. The last response and concurrent in-flight calls can exceed the
+threshold; it is not a strict token reservation or spending cap. Missing,
+invalid, or ambiguous usage prevents further calls only when this token control
+is enabled. With both controls off, usage collection preserves existing retry
+and fallback behavior. Opaque custom permission reviewers are skipped while
+limits apply; statistics-only runs mark their coverage incomplete.
+
+Main/child model requests include explicitly enabled invocation limits in a
+fixed policy block before conversation history. It describes total limits,
+including usage already consumed by children and auxiliary calls; it does not
+claim they are remaining allowances. Live counters stay in usage reporting so
+they cannot rewrite the cached request prefix each round. The policy is not
+saved as conversation history. Admission checks remain authoritative.
+
+`yhc exec --timeout 29m` optionally cancels the query after that duration,
+including its active child/tool/provider contexts. The timer starts after provider configuration,
+before engine initialization, resume and query submission; zero (the default)
+disables it.
+An earlier caller deadline still wins. The explicit invocation deadline survives
+child foreground/background detachment and child continuation with fresh
+contexts; ordinary parent cancellation leases
+retain their existing behavior. With an invocation collector, enforced
+context deadlines are included as an absolute UTC cutoff in the model's policy,
+instead of a changing countdown. The policy asks
+for targeted verification and honest reporting of unfinished work; it cannot
+guarantee the model will finish early. Cancellation uses the existing exit
+`130` path and settles available usage; shutdown/logging can take additional
+time, so leave a margin before an external container kill deadline.
+
+For native currency estimates, pass `--price-card public-prices.json`.
+Add `--max-estimated-cost 1.50` to stop new calls once the reported estimate
+reaches that amount in the card's currency; this option defaults to disabled.
+In-flight responses can exceed this stopping threshold. The public price-card
+schema, exact route-selector matching, incomplete-cost behavior and explicit
+Harbor continuation grants are owned by
+[budgets and limits](../architecture/runtime/budgets-and-limits.md#native-currency-estimates-and-stopping-threshold).
+A price card records an estimate; it does not read the provider's account bill.
+
+For a conservative pre-dispatch ceiling on that estimate, add
+`--reserve-cost-before-dispatch --max-output-tokens-per-call 16384` alongside a
+positive `--max-estimated-cost`. This optional mode is off by default. The card
+must declare `window: "upper_bound"` and an explicit `api_model` for every route.
+Currently only the built-in local DeepSeek adapter supports this mode. Each
+request reserves the full supported context capacity at the higher input rate
+plus the output bound before dispatch; known usage refunds the difference.
+Consequently a call can be denied while some budget remains. Unknown response
+cost retains the reservation and stops retries. This controls the declared
+estimate, not the provider's invoice or external tool charges.
+
+A rejected admission returns exit `1` with `error.code=run_budget_exceeded`.
+`usage.budget_stop_cause` distinguishes `provider_calls`, `total_tokens`,
+`estimated_cost_threshold`, and `estimated_cost_reservation`. A reservation
+denial can occur while money remains because the next full bound cannot fit.
+Incomplete usage under a token or monetary threshold, or missing required pricing,
+returns `run_usage_unknown`. Cancellation
+retains exit `130`. Reaching a threshold in a successful final answer does not
+itself turn success into failure; the next admission is the enforcement point.
+
+`usage` contains input/output/total tokens, cached input, reasoning output,
+known/unknown/in-flight calls, denied calls, and breakdowns by model, source,
+role, and effort. `total_tokens` is at least input plus output. Cached input and
+reasoning output are subsets, never added again. Missing usage is **unknown**,
+not zero: totals are partial when `complete=false`. Cache and reasoning details
+are those supplied by the adapter; an omitted detail cannot prove that no
+caching or thinking occurred. `provider_duration_ms` sums call lifetimes and
+may exceed invocation `elapsed_ms` when calls overlap. No price is inferred.
+A forced process kill may prevent the final summary from being written.
+Opt-in [invocation usage checkpoints](invocation-usage-checkpoints.md) retain
+admission and settlement records for inspection from a new process; they do
+not grant automatic continuation or reuse the previous budget.
+
+`usage.call_ledger` adds up to 1,024 individual admission records per invocation:
+model/provider labels, source/role/effort, attempt/retry indices, timing,
+settlement state, and known cached/uncached input plus output/thinking tokens.
+`dropped_records` reports omitted details; aggregate totals still include those
+calls. Unsettled/unknown/released records have null tokens. `resolved_model` is
+observed from supported typed response metadata and otherwise says `unknown`.
+`cache_write_prompt_tokens` is a subset of input, paired with
+`cache_write_reported_calls` in invocation and route totals. A per-call write
+counter is omitted when unreported and can explicitly be zero. `cache_ttl` is
+included only when supported typed response metadata actually reports it;
+request settings do not supply it. This adds no separate write-token price.
+The [invocation usage contract](../architecture/runtime/budgets-and-limits.md#invocation-usage-and-per-call-history)
+explains identity, privacy, truncation, and supported entrypoint boundaries.
+Harbor continuation metadata retains one ledger per incremental invocation in
+`usage.call_ledgers`; `call_ledger_complete` describes history coverage separately
+from `usage.complete`. Older logs remain valid without synthesized history.
+
+
+The [Harbor adapter](../../scripts/terminal_bench/yhc_agent.py) accepts optional
+agent arguments `--ak max_provider_calls=30 --ak max_total_tokens=200000`.
+For the opt-in evaluation controller's disconnected grading containers and
+failure classification, see [Isolated benchmark verification](benchmark-verification.md).
+An optional `--ak execution_timeout_sec=1740` passes `--timeout 1740s` to YHC;
+choose a duration below Harbor's outer timeout to leave shutdown time. All three
+controls default to disabled. Complete usage fills Harbor input,
+output and cache counters; partial usage stays in metadata so it cannot be
+mistaken for a complete total. Cost remains unset.
+On Harbor timeout/cancellation, the adapter checks the invocation PID and Linux
+executable identity, sends an interrupt, and allows a bounded shutdown before
+Harbor collects logs. The original cancellation still propagates. Settled usage
+can survive in the final cancelled result; an interrupted call without usage
+remains unknown. Hard kills or failed shutdown can still leave an incomplete
+stream, so this is not a durable crash-recovery ledger.
+
+For local Docker running an amd64 task through Rosetta on an arm64 host,
+`/proc/PID/exe` can identify the emulator rather than the uploaded YHC binary.
+The identity guard then refuses to signal that PID. Keep this guard and set an
+explicit internal deadline at least 60 seconds before the outer deadline; for
+an outer 1200-second limit, use `--ak execution_timeout_sec=1140`. An offline
+streaming check confirms that the internal deadline preserves completed usage
+and marks the unfinished response unknown. It does not establish an actual
+bill or make incomplete usage safe for automatic budget continuation.
+
+Budget continuation is opt-in. Supply a JSON list of new finite allowances to
+authorize attempts after a budget stop, for example:
+
+```bash
+--ak max_provider_calls=30 \
+--ak 'continuation_budgets=[{"max_provider_calls":10,"max_total_tokens":200000}]'
+```
+
+The initial allowance and every additional allowance apply to one invocation;
+the list authorizes additional spending, rather than resetting an overall
+financial cap. At least one limit in each grant must be positive. No grants are
+configured by default. The adapter only continues after an exit-1
+`run_budget_exceeded` result with complete usage and a saved session ID.
+
+For the
+pinned Harbor 0.22 Docker backend it also compares every declared Compose
+service's container ID, image, start time, PID and restart count before the
+first invocation and before each continuation. Missing, stopped, paused,
+unhealthy, replaced or restarted services block the next invocation. An
+unsupported backend or an unavailable inventory also blocks continuation;
+ordinary independent runs do not require this inventory. No configured Docker
+healthcheck is reported as `not_configured`, without claiming application
+health was verified.
+
+It runs
+`exec --resume` in the same environment with existing files and conversation
+history. Unknown usage, cancellation, other errors and exhausted grants stop
+the run. The overall configured execution timeout and Harbor timeout do not
+restart. Session recovery preserves completed tool history; the model can still
+choose to repeat an action, so continuation is an opportunity to finish, not a
+guarantee of zero repeated work or eventual reward.
+
+Prior streams and stderr are archived as `yhc.segment-0000.*`, etc.;
+`yhc.jsonl` is the latest segment. Harbor metadata contains per-segment usage
+and the aggregate across segments. Missing segment usage makes the total
+unknown; it never becomes zero. The continuation list must be supplied before
+the trial starts. Once Harbor has deleted the environment, this adapter cannot
+restore the entire workspace from a session ID alone. A resumed trial also has
+different allowances and must be reported separately from a fresh baseline.
+
+Harbor metadata under `yhc.recovery` separates a live continuation check from
+cold recovery after teardown. The check is a point-in-time observation of the
+declared containers, not a memory snapshot or a future authorization. It cannot
+detect an application restarting inside an unchanged container, discover
+external state owners, or freeze time while the agent is stopped. An unknown
+usage receipt still blocks spending even if the entire environment remains
+alive. No diagnostic or saved file authorizes another request.
+
+| State | What currently survives | Cold recovery boundary |
+|---|---|---|
+| YHC conversation and tool history | Native session files; `exec --resume` loads them in the existing workspace | An archived file or session ID alone does not prove a fresh environment can load it |
+| Workspace and file-backed data | Captured files can be retained; an explicit copy can restore known files | There is no automatic complete-environment restore entrypoint |
+| Sidecar process memory and background processes | Continue only while those processes remain alive | Container stop/restart loses RAM; retained container files do not restore it |
+| Logical clocks and wall time | Live services keep advancing their own clocks | No generic clock checkpoint, pause or rebase is implemented |
+| External side effects | Require their own durable state and reconciliation | Conversation replay cannot roll back or deduplicate arbitrary external actions |
+
+[`recovery`](../../scripts/terminal_bench/recovery.py) can assess an existing
+capture on a POSIX host without starting it or modifying its files. Supply a new host-owned
+output path outside the task's writable mounts:
+
+```bash
+mkdir -m 700 /path/to/private-recovery-reports
+python -m scripts.terminal_bench.recovery /path/to/checkpoint-manifest.json \
+  --inspect-docker --output /path/to/private-recovery-reports/assessment.json
+```
+
+`--inspect-docker` only inspects the manifest's owned container handles; it
+does not establish complete service discovery. Omit it for a file-only check.
+The output parent must be private, owned by the caller, and use a real path
+without symbolic-link traversal. The caller must still keep it outside task
+mounts; file permissions alone do not protect a file inside a writable mount.
+The report verifies the archive digest when available, distinguishes retained
+files from verified restoration, and reports `can_resume: false`. A legacy
+`capture: complete` or `retained_environment_required: false` never overrides
+this boundary.
+
+The [cooperative service cold recovery](service-cold-recovery.md) operator
+entrypoint supports explicit service exports, independent probes and logical
+clock restoration. It does not upgrade these legacy captures or authorize an
+agent continuation. The original file-only two-service fixture in
+[`test_recovery_docker`](../../scripts/terminal_bench/test_recovery_docker.py)
+actually reconstructs a file-backed SQLite service and probes its data, RAM
+and clock generation separately. Its successful file copy does not establish
+restoration support for arbitrary benchmark services.
+
+For a new DeepSeek stream failure, inspect the admitted call's `diagnostics`
+in the final native JSONL result or Harbor usage metadata. The fields separate
+HTTP status, request/response ID hashes, transport phase, validated event
+sequence, body bytes, terminal presence and authoritative usage. Cancellation,
+deadline, transport error and clean EOF without a terminal event have distinct
+categories. They describe the configured HTTP hop and do not identify the
+physical cause of a proxy or upstream reset. An absent diagnostic means the
+adapter did not supply it; it never means a successful or zero-cost request.
+
+For offline cost reports, use
+[`report_costs`](../../scripts/terminal_bench/report_costs.py) with existing
+statistics and explicit dated rate cards. It groups successful trials
+separately, counts each unique trial once, preserves unknown/lower-bound usage,
+and keeps bills distinct from price scenarios:
+
+```bash
+python -m scripts.terminal_bench.report_costs \
+  --statistics build/experiment/statistics.json \
+  --rates build/experiment/rates.json --output build/experiment/costs.json
+```
+
+A rate card has `name`, `currency`, `as_of`, `source`, and `models`, keyed by
+the experiment's explicitly recorded `manifest.model_request`. Each model has
+`cached_input_per_million`, `uncached_input_per_million`, and
+`output_per_million`. Statistics are trial rows with unique `trial_path`,
+`manifest`, `reward` and `usage`, as emitted by the experiment summarizer.
+Historical recovered subsets use `partial_usage_lower_bound` with
+`complete=false` and `totals`. When continuation records are missing, `totals`
+retains validated usage and native cost receipts from the available segments.
+Their known native estimates remain separate by currency and explicitly
+incomplete; a missing segment is not a zero-cost segment. Older token-only
+subsets cannot supply a native estimate. Cache and thinking subsets are not
+charged twice.
+No rate is guessed for an unlisted model, and `actual_billed_cost` stays null.
+Choose the rate card in the account's settlement currency: providers can publish
+independent CNY and USD prices, so their ratio is not a foreign-exchange rate.
+The optional `--settlement-currency CNY` records the explicitly checked account
+currency and identifies matching cards. This offline command does not access
+the account or verify that declaration. There is no default USD conversion.
+
+For a separate display view, add `--display-currency USD --fx fx.json`. An FX
+snapshot has `base`, `quote`, `rate`, `as_of` (ISO date/time), and `source`;
+`rate` means one unit of `base` buys that many units of `quote`. For example,
+`{"base":"CNY","quote":"USD","rate":"0.14","as_of":"2026-10-03","source":"example fixture"}`
+illustrates the schema, not a current exchange rate. The report preserves the
+original price scenarios and adds `converted_estimates`, including the exact
+snapshot used. It permits inversion of an explicitly supplied pair, rejects
+duplicate or conflicting pairs, and never chains rates or infers missing ones.
+Missing FX leaves the converted amount unknown. Each report freezes its supplied
+rate; a later revaluation requires a new output file, so currency fluctuations
+cannot silently rewrite historical estimates. Unknown and lower-bound usage
+remain unknown and lower-bound after conversion. These views do not implement
+a currency spending cap or reconstruct provider invoices.
+
+The CLI checks each trial's Harbor `result.json` for continuation history, so
+an older summarizer's latest-segment-only usage cannot undercount the run.
+Continuation preserves every segment's model routes. Route `model` values are
+configured profile names, not resolved vendor model IDs. Mixed or unknown
+profiles, or missing routes in a partly described continuation, remain unpriced.
+Older usage without any route fields
+retains the explicit experiment-model assumption; a single-model estimate assumes the
+experiment's recorded model applies to all counted calls and does not prove
+the provider's resolved model identity.
+This is a supplied-cohort estimate; it does not read the account's bill,
+automatically infer historical prices/time bands, or enforce a currency limit.
+The current runtime limits remain calls and reported tokens, with possible
+in-flight overshoot.
+
+The collector is invocation-local and distinct from durable Goal accounting.
+Embedded consumers can explicitly share `QueryEngineConfig.RunUsage`;
+existing Goal accounting remains authoritative and fails closed independently.
+See [`RunUsage`](../../engine/execution/run_usage.go),
+[provider admission](../../engine/execution/provider_usage.go), and
+[headless composition](../../cmd/yhc/cmd/headless.go).
 
 Runtime flags are command-local. Put them after the selected subcommand, for
 example `yhc exec --provider openai "prompt"` or
@@ -170,10 +676,25 @@ empty session and preserves the source transcript.
 - `/help` and the TUI help overlay group all currently reachable primary and
   secondary commands by category. The empty command palette shows at most
   three process-local Recent commands followed by the twelve ordered Suggested
-  commands; typing searches the complete reachable set. Recent entries are
-  recorded only after fresh admission and are never persisted.
-- While a TUI request is running, discovery exposes only `/agent`, `/team`,
-  `/keybindings`, and `/queue`. Direct dispatch rechecks the live phase, so a
+  commands; typing also finds non-hidden unavailable commands and explains why
+  they cannot run. Recent entries are recorded only after a successful admitted
+  result and are never persisted.
+- In Ctrl+K, select a command with Enter to edit its parameters. Tab/Shift+Tab
+  switches fields; arrows cycle static choices, and you can type other values.
+  Required fields carry `*`; defaults appear in the fields. Enter confirms;
+  Esc returns to the list with the draft intact. Commands without parameters
+  run when selected. Skill confirmation stages the complete slash invocation
+  in the composer; press Enter again there to submit it to the model.
+- The selected command shows its source, availability reason, direct side
+  effect, and whether it calls a model. F1 opens full details, including the
+  Skill source path; arrows scroll and Esc returns. `Effect: none (direct)`
+  means the command handler itself does not mutate state. A submitted Skill
+  still runs through normal model and tool permission checks. `possible`
+  depends on the selected action; `unknown` means the extension has not
+  declared its model policy. Browsing and editing a form do not call the model.
+  Reopen a form after changing session, draft, or loaded command definitions.
+- While a TUI request is running, executable discovery exposes only `/agent`, `/team`,
+  `/keybindings`, `/queue`, `/btw`, `/changes`, and `/recap`. Direct dispatch rechecks the live phase, so a
   command selected from an idle snapshot cannot execute after the turn starts.
 - Headless `exec` and compatibility `-p` pass through the same `QueryEngine`,
   registry, and typed result projection, but discovery intentionally exposes
@@ -219,3 +740,24 @@ workflows plus `/cpr` return P21.2 migration guidance.
 | Workspace command service | [`workspace_commands.go`](../../engine/workspace_commands.go), [`execution_controls.go`](../../engine/execution_controls.go) |
 | Entrypoint projections | [`app.go`](../../internal/tui/app.go), [`root.go`](../../cmd/yhc/cmd/root.go), [`agent.go`](../../server/acp/agent.go) |
 | Architecture | [Runtime](../architecture/runtime/README.md) |
+
+
+### Guarded file restore
+
+In `/changes`, select a completed turn or captured file and press **r**. Review
+the exact paths, current/target existence, permissions and diff. Tab cycles
+files; arrows scroll. Enter confirms the preview, then a separate allow-once
+permission decides whether the engine may apply it. Esc discards the preview.
+No model call is made, and conversation messages and your draft stay intact.
+
+This is available for complete new Write/Edit captures on macOS and Linux.
+Legacy history, Bash/hooks/MCP/child effects, unsupported content, active work,
+queued input and conflicting external changes explain why a restore cannot be
+prepared. Stop active work and withdraw queued input before trying again.
+
+If interrupted, open `/changes` and press **t** to preview retry or **b** to
+preview rollback to the pre-restore states. Every attempt asks again; restart
+does not apply files automatically. Unknown bytes are preserved. After a file
+changes, the next model turn must Read it again before Write/Edit. See the
+[restore contract](../architecture/tui/contracts/sessions.md#guarded-file-restore)
+for capture limits and recovery boundaries.

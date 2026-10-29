@@ -116,7 +116,9 @@ func parseSettingsMigrationPayload(data []byte) (settingsMigrationPayload, error
 		case "model":
 			payload.Model, err = decodeMigrationString(raw, nil)
 		case "theme":
-			payload.Theme, err = decodeMigrationString(raw, SupportedConfigSettings["theme"].Options)
+			// The historical importer keeps its original format; it does not
+			// follow the live shared editor schema or migrate into that schema.
+			payload.Theme, err = decodeMigrationString(raw, []string{"dark", "light", "auto"})
 		case "permissions":
 			payload.Permissions, err = decodeMigrationPermissions(raw)
 		case "compact":
@@ -148,7 +150,7 @@ func decodeMigrationPermissions(
 		case "defaultMode":
 			permissions.DefaultMode, err = decodeMigrationString(
 				value,
-				SupportedConfigSettings["permissions.defaultMode"].Options,
+				[]string{"default", "acceptEdits", "bypassPermissions", "plan", "auto"},
 			)
 		case "allow":
 			permissions.Allow, err = decodeMigrationStrings(value)
@@ -177,7 +179,7 @@ func decodeMigrationCompact(raw json.RawMessage) (*settingsMigrationCompact, err
 		case "strategy":
 			compact.Strategy, err = decodeMigrationString(
 				value,
-				SupportedConfigSettings["compact.strategy"].Options,
+				[]string{"auto", "manual"},
 			)
 		default:
 			return nil, errors.New("settings migration schema is invalid")

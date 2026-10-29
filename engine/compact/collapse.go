@@ -200,13 +200,7 @@ func RecoverFromOverflowWithState(
 		return &DrainResult{Committed: 0, Messages: messages, State: state}
 	}
 
-	cut := len(messages) - collapsePreservedTailMessages
-	if cut <= 0 {
-		return &DrainResult{Committed: 0, Messages: messages, State: state}
-	}
-
-	prefix := messages[:cut]
-	preserved := messages[cut:]
+	prefix, preserved := splitDeterministicContext(messages, collapsePreservedTailMessages)
 	committed := countDrainableMessages(prefix)
 	if committed == 0 {
 		return &DrainResult{Committed: 0, Messages: messages, State: state}
@@ -225,6 +219,9 @@ func RecoverFromOverflowWithState(
 	out := make([]*schema.Message, 0, 1+len(preserved))
 	out = append(out, summary)
 	out = append(out, preserved...)
+	if EstimateTokenCount(out) >= EstimateTokenCount(messages) {
+		return &DrainResult{Messages: messages, State: state}
+	}
 	return &DrainResult{Committed: committed, Messages: out, State: state}
 }
 

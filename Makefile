@@ -34,6 +34,9 @@ GOVULNCHECK_VERSION := v1.6.0
 GITLEAKS_VERSION := v8.29.1
 CYCLONEDX_GOMOD_VERSION := v1.10.0
 LINT_NEW_BASE ?= origin/master
+# Bound process launch contention in the full suite without changing test
+# deadlines or concurrency within a package. CI uses a smaller runner budget.
+TEST_PACKAGE_PARALLEL ?= 2
 TEST_CONTRACT_TIMEOUT ?= 3m
 TEST_RACE_TIMEOUT ?= 5m
 TEST_PTY_TIMEOUT ?= 3m
@@ -45,6 +48,10 @@ TEST_DEEP_TIMEOUT ?= 10m
 ITERATION_BASE ?= origin/master
 ITERATION_FORMAT ?= markdown
 ITERATION_SLICE_ID ?=
+ITERATION_TEST_TIMEOUT ?=
+ITERATION_BUDGET_REASON ?=
+ITERATION_RESTART_REASON ?=
+TEST_EVENTS_FILE ?= $(BUILD_DIR)/test-events.jsonl
 HOOK_BENCHMARK_RUNS ?= 7
 WORKTREE_AUDIT_BASE ?= origin/master
 WORKTREE_AUDIT_FORMAT ?= text
@@ -68,7 +75,7 @@ WEBUI_ASSETS := $(shell find internal/webui/assets -type f 2>/dev/null)
 # Default provider config (override via ENV or make args)
 PROV ?= agenticdeepseek
 PROV_API_KEY ?= $(ANTHROPIC_AUTH_TOKEN)
-PROV_MODEL ?= deepseek-v4-flash
+PROV_MODEL ?= deepseek-flash
 
 # Release flags
 VERSION ?= 0.1.0
@@ -174,6 +181,7 @@ desktop-stage-windows-amd64: build/desktop/windows-amd64/yhc.exe
 
 desktop-install:
 	npm --prefix desktop ci --no-audit --no-fund
+	$(NODE) desktop/node_modules/electron/install.js
 
 desktop-test:
 	node --test desktop/test/*.test.mjs
@@ -187,6 +195,7 @@ desktop-check: desktop-test
 	node --check desktop/preload.cjs
 	node --check desktop/scripts/unpacked_lifecycle_smoke.cjs
 	node --check desktop/scripts/verify_packaged_notices.cjs
+	node --check desktop/scripts/workbench_ui_acceptance.cjs
 	node --check internal/webui/assets/activity.mjs
 	node --check internal/webui/assets/app.mjs
 	node --check internal/webui/assets/catalog.mjs
@@ -195,6 +204,11 @@ desktop-check: desktop-test
 	node --check internal/webui/assets/vendor/marked.esm.js
 	node --check internal/webui/assets/provider_setup.mjs
 	node --check internal/webui/assets/session_creation.mjs
+	node --check internal/webui/assets/settings_view.mjs
+	node --check internal/webui/assets/timeline_view.mjs
+	node --check internal/webui/assets/task_explorer.mjs
+	node --check internal/webui/assets/agent_execution_detail.mjs
+	node --check internal/webui/assets/agent_conversation.mjs
 	node --check internal/webui/assets/state.mjs
 	node --check internal/webui/assets/transport.mjs
 	node --check internal/webui/assets/view_models.mjs
@@ -221,9 +235,9 @@ clear:
 	rm -rf $(BUILD_DIR)
 
 # ── Test ───────────────────────────────────────────────
-test: prepare-gotestsum
+test: prepare-gotestsum test-provider-costs
 	@mkdir -p $(BUILD_DIR)
-	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml -- -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
+	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml --jsonfile $(TEST_EVENTS_FILE) -- -p=$(TEST_PACKAGE_PARALLEL) -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
 	$(GO) -C third_party/acp-go-sdk test ./...
 	$(GO) tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
 	@echo "Coverage report: $(BUILD_DIR)/coverage.html"
@@ -305,7 +319,18 @@ run:
 .PHONY: test-deepseek-live
 test-deepseek-live:
 	@if [[ -z "$$DEEPSEEK_API_KEY" ]]; then echo "DEEPSEEK_API_KEY is required" >&2; exit 1; fi
-	DEEPSEEK_LIVE_TEST=1 $(GO) test ./engine/provider/agenticdeepseek -run '^TestLiveDeepSeekResponsesAndFilesLifecycle$$' -count=1 -timeout=4m
+	DEEPSEEK_LIVE_TEST=1 $(GO) test ./engine/provider/agenticdeepseek -run '^TestLiveDeepSeek(ResponsesAndFilesLifecycle|FlashVisionStream)$$' -count=1 -timeout=6m
+
+.PHONY: test-glm-live
+test-glm-live:
+	@if [[ -z "$$ZAI_API_KEY" && -z "$$ZHIPUAI_API_KEY" ]]; then echo "ZAI_API_KEY or ZHIPUAI_API_KEY is required" >&2; exit 1; fi
+	GLM_LIVE_TEST=1 $(GO) test ./engine/provider/agenticglm -run '^TestLiveGLM53FlashAndFilesLifecycle$$' -v -count=1 -timeout=8m
+
+.PHONY: test-provider-costs
+test-provider-costs:
+	python3 -m unittest scripts.terminal_bench.test_http_stream
+	python3 -m unittest scripts.terminal_bench.test_history_state scripts.terminal_bench.test_compare_runs scripts.terminal_bench.test_prefix_audit scripts.terminal_bench.test_trial_policy
+	python3 -m unittest scripts.terminal_bench.test_costs scripts.terminal_bench.test_recovery scripts.terminal_bench.test_service_clock scripts.terminal_bench.test_service_snapshot scripts.terminal_bench.test_recovery_bundle scripts.terminal_bench.test_native_handoff_fixture scripts.terminal_bench.test_paused_recovery scripts.terminal_bench.test_cold_dispatch scripts.terminal_bench.test_cohort_admission scripts.terminal_bench.test_host_gateway_pipe scripts.terminal_bench.test_host_gateway_transport
 
 # ── Debug ───────────────────────────────────────────────
 # Launches the agent under delve in headless mode so any IDE can attach.
@@ -385,7 +410,11 @@ verify-focused:
 	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) verify --level focused
 
 verify-merge:
-	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) verify --level merge
+	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) verify --level merge $(if $(ITERATION_TEST_TIMEOUT),--test-timeout $(ITERATION_TEST_TIMEOUT),) $(if $(ITERATION_BUDGET_REASON),--budget-reason $(ITERATION_BUDGET_REASON),)
+
+.PHONY: change-evidence-restart
+change-evidence-restart:
+	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) $(if $(ITERATION_SLICE_ID),--slice-id $(ITERATION_SLICE_ID),) restart --reason $(ITERATION_RESTART_REASON)
 
 check-boundaries:
 	$(GO) run ./scripts/iteration --base $(ITERATION_BASE) --format $(ITERATION_FORMAT) boundaries
@@ -407,7 +436,7 @@ change-evidence-ready:
 iteration-policy-check:
 	$(GO) run ./scripts/iteration policy-check
 
-# Read-only aggregate of retained local gate evidence. It is intentionally
+# Read-only aggregate of current local gate evidence. It is intentionally
 # advisory and is not part of verification, hooks, or CI.
 iteration-metrics:
 	$(GO) run ./scripts/iteration metrics --format $(ITERATION_FORMAT)
@@ -644,6 +673,10 @@ desktop-unpacked-native-smokes-darwin-amd64: desktop-package-smoke-darwin-amd64
 
 desktop-unpacked-lifecycle-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64
 	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC
+
+.PHONY: desktop-unpacked-shared-settings-smoke-darwin-arm64
+desktop-unpacked-shared-settings-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64
+	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --shared-settings
 
 desktop-unpacked-window-reopen-smoke-darwin-arm64: desktop-package-smoke-darwin-arm64
 	node desktop/scripts/unpacked_lifecycle_smoke.cjs --app desktop/dist/mac-arm64/YHC.app/Contents/MacOS/YHC --reopen-window

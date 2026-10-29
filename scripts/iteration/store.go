@@ -30,6 +30,8 @@ type RunResult struct {
 	DurationMillis   int64
 	FailureLogPath   string
 	FirstFailingSeed string
+	TimeoutMillis    int64
+	BudgetReason     string
 }
 
 type EvidenceStore interface {
@@ -52,6 +54,7 @@ type focusedPromotion struct {
 type fileEvidenceStore struct {
 	root   string
 	rename func(*os.Root, string, string) error
+	move   func(*os.Root, string, string) error
 }
 
 var (
@@ -496,6 +499,9 @@ func validateGate(plan Plan, gate GateEvidence) error {
 		gate.DurationMillis < 0 {
 		return errors.New("invalid gate evidence")
 	}
+	if err := validateGateBudget(gate); err != nil {
+		return err
+	}
 	if !slices.Contains(expectedTargets(plan, VerifyLevel(gate.Level)), gate.Target) || !safeTarget(gate.Target) {
 		return errors.New("invalid gate target")
 	}
@@ -599,6 +605,9 @@ func (s *fileEvidenceStore) persistTransition(dir *os.Root, plan Plan, evidence 
 func derivedEvidenceState(evidence Evidence, plan Plan) string {
 	if len(plan.Changed) == 0 {
 		return "planned"
+	}
+	if len(evidence.Gates) == 0 {
+		return "changed"
 	}
 	if !allExpectedComplete(evidence, expectedTargets(plan, VerifyFocused), VerifyFocused) {
 		return "changed"

@@ -1,0 +1,64 @@
+== preview 40 ==
+Workspace restore
+Captured files only; conversation and d…
+1/1 "note.txt" [pending]
+current "note.txt" exists=true mode=064…
+target "note.txt" exists=true mode=0640…
+--- a/"note.txt"
++++ b/"note.txt"
+@@ -1,2 +1,2 @@
+-old
+-last
+\ No newline at end of file
++new
++LAST
+\ No newline at end of file
+Tab file ↑↓ scroll Enter confirm Esc
+== preview 80 ==
+Workspace restore
+Captured files only; conversation and draft are unchanged.
+1/1 "note.txt" [pending]
+current "note.txt" exists=true mode=0640 bytes=9 final-newline=false
+target "note.txt" exists=true mode=0640 bytes=9 final-newline=false
+--- a/"note.txt"
++++ b/"note.txt"
+@@ -1,2 +1,2 @@
+-old
+-last
+\ No newline at end of file
++new
++LAST
+\ No newline at end of file
+Tab file ↑↓ scroll Enter confirm Esc
+== preview 120 ==
+Workspace restore
+Captured files only; conversation and draft are unchanged.
+1/1 "note.txt" [pending]
+current "note.txt" exists=true mode=0640 bytes=9 final-newline=false
+target "note.txt" exists=true mode=0640 bytes=9 final-newline=false
+--- a/"note.txt"
++++ b/"note.txt"
+@@ -1,2 +1,2 @@
+-old
+-last
+\ No newline at end of file
++new
++LAST
+\ No newline at end of file
+Tab file ↑↓ scroll Enter confirm Esc
+== preview 180 ==
+Workspace restore
+Captured files only; conversation and draft are unchanged.
+1/1 "note.txt" [pending]
+current "note.txt" exists=true mode=0640 bytes=9 final-newline=false
+target "note.txt" exists=true mode=0640 bytes=9 final-newline=false
+--- a/"note.txt"
++++ b/"note.txt"
+@@ -1,2 +1,2 @@
+-old
+-last
+\ No newline at end of file
++new
++LAST
+\ No newline at end of file
+Tab file ↑↓ scroll Enter confirm Esc

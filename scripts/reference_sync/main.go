@@ -47,14 +47,16 @@ type Config struct {
 	MaxCommitSubjects int             `yaml:"max_commit_subjects"`
 	ModelSummary      ModelSummary    `yaml:"model_summary"`
 	SubagentSummary   SubagentSummary `yaml:"subagent_summary"`
+	GitFetch          FetchPolicy     `yaml:"git_fetch"`
 	Repositories      []Repository    `yaml:"repositories"`
 }
 
 type ModelSummary struct {
-	Backend        string `yaml:"backend"`
-	Model          string `yaml:"model"`
-	MaxInputBytes  int    `yaml:"max_input_bytes"`
-	TimeoutSeconds int    `yaml:"timeout_seconds"`
+	Retry          RetryPolicy `yaml:"retry"`
+	Backend        string      `yaml:"backend"`
+	Model          string      `yaml:"model"`
+	MaxInputBytes  int         `yaml:"max_input_bytes"`
+	TimeoutSeconds int         `yaml:"timeout_seconds"`
 }
 
 func (s ModelSummary) normalized() ModelSummary {
@@ -69,10 +71,11 @@ func (s ModelSummary) normalized() ModelSummary {
 }
 
 type SubagentSummary struct {
-	Backend        string `yaml:"backend"`
-	Model          string `yaml:"model"`
-	MaxInputBytes  int    `yaml:"max_input_bytes"`
-	TimeoutSeconds int    `yaml:"timeout_seconds"`
+	Retry          RetryPolicy `yaml:"retry"`
+	Backend        string      `yaml:"backend"`
+	Model          string      `yaml:"model"`
+	MaxInputBytes  int         `yaml:"max_input_bytes"`
+	TimeoutSeconds int         `yaml:"timeout_seconds"`
 }
 
 func (s SubagentSummary) normalized() SubagentSummary {
@@ -119,6 +122,8 @@ type Repository struct {
 }
 
 type syncResult struct {
+	FetchAttempts   int
+	SummaryAttempts int
 	Repository      string
 	Path            string
 	Remote          string
@@ -145,8 +150,9 @@ type syncResult struct {
 }
 
 type gitClient struct {
-	dir string
-	ctx context.Context
+	dir     string
+	ctx     context.Context
+	timeout time.Duration
 }
 
 func main() {
@@ -223,7 +229,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	case "check":
 		return runCheckContext(ctx, repositories, refRoot, stdout, stderr)
 	case "sync":
-		return runSyncContext(ctx, root, repositories, refRoot, memRoot, cfg.MaxCommitSubjects, cfg.ModelSummary, cfg.SubagentSummary, *dryRun, stdout, stderr)
+		return runSyncContext(ctx, root, repositories, refRoot, memRoot, cfg.MaxCommitSubjects, cfg.ModelSummary, cfg.SubagentSummary, *dryRun, stdout, stderr, cfg.GitFetch)
 	case "baseline":
 		return runBaselineContext(ctx, repositories, refRoot, memRoot, *dryRun, stdout, stderr)
 	default:
@@ -254,6 +260,14 @@ func loadConfig(path string) (Config, error) {
 }
 
 func validateConfig(cfg Config) error {
+	if cfg.GitFetch.TimeoutSeconds < 0 || cfg.GitFetch.TimeoutSeconds > 300 {
+		return errors.New("git_fetch.timeout_seconds must be 0..300 (0 uses default)")
+	}
+	for name, policy := range map[string]RetryPolicy{"git_fetch": cfg.GitFetch.Retry, "model_summary": cfg.ModelSummary.Retry, "subagent_summary": cfg.SubagentSummary.Retry} {
+		if err := policy.validate(name); err != nil {
+			return err
+		}
+	}
 	if cfg.Version != 1 {
 		return fmt.Errorf("version must be 1, got %d", cfg.Version)
 	}
@@ -354,7 +368,7 @@ func runCheckContext(ctx context.Context, repositories []Repository, referenceRo
 	return 0
 }
 
-func runSyncContext(ctx context.Context, projectDir string, repositories []Repository, referenceRoot, memoryRoot string, maxSubjects int, summaryConfig ModelSummary, subagentConfig SubagentSummary, dryRun bool, stdout, stderr io.Writer) int {
+func runSyncContext(ctx context.Context, projectDir string, repositories []Repository, referenceRoot, memoryRoot string, maxSubjects int, summaryConfig ModelSummary, subagentConfig SubagentSummary, dryRun bool, stdout, stderr io.Writer, fetchPolicies ...FetchPolicy) int {
 	if maxSubjects == 0 {
 		maxSubjects = defaultMaxSubjects
 	}
@@ -386,7 +400,7 @@ func runSyncContext(ctx context.Context, projectDir string, repositories []Repos
 			})
 			continue
 		}
-		result := syncRepositoryContext(ctx, repo, referenceRoot, maxSubjects, summaryConfig.MaxInputBytes, dryRun)
+		result := syncRepositoryContext(ctx, repo, referenceRoot, maxSubjects, summaryConfig.MaxInputBytes, dryRun, fetchPolicies...)
 		result.ObservedAt = now
 		results = append(results, result)
 	}
@@ -448,6 +462,11 @@ func runSyncContext(ctx context.Context, projectDir string, repositories []Repos
 		}
 	}
 	printSubagentSummary(stdout, postSummary)
+	recoveryErr := recoverPendingSummaries(ctx, projectDir, memoryRoot, updateFiles, subagentConfig, subagentFactory, stdout)
+	if recoveryErr != nil {
+		fmt.Fprintf(stderr, "post-update summary recovery: %v\n", recoveryErr)
+		return 1
+	}
 	if postSummaryErr != nil {
 		return 1
 	}
@@ -530,7 +549,7 @@ func inspectRepositoryContext(ctx context.Context, repo Repository, referenceRoo
 	return result
 }
 
-func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot string, maxSubjects, maxDiffBytes int, dryRun bool) syncResult {
+func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot string, maxSubjects, maxDiffBytes int, dryRun bool, fetchPolicies ...FetchPolicy) syncResult {
 	result := inspectRepositoryContext(ctx, repo, referenceRoot)
 	if result.Status == "error" || result.Status == "frozen" {
 		return result
@@ -544,7 +563,7 @@ func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot s
 	}
 	if strings.TrimSpace(status) != "" {
 		result.Status = "blocked_dirty"
-		result.Detail = summarizeLines(status, 12)
+		result.Detail = summarizeLines(status)
 		return result
 	}
 	if dryRun {
@@ -552,9 +571,18 @@ func syncRepositoryContext(ctx context.Context, repo Repository, referenceRoot s
 		result.Detail = "dry-run skipped fetch and merge"
 		return result
 	}
-	if _, err := client.run("fetch", "--prune", "origin"); err != nil {
+	var fetchPolicy FetchPolicy
+	if len(fetchPolicies) > 0 {
+		fetchPolicy = fetchPolicies[0]
+	}
+	result.FetchAttempts, err = client.fetch(repo.Remote, result.Before, repo.Upstream, fetchPolicy)
+	if err != nil {
 		result.Status = "error"
 		result.Detail = err.Error()
+		var guard *fetchGuardError
+		if errors.As(err, &guard) {
+			result.Status, result.Detail = guard.status, guard.detail
+		}
 		return result
 	}
 	if _, err := client.run("rev-parse", "--verify", repo.Upstream); err != nil {
@@ -650,7 +678,7 @@ func mergePreparedRepositoryContext(ctx context.Context, repo Repository, refere
 	}
 	if strings.TrimSpace(status) != "" {
 		result.Status = "blocked_dirty"
-		result.Detail = summarizeLines(status, 12)
+		result.Detail = summarizeLines(status)
 		return
 	}
 	if _, err := client.run("merge", "--ff-only", result.After); err != nil {
@@ -702,7 +730,7 @@ func baselineRepositoryContext(ctx context.Context, repo Repository, referenceRo
 	result.After = result.Before
 	result.Branch, _ = client.run("rev-parse", "--abbrev-ref", "HEAD")
 	if status, err := client.run("status", "--porcelain", "--untracked-files=all"); err == nil && strings.TrimSpace(status) != "" {
-		result.Detail = "baseline captured with a dirty worktree: " + summarizeLines(status, 12)
+		result.Detail = "baseline captured with a dirty worktree: " + summarizeLines(status)
 	}
 	return result
 }
@@ -713,7 +741,11 @@ func (g gitClient) run(args ...string) (string, error) {
 	if parentCtx == nil {
 		parentCtx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(parentCtx, defaultGitCommandTimeout)
+	timeout := g.timeout
+	if timeout <= 0 {
+		timeout = defaultGitCommandTimeout
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	cmd.Dir = g.dir
@@ -799,7 +831,8 @@ func commitSubjects(client gitClient, before, after string, maxSubjects int) ([]
 	return strings.Split(value, "\n"), nil
 }
 
-func summarizeLines(value string, max int) string {
+func summarizeLines(value string) string {
+	const max = 12
 	lines := strings.Split(strings.TrimSpace(value), "\n")
 	if len(lines) <= max {
 		return strings.Join(lines, "; ")
@@ -849,11 +882,18 @@ func acquireLock(memoryRoot string) (func(), error) {
 	}, nil
 }
 
-func writeSyncUpdates(memoryRoot string, now time.Time, results []syncResult) ([]string, error) {
+func writeSyncUpdates(memoryRoot string, now time.Time, results []syncResult) (paths []string, err error) {
+	// Keep the successfully written subset recoverable even if a later write fails.
+	defer func() {
+		if len(paths) > 0 {
+			_, jobErr := newSummaryJob(memoryRoot, now, paths)
+			err = errors.Join(err, jobErr)
+		}
+	}()
 	if err := ensureMemoryReadme(memoryRoot); err != nil {
 		return nil, err
 	}
-	paths := make([]string, 0)
+	paths = make([]string, 0)
 	for _, result := range results {
 		if result.Status != "updated" {
 			continue
@@ -861,7 +901,7 @@ func writeSyncUpdates(memoryRoot string, now time.Time, results []syncResult) ([
 		name := filepath.Join("updates", memoryFilename(now, result.Repository))
 		path := filepath.Join(memoryRoot, name)
 		if err := writeMemoryFile(path, renderUpdateMemory(result)); err != nil {
-			return nil, fmt.Errorf("%s: %w", result.Repository, err)
+			return paths, fmt.Errorf("%s: %w", result.Repository, err)
 		}
 		paths = append(paths, path)
 	}
@@ -911,7 +951,9 @@ func referenceMemoryReadme() []byte {
 		"After updates are written, a separate read-only subagent reads only the new `updates/` " +
 		"records and writes a consolidated summary under `summaries/`. A failed post-update " +
 		"summary is recorded and makes the sync run fail, but does not roll back an already " +
-		"completed fast-forward.\n\n" +
+		"completed fast-forward. `summary-jobs/` records immutable input paths and hashes " +
+		"before model dispatch. Each later sync can recover one pending historical batch, " +
+		"even with no new updates, without re-merging or replacing the old failed summary.\n\n" +
 		"The memory is operational evidence, not a product backlog. Frozen repositories " +
 		"are never fetched or merged by the scheduled sync.\n")
 }
@@ -1019,6 +1061,11 @@ func renderRunMemory(now time.Time, results []syncResult, postSummary *postUpdat
 		}
 		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` | %s |\n", result.Repository, result.Policy, result.Status, strings.ReplaceAll(detail, "|", "\\|"))
 	}
+	for _, result := range results {
+		if result.FetchAttempts > 1 || result.SummaryAttempts > 1 {
+			fmt.Fprintf(&b, "\nRetry attempts for `%s`: fetch=%d, analysis=%d\n", result.Repository, result.FetchAttempts, result.SummaryAttempts)
+		}
+	}
 	if postSummary != nil {
 		b.WriteString("\n## Post-update subagent summary\n\n")
 		fmt.Fprintf(&b, "- Status: `%s`\n", emptyAsNone(postSummary.Status))
@@ -1026,6 +1073,10 @@ func renderRunMemory(now time.Time, results []syncResult, postSummary *postUpdat
 			fmt.Fprintf(&b, "- Model: `%s:%s`\n", emptyAsNone(postSummary.Provider), emptyAsNone(postSummary.Model))
 		}
 		fmt.Fprintf(&b, "- Update files: %d\n", postSummary.InputFiles)
+		fmt.Fprintf(&b, "- Attempts: %d\n", postSummary.Attempts)
+		if postSummary.SourceBatch != "" {
+			fmt.Fprintf(&b, "- Source batch: `%s`\n", postSummary.SourceBatch)
+		}
 		fmt.Fprintf(&b, "- Input supplied: %d bytes", postSummary.InputBytes)
 		if postSummary.InputTruncated {
 			b.WriteString(" (truncated)")

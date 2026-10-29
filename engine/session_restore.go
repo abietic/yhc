@@ -160,11 +160,7 @@ func (e *QueryEngine) reloadResumedExecutionContext(
 		// hooks when the resumed project has none.
 		e.config.HookExecutor.RegisterShellHooks(shellHooks)
 	}
-	rules, _ := permission.LoadPermissionRules(cwd)
-	rules = append(
-		rules,
-		toolSelectionDenyRules(e.toolRegistry, e.config.ToolSelection)...,
-	)
+	e.reloadPermissionRules()
 	registry, _ := skills.LoadDefaultSkills(cwd)
 	definitions, _ := LoadAgentDefinitions(cwd)
 	var reloadedMCP *tools.MCPToolManager
@@ -177,7 +173,6 @@ func (e *QueryEngine) reloadResumedExecutionContext(
 	e.mu.Lock()
 	oldWatcher := e.settingsWatcher
 	oldMCP := e.mcpManager
-	e.permissionRules = permission.NewRulesEngine(rules)
 	if registry != nil {
 		e.skillRegistry = registry
 		e.ensureCommandRegistry()
@@ -197,18 +192,7 @@ func (e *QueryEngine) reloadResumedExecutionContext(
 		e.subagentExecutor.ParentFileState = e.fileStateCache
 	}
 	watcher := enginecfg.NewSettingsWatcher(cwd, 0, func(*enginecfg.Settings) {
-		current := e.GetCWD()
-		updated, _ := permission.LoadPermissionRules(current)
-		e.mu.Lock()
-		updated = append(
-			updated,
-			toolSelectionDenyRules(
-				e.toolRegistry,
-				e.config.ToolSelection,
-			)...,
-		)
-		e.permissionRules = permission.NewRulesEngine(updated)
-		e.mu.Unlock()
+		e.reloadPermissionRules()
 	})
 	e.settingsWatcher = watcher
 	catalogPath := e.config.SessionCatalogPath

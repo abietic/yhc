@@ -18,6 +18,7 @@ const {
   activeTurnProjectionMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
+  buildUnpackedAppArguments,
   closePackagedDesktop,
   combineSmokeFailure,
   crashContainmentMatches,
@@ -44,6 +45,23 @@ const {
   terminateProcessGroup,
   validatePlatformOptions,
 } = require('../scripts/unpacked_lifecycle_smoke.cjs');
+
+test('native smoke launch args isolate Darwin keychain and preserve launch controls', () => {
+  const profile = '/private/tmp/isolated native profile';
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    for (const disableSandbox of [false, true]) {
+      const args = buildUnpackedAppArguments(profile, {platform, disableSandbox});
+      assert.deepEqual(args, [
+        ...(disableSandbox ? ['--no-sandbox'] : []),
+        ...(platform === 'darwin' ? ['--use-mock-keychain'] : []),
+        '--disable-gpu',
+        '--remote-debugging-address=127.0.0.1',
+        '--remote-debugging-port=0',
+        `--user-data-dir=${profile}`,
+      ]);
+    }
+  }
+});
 
 test('DevTools discovery accepts one ephemeral loopback browser endpoint', () => {
   const endpoint = 'ws://127.0.0.1:43127/devtools/browser/01234567-89ab-cdef-0123-456789abcdef';
@@ -301,6 +319,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: true,
       disableSandbox: true,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -310,6 +329,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: true,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -319,6 +339,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: true,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -328,6 +349,7 @@ test('platform options admit crash injection on supported native hosts and keep 
       crashBackend: false,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.throws(
@@ -482,6 +504,7 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
       crashBackend: false,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -492,6 +515,7 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
       crashBackend: true,
       disableSandbox: true,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   assert.deepEqual(
@@ -502,6 +526,7 @@ test('smoke arguments admit one explicit crash mode and reject ambiguity', () =>
       crashBackend: false,
       disableSandbox: false,
       reopenWindow: false,
+      sharedSettings: false,
     },
   );
   for (const invalid of [
@@ -1072,12 +1097,14 @@ test('window-reopen arguments and platform admission fail closed', () => {
     crashBackend: false,
     disableSandbox: false,
     reopenWindow: true,
+    sharedSettings: false,
   });
   assert.deepEqual(validatePlatformOptions('darwin', { reopenWindow: true }), {
     crashActiveTurn: false,
     crashBackend: false,
     disableSandbox: false,
     reopenWindow: true,
+    sharedSettings: false,
   });
   for (const invalid of [
     ['--app', app, '--reopen-window', '--reopen-window'],

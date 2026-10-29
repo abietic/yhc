@@ -95,11 +95,6 @@ export function providerSetupProjection(surface, status = {}) {
   };
 }
 
-export function shouldDeferWorkspaceForProvider(surface, setup) {
-  return surface === 'desktop' && setup?.setupAvailable === true &&
-    setup?.launchReady !== true;
-}
-
 export function executionForDisplay(session) {
   return session?.live === true ? session.execution : null;
 }

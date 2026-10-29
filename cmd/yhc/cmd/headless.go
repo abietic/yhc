@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -15,9 +16,11 @@ import (
 	"github.com/abietic/yhc/engine"
 	"github.com/abietic/yhc/engine/commands"
 	engineerrors "github.com/abietic/yhc/engine/errors"
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/session"
 	enginetransport "github.com/abietic/yhc/engine/transport"
+	"github.com/abietic/yhc/tools"
 )
 
 const headlessEnvelopeSchemaVersion = 1
@@ -33,15 +36,25 @@ const (
 )
 
 type headlessOptions struct {
-	Runtime      runtimeFlags
-	Resume       string
-	OutputFormat string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
+	Timeout            time.Duration
+	Runtime            runtimeFlags
+	UsageLimits        execution.RunUsageLimits
+	PriceCardFile      string
+	UsageCheckpointDir string
+	CaptureReadGuards  bool
+	ColdToolHandoff    string
+	ColdToolHandoffSHA string
+	Resume             string
+	OutputFormat       string
+	Stdin              io.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
 }
 
 type headlessResult struct {
+	ReadGuards     *tools.ReadGuardCapture
+	ColdRecovery   *engine.ColdToolStateProof
+	Usage          *execution.RunUsageSnapshot
 	Status         string
 	Output         string
 	SessionID      string
@@ -53,13 +66,16 @@ type headlessResult struct {
 }
 
 type headlessEnvelope struct {
-	SchemaVersion  int                    `json:"schema_version"`
-	Status         string                 `json:"status"`
-	Output         string                 `json:"output,omitempty"`
-	SessionID      string                 `json:"session_id,omitempty"`
-	TerminalReason string                 `json:"terminal_reason,omitempty"`
-	ExitCode       int                    `json:"exit_code"`
-	Error          *headlessEnvelopeError `json:"error,omitempty"`
+	ReadGuards     *tools.ReadGuardCapture     `json:"read_guards,omitempty"`
+	ColdRecovery   *engine.ColdToolStateProof  `json:"cold_recovery,omitempty"`
+	Usage          *execution.RunUsageSnapshot `json:"usage,omitempty"`
+	SchemaVersion  int                         `json:"schema_version"`
+	Status         string                      `json:"status"`
+	Output         string                      `json:"output,omitempty"`
+	SessionID      string                      `json:"session_id,omitempty"`
+	TerminalReason string                      `json:"terminal_reason,omitempty"`
+	ExitCode       int                         `json:"exit_code"`
+	Error          *headlessEnvelopeError      `json:"error,omitempty"`
 }
 
 type headlessEnvelopeError struct {
@@ -87,6 +103,17 @@ func newExecCommand() *cobra.Command {
 		},
 	}
 	bindRuntimeFlags(command.Flags(), &options.Runtime)
+	command.Flags().DurationVar(&options.Timeout, "timeout", 0, "Cancel this query and its children after this duration (0 disables)")
+	command.Flags().Int64Var(&options.UsageLimits.MaxProviderCalls, "max-provider-calls", 0, "Maximum YHC provider calls across this invocation and children (0 disables)")
+	command.Flags().Int64Var(&options.UsageLimits.MaxTotalTokens, "max-total-tokens", 0, "Stop new calls after reported total tokens reach this threshold; in-flight calls may overshoot (0 disables)")
+	command.Flags().StringVar(&options.PriceCardFile, "price-card", "", "Explicit native currency price card JSON for invocation-fixed cost estimates")
+	command.Flags().StringVar(&options.UsageCheckpointDir, "usage-checkpoint-dir", "", "Fresh private directory for synchronous invocation usage checkpoints (off by default; never reopens history)")
+	command.Flags().BoolVar(&options.CaptureReadGuards, "capture-read-guards", false, "Capture content-bound file read guards in JSON output (opt-in)")
+	command.Flags().StringVar(&options.ColdToolHandoff, "cold-tool-handoff", "", "Private externally anchored cold file-tool handoff for an explicit new resumed turn")
+	command.Flags().StringVar(&options.ColdToolHandoffSHA, "cold-tool-handoff-sha256", "", "Independent SHA-256 of the exact cold handoff file bytes")
+	command.Flags().StringVar(&options.UsageLimits.MaxEstimatedCost, "max-estimated-cost", "", "Stop new calls after estimated native cost reaches this decimal amount; in-flight calls may overshoot (0 or unset disables; requires --price-card)")
+	command.Flags().BoolVar(&options.UsageLimits.ReserveCostBeforeDispatch, "reserve-cost-before-dispatch", false, "Reserve a proven worst-case native estimate before dispatch (requires positive cost limit and upper_bound price card)")
+	command.Flags().IntVar(&options.UsageLimits.MaxOutputTokensPerCall, "max-output-tokens-per-call", 0, "Enforced maximum response tokens per reserved call, including reasoning (requires reservation mode)")
 	command.Flags().StringVar(&options.Resume, "resume", "", "Resume a previous session by ID")
 	command.Flags().StringVar(&options.OutputFormat, "output-format", string(outputFormatText), "Output format (text, json, or jsonl)")
 	return command
@@ -110,7 +137,46 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 	if err != nil {
 		return renderHeadlessFailure(formatForError(options.OutputFormat), options, err, "usage_error", ExitUsage)
 	}
+	if options.Timeout < 0 {
+		return renderHeadlessFailure(format, options, usageErrorf("timeout must be non-negative (0 disables)"), "usage_error", ExitUsage)
+	}
 	options = normalizeHeadlessWriters(options)
+	if (options.CaptureReadGuards || options.ColdToolHandoff != "" || options.ColdToolHandoffSHA != "") && format != outputFormatJSON {
+		return renderHeadlessFailure(format, options, usageErrorf("read guard recovery requires JSON output"), "usage_error", ExitUsage)
+	}
+	var handoff *engine.ColdToolHandoff
+	if options.ColdToolHandoff != "" || options.ColdToolHandoffSHA != "" {
+		if strings.TrimSpace(options.Resume) == "" || options.UsageCheckpointDir == "" || options.Timeout <= 0 || options.UsageLimits.MaxProviderCalls <= 0 || !options.UsageLimits.ReserveCostBeforeDispatch {
+			return renderHeadlessFailure(format, options, usageErrorf("cold handoff requires an explicit resume, fresh usage checkpoint, finite timeout/calls and cost reservation"), "usage_error", ExitUsage)
+		}
+		value, err := engine.ReadColdToolHandoff(options.ColdToolHandoff, options.ColdToolHandoffSHA)
+		if err != nil {
+			return renderHeadlessFailure(format, options, err, "cold_tool_handoff_invalid", ExitFailure)
+		}
+		handoff = &value
+	}
+	usage, err := execution.NewRunUsage(options.UsageLimits)
+	if options.PriceCardFile != "" {
+		var file *os.File
+		file, err = os.Open(options.PriceCardFile)
+		if err == nil {
+			var card execution.RunPriceCard
+			card, err = execution.DecodeRunPriceCard(file)
+			_ = file.Close()
+			if err == nil {
+				usage, err = execution.NewPricedRunUsage(options.UsageLimits, card)
+			}
+		} else {
+			err = fmt.Errorf("price card cannot be opened")
+		}
+	}
+	if err == nil && options.UsageCheckpointDir != "" {
+		err = usage.EnableCheckpointDir(options.UsageCheckpointDir)
+	}
+	if err != nil {
+		return renderHeadlessFailure(format, options, err, "usage_error", ExitUsage)
+	}
+	defer func() { _ = usage.Close() }()
 
 	prompt, err := resolveHeadlessPrompt(promptArgument, options.Stdin, readerIsTerminal(options.Stdin))
 	if err != nil {
@@ -134,19 +200,44 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 
 	configureHeadlessPermissions(&engineCfg, options.Stderr)
 	engineCfg.CommandEntrypoint = commands.EntrypointHeadless
+	engineCfg.RunUsage = usage
+	if options.Timeout > 0 {
+		engineCfg.RunDeadline = time.Now().Add(options.Timeout)
+		if earlier, ok := ctx.Deadline(); ok && earlier.Before(engineCfg.RunDeadline) {
+			engineCfg.RunDeadline = earlier
+		}
+	}
 
 	eng := engine.NewQueryEngine(engineCfg)
 	emitExecutionContainmentStartupDiagnostic(options.Stderr, eng)
 	defer eng.Close()
 	defer printResumeHint(options.Stderr, eng)
-	if err := resumeConfiguredSession(ctx, eng, resumeSource, options.Stderr); err != nil {
+	var guards *tools.FileReadGuards
+	var coldProof *engine.ColdToolStateProof
+	if handoff != nil {
+		var proof engine.ColdToolStateProof
+		guards, proof, err = eng.SessionService().ResumeInfoWithColdToolHandoff(ctx, *resumeSource, *handoff)
+		if err != nil {
+			return renderHeadlessFailure(format, options, err, "cold_tool_handoff_invalid", ExitFailure)
+		}
+		coldProof = &proof
+	} else if err := resumeConfiguredSession(ctx, eng, resumeSource, options.Stderr); err != nil {
 		return renderHeadlessFailure(format, options, err, errorCodeForFailure(err, "session_error"), ExitCode(err))
+	}
+	if guards == nil && options.CaptureReadGuards {
+		guards = tools.NewFileReadGuards()
 	}
 
 	queryCtx := ctx
+	if guards != nil {
+		queryCtx = tools.WithFileReadGuards(queryCtx, guards)
+	}
 	cancelQuery := func() {}
-	if format == outputFormatJSONL {
-		queryCtx, cancelQuery = context.WithCancel(ctx)
+	if options.Timeout > 0 {
+		queryCtx, cancelQuery = execution.WithRunDeadline(queryCtx, engineCfg.RunDeadline)
+		defer cancelQuery()
+	} else if format == outputFormatJSONL {
+		queryCtx, cancelQuery = context.WithCancel(queryCtx)
 		defer cancelQuery()
 	}
 	events, _ := eng.SubmitMessage(queryCtx, prompt)
@@ -173,6 +264,33 @@ func runHeadless(ctx context.Context, promptArgument string, options headlessOpt
 		result = collectHeadlessEvents(queryCtx, options.Stderr, events)
 	}
 	result.SessionID = eng.SessionID()
+	eng.Close()
+	_ = usage.Close()
+	snapshot := usage.Snapshot()
+	result.Usage = &snapshot
+	result.ColdRecovery = coldProof
+	if guards != nil {
+		captured, captureErr := guards.Snapshot(eng.GetCWD())
+		result.ReadGuards = &tools.ReadGuardCapture{Version: 1, Complete: captureErr == nil}
+		if captureErr == nil {
+			result.ReadGuards.Snapshot = &captured
+		}
+	}
+	if snapshot.StopReason != "" && result.ExitCode != ExitCancelled {
+		result.Status = "failed"
+		result.TerminalReason = snapshot.StopReason
+		result.ErrorCode = snapshot.StopReason
+		result.ExitCode = ExitFailure
+		budgetErr := execution.ErrRunBudgetExceeded
+		if snapshot.StopReason == "run_usage_unknown" {
+			budgetErr = execution.ErrRunUsageUnknown
+		}
+		if result.Err == nil {
+			result.Err = budgetErr
+		} else if !errors.Is(result.Err, budgetErr) {
+			result.Err = errors.Join(budgetErr, result.Err)
+		}
+	}
 	result.Err = sanitizeHeadlessError(result.Err, options.Runtime.apiKey)
 	if err := renderHeadlessResult(format, options.Stdout, options.Stderr, result); err != nil {
 		return err
@@ -393,7 +511,10 @@ func sanitizeHeadlessError(err error, exactSecrets ...string) error {
 func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result headlessResult) error {
 	if format == outputFormatJSON {
 		envelope := headlessEnvelope{
+			ReadGuards:     result.ReadGuards,
+			ColdRecovery:   result.ColdRecovery,
 			SchemaVersion:  headlessEnvelopeSchemaVersion,
+			Usage:          result.Usage,
 			Status:         result.Status,
 			Output:         result.Output,
 			SessionID:      result.SessionID,
@@ -414,6 +535,7 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 		}
 		lifecycleResult := enginetransport.LifecycleResult{
 			LifecycleIdentity: identity,
+			Usage:             result.Usage,
 			Status:            result.Status,
 			Output:            result.Output,
 			TerminalReason:    result.TerminalReason,
@@ -435,6 +557,12 @@ func renderHeadlessResult(format outputFormat, stdout, stderr io.Writer, result 
 			if _, err := io.WriteString(stdout, "\n"); err != nil {
 				return fmt.Errorf("write headless output terminator: %w", err)
 			}
+		}
+	}
+	if result.Usage != nil {
+		u := result.Usage
+		if _, err := fmt.Fprintf(stderr, "Usage: calls=%d tokens=%d input=%d output=%d cached=%d reasoning=%d unknown=%d in_flight=%d complete=%t\n", u.ProviderCalls, u.TotalTokens, u.PromptTokens, u.CompletionTokens, u.CachedPromptTokens, u.ReasoningTokens, u.UnknownCalls, u.InFlight, u.Complete); err != nil {
+			return err
 		}
 	}
 	if result.Err != nil {

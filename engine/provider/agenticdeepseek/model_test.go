@@ -338,7 +338,7 @@ func TestImageInputFailsBeforeDispatchForNonVisionModel(t *testing.T) {
 	m, err := New(context.Background(), &Config{
 		APIKey:  "fixture-key",
 		BaseURL: server.URL,
-		Model:   "deepseek-v4-flash",
+		Model:   "deepseek-v4-pro",
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
