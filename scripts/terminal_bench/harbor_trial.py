@@ -25,6 +25,11 @@ from scripts.terminal_bench.trial_policy import (
 )
 
 
+def _immutable_image(image):
+    return (isinstance(image, str) and "://" not in image
+            and re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9._:/-]*@)?sha256:[0-9a-f]{64}", image) is not None)
+
+
 def isolated_task(task):
     """Clone runtime policy, retaining immutable task files and agent semantics."""
     cloned = copy.copy(task)
@@ -36,7 +41,7 @@ def isolated_task(task):
     for target, (_, original) in zip(targets, definitions):
         if original is None:
             raise PolicyError("shared_verifier_unqualified")
-        if original.os != TaskOS.LINUX or not re.fullmatch(r"sha256:[0-9a-f]{64}", original.docker_image or ""):
+        if original.os != TaskOS.LINUX or not _immutable_image(original.docker_image):
             raise PolicyError("verifier_requires_pinned_linux_image")
         environment = original.model_copy(deep=True)
         environment.network_mode = NetworkMode.NO_NETWORK
@@ -119,7 +124,7 @@ class IsolatedDockerEnvironment(DockerEnvironment):
                 or any(p.network_mode != NetworkMode.NO_NETWORK for p in self._phase_network_policies)):
             raise PolicyError("verifier_network_transition_unqualified")
         image = self.task_env_config.docker_image or ""
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
+        if not _immutable_image(image):
             raise PolicyError("verifier_requires_pinned_linux_image")
         directory = self._proof_directory
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -168,7 +173,12 @@ class IsolatedDockerEnvironment(DockerEnvironment):
             raise PolicyError("verifier_build_unqualified")
         # Fail before Harbor can pull a missing image or start any container.
         image = self.task_env_config.docker_image
-        await self._inspect("image", image)
+        cached = await self._inspect("image", image)
+        content_id = cached.get("Id", "")
+        if (cached.get("Os") != "linux" or not isinstance(content_id, str)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", content_id)
+                or image.startswith("sha256:") and content_id != image):
+            raise PolicyError("verifier_cached_image_unverified")
         await super().start(force_build=False)
         if not self._compose_verified:
             raise PolicyError("verifier_compose_unverified")
@@ -177,9 +187,9 @@ class IsolatedDockerEnvironment(DockerEnvironment):
         if len(ids) != 1:
             raise PolicyError("verifier_container_unverified")
         row = await self._inspect("container", ids[0])
-        verify_container(row, image=image, log_dir=self._log_dir)
+        verify_container(row, image=content_id, log_dir=self._log_dir)
         proof = dict(version=1, session_id=self.session_id, container_id=row["Id"],
-                     image_id=row["Image"], network_mode="none", compose_verified=True,
+                     image_id=row["Image"], image_reference=image, network_mode="none", compose_verified=True,
                      stage="before_artifact_upload", can_resume_agent=False)
         with self.verifier_proof_path.open("x") as out:
             json.dump(proof, out, sort_keys=True)
