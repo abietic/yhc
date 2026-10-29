@@ -36,6 +36,33 @@ type backgroundShellEntry struct {
 	ShellID   string
 	Command   string
 	StartedAt time.Time
+	owner     string
+	mu        sync.Mutex
+	status    string
+	outcome   string
+	output    string
+	done      chan struct{}
+}
+
+func (entry *backgroundShellEntry) finish(command string, result *ShellResult, err error) {
+	status, outcome, output := "failed", "[execution failed]\n", ""
+	if result != nil {
+		status, outcome = shellResultOutcome(result)
+		output = formatShellResult(command, result)
+	}
+	if err != nil {
+		status = "failed"
+		if result != nil {
+			outcome += "[execution failed]\n"
+		}
+		output += "[execution error: " + truncateShellText(err.Error(), bashMaxCommandPreview, "error") + "]\n"
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	entry.status, entry.outcome, entry.output = status, outcome, output
+	if entry.done != nil {
+		close(entry.done)
+	}
 }
 
 func BashTool() ToolImpl {
@@ -227,23 +254,43 @@ func executeBashOutput(manager *ShellManager, input string) (string, error) {
 	if params.BashID == "" {
 		return "", fmt.Errorf("bash_output: bash_id is required")
 	}
-
-	if _, ok := backgroundShells.Load(params.BashID); !ok {
-		return fmt.Sprintf("No background shell found with ID %q", params.BashID), nil
+	var filter *regexp.Regexp
+	if params.Filter != "" {
+		var err error
+		filter, err = regexp.Compile(params.Filter)
+		if err != nil {
+			return "", fmt.Errorf("bash_output: invalid filter: %w", err)
+		}
 	}
 
-	stderr := ""
-	manager.mu.RLock()
-	shell := manager.shells[params.BashID]
-	manager.mu.RUnlock()
-	if shell != nil {
-		stderr, _ = shell.getStderrBuffer()
+	value, ok := backgroundShells.Load(params.BashID)
+	if !ok || manager == nil || manager.backgroundOwner == "" || value.(*backgroundShellEntry).owner != manager.backgroundOwner {
+		return fmt.Sprintf("No background shell found with ID %q", params.BashID), nil
+	}
+	entry := value.(*backgroundShellEntry)
+	entry.mu.Lock()
+	status, outcome, output := entry.status, entry.outcome, entry.output
+	entry.output = ""
+	entry.mu.Unlock()
+	if filter != nil && output != "" {
+		var kept []string
+		for _, line := range strings.Split(output, "\n") {
+			if filter.MatchString(line) {
+				kept = append(kept, line)
+			}
+		}
+		output = strings.Join(kept, "\n")
 	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Background shell: %s\n", params.BashID)
-	if stderr != "" {
-		fmt.Fprintf(&sb, "Output:\n%s\n", stderr)
+	fmt.Fprintf(&sb, "Status: %s\n", status)
+	// Terminal facts survive output consumption and user-supplied filters.
+	sb.WriteString(outcome)
+	if output != "" {
+		fmt.Fprintf(&sb, "Output:\n%s\n", output)
+	} else if status == "running" {
+		sb.WriteString("(command still running; completed output is not available yet)\n")
 	} else {
 		sb.WriteString("(no new output captured)\n")
 	}
@@ -290,7 +337,9 @@ func executeKillShell(manager *ShellManager, input string) (string, error) {
 		return fmt.Sprintf("Failed to kill shell %q: %s", params.ShellID, err.Error()), nil
 	}
 
-	backgroundShells.Delete(params.ShellID)
+	if value, ok := backgroundShells.Load(params.ShellID); ok && value.(*backgroundShellEntry).owner == manager.backgroundOwner {
+		backgroundShells.CompareAndDelete(params.ShellID, value)
+	}
 	return fmt.Sprintf("Shell %q terminated successfully.", params.ShellID), nil
 }
 
@@ -307,16 +356,21 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 	}
 
 	// Track it.
-	backgroundShells.Store(shellID, &backgroundShellEntry{
+	entry := &backgroundShellEntry{
 		ShellID:   shellID,
-		Command:   command,
+		Command:   truncateShellText(command, bashMaxCommandPreview, "command"),
 		StartedAt: time.Now(),
-	})
+		owner:     mgr.backgroundOwner,
+		status:    "running",
+		done:      make(chan struct{}),
+	}
+	backgroundShells.Store(shellID, entry)
 
 	// Fire and forget — execute in background goroutine.
 	go func() {
 		backgroundCtx := context.WithoutCancel(ctx)
-		_, _ = mgr.ExecuteAt(backgroundCtx, shellID, cwd, command, 10*time.Minute)
+		result, err := mgr.ExecuteAt(backgroundCtx, shellID, cwd, command, 10*time.Minute)
+		entry.finish(command, result, err)
 	}()
 
 	var sb strings.Builder
@@ -361,13 +415,8 @@ func formatShellResult(command string, result *ShellResult) string {
 		}
 	}
 
-	if result.TimedOut {
-		sb.WriteString("[timeout]\n")
-	} else if result.Canceled {
-		sb.WriteString("[canceled]\n")
-	} else if result.ExitCode != 0 {
-		fmt.Fprintf(&sb, "[exit code: %d]\n", result.ExitCode)
-	}
+	_, outcome := shellResultOutcome(result)
+	sb.WriteString(outcome)
 
 	// Sed-edit detection: warn when `sed -i` detected, suggest Edit tool.
 	// Mirrors TS parseSedEditCommand() warning.
@@ -377,6 +426,19 @@ func formatShellResult(command string, result *ShellResult) string {
 
 	// Keep terminal markers even if a future section reaches the safety limit.
 	return truncateShellText(sb.String(), bashMaxOutputDefault, "output")
+}
+
+func shellResultOutcome(result *ShellResult) (status, marker string) {
+	if result.TimedOut {
+		return "timed_out", "[timeout]\n"
+	}
+	if result.Canceled {
+		return "canceled", "[canceled]\n"
+	}
+	if result.ExitCode != 0 {
+		return "failed", fmt.Sprintf("[exit code: %d]\n", result.ExitCode)
+	}
+	return "completed", ""
 }
 
 // truncateShellText bounds a preview without splitting valid UTF-8 input.

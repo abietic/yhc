@@ -312,3 +312,15 @@ Examples and recovery guidance are in the
 
 Tool-call ordering is documented in [`model-and-tool-execution.md`](../runtime/model-and-tool-execution.md).
 Migration decisions remain in [`migration/PLAN.md`](../../migration/PLAN.md).
+
+## Background command feedback
+
+Background Bash publishes a bounded completed-result preview to `BashOutput`,
+with an explicit running/completed/failed/timeout/cancelled state. While a
+command is running, this path does not claim to stream its stdout. Each completed
+preview is consumed once; the terminal state remains visible on later reads and
+survives an optional regex filter. Invalid filters do not consume output.
+Records belong to one process-local ShellManager identity, and `KillAll`
+discards that manager's registered records. This does not establish cold recovery
+of background processes. Foreground command exit markers retain their existing
+tool-return semantics; ordinary nonzero exit does not become an engine exception.

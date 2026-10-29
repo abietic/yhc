@@ -110,14 +110,15 @@ func (s *PersistentShell) UpdateCWD() string {
 
 // ShellManager manages multiple persistent shell sessions.
 type ShellManager struct {
-	shells         map[string]*PersistentShell
-	mu             sync.RWMutex
-	defaultShell   string
-	policy         *containment.Snapshot
-	binding        *containment.Binding
-	bindingDigest  string
-	executionProof containment.ExecutionProof
-	start          func(*exec.Cmd) error
+	shells          map[string]*PersistentShell
+	backgroundOwner string
+	mu              sync.RWMutex
+	defaultShell    string
+	policy          *containment.Snapshot
+	binding         *containment.Binding
+	bindingDigest   string
+	executionProof  containment.ExecutionProof
+	start           func(*exec.Cmd) error
 	// captureRootIdentityForTest supplies a platform-neutral root identity
 	// oracle to white-box tests. Production uses the selected platform adapter.
 	captureRootIdentityForTest func(string) (containment.RootIdentity, error)
@@ -157,8 +158,9 @@ func (m *ShellManager) revalidateGuestRootIdentity(identity containment.RootIden
 // NewShellManager creates a new shell manager with no active shells.
 func NewShellManager() *ShellManager {
 	return &ShellManager{
-		shells:       make(map[string]*PersistentShell),
-		defaultShell: "default",
+		shells:          make(map[string]*PersistentShell),
+		backgroundOwner: uuid.NewString(),
+		defaultShell:    "default",
 	}
 }
 
@@ -188,7 +190,7 @@ func NewShellManagerWithGuestBinding(binding *containment.Binding) (*ShellManage
 	if err != nil {
 		return nil, err
 	}
-	return &ShellManager{shells: make(map[string]*PersistentShell), defaultShell: "default", policy: binding.Policy(), binding: binding, bindingDigest: binding.Digest(), executionProof: proof}, nil
+	return &ShellManager{shells: make(map[string]*PersistentShell), backgroundOwner: uuid.NewString(), defaultShell: "default", policy: binding.Policy(), binding: binding, bindingDigest: binding.Digest(), executionProof: proof}, nil
 }
 
 // BindGuestBinding atomically pins the first Guest binding and rejects replacement.
@@ -260,9 +262,10 @@ func NewShellManagerWithExecutionPolicy(policy *containment.Snapshot) *ShellMana
 		panic("tools: shell execution policy must be valid")
 	}
 	return &ShellManager{
-		shells:       make(map[string]*PersistentShell),
-		defaultShell: "default",
-		policy:       policy,
+		shells:          make(map[string]*PersistentShell),
+		backgroundOwner: uuid.NewString(),
+		defaultShell:    "default",
+		policy:          policy,
 	}
 }
 
@@ -987,6 +990,12 @@ func (m *ShellManager) KillAll() error {
 		shells = append(shells, shell)
 	}
 	m.shells = make(map[string]*PersistentShell)
+	backgroundShells.Range(func(key, value any) bool {
+		if value.(*backgroundShellEntry).owner == m.backgroundOwner {
+			backgroundShells.CompareAndDelete(key, value)
+		}
+		return true
+	})
 	m.mu.Unlock()
 
 	var firstErr error
