@@ -133,6 +133,14 @@ validation, and all inspection commands share a 30-second deadline. Packaging
 therefore needs the actual build toolchain and resolved module metadata in cache;
 an older launcher can use an already cached newer compiler.
 
+Publication outputs retain file-data synchronization and same-directory rooted
+rename promotion, with directory identities revalidated around promotion. Unix
+platforms also synchronize the parent directory and reject synchronization errors.
+Windows verifies and closes the directory handle without issuing the unsupported
+read-only directory flush; this does not provide Unix parent-directory crash
+durability. File write, data-sync, rename and close failures remain fatal on every
+platform, as do unexpected directory inspection and close failures.
+
 `go test ./scripts/publication` checks archive contents, source digest drift,
 license-scope separation, changed detector sets, module and binary version drift,
 replacements, unknown identifiers and unsafe inputs. Desktop tests use real Go

@@ -282,6 +282,10 @@ func validLicenseID(value string) bool {
 }
 
 func writeInventory(outputPath string, contents []byte) error {
+	return writeInventoryWithDirectorySync(outputPath, contents, syncInventoryDirectory)
+}
+
+func writeInventoryWithDirectorySync(outputPath string, contents []byte, syncDirectory func(*os.File) error) (resultErr error) {
 	directory := filepath.Dir(outputPath)
 	base := filepath.Base(outputPath)
 	if err := validateInventoryOutputPath(outputPath, directory, base); err != nil {
@@ -291,7 +295,11 @@ func writeInventory(outputPath string, contents []byte) error {
 	if err != nil {
 		return err
 	}
-	defer outputDirectory.Close()
+	defer func() {
+		if err := outputDirectory.Close(); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("close inventory output roots: %w", err))
+		}
+	}()
 	root := outputDirectory.root
 	initialTarget, err := lstatRegularOrAbsent(root, base)
 	if err != nil {
@@ -307,16 +315,8 @@ func writeInventory(outputPath string, contents []byte) error {
 			_ = root.Remove(temporary)
 		}
 	}()
-	if _, err := file.Write(contents); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write inventory output: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("sync inventory output: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close inventory output: %w", err)
+	if err := writeSyncedInventoryFile(file, contents); err != nil {
+		return err
 	}
 	if err := outputDirectory.revalidate(); err != nil {
 		return err
@@ -335,8 +335,12 @@ func writeInventory(outputPath string, contents []byte) error {
 	if err != nil {
 		return fmt.Errorf("open inventory output directory for sync: %w", err)
 	}
-	defer directoryFile.Close()
-	if err := directoryFile.Sync(); err != nil {
+	defer func() {
+		if err := directoryFile.Close(); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("close inventory output directory after sync: %w", err))
+		}
+	}()
+	if err := syncDirectory(directoryFile); err != nil {
 		return fmt.Errorf("sync inventory output directory: %w", err)
 	}
 	return nil
