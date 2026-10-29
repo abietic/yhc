@@ -45,6 +45,9 @@ func overflowAPIError(errorType, content string) *schema.Message {
 }
 
 func TestQueryRecoveryCascadeRunsPreparationAndOverflowStagesInOrder(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "20000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
 	ctx := context.Background()
 	model := &scriptedOverflowModel{streams: [][]*schema.Message{
 		{overflowAPIError("413", "Prompt is too long")},
@@ -57,7 +60,11 @@ func TestQueryRecoveryCascadeRunsPreparationAndOverflowStagesInOrder(t *testing.
 		if i%2 == 1 {
 			role = schema.Assistant
 		}
-		messages = append(messages, &schema.Message{Role: role, Content: "history"})
+		content := "history"
+		if role == schema.Assistant {
+			content = strings.Repeat("discardable investigation details ", 30)
+		}
+		messages = append(messages, &schema.Message{Role: role, Content: content})
 	}
 	messages[1].ReasoningContent = strings.Repeat("reasoning ", 1200)
 	messages = append(messages, &schema.Message{Role: schema.User, Content: "latest question"})
@@ -104,7 +111,10 @@ func TestQueryRecoveryCascadeRunsPreparationAndOverflowStagesInOrder(t *testing.
 	}
 }
 
-func TestQueryPreparationMicrocompactsBelowSnipThreshold(t *testing.T) {
+func TestQueryPreparationMicrocompactsUnderPressureBelowSnipThreshold(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "15000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
 	model := &scriptedOverflowModel{}
 	messages := []*schema.Message{
 		{Role: schema.User, Content: "question"},
@@ -156,6 +166,10 @@ func TestQueryPromptTooLongRetriesWithReactiveCompact(t *testing.T) {
 	terminal := Query(ctx, QueryParams{
 		Messages: []*schema.Message{
 			{Role: schema.User, Content: strings.Repeat("old context ", 2000)},
+			{Role: schema.Assistant, Content: strings.Repeat("first investigation ", 100)},
+			{Role: schema.Assistant, Content: strings.Repeat("second investigation ", 100)},
+			{Role: schema.Assistant, Content: strings.Repeat("third investigation ", 100)},
+			{Role: schema.Assistant, Content: strings.Repeat("fourth investigation ", 100)},
 			{Role: schema.Assistant, Content: "older answer"},
 			{Role: schema.User, Content: "latest question"},
 		},
@@ -190,6 +204,7 @@ func TestQueryPromptTooLongRetriesWithReactiveCompact(t *testing.T) {
 		t.Fatalf("expected collapse drain summary in first retry input, got %#v", drainInput)
 	}
 	secondInput := model.inputs[2]
+	assertExactCompactedRequests(t, secondInput, strings.Repeat("old context ", 2000), "latest question")
 	if len(secondInput) < 3 {
 		t.Fatalf("expected reactively compacted retry input, got %#v", secondInput)
 	}
@@ -237,6 +252,10 @@ func TestQueryPromptTooLongSecondFailureSurfacesTerminalError(t *testing.T) {
 	events, terminal := collectEvents(ctx, QueryParams{
 		Messages: []*schema.Message{
 			{Role: schema.User, Content: strings.Repeat("older prompt ", 600)},
+			{Role: schema.Assistant, Content: strings.Repeat("first investigation ", 100)},
+			{Role: schema.Assistant, Content: strings.Repeat("second investigation ", 100)},
+			{Role: schema.Assistant, Content: strings.Repeat("third investigation ", 100)},
+			{Role: schema.Assistant, Content: strings.Repeat("fourth investigation ", 100)},
 			{Role: schema.Assistant, Content: "older answer"},
 			{Role: schema.User, Content: strings.Repeat("big prompt ", 1500)},
 		},

@@ -26,7 +26,11 @@ func (a *App) resolveKeyAction(msg tea.KeyPressMsg, contexts ...keybindings.Cont
 		a.showToast("Key chord canceled")
 		return true, nil
 	case keybindings.ResolutionMatch:
-		return a.handleKeyAction(resolution.Action, msg)
+		handled, cmd := a.handleKeyAction(resolution.Action, msg)
+		if handled && resolution.Action != keybindings.ActionChatArgumentSuggest {
+			a.dismissComposerSuggestion()
+		}
+		return handled, cmd
 	default:
 		return false, nil
 	}
@@ -82,6 +86,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionAppQuickOpen:
 		a.openCommandPalette()
 		return true, nil
+	case keybindings.ActionChatManageContext:
+		a.openComposerContextManager()
+		return true, nil
 	case keybindings.ActionChatCancel:
 		a.cancelEditorInput()
 		return true, nil
@@ -105,6 +112,12 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 		return true, nil
 	case keybindings.ActionChatImagePaste:
 		return true, a.pasteClipboardImage()
+	case keybindings.ActionChatArgumentSuggest:
+		if a.inputMode == InputNormal && a.textarea.Value() == "" {
+			return true, a.requestManualComposerSuggestion()
+		}
+		a.updateArgumentCompletion(true)
+		return true, nil
 	case keybindings.ActionChatExternalEditor:
 		return true, a.openComposerExternalEditor()
 	case keybindings.ActionChatUndo:
@@ -143,7 +156,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 	case keybindings.ActionAutocompleteAccept:
 		return true, a.acceptAutocomplete(msg)
 	case keybindings.ActionAutocompleteDismiss:
-		if a.hasComposerSuggestionActivity() {
+		if a.hasArgumentCompletionActivity() {
+			a.dismissArgumentCompletion()
+		} else if a.hasComposerSuggestionActivity() {
 			a.dismissComposerSuggestion()
 		} else if len(a.mentionHints) > 0 {
 			a.dismissMentionHints()
@@ -176,6 +191,9 @@ func (a *App) handleKeyAction(action keybindings.Action, msg tea.KeyPressMsg) (b
 		return true, a.loadOlderActiveAgentTranscript()
 	case keybindings.ActionScrollBottom:
 		a.chat.ResetFollow()
+		return true, nil
+	case keybindings.ActionSelectionAttach:
+		a.attachSelectedOutputContext()
 		return true, nil
 	case keybindings.ActionSelectionCopy:
 		if !a.selection.HasSelection() {
@@ -321,6 +339,18 @@ func (a *App) handleHistoryAction(msg tea.KeyPressMsg, direction int) tea.Cmd {
 }
 
 func (a *App) moveAutocomplete(direction int) {
+	if values := a.argumentCandidates(); len(values) > 0 {
+		index := a.argumentCompletion.Index
+		if index < 0 {
+			if direction > 0 {
+				index = -1
+			} else {
+				index = 0
+			}
+		}
+		a.argumentCompletion.Index = (index + direction + len(values)) % len(values)
+		return
+	}
 	if len(a.mentionHints) > 0 {
 		if direction < 0 {
 			if a.mentionHintIdx <= 0 {
@@ -365,6 +395,10 @@ func (a *App) moveAutocomplete(direction int) {
 }
 
 func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
+	if len(a.argumentCandidates()) > 0 && (msg.Code == tea.KeyTab || a.argumentCompletion.Index >= 0) {
+		a.acceptArgumentCompletion()
+		return nil
+	}
 	if a.visibleComposerSuggestion() != "" {
 		return a.acceptComposerSuggestion()
 	}
@@ -395,6 +429,9 @@ func (a *App) acceptAutocomplete(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *App) autocompleteOwnsKey(msg tea.KeyPressMsg) bool {
+	if msg.Code == tea.KeyEscape && (a.hasArgumentCompletionActivity() || a.hasComposerSuggestionActivity()) {
+		return true
+	}
 	if a.visibleComposerSuggestion() != "" {
 		switch msg.Code {
 		case tea.KeyTab, tea.KeyRight, tea.KeyEscape:
@@ -408,6 +445,7 @@ func (a *App) autocompleteOwnsKey(msg tea.KeyPressMsg) bool {
 	}
 	mentionActive := len(a.mentionHints) > 0
 	commandActive := a.inputMode == InputCommand && (len(a.commandHints) > 0 || len(a.fileHints) > 0)
+	commandActive = commandActive || len(a.argumentCandidates()) > 0
 	if !mentionActive && !commandActive {
 		return false
 	}
@@ -526,6 +564,9 @@ func (a *App) keybindingSummary() string {
 		{keybindings.ContextChat, keybindings.ActionHistorySearch, "reverse history search"},
 		{keybindings.ContextChat, keybindings.ActionChatExternalEditor, "external editor"},
 		{keybindings.ContextChat, keybindings.ActionChatUndo, "undo composer edit"},
+		{keybindings.ContextChat, keybindings.ActionChatManageContext, "manage attached context"},
+		{keybindings.ContextChat, keybindings.ActionChatArgumentSuggest, "suggest next prompt / command argument"},
+		{keybindings.ContextScroll, keybindings.ActionSelectionAttach, "attach selected output as context"},
 		{keybindings.ContextGlobal, keybindings.ActionAppInterrupt, "interrupt / double-press exit"},
 		{keybindings.ContextGlobal, keybindings.ActionAppExit, "exit"},
 		{keybindings.ContextGlobal, keybindings.ActionAppToggleTranscript, "expanded transcript"},

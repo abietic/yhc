@@ -18,6 +18,34 @@ type sideQueryCaptureModel struct {
 	response       []*schema.Message
 }
 
+func TestSideQuerySamplingOverride(t *testing.T) {
+	zero := float32(0)
+	for _, tc := range []struct {
+		name        string
+		temperature *float32
+		want        float32
+	}{
+		{"inherit", nil, 0.7},
+		{"explicit zero", &zero, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chatModel := &sideQueryCaptureModel{response: []*schema.Message{{Role: schema.Assistant, Content: "continue the selected plan"}}}
+			_, err := SideQuery(t.Context(), chatModel, SideQueryOptions{
+				Messages:    []*schema.Message{{Role: schema.User, Content: "continue the selected plan"}},
+				Temperature: tc.temperature,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			inherited := float32(0.7)
+			options := model.GetCommonOptions(&model.Options{Temperature: &inherited}, chatModel.streamOptions...)
+			if options.Temperature == nil || *options.Temperature != tc.want || inherited != 0.7 || zero != 0 {
+				t.Fatal("side query lost the sampling override or mutated the inherited setting")
+			}
+		})
+	}
+}
+
 func (m *sideQueryCaptureModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	return &schema.Message{Role: schema.Assistant, Content: "done"}, nil
 }

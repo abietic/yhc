@@ -25,6 +25,7 @@ const (
 	runtimeInputEnvelopeLegacyVersion    = 1
 	runtimeInputEnvelopeVersion          = 2
 	runtimeItemVersion                   = 1
+	runtimeItemDeliveryVersion           = 2
 	runtimeInputAdmissionReceiptVersion  = 1
 	runtimeInputAdmissionDigestAlgorithm = "sha256-v1"
 	runtimeGoalContinuationLegacyVersion = 1
@@ -43,6 +44,19 @@ const (
 	RuntimePriorityNext  RuntimeInputPriority = "next"
 	RuntimePriorityLater RuntimeInputPriority = "later"
 )
+
+// PromptDeliveryMode separates active-turn steering from a fresh invocation.
+// The empty value preserves the scheduling of existing callers and ledgers.
+type PromptDeliveryMode string
+
+const (
+	PromptDeliverySteer    PromptDeliveryMode = "steer"
+	PromptDeliveryNextTurn PromptDeliveryMode = "next_turn"
+)
+
+func validPromptDelivery(mode PromptDeliveryMode) bool {
+	return mode == "" || mode == PromptDeliverySteer || mode == PromptDeliveryNextTurn
+}
 
 // RuntimeItemKind identifies one checkpoint-safe input variant.
 type RuntimeItemKind string
@@ -208,6 +222,7 @@ type RuntimeItem struct {
 	ID         string               `json:"id"`
 	Kind       RuntimeItemKind      `json:"kind"`
 	Priority   RuntimeInputPriority `json:"priority"`
+	Delivery   PromptDeliveryMode   `json:"delivery,omitempty"`
 	Scope      RuntimeInputScope    `json:"scope"`
 	Sequence   uint64               `json:"sequence"`
 	EnqueuedAt time.Time            `json:"enqueued_at"`
@@ -566,6 +581,9 @@ func (c *RuntimeInputCoordinator) HasAdmissionReceipt(
 	item.ID = strings.TrimSpace(item.ID)
 	normalizeRuntimeItemPayload(&item)
 	item.Version = runtimeItemVersion
+	if item.Delivery != "" {
+		item.Version = runtimeItemDeliveryVersion
+	}
 	item.Priority = normalizedRuntimePriority(item.Priority)
 	item.Scope = c.normalizeScope(item.Scope)
 	c.mu.Lock()
@@ -657,6 +675,9 @@ func (c *RuntimeInputCoordinator) enqueueBatchLocked(
 			return nil, errors.New(runtimeInlineImagesDecodeOnly)
 		}
 		item.Version = runtimeItemVersion
+		if item.Delivery != "" {
+			item.Version = runtimeItemDeliveryVersion
+		}
 		item.Priority = normalizedRuntimePriority(item.Priority)
 		item.Scope = c.normalizeScope(item.Scope)
 		if recordAdmission {
@@ -840,8 +861,11 @@ func (c *RuntimeInputCoordinator) ClaimSafePoint(
 			!runtimeScopesEqual(item.Scope, c.normalizeScope(scope)) {
 			continue
 		}
-		if item.Kind == RuntimeItemUserPrompt && !includeUser {
-			continue
+		if item.Kind == RuntimeItemUserPrompt {
+			if item.Delivery == PromptDeliveryNextTurn ||
+				!includeUser && item.Delivery != PromptDeliverySteer {
+				continue
+			}
 		}
 		if item.Priority == RuntimePriorityLater && !allowLater {
 			continue
@@ -1613,7 +1637,7 @@ func (c *RuntimeInputCoordinator) normalizeScope(scope RuntimeInputScope) Runtim
 }
 
 func (c *RuntimeInputCoordinator) validateItem(item RuntimeItem) error {
-	if item.Version != runtimeItemVersion {
+	if item.Version != runtimeItemVersion && item.Version != runtimeItemDeliveryVersion {
 		return fmt.Errorf("runtime input coordinator: item %q has unsupported version %d", item.ID, item.Version)
 	}
 	switch item.State {
@@ -1646,6 +1670,11 @@ func (c *RuntimeInputCoordinator) validateItem(item RuntimeItem) error {
 	case RuntimePriorityNow, RuntimePriorityNext, RuntimePriorityLater:
 	default:
 		return fmt.Errorf("runtime input coordinator: item %q has invalid priority %q", item.ID, item.Priority)
+	}
+	if item.Delivery != "" && item.Version != runtimeItemDeliveryVersion ||
+		!validPromptDelivery(item.Delivery) ||
+		item.Delivery != "" && item.Kind != RuntimeItemUserPrompt {
+		return fmt.Errorf("runtime input coordinator: item %q has invalid delivery mode", item.ID)
 	}
 	if item.Scope.SessionID == "" || item.Scope.SessionID != c.scope.SessionID {
 		return fmt.Errorf("runtime input coordinator: item %q has invalid session scope", item.ID)
@@ -1978,6 +2007,7 @@ type runtimeInputAdmissionPayload struct {
 	Version    int                  `json:"version"`
 	Kind       RuntimeItemKind      `json:"kind"`
 	Priority   RuntimeInputPriority `json:"priority"`
+	Delivery   PromptDeliveryMode   `json:"delivery,omitempty"`
 	Scope      RuntimeInputScope    `json:"scope"`
 	IsMeta     bool                 `json:"is_meta,omitempty"`
 	Origin     string               `json:"origin,omitempty"`
@@ -2005,6 +2035,7 @@ func runtimeInputAdmissionDigest(item RuntimeItem) (string, error) {
 		Version:    runtimeInputAdmissionReceiptVersion,
 		Kind:       item.Kind,
 		Priority:   normalizedRuntimePriority(item.Priority),
+		Delivery:   item.Delivery,
 		Scope:      item.Scope,
 		IsMeta:     item.IsMeta,
 		Origin:     strings.TrimSpace(item.Origin),
@@ -2248,6 +2279,9 @@ func runtimeItemMetadata(item RuntimeItem) map[string]any {
 		"command_uuid":          item.ID,
 		"command_priority":      string(item.Priority),
 		"is_meta":               item.IsMeta,
+	}
+	if item.Delivery != "" {
+		extra["runtime_input_delivery"] = string(item.Delivery)
 	}
 	switch item.Kind {
 	case RuntimeItemUserPrompt, RuntimeItemSteering, RuntimeItemAgentMessage:

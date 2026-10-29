@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/abietic/yhc/engine/internal/providercost"
 )
 
 // ProviderUsageDescriptor names one logical model round before an actual
@@ -18,14 +20,50 @@ type ProviderUsageDescriptor struct {
 	ModelAttemptIndex int
 	ModelRetryIndex   int
 	Model             string
+	Provider          string
 	QuerySource       string
 	ModelRole         string
 	ModelProfile      string
 	ReasoningEffort   string
+	CostBound         *providercost.Bound
+	// Request identifies a standalone, token-free API request. It must settle
+	// through CompleteRequestUsage rather than inferred token usage.
+	Request bool
 }
 
-// ProviderUsageAdmitter is the narrow provider-facing capability exposed by a
-// root Goal. It cannot change Goal budget, status, objective, or continuation.
+// RequestUsageAvailable checks whether a paid request can be accounted for.
+// An unpriced optional service may use a free fallback without poisoning the
+// model run's admission state. Actual admission remains atomic and authoritative.
+func RequestUsageAvailable(owner ProviderUsageAdmitter, d ProviderUsageDescriptor) bool {
+	if policy, ok := owner.(interface {
+		RequestUsageAvailable(ProviderUsageDescriptor) bool
+	}); ok {
+		return policy.RequestUsageAvailable(d)
+	}
+	return true
+}
+
+// CompleteRequestUsage records one known request, with either one billable unit
+// or zero (for example, an empty search). It never invents model token usage.
+func CompleteRequestUsage(call ProviderUsageCall, billable bool) error {
+	if call == nil {
+		return nil
+	}
+	var err error
+	if request, ok := call.(interface{ CompleteRequestUsage(bool) error }); ok {
+		err = request.CompleteRequestUsage(billable)
+	} else {
+		// Durable token-only Goal owners still observe the call and zero tokens.
+		err = call.CompleteProviderUsage(&schema.TokenUsage{})
+	}
+	if err != nil {
+		return &ProviderUsageTerminalError{Err: err}
+	}
+	return nil
+}
+
+// ProviderUsageAdmitter is the narrow provider-facing accounting capability.
+// Goal and invocation owners may compose it without exposing their state controls.
 type ProviderUsageAdmitter interface {
 	NewLogicalRoundID() string
 	AdmitProviderUsage(context.Context, ProviderUsageDescriptor) (ProviderUsageCall, error)
@@ -106,8 +144,8 @@ func IsProviderUsageTerminalError(err error) bool {
 	return errors.As(err, &terminal)
 }
 
-// CompleteProviderUsage extracts the one final cumulative usage snapshot
-// produced by ProcessStream and commits it through the admitted Goal call.
+// CompleteProviderUsage extracts the final cumulative usage from a completed
+// provider message and commits it through the admitted call.
 func CompleteProviderUsage(
 	call ProviderUsageCall,
 	messages []*schema.Message,
@@ -122,10 +160,32 @@ func CompleteProviderUsage(
 			continue
 		}
 		if message.ResponseMeta != nil && message.ResponseMeta.Usage != nil {
-			copied := *message.ResponseMeta.Usage
-			usage = &copied
+			usage = message.ResponseMeta.Usage
 		}
 		break
+	}
+	return completeProviderUsage(call, usage)
+}
+
+// CompleteStreamProviderUsage settles the final cumulative stream receipt even
+// when the provider produced no assistant content. A stream error must still
+// use MarkProviderUsageAmbiguous, which accepts only explicitly authoritative
+// terminal-error receipts and never settles partial stream counters.
+func CompleteStreamProviderUsage(call ProviderUsageCall, result *StreamResult) error {
+	var usage *schema.TokenUsage
+	if result != nil {
+		usage = result.Usage
+	}
+	return completeProviderUsage(call, usage)
+}
+
+func completeProviderUsage(call ProviderUsageCall, usage *schema.TokenUsage) error {
+	if call == nil {
+		return nil
+	}
+	if usage != nil {
+		copied := *usage
+		usage = &copied
 	}
 	if err := call.CompleteProviderUsage(usage); err != nil {
 		return &ProviderUsageTerminalError{Err: err}
@@ -133,13 +193,38 @@ func CompleteProviderUsage(
 	return nil
 }
 
-// MarkProviderUsageAmbiguous fails closed after provider dispatch may have
-// occurred but no exact final usage record can be committed.
+// MarkProviderUsageAmbiguous settles an explicit final error receipt, retaining
+// the provider failure. Without one it fails closed unless the call explicitly
+// opts into observation-only ambiguity. Goal owners remain strict by default.
 func MarkProviderUsageAmbiguous(call ProviderUsageCall, cause error) error {
 	if call == nil {
 		return cause
 	}
+	var receipt providercost.FinalUsageError
+	if errors.As(cause, &receipt) {
+		if usage, responseModel := receipt.FinalProviderUsage(); usage != nil {
+			// Optional details belong to this authoritative receipt, never a
+			// sibling error in a joined chain.
+			if cacheReceipt, ok := receipt.(interface{ ProviderCacheWriteReceipt() (int, bool, string) }); ok {
+				if tokens, known, ttl := cacheReceipt.ProviderCacheWriteReceipt(); known {
+					if observer, ok := call.(ProviderCacheWriteObserver); ok {
+						observer.ObserveProviderCacheWrite(tokens, ttl)
+					}
+				}
+			}
+			if observer, ok := call.(interface{ ObserveProviderResponseModel(string) }); ok {
+				observer.ObserveProviderResponseModel(responseModel)
+			}
+			if err := completeProviderUsage(call, usage); err != nil {
+				return errors.Join(cause, err)
+			}
+			return cause
+		}
+	}
 	accountingErr := call.MarkProviderUsageAmbiguous(cause)
+	if policy, ok := call.(interface{ FailClosedOnAmbiguousUsage() bool }); ok && !policy.FailClosedOnAmbiguousUsage() && accountingErr == nil {
+		return cause
+	}
 	return &ProviderUsageTerminalError{
 		Err: errors.Join(cause, accountingErr),
 	}

@@ -27,6 +27,9 @@ type executionSettingsEngine struct {
 	capabilitySet                            bool
 	capability                               bool
 	capabilityErr                            error
+	reasoningOptions                         []string
+	reasoningOptionsErr                      error
+	reasoningOptionsCalls                    int
 	block                                    *engine.ModelDispatchBlock
 	modelErr                                 error
 	permissionErr                            error
@@ -42,6 +45,11 @@ func (e *executionSettingsEngine) ReasoningEffortCapability(context.Context) (bo
 		return true, "", nil
 	}
 	return e.capability, "", e.capabilityErr
+}
+
+func (e *executionSettingsEngine) ReasoningEffortOptions(context.Context) ([]string, error) {
+	e.reasoningOptionsCalls++
+	return e.reasoningOptions, e.reasoningOptionsErr
 }
 
 func (e *executionSettingsEngine) ChangeModel(_ context.Context, value string) (engine.ModelControlState, error) {
@@ -76,6 +84,7 @@ func TestExecutionSettingsGetAndPatch(t *testing.T) {
 	var created *executionSettingsEngine
 	server, err := New(Config{Token: "test-token", Factory: func(_ context.Context, input EngineOptions) (SessionEngine, error) {
 		created = &executionSettingsEngine{fakeSessionEngine: newFakeSessionEngine(input, false), model: "safe", mode: permission.ModeDefault, block: &engine.ModelDispatchBlock{Code: engine.ModelDispatchBlockInvalidBinding, Selector: "safe", Remediation: "select a model"}, inventory: provider.RuntimeInventorySnapshot{Entries: []provider.RuntimeInventoryEntry{{Selector: "safe", DisplayName: "Safe", Provider: "agenticopenai", APIModel: "gpt-safe", Metadata: modelMetadata([]string{"low", "high", "HIGH"})}}}}
+		created.reasoningOptions = []string{"low", "high"}
 		return created, nil
 	}})
 	if err != nil {
@@ -229,12 +238,13 @@ func TestExecutionSettingsProjectionIsBoundedAndSafe(t *testing.T) {
 	}
 }
 
-func TestExecutionSettingsLegacyClaudeThinkingFallback(t *testing.T) {
+func TestExecutionSettingsUsesEngineOptionsForLegacyClaude(t *testing.T) {
 	server, err := New(Config{Token: "test-token", Factory: func(_ context.Context, input EngineOptions) (SessionEngine, error) {
 		return &executionSettingsEngine{
 			fakeSessionEngine: newFakeSessionEngine(input, false),
 			model:             "legacy:claude-sonnet-4-6",
 			mode:              permission.ModeDefault,
+			reasoningOptions:  []string{"high", "max"},
 			inventory: provider.RuntimeInventorySnapshot{Entries: []provider.RuntimeInventoryEntry{{
 				Selector: "legacy:claude-sonnet-4-6", Provider: "agenticclaude", APIModel: "claude-sonnet-4-6",
 			}}},
@@ -254,9 +264,38 @@ func TestExecutionSettingsLegacyClaudeThinkingFallback(t *testing.T) {
 	getResponse := getBearer(t, httpServer.URL+"/v1/sessions/"+summary.ID+"/execution-settings", "test-token")
 	decodeResponse(t, getResponse, &got)
 	_ = getResponse.Body.Close()
-	want := []string{"default", "low", "medium", "high", "xhigh", "max"}
+	// The engine has already reconciled metadata and adapter support. The
+	// presentation must not reconstruct a larger list from the model name.
+	want := []string{"default", "high", "max"}
 	if !equalStrings(got.ReasoningEffortOptions, want) {
 		t.Fatalf("reasoning options = %#v, want %#v", got.ReasoningEffortOptions, want)
+	}
+}
+
+func TestExecutionSettingsReasoningOptionsFailureKeepsModelRepairAvailable(t *testing.T) {
+	controller := &executionSettingsEngine{
+		model:               "safe",
+		mode:                permission.ModeDefault,
+		reasoningOptions:    []string{"high"},
+		reasoningOptionsErr: errors.New("binding changed"),
+		inventory: provider.RuntimeInventorySnapshot{Entries: []provider.RuntimeInventoryEntry{{
+			Selector: "safe", Provider: "agenticopenai", APIModel: "safe",
+		}}},
+	}
+	owned := &session{engine: controller}
+	got, err := owned.executionSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ReasoningEffortSupported || !equalStrings(got.ReasoningEffortOptions, []string{"default"}) ||
+		len(got.Models) != 1 || got.Models[0].Selector != "safe" || controller.reasoningOptionsCalls != 1 {
+		t.Fatalf("settings after option resolution error = %+v; calls=%d", got, controller.reasoningOptionsCalls)
+	}
+	controller.capabilitySet = true
+	controller.capability = false
+	_, err = owned.executionSettings(t.Context())
+	if err != nil || controller.reasoningOptionsCalls != 1 {
+		t.Fatalf("unsupported reasoning queried options: calls=%d err=%v", controller.reasoningOptionsCalls, err)
 	}
 }
 
@@ -318,6 +357,7 @@ func TestExecutionSettingsMutationsAreIndependentAndInvalidInputsDoNotCallContro
 	var created *executionSettingsEngine
 	server, err := New(Config{Token: "test-token", Factory: func(_ context.Context, input EngineOptions) (SessionEngine, error) {
 		created = &executionSettingsEngine{fakeSessionEngine: newFakeSessionEngine(input, false), model: "first", effort: "low", mode: permission.ModeDefault, inventory: provider.RuntimeInventorySnapshot{Entries: []provider.RuntimeInventoryEntry{{Selector: "first", Provider: "agenticopenai", APIModel: "first", Metadata: modelMetadata([]string{"low", "high"})}, {Selector: "next", Provider: "agenticopenai", APIModel: "next"}}}}
+		created.reasoningOptions = []string{"low", "high"}
 		return created, nil
 	}})
 	if err != nil {

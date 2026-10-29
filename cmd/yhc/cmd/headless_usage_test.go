@@ -1,0 +1,421 @@
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestExecBudgetResumeKeepsCompletedToolAndFreshAllowance(t *testing.T) {
+	repo := prepareHeadlessJSONLProviderTest(t)
+	artifact := filepath.Join(repo, "budget-progress.txt")
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		var body json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		item := p430Function("budget-write-once", artifact, "saved progress")
+		if call == 2 {
+			if !bytes.Contains(body, []byte("budget-write-once")) || !bytes.Contains(body, []byte("saved progress")) {
+				t.Errorf("resume lost completed tool history: %s", body)
+			}
+			item = `{"type":"message","id":"budget-final","role":"assistant","status":"completed","content":[{"type":"output_text","text":"continued","annotations":[]}]}`
+		} else if call != 1 {
+			t.Errorf("unexpected replay or retry, call %d", call)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		if call == 1 {
+			_, _ = fmt.Fprintf(w, "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":0,\"output_index\":0,\"item\":%s}\n\n", item)
+		} else {
+			_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":0,\"item_id\":\"budget-final\",\"output_index\":0,\"content_index\":0,\"delta\":\"continued\"}\n\n")
+		}
+		_, _ = fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"id\":\"budget-response\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[%s],\"usage\":{\"input_tokens\":10,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":4,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":14}}}\n\n", item)
+	}))
+	defer server.Close()
+	run := func(resume string) (headlessEnvelope, error) {
+		var out, stderr bytes.Buffer
+		cmd := newRootCommand()
+		cmd.SetOut(&out)
+		cmd.SetErr(&stderr)
+		cmd.SetIn(bytes.NewReader(nil))
+		args := []string{"exec", "continue saved work", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--permission-mode", "acceptEdits", "--tools", "Write", "--max-provider-calls", "1"}
+		if resume != "" {
+			args = append(args, "--resume", resume)
+		}
+		cmd.SetArgs(args)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		err := cmd.ExecuteContext(ctx)
+		var result headlessEnvelope
+		if decodeErr := json.Unmarshal(out.Bytes(), &result); decodeErr != nil {
+			t.Fatalf("decode result: %v stdout=%s stderr=%s", decodeErr, out.String(), stderr.String())
+		}
+		return result, err
+	}
+	first, err := run("")
+	if err == nil || first.Error == nil || first.Error.Code != "run_budget_exceeded" || first.SessionID == "" {
+		t.Fatalf("first result=%+v err=%v", first, err)
+	}
+	before, err := os.Stat(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := run(first.SessionID)
+	if err != nil || second.Status != "completed" || second.SessionID != first.SessionID {
+		t.Fatalf("second result=%+v err=%v", second, err)
+	}
+	after, err := os.Stat(artifact)
+	if err != nil || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("completed write was replayed: before=%v after=%v err=%v", before, after, err)
+	}
+	data, err := os.ReadFile(artifact)
+	if err != nil || string(data) != "saved progress" || calls.Load() != 2 {
+		t.Fatalf("artifact=%q calls=%d err=%v", data, calls.Load(), err)
+	}
+	if first.Usage.CallLedger.SegmentID == second.Usage.CallLedger.SegmentID {
+		t.Fatal("resume reused invocation ledger identity")
+	}
+	for _, result := range []headlessEnvelope{first, second} {
+		if result.Usage == nil || !result.Usage.Complete || result.Usage.ProviderCalls != 1 || result.Usage.TotalTokens != 14 || result.Usage.Limits.MaxProviderCalls != 1 {
+			t.Fatalf("segment allowance/usage=%+v", result.Usage)
+		}
+	}
+}
+
+func TestExecRunUsageAndOptionalLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		flags  []string
+		calls  int32
+		failed bool
+		priced bool
+		cause  string
+	}{
+		{name: "default-off", calls: 2},
+		{name: "call-limit", flags: []string{"--max-provider-calls", "1"}, calls: 1, failed: true, cause: "provider_calls"},
+		{name: "token-threshold", flags: []string{"--max-total-tokens", "1"}, calls: 1, failed: true, cause: "total_tokens"},
+		{name: "native-cost-threshold", flags: []string{"--max-estimated-cost", "0.000025"}, calls: 1, failed: true, priced: true, cause: "estimated_cost_threshold"},
+		{name: "native-cost-report-only", calls: 2, priced: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := prepareHeadlessJSONLProviderTest(t)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				call := calls.Add(1)
+				item := `{"type":"message","id":"message-final","role":"assistant","status":"completed","content":[{"type":"output_text","text":"done","annotations":[]}]}`
+				if call == 1 {
+					item = p430Function("usage-write", filepath.Join(repo, "usage.txt"), "ok")
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				if call == 1 {
+					_, _ = fmt.Fprintf(w, "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":0,\"output_index\":0,\"item\":%s}\n\n", item)
+				} else {
+					_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":0,\"item_id\":\"message-final\",\"output_index\":0,\"content_index\":0,\"delta\":\"done\"}\n\n")
+				}
+				_, _ = fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"id\":\"usage-response\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[%s],\"usage\":{\"input_tokens\":10,\"output_tokens\":4,\"total_tokens\":14,\"input_tokens_details\":{\"cached_tokens\":6},\"output_tokens_details\":{\"reasoning_tokens\":2}}}}\n\n", item)
+			}))
+			defer server.Close()
+			var out, stderr bytes.Buffer
+			cmd := newRootCommand()
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.SetIn(bytes.NewReader(nil))
+			args := []string{"exec", "exercise usage", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--permission-mode", "acceptEdits", "--tools", "Write", "--max-turns", "4"}
+			if tc.priced {
+				args = append(args, "--price-card", writeHeadlessPriceCard(t, repo))
+			}
+			cmd.SetArgs(append(args, tc.flags...))
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			err := cmd.ExecuteContext(ctx)
+			if (err != nil) != tc.failed {
+				t.Fatalf("err=%v stderr=%s output=%s", err, stderr.String(), out.String())
+			}
+			var result headlessEnvelope
+			if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			u := result.Usage
+			if u == nil || u.BudgetStopCause != tc.cause {
+				t.Fatalf("budget cause: want %q, usage=%+v", tc.cause, u)
+			}
+			if calls.Load() != tc.calls || u == nil || u.ProviderCalls != uint64(tc.calls) || u.TotalTokens != uint64(tc.calls)*14 || u.CachedPromptTokens != uint64(tc.calls)*6 || u.ReasoningTokens != uint64(tc.calls)*2 || !u.Complete {
+				t.Fatalf("calls=%d usage=%+v routes=%+v ledger=%+v", calls.Load(), u, u.Routes, u.CallLedger.Records)
+			}
+			if u.CallLedger.Version != 1 || len(u.CallLedger.Records) != int(tc.calls) || u.CallLedger.DroppedRecords != 0 {
+				t.Fatalf("ledger=%+v", u.CallLedger)
+			}
+			for _, record := range u.CallLedger.Records {
+				if record.State != "known" || record.Provider != "agenticdeepseek" || record.ResolvedModel != "deepseek-v4-flash" || record.Tokens == nil || record.Tokens.UncachedPromptTokens != 4 || record.Tokens.ReasoningTokens != 2 {
+					t.Fatalf("record=%+v", record)
+				}
+			}
+			if tc.failed && (result.Error == nil || result.Error.Code != "run_budget_exceeded" || result.ExitCode != 1) {
+				t.Fatalf("result=%+v", result)
+			}
+			if tc.priced && (u.Cost == nil || !u.Cost.Complete || u.Cost.PriceCard.Currency != "CNY" || u.Cost.PricedCalls != uint64(tc.calls)) {
+				t.Fatalf("native cost=%+v routes=%+v", u.Cost, u.Routes)
+			}
+			if !tc.failed && (u.Limits.MaxProviderCalls != 0 || u.Limits.MaxTotalTokens != 0) {
+				t.Fatal("default enabled a limit")
+			}
+		})
+	}
+}
+
+func TestExecTimeoutCancelsProviderAndPreservesUnknownUsage(t *testing.T) {
+	prepareHeadlessJSONLProviderTest(t)
+	var calls atomic.Int32
+	var sawDeadline atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		encoded, _ := json.Marshal(body)
+		sawDeadline.Store(bytes.Contains(encoded, []byte("deadline_utc=")))
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	var out, stderr bytes.Buffer
+	cmd := newRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetIn(bytes.NewReader(nil))
+	cmd.SetArgs([]string{"exec", "deadline probe", "--timeout", "1s", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		t.Fatal("timeout became success")
+	}
+	var result headlessEnvelope
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v output=%s stderr=%s", err, out.String(), stderr.String())
+	}
+	if calls.Load() != 1 || !sawDeadline.Load() {
+		t.Fatalf("calls=%d deadline=%v", calls.Load(), sawDeadline.Load())
+	}
+	if result.Status != "cancelled" || result.ExitCode != 130 || result.Usage == nil || result.Usage.Complete || result.Usage.UnknownCalls != 1 || result.Usage.InFlight != 0 {
+		t.Fatalf("result=%+v usage=%+v", result, result.Usage)
+	}
+}
+
+func TestExecRejectsNegativeTimeoutBeforeProviderSetup(t *testing.T) {
+	var out, stderr bytes.Buffer
+	cmd := newRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"exec", "probe", "--timeout=-1s", "--output-format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("negative timeout accepted")
+	}
+	var result headlessEnvelope
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == nil || result.Error.Code != "usage_error" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestExecCostThresholdResumeKeepsProgressAndIncrementalCost(t *testing.T) {
+	t.Run("threshold", func(t *testing.T) { testExecCostResume(t, false) })
+	t.Run("reservation", func(t *testing.T) { testExecCostResume(t, true) })
+}
+
+func testExecCostResume(t *testing.T, reserve bool) {
+	repo := prepareHeadlessJSONLProviderTest(t)
+	artifact := filepath.Join(repo, "budget-progress.txt")
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		var body json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		item := p430Function("budget-write-once", artifact, "saved progress")
+		if call == 2 {
+			if !bytes.Contains(body, []byte("budget-write-once")) || !bytes.Contains(body, []byte("saved progress")) {
+				t.Errorf("resume lost completed tool history: %s", body)
+			}
+			item = `{"type":"message","id":"budget-final","role":"assistant","status":"completed","content":[{"type":"output_text","text":"continued","annotations":[]}]}`
+		} else if call != 1 {
+			t.Errorf("unexpected replay or retry, call %d", call)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		if call == 1 {
+			_, _ = fmt.Fprintf(w, "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":0,\"output_index\":0,\"item\":%s}\n\n", item)
+		} else {
+			_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":0,\"item_id\":\"budget-final\",\"output_index\":0,\"content_index\":0,\"delta\":\"continued\"}\n\n")
+		}
+		_, _ = fmt.Fprintf(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"id\":\"budget-response\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"deepseek-v4-flash\",\"output\":[%s],\"usage\":{\"input_tokens\":10,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":4,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":14}}}\n\n", item)
+	}))
+	defer server.Close()
+	cardPath := writeHeadlessPriceCard(t, repo)
+	limit := "0.000030"
+	if reserve {
+		var card map[string]any
+		data, err := os.ReadFile(cardPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal(data, &card); err != nil {
+			t.Fatal(err)
+		}
+		card["window"] = "upper_bound"
+		card["routes"].([]any)[0].(map[string]any)["api_model"] = "deepseek-v4-flash"
+		data, err = json.Marshal(card)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(cardPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		limit = "2.097168" // 1048576*2 + 4*4, native price per million.
+	}
+	run := func(resume string) (headlessEnvelope, error) {
+		var out, stderr bytes.Buffer
+		cmd := newRootCommand()
+		cmd.SetOut(&out)
+		cmd.SetErr(&stderr)
+		cmd.SetIn(bytes.NewReader(nil))
+		args := []string{"exec", "continue saved work", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--permission-mode", "acceptEdits", "--tools", "Write", "--price-card", cardPath, "--max-estimated-cost", limit}
+		if reserve {
+			args = append(args, "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "4")
+		}
+		if resume != "" {
+			args = append(args, "--resume", resume)
+		}
+		cmd.SetArgs(args)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		err := cmd.ExecuteContext(ctx)
+		var result headlessEnvelope
+		if decodeErr := json.Unmarshal(out.Bytes(), &result); decodeErr != nil {
+			t.Fatalf("decode result: %v stdout=%s stderr=%s", decodeErr, out.String(), stderr.String())
+		}
+		return result, err
+	}
+	first, err := run("")
+	if err == nil || first.Error == nil || first.Error.Code != "run_budget_exceeded" || first.SessionID == "" {
+		t.Fatalf("first result=%+v err=%v", first, err)
+	}
+	before, err := os.Stat(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := run(first.SessionID)
+	if err != nil || second.Status != "completed" || second.SessionID != first.SessionID {
+		t.Fatalf("second result=%+v err=%v", second, err)
+	}
+	after, err := os.Stat(artifact)
+	if err != nil || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("completed write was replayed: before=%v after=%v err=%v", before, after, err)
+	}
+	data, err := os.ReadFile(artifact)
+	if err != nil || string(data) != "saved progress" || calls.Load() != 2 {
+		t.Fatalf("artifact=%q calls=%d err=%v", data, calls.Load(), err)
+	}
+	if first.Usage.CallLedger.SegmentID == second.Usage.CallLedger.SegmentID {
+		t.Fatal("resume reused invocation ledger identity")
+	}
+	for _, result := range []headlessEnvelope{first, second} {
+		if reserve && (result.Usage.Cost.Reservation == nil || result.Usage.Cost.Reservation.OutstandingAmount != "0.000000000000" || result.Usage.Cost.Reservation.RetainedAmount != "0.000000000000" || result.Usage.Cost.LimitMode != "pre_dispatch_reservation") {
+			t.Fatalf("reservation=%+v", result.Usage.Cost)
+		}
+		if result.Usage == nil || !result.Usage.Complete || result.Usage.ProviderCalls != 1 || result.Usage.TotalTokens != 14 || result.Usage.Cost == nil || result.Usage.Cost.KnownEstimatedAmount != "0.000036000000" || result.Usage.Limits.MaxEstimatedCost != limit {
+			t.Fatalf("segment allowance/usage=%+v", result.Usage)
+		}
+	}
+}
+
+func writeHeadlessPriceCard(t *testing.T, repo string) string {
+	t.Helper()
+	path := filepath.Join(repo, "public-price-card.json")
+	const card = `{"version":1,"currency":"CNY","source":"https://example.org/pricing","as_of":"2026-10-11T00:00:00Z","window":"fixed","routes":[{"provider":"agenticdeepseek","model":"legacy:deepseek-v4-flash","cached_input_per_million":"1","uncached_input_per_million":"2","output_per_million":"4"}]}`
+	if err := os.WriteFile(path, []byte(card), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestExecReservationDenialAndOverloadDoNotRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name, limit string
+		wantCalls   int32
+		code        string
+	}{
+		{name: "pre-dispatch denial", limit: "0.01", wantCalls: 0, code: "run_budget_exceeded"},
+		{name: "uncertain overload", limit: "5", wantCalls: 1, code: "run_usage_unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := prepareHeadlessJSONLProviderTest(t)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprint(w, `{"error":{"type":"overloaded","message":"fixture overload"}}`)
+			}))
+			defer server.Close()
+			path := writeHeadlessPriceCard(t, repo)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var card map[string]any
+			if err = json.Unmarshal(data, &card); err != nil {
+				t.Fatal(err)
+			}
+			card["window"] = "upper_bound"
+			card["routes"].([]any)[0].(map[string]any)["api_model"] = "deepseek-v4-flash"
+			data, err = json.Marshal(card)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var out, stderr bytes.Buffer
+			cmd := newRootCommand()
+			cmd.SetOut(&out)
+			cmd.SetErr(&stderr)
+			cmd.SetIn(bytes.NewReader(nil))
+			cmd.SetArgs([]string{"exec", "reservation probe", "--output-format", "json", "--provider", "deepseek", "--model", "deepseek-v4-flash", "--base-url", server.URL, "--api-key", p430FakeKey, "--price-card", path, "--max-estimated-cost", tc.limit, "--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "4"})
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			err = cmd.ExecuteContext(ctx)
+			var result headlessEnvelope
+			if e := json.Unmarshal(out.Bytes(), &result); e != nil {
+				t.Fatalf("decode: %v", e)
+			}
+			if err == nil || result.Error == nil || result.Error.Code != tc.code || calls.Load() != tc.wantCalls {
+				t.Fatalf("code=%+v calls=%d err=%v", result.Error, calls.Load(), err)
+			}
+			wantCause := ""
+			if tc.wantCalls == 0 {
+				wantCause = "estimated_cost_reservation"
+			}
+			if result.Usage == nil || result.Usage.BudgetStopCause != wantCause {
+				t.Fatalf("budget cause: want %q, usage=%+v", wantCause, result.Usage)
+			}
+			if tc.wantCalls == 1 && (result.Usage.Cost.Complete || result.Usage.Cost.Reservation.RetainedAmount != "2.097168000000" || result.Usage.ProviderCalls != 1) {
+				t.Fatalf("uncertain exposure=%+v", result.Usage)
+			}
+		})
+	}
+}

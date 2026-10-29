@@ -45,7 +45,7 @@ func TestResolvePortfolioMetadataUsesProviderModelRequestCapabilities(t *testing
 	if metadata.SupportedReasoningEfforts.Source != "built-in" ||
 		!reflect.DeepEqual(
 			metadata.SupportedReasoningEfforts.Value,
-			[]string{"none", "high", "max"},
+			[]string{"none", "low", "high", "max"},
 		) {
 		t.Fatalf(
 			"DeepSeek request capability metadata = %#v",

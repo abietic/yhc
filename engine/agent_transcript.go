@@ -28,10 +28,13 @@ var (
 
 // AgentTranscriptPageRequest addresses one exact child generation. Cursor is
 // process-local and opaque; callers must retain AgentID and Generation on every
-// async request so stale selection results fail closed.
+// async request so stale selection results fail closed. SessionID and ThreadID
+// are an optional pair for legacy callers; transport callers bind both.
 type AgentTranscriptPageRequest struct {
 	AgentID    string
 	Generation int64
+	SessionID  string
+	ThreadID   string
 	Cursor     string
 	Limit      int
 }
@@ -109,10 +112,19 @@ type agentTranscriptSelector struct {
 func (e *QueryEngine) AgentTranscriptPage(
 	request AgentTranscriptPageRequest,
 ) (AgentTranscriptPage, bool, error) {
+	return e.agentTranscriptPage(request, transcript.LoadMessagePage)
+}
+
+func (e *QueryEngine) agentTranscriptPage(
+	request AgentTranscriptPageRequest,
+	loadPage func(transcript.MessagePageRequest) (*transcript.MessagePageResult, error),
+) (AgentTranscriptPage, bool, error) {
 	if e == nil || e.runtimeState == nil {
 		return AgentTranscriptPage{}, false, nil
 	}
 	request.AgentID = strings.TrimSpace(request.AgentID)
+	request.SessionID = strings.TrimSpace(request.SessionID)
+	request.ThreadID = strings.TrimSpace(request.ThreadID)
 	request.Cursor = strings.TrimSpace(request.Cursor)
 	if request.AgentID == "" {
 		return AgentTranscriptPage{}, false, errors.New("agent transcript page requires an Agent ID")
@@ -127,7 +139,7 @@ func (e *QueryEngine) AgentTranscriptPage(
 		limit = maxAgentTranscriptPageSize
 	}
 
-	agent, thread, revision, found := e.runtimeState.AgentThreadSnapshot(request.AgentID)
+	agent, thread, _, found := e.runtimeState.AgentThreadSnapshot(request.AgentID)
 	if !found {
 		if request.Cursor != "" {
 			return AgentTranscriptPage{}, false, fmt.Errorf("%w: Agent is no longer present", ErrAgentTranscriptSelectionChanged)
@@ -170,7 +182,26 @@ func (e *QueryEngine) AgentTranscriptPage(
 		pageRequest.Boundary = state.boundary
 		pageRequest.ExpectedFile = state.fileInfo
 	}
-	durable, err := transcript.LoadMessagePage(pageRequest)
+	durable, err := loadPage(pageRequest)
+	if err != nil {
+		return AgentTranscriptPage{}, true, err
+	}
+	// Reading a frozen file prefix is not an activation lock. Revalidate the
+	// exact owner after I/O, before publishing content or admitting a cursor.
+	currentAgent, currentThread, currentRevision, currentFound := e.runtimeState.AgentThreadSnapshot(request.AgentID)
+	bound := request
+	bound.SessionID, bound.ThreadID = agent.SessionID, agent.ThreadID
+	if !currentFound || validateAgentTranscriptSelection(currentAgent, currentThread, bound) != nil ||
+		currentAgent.TranscriptPath != agent.TranscriptPath {
+		return AgentTranscriptPage{}, true, ErrAgentTranscriptSelectionChanged
+	}
+	currentFile, statErr := os.Lstat(agent.TranscriptPath)
+	if durable == nil || durable.FileInfo == nil || statErr != nil || !currentFile.Mode().IsRegular() ||
+		!os.SameFile(durable.FileInfo, currentFile) || currentFile.Size() < durable.SnapshotSize {
+		return AgentTranscriptPage{}, true, transcript.ErrTranscriptRevisionChanged
+	}
+	agent, thread = currentAgent, currentThread
+	mode, err = agentTranscriptAttachmentMode(agent, thread)
 	if err != nil {
 		return AgentTranscriptPage{}, true, err
 	}
@@ -198,7 +229,7 @@ func (e *QueryEngine) AgentTranscriptPage(
 	}
 
 	response := AgentTranscriptPage{
-		Revision:     revision,
+		Revision:     currentRevision,
 		AgentID:      agent.AgentID,
 		SessionID:    agent.SessionID,
 		ThreadID:     agent.ThreadID,
@@ -255,13 +286,18 @@ func validateAgentTranscriptSelection(
 	if agent.AgentID != request.AgentID || agent.Generation != request.Generation {
 		return fmt.Errorf("%w: requested Agent generation is stale", ErrAgentTranscriptSelectionChanged)
 	}
+	if (request.SessionID != "" || request.ThreadID != "") &&
+		(request.SessionID != agent.SessionID || request.ThreadID != agent.ThreadID) {
+		return fmt.Errorf("%w: requested Agent lineage is stale", ErrAgentTranscriptSelectionChanged)
+	}
 	if strings.TrimSpace(agent.SessionID) == "" ||
 		strings.TrimSpace(agent.ThreadID) == "" ||
 		strings.TrimSpace(agent.TranscriptPath) == "" {
 		return fmt.Errorf("%w: durable Agent identity is incomplete", ErrAgentTranscriptSelectionChanged)
 	}
 	if thread.ThreadID != "" &&
-		(thread.ThreadID != agent.ThreadID || thread.SessionID != agent.SessionID || thread.AgentID != agent.AgentID) {
+		(thread.ThreadID != agent.ThreadID || thread.SessionID != agent.SessionID || thread.AgentID != agent.AgentID ||
+			(thread.AgentGeneration > 0 && thread.AgentGeneration != request.Generation)) {
 		return fmt.Errorf("%w: runtime thread identity does not match Agent metadata", ErrAgentTranscriptSelectionChanged)
 	}
 	return nil

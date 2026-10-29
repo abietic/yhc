@@ -1,13 +1,48 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const asset = (name) => new URL(`../../internal/webui/assets/${name}`, import.meta.url);
+
+test('provider dialog preserves every supported saved selection and never preloads a key', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const start = app.indexOf('function openProviderDialog(');
+  const end = app.indexOf('function closeProviderDialog(', start);
+  assert.ok(start >= 0 && end > start);
+  const providers = ['anthropic', 'openai', 'google', 'deepseek', 'glm', 'kimi', 'qwen', 'ark'];
+  for (const provider of [...providers, 'unknown-provider']) {
+    const nodes = new Map();
+    const node = id => {
+      if (!nodes.has(id)) nodes.set(id, {
+        value: '', options: providers.map(value => ({ value })), open: false,
+        classList: { toggle() {} }, focus() {}, showModal() { this.open = true; },
+      });
+      return nodes.get(id);
+    };
+    node('provider-api-key').value = 'stale-test-input';
+    runInNewContext(`${app.slice(start, end)}\nopenProviderDialog();`, {
+      $: node, state: {}, sessionCreation: { busy: () => false },
+      backendAvailable: () => true,
+      providerSetup: { setupAvailable: true, configured: true, provider,
+        model: 'fixture-model', baseURL: 'https://fixture.example.invalid/' },
+      providerSetupMessage: () => '', renderProviderSetup() {},
+      requestAnimationFrame: callback => callback(),
+      api() { assert.fail('Opening provider setup must not perform an API operation.'); },
+    });
+    assert.equal(node('provider-select').value, providers.includes(provider) ? provider : 'openai', provider);
+    assert.equal(node('provider-model').value, 'fixture-model');
+    assert.equal(node('provider-base-url').value, 'https://fixture.example.invalid/');
+    assert.equal(node('provider-api-key').value, '');
+    assert.equal(node('provider-dialog').open, true);
+  }
+});
 
 test('renderer exposes a semantic Desktop provider setup and reachable history', async () => {
   const html = await readFile(asset('index.html'), 'utf8');
   assert.match(html, /class="mark"[^>]*>Y<\/span>/);
-  assert.match(html, /class="empty-mark"[^>]*>YHC<\/span>/);
+  assert.match(html, /class="empty workbench-home"[^>]*aria-labelledby="empty-title"/);
+  assert.match(html, /id="home-sessions"/);
   assert.doesNotMatch(html, /class="(?:empty-)?mark"[^>]*>E<\/span>/);
   assert.match(html, /id="provider-settings"/);
   assert.match(html, /id="toggle-session-history"/);
@@ -18,6 +53,42 @@ test('renderer exposes a semantic Desktop provider setup and reachable history',
   assert.match(html, /id="provider-api-key"[^>]*type="password"/s);
   assert.match(html, /id="provider-api-key"[^>]*autocomplete="off"/s);
   assert.match(html, /id="provider-form"/);
+  assert.match(html, /id="settings-open"[^>]*type="button"/);
+  assert.match(html, /<dialog id="settings-dialog"[^>]*aria-labelledby="settings-title"/);
+  assert.match(html, /id="settings-close"[^>]*aria-label="Close settings"/);
+  assert.match(html, /id="settings-search"[^>]*type="search"/);
+  assert.match(html, /id="settings-scope"/);
+  assert.match(html, /id="settings-status"[^>]*role="status"/);
+});
+
+test('Web onboarding offers browsing and does not expose a dead new-session action', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const creationControls = app.slice(
+    app.indexOf('function renderSessionCreationControls()'),
+    app.indexOf('function option('),
+  );
+  const empty = app.slice(
+    app.indexOf('function renderEmptyState()'),
+    app.indexOf('function sessionDotClass('),
+  );
+  assert.match(creationControls, /button\.hidden = surface === 'web'/);
+  assert.match(creationControls, /button\.disabled = creating \|\| providerSetupBusy \|\| !backendAvailable\(state\)/);
+  assert.match(empty, /workspaceButton\.hidden = surface === 'web'/);
+  assert.match(empty, /browseButton\.hidden = surface !== 'web'/);
+  assert.match(empty, /openSheet\('navigation', trigger\)/);
+  assert.match(empty, /\$\('session-filter'\)\.focus\(\)/);
+});
+
+test('a healthy welcome screen reports its connection and saved sessions explain Send', async () => {
+  const [app, html] = await Promise.all([
+    readFile(asset('app.mjs'), 'utf8'),
+    readFile(asset('index.html'), 'utf8'),
+  ]);
+  assert.match(app, /!surface \? 'Connecting' : backendReady \? 'Connected' : 'Offline'/);
+  assert.match(app, /Send a message to continue this saved session\./);
+  assert.doesNotMatch(app, /Select this saved session to resume it\./);
+  assert.match(html, /id="workbench-notice"[^>]*role="alert"/);
+  assert.match(html, /id="prompt"[^>]*aria-label=/s);
 });
 
 test('renderer keeps provider key DOM-local and clears it after submit', async () => {
@@ -32,13 +103,24 @@ test('renderer keeps provider key DOM-local and clears it after submit', async (
   assert.match(app, /button\.disabled = creating/);
   assert.match(
     app,
-    /workspaceButton\.disabled = !backendReady \|\| sessionCreation\.busy\(\)/,
+    /workspaceButton\.disabled = !backendReady \|\| providerSetupBusy \|\| sessionCreation\.busy\(\)/,
   );
   assert.match(app, /createDurableHistoryLoader/);
-  assert.match(app, /shouldDeferWorkspaceForProvider/);
-  assert.match(app, /pendingWorkspace\.defer\(workspace\)/);
+  assert.match(app, /pendingWorkspace\.attempt\(workspace\)/);
+  assert.doesNotMatch(app, /shouldDeferWorkspaceForProvider/);
   assert.doesNotMatch(app, /state\.(?:provider|setup)[^\n]*(?:apiKey|PROV_API_KEY)/);
   assert.doesNotMatch(app, /localStorage[^\n]*(?:apiKey|provider-api-key|PROV_API_KEY)/);
+});
+
+test('workspace creation lets the runtime resolve shared configuration before requesting credentials', async () => {
+  const app = await readFile(asset('app.mjs'), 'utf8');
+  const create = app.slice(
+    app.indexOf('async function createSession()'),
+    app.indexOf('async function loadExecutionSettings('),
+  );
+  assert.match(create, /await selectWorkspace\(\)/);
+  assert.match(create, /pendingWorkspace\.attempt\(workspace\)/);
+  assert.doesNotMatch(create, /providerSetup|openProviderDialog|pendingWorkspace\.defer/);
 });
 
 test('new Desktop sessions activate before target-scoped hydration', async () => {

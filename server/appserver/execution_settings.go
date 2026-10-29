@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/abietic/yhc/engine"
-	modelcaps "github.com/abietic/yhc/engine/model"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/provider"
 )
@@ -35,6 +34,7 @@ type sessionExecutionController interface {
 	GetModelName() string
 	ReasoningEffort() string
 	ReasoningEffortCapability(context.Context) (bool, string, error)
+	ReasoningEffortOptions(context.Context) ([]string, error)
 	ChangeModel(context.Context, string) (engine.ModelControlState, error)
 	ChangeReasoningEffort(context.Context, string) (string, error)
 	PermissionMode() permission.Mode
@@ -95,9 +95,12 @@ func (s *session) executionSettings(ctx context.Context) (ExecutionSettingsRespo
 		DispatchBlock:            executionDispatchBlock(controller.ModelDispatchBlockSnapshot()),
 	}
 	if supported {
-		response.ReasoningEffortOptions = executionReasoningOptions(
-			controller.ModelInventory(), model,
-		)
+		options, err := controller.ReasoningEffortOptions(ctx)
+		if err != nil {
+			response.ReasoningEffortSupported = false
+		} else {
+			response.ReasoningEffortOptions = append(response.ReasoningEffortOptions, options...)
+		}
 	}
 	return response, nil
 }
@@ -133,35 +136,6 @@ func executionModelOptions(
 	return options
 }
 
-func executionReasoningOptions(inventory provider.RuntimeInventorySnapshot, current string) []string {
-	options := []string{"default"}
-	seen := map[string]struct{}{"default": {}}
-	for _, entry := range inventory.Entries {
-		if !strings.EqualFold(strings.TrimSpace(entry.Selector), current) {
-			continue
-		}
-		efforts := entry.Metadata.SupportedReasoningEfforts.Value
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(entry.Selector)), "legacy:") &&
-			strings.EqualFold(strings.TrimSpace(entry.Provider), "agenticclaude") &&
-			modelcaps.GetCapabilities(entry.APIModel).SupportsThinking {
-			efforts = []string{"low", "medium", "high", "xhigh", "max"}
-		}
-		for _, raw := range efforts {
-			effort := strings.ToLower(strings.TrimSpace(raw))
-			if effort == "" || !modelcaps.SupportsAdapterReasoningEffort(entry.Provider, effort) {
-				continue
-			}
-			if _, exists := seen[effort]; exists {
-				continue
-			}
-			seen[effort] = struct{}{}
-			options = append(options, effort)
-		}
-		break
-	}
-	return options
-}
-
 func executionPermissionModeOptions() []string {
 	options := make([]string, 0, len(desktopPermissionModes))
 	for _, mode := range desktopPermissionModes {
@@ -189,6 +163,11 @@ func (s *session) updateExecutionSettings(
 	if err != nil {
 		return ExecutionSettingsResponse{}, err
 	}
+	s.turnAdmissionMu.Lock()
+	defer s.turnAdmissionMu.Unlock()
+	s.mu.Lock()
+	s.cancelPromptSuggestionLocked()
+	s.mu.Unlock()
 	if s.summary().ActiveTurnID != "" {
 		return ExecutionSettingsResponse{}, errExecutionSettingsActiveTurn
 	}

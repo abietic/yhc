@@ -643,10 +643,10 @@ func TestDefaultCommandContractAndAliasSnapshot(t *testing.T) {
 	wantVisible := []string{
 		"help", "new", "clear", "compact", "status", "model", "sessions", "resume",
 		"terminal", "suspend", "quit", "version", "usage",
-		"context", "config", "diff", "copy", "init", "permissions", "hooks",
+		"context", "config", "settings", "diff", "attach-diff", "copy", "init", "permissions", "hooks",
 		"doctor", "plan", "goal", "memory", "add-dir", "tasks",
 		"effort", "skills", "agents", "agent", "mcp", "team", "queue", "files",
-		"vim", "theme", "fork", "keybindings", "search", "reload-plugins",
+		"vim", "theme", "fork", "keybindings", "search", "reload-plugins", "btw", "changes", "recap",
 	}
 	if got, want := strings.Join(visible, ","), strings.Join(wantVisible, ","); got != want {
 		t.Fatalf("visible commands:\n got %s\nwant %s", got, want)
@@ -708,7 +708,7 @@ func TestDefaultCommandContractAndAliasSnapshot(t *testing.T) {
 		}
 	}
 	wantEntrypointCounts := map[Entrypoint]int{
-		EntrypointTUI:            40,
+		EntrypointTUI:            45,
 		EntrypointPlain:          30,
 		EntrypointHeadless:       18,
 		EntrypointACP:            14,

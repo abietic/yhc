@@ -20,6 +20,37 @@ import (
 	"github.com/abietic/yhc/tools"
 )
 
+func TestWorkspaceRuntimeReadRootsPreservesLinuxAliases(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "runtime")
+	alias := filepath.Join(parent, "runtime-alias")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("symlink fixture unavailable: %v", err)
+	}
+	canonical, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name            string
+		preserveAliases bool
+		want            []string
+	}{
+		{"canonical only", false, []string{canonical}},
+		{"Linux runtime alias", true, []string{canonical, alias}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := workspaceRuntimeReadRoots([]string{alias, filepath.Join(parent, "missing")}, tc.preserveAliases)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("runtime read roots = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSandboxSelectionRejectsImplicitAmbientAuthority(t *testing.T) {
 	readOnlyA, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -142,6 +173,9 @@ func TestP511EngineBindsEachOwnerToItsNamedClass(t *testing.T) {
 	}
 	if eng.ExecutionPolicySnapshot().Digest() != bindings.Guest().PolicyDigest() {
 		t.Fatal("legacy policy accessor did not map to Guest policy")
+	}
+	if runtime.GOOS == "linux" && os.Getenv("YHC_REQUIRE_LINUX_BWRAP") == "1" && bindings.Guest().Availability() != containment.BindingAvailable {
+		t.Fatalf("required real Linux Guest binding = %#v", bindings.Guest().Diagnostic())
 	}
 	if bindings.Guest().Availability() == containment.BindingAvailable {
 		proof := eng.GuestExecutionProof()

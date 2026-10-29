@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -19,15 +20,19 @@ import (
 	arkresponses "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"google.golang.org/genai"
 
+	"github.com/abietic/yhc/engine/internal/providercost"
 	"github.com/abietic/yhc/engine/internal/providerorigin"
 	enginemodel "github.com/abietic/yhc/engine/model"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
+	"github.com/abietic/yhc/engine/provider/agenticglm"
+	"github.com/abietic/yhc/engine/provider/agentickimi"
 )
 
 const (
 	claudeAnthropicBetaHeader   = "anthropic-beta"
 	claudeTaskBudgetsBetaHeader = "task-budgets-2026-03-13"
 	providerAgenticDeepSeek     = "agenticdeepseek"
+	providerAgenticGLM          = "agenticglm"
 	providerAgenticClaude       = "agenticclaude"
 	providerAgenticGemini       = "agenticgemini"
 	providerAgenticOpenAI       = "agenticopenai"
@@ -83,6 +88,7 @@ type CallModelOptions struct {
 	SessionID              string
 	SkipCacheWrite         bool
 	MaxOutputTokens        *int
+	Temperature            *float32 // nil inherits the model setting; zero is an explicit override.
 	TaskBudget             *TaskBudget
 	EffortValue            string
 	ProviderUsage          ProviderUsageAdmitter
@@ -133,6 +139,51 @@ func CallModel(
 		return nil, err
 	}
 
+	streamOpts := make([]model.Option, 0, 7)
+	if name := strings.TrimSpace(opts.Model); name != "" {
+		streamOpts = append(streamOpts, model.WithModel(name))
+	}
+	if opts.MaxOutputTokens != nil {
+		streamOpts = append(streamOpts, model.WithMaxTokens(*opts.MaxOutputTokens))
+	}
+	if opts.Temperature != nil {
+		streamOpts = append(streamOpts, model.WithTemperature(*opts.Temperature))
+	}
+	if toolChoice, allowedToolNames, ok := resolveToolChoice(opts.ToolChoice, opts.ForcedToolName); ok {
+		streamOpts = append(streamOpts, model.WithToolChoice(toolChoice, allowedToolNames...))
+	}
+	if isClaudeCallProvider(opts.Provider) {
+		if extraFields := buildClaudeExtraFields(opts); len(extraFields) > 0 {
+			streamOpts = append(streamOpts, agenticclaude.WithExtraFields(extraFields))
+		}
+	}
+	if hasEffortOption {
+		streamOpts = append(streamOpts, effortOption)
+	}
+
+	var preparedCostStream providercost.Stream
+	var costBound *providercost.Bound
+	if policy, ok := opts.ProviderUsage.(interface{ ProviderCostReservationPolicy() (bool, int) }); ok {
+		if required, cap := policy.ProviderCostReservationPolicy(); required {
+			preparer, ok := chatModel.(providercost.Preparer)
+			if !ok {
+				return nil, &ProviderUsageTerminalError{Err: errors.Join(ErrRunUsageUnknown, providercost.ErrUnsupported)}
+			}
+			preparedCostStream, err = preparer.PrepareBudgetStream(ctx, fullMessages, cap, streamOpts...)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return nil, err
+				}
+				return nil, &ProviderUsageTerminalError{Err: errors.Join(ErrRunUsageUnknown, err)}
+			}
+			if preparedCostStream == nil {
+				return nil, &ProviderUsageTerminalError{Err: ErrRunUsageUnknown}
+			}
+			bound := preparedCostStream.CostBound()
+			costBound = &bound
+		}
+	}
+
 	var providerUsageCall ProviderUsageCall
 	if opts.ProviderUsage != nil {
 		if strings.TrimSpace(opts.UsageLogicalRoundID) == "" {
@@ -143,11 +194,13 @@ func CallModel(
 			ctx,
 			ProviderUsageDescriptor{
 				LogicalRoundID:    opts.UsageLogicalRoundID,
+				CostBound:         costBound,
 				LogicalRequestID:  opts.UsageLogicalRequestID,
 				ModelAttemptID:    opts.UsageModelAttemptID,
 				ModelAttemptIndex: opts.UsageModelAttemptIndex,
 				ModelRetryIndex:   opts.UsageModelRetryIndex,
 				Model:             opts.Model,
+				Provider:          opts.Provider,
 				QuerySource:       opts.QuerySource,
 				ModelRole:         opts.ModelRole,
 				ModelProfile:      opts.ModelProfile,
@@ -171,36 +224,27 @@ func CallModel(
 		}
 	}
 
-	streamOpts := make([]model.Option, 0, 7)
-	if name := strings.TrimSpace(opts.Model); name != "" {
-		streamOpts = append(streamOpts, model.WithModel(name))
+	if err := opts.ProviderCallBudget.ReserveProviderCall(ctx); err != nil {
+		return nil, ReleaseProviderUsageBeforeDispatch(providerUsageCall, err)
 	}
-	if opts.MaxOutputTokens != nil {
-		streamOpts = append(streamOpts, model.WithMaxTokens(*opts.MaxOutputTokens))
-	}
-	if toolChoice, allowedToolNames, ok := resolveToolChoice(opts.ToolChoice, opts.ForcedToolName); ok {
-		streamOpts = append(streamOpts, model.WithToolChoice(toolChoice, allowedToolNames...))
-	}
+	// Wire identity is supplied by the admitted owner. Claude is not a strict
+	// prepared-stream transport, so its headers are assembled after admission.
 	if isClaudeCallProvider(opts.Provider) {
 		if headers := buildClaudeCustomHeaders(opts); len(headers) > 0 {
 			streamOpts = append(streamOpts, agenticclaude.WithCustomHeaders(headers))
 		}
-		if extraFields := buildClaudeExtraFields(opts); len(extraFields) > 0 {
-			streamOpts = append(streamOpts, agenticclaude.WithExtraFields(extraFields))
-		}
-	}
-	if hasEffortOption {
-		streamOpts = append(streamOpts, effortOption)
-	}
-
-	if err := opts.ProviderCallBudget.ReserveProviderCall(ctx); err != nil {
-		return nil, ReleaseProviderUsageBeforeDispatch(providerUsageCall, err)
 	}
 
 	// Stream from the model. The private dispatch state is created here so only
 	// the actual routing owner can publish the origin selected for this call.
 	dispatchCtx, dispatchState := providerorigin.WithDispatchState(ctx)
-	sr, err := chatModel.Stream(dispatchCtx, fullMessages, streamOpts...)
+	responseCtx := withProviderUsageResponseObserver(dispatchCtx, providerUsageCall)
+	var sr *schema.StreamReader[*schema.Message]
+	if preparedCostStream != nil {
+		sr, err = preparedCostStream.Stream(responseCtx)
+	} else {
+		sr, err = chatModel.Stream(responseCtx, fullMessages, streamOpts...)
+	}
 	if err != nil {
 		streamErr := fmt.Errorf("model stream: %w", err)
 		return nil, MarkProviderUsageAmbiguous(providerUsageCall, streamErr)
@@ -280,6 +324,12 @@ func buildProviderEffortOption(
 	case enginemodel.ReasoningDialectDeepSeek:
 		return agenticdeepseek.WithReasoningEffort(
 			agenticdeepseek.ReasoningEffort(resolved.WireEffort),
+		), true, nil
+	case enginemodel.ReasoningDialectKimi:
+		return agentickimi.WithReasoningEffort(agentickimi.ReasoningEffort(resolved.WireEffort)), true, nil
+	case enginemodel.ReasoningDialectGLM:
+		return agenticglm.WithReasoningEffort(
+			agenticglm.ReasoningEffort(resolved.WireEffort),
 		), true, nil
 	default:
 		return model.Option{}, false, fmt.Errorf(

@@ -34,12 +34,13 @@ test('composer keeps draft admission separate and exposes explicit rebind', asyn
   assert.match(app, /modelRebindSelector/);
   assert.match(
     app,
-    /\$\('prompt'\)\.disabled = !backendReady \|\| !canEditDraft\(current\)/,
+    /\$\('prompt'\)\.disabled = agentConversationView\.isOpen\(\) \|\| !backendReady \|\| !canEditDraft\(current\)/,
   );
   assert.match(
     app,
-    /\$\('send'\)\.disabled = !backendReady \|\| !\(canSubmitTurn\(current\) \|\| canQueuePrompt\(current\)\)/,
+    /\$\('send'\)\.disabled = agentConversationView\.isOpen\(\) \|\| !backendReady \|\| !\(canSubmitTurn\(current\) \|\| canQueuePrompt\(current\)\)/,
   );
+  assert.match(app, /async function send\(event\)[\s\S]*?if \(agentConversationView\.isOpen\(\)\) return;/);
   assert.match(app, /api\('queuePrompt'/);
   assert.match(app, /typeof response\.pending !== 'boolean'/);
   assert.match(app, /api\('cancelQueuedPrompt'/);

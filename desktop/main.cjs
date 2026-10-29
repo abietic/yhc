@@ -30,6 +30,8 @@ const { desktopOperation, requireSessionID } = require('./request.cjs');
 const BOOTSTRAP_TIMEOUT_MS = 10_000;
 const MAX_BOOTSTRAP_BYTES = 1 << 20;
 const PROVIDER_PROFILE_NAME = 'provider-profile.v1.json';
+const SETTINGS_REQUEST_TIMEOUT_MS = 15_000;
+const SETTINGS_TIMEOUT_MESSAGE = 'Settings request timed out. Reload before saving.';
 
 let backend = null;
 let bootstrap = null;
@@ -42,6 +44,7 @@ let quitDecision = null;
 const eventStreams = new Map();
 const observedSenders = new Set();
 const stoppingBackends = new WeakSet();
+const settingsTimeoutErrors = new WeakSet();
 const backendStopCoordinator = createBackendStopCoordinator({
   markStopping: (child) => stoppingBackends.add(child),
   unmarkStopping: (child) => stoppingBackends.delete(child),
@@ -342,21 +345,73 @@ async function backendRequest(pathname, method = 'GET', body) {
   if (!bootstrap) throw new Error('backend is unavailable');
   const headers = { Authorization: `Bearer ${bootstrap.token}` };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(`${bootstrap.url}${pathname}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error?.message || `backend request failed (${response.status})`);
+  const requestPath = new URL(pathname, bootstrap.url).pathname;
+  const isSettingsRequest = requestPath === '/v1/settings' || requestPath === '/v1/permission-settings';
+  const controller = isSettingsRequest ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), SETTINGS_REQUEST_TIMEOUT_MS) : null;
+  try {
+    const response = await fetch(`${bootstrap.url}${pathname}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const message = payload?.error?.message;
+      const error = new Error(
+        typeof message === 'string' && message
+          ? message : `backend request failed (${response.status})`,
+      );
+      const code = payload?.error?.code;
+      if (typeof code === 'string' && /^[a-z][a-z0-9_]{0,127}$/.test(code)) {
+        error.code = code;
+      }
+      error.status = response.status;
+      throw error;
+    }
+    return response.status === 204 ? null : await response.json();
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      const timeoutError = new Error(SETTINGS_TIMEOUT_MESSAGE);
+      settingsTimeoutErrors.add(timeoutError);
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
   }
-  return response.status === 204 ? null : response.json();
 }
 
 function operationRequest(operation, payload = {}) {
   const [pathname, method, body] = desktopOperation(operation, payload);
   return backendRequest(pathname, method, body);
+}
+
+function rendererOperation(operation, payload = {}) {
+  if (operation === 'createWorkspace') {
+    throw new Error('workspace creation is available only through the native picker');
+  }
+  return desktopOperation(operation, payload);
+}
+
+function backendErrorResult(error) {
+  if (settingsTimeoutErrors.has(error)) {
+    return { ok: false, error: { message: SETTINGS_TIMEOUT_MESSAGE, code: 'settings_timeout' } };
+  }
+  // Only HTTP errors have a public backend message. Do not copy network causes,
+  // stack traces or unknown host error messages into the renderer.
+  if (!Number.isInteger(error?.status) || error.status < 400 || error.status > 599) {
+    return { ok: false, error: { message: 'desktop backend request failed' } };
+  }
+  return {
+    ok: false,
+    error: {
+      message: error.message,
+      ...(error.code ? { code: error.code } : {}),
+      status: error.status,
+    },
+  };
 }
 
 function eventStreamKey(sender, sessionID) {
@@ -526,10 +581,22 @@ ipcMain.handle('app:select-workspace', async (event) => {
 });
 ipcMain.handle('app:api', (event, operation, payload) => {
   assertTrustedSender(event);
-  if (operation === 'createWorkspace') {
-    throw new Error('workspace creation is available only through the native picker');
+  return backendRequest(...rendererOperation(operation, payload));
+});
+ipcMain.handle('app:api-result', async (event, operation, payload) => {
+  assertTrustedSender(event);
+  let request;
+  try {
+    request = rendererOperation(operation, payload);
+  } catch (error) {
+    // This catch covers only our synchronous, bounded operation validators.
+    return { ok: false, error: { message: error.message } };
   }
-  return operationRequest(operation, payload);
+  try {
+    return { ok: true, value: await backendRequest(...request) };
+  } catch (error) {
+    return backendErrorResult(error);
+  }
 });
 ipcMain.handle('app:events-start', (event, payload) => {
   assertTrustedSender(event);

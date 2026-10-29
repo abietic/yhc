@@ -541,10 +541,17 @@ func (s *RuntimeStateStore) apply(evt QueryEvent) error {
 			Tools:               make(map[string]RuntimeToolSnapshot),
 			PendingInteractions: make(map[string]RuntimeInteractionSnapshot),
 		}}
+		if isGoalUsageLifecycle(evt) {
+			thread.Status = RuntimeThreadCompleted
+			thread.CompletedAt = evt.Timestamp
+		}
 		s.threads[evt.ThreadID] = thread
 	}
 
-	if isExternalPlanStateTransition(evt) ||
+	if isGoalUsageLifecycle(evt) {
+		// Durable child usage can settle after its root turn ends or while a
+		// different root turn is active. It never owns thread execution state.
+	} else if isExternalPlanStateTransition(evt) ||
 		isExternalGoalLifecycle(evt) {
 		thread.ActiveTurnID = ""
 		thread.LiveMessage = nil
@@ -599,6 +606,10 @@ func (s *RuntimeStateStore) apply(evt QueryEvent) error {
 	s.revision++
 
 	s.appendEventLocked(thread, runtimeEventRecord(evt))
+	if isGoalUsageLifecycle(evt) {
+		s.reduceGoalLocked(thread, evt)
+		return nil
+	}
 	s.reduceMessageLocked(thread, evt)
 	s.reduceToolLocked(thread, evt)
 	s.reduceInteractionLocked(thread, evt)
@@ -1567,6 +1578,23 @@ func validateGoalLifecycleEvent(evt QueryEvent) error {
 			goal.BlockerTurnIDs[2] != evt.GoalTurnID {
 			return fmt.Errorf("runtime state: blocked Goal lifecycle has conflicting evidence")
 		}
+	case GoalLifecycleUsageRecorded, GoalLifecycleUsageAdmissionReleased:
+		if evt.GoalTurnID == "" || goal.PendingUsageAdmission != nil ||
+			goal.UsageCoverage != "complete" ||
+			lifecycle.Phase == GoalLifecycleUsageRecorded && goal.UsageLedgerRevision == 0 {
+			return fmt.Errorf("runtime state: settled Goal usage lifecycle has conflicting evidence")
+		}
+	case GoalLifecycleUsageLimited:
+		if evt.GoalTurnID == "" || goal.Status != string(goalStatusUsageLimited) ||
+			goal.PendingUsageAdmission == nil || goal.UsageCoverage != "pending" {
+			return fmt.Errorf("runtime state: usage-limited Goal lifecycle has conflicting evidence")
+		}
+	case GoalLifecycleBudgetLimited:
+		if evt.GoalTurnID == "" || goal.Status != string(goalStatusBudgetLimited) ||
+			goal.TokenBudget == nil || goal.TokensUsed < *goal.TokenBudget ||
+			goal.PendingUsageAdmission != nil || goal.UsageCoverage != "complete" {
+			return fmt.Errorf("runtime state: budget-limited Goal lifecycle has conflicting evidence")
+		}
 	case GoalLifecycleTurnFinished:
 		if evt.GoalTurnID == "" ||
 			evt.Sequence == ^uint64(0) ||
@@ -1622,7 +1650,8 @@ func validateRuntimeTransition(thread *runtimeThreadState, evt QueryEvent) error
 		thread.Status != RuntimeThreadWaitingInput &&
 		!isExternalPlanStateTransition(evt) &&
 		!isExternalWorktreeLifecycle(evt) &&
-		!isExternalGoalLifecycle(evt) {
+		!isExternalGoalLifecycle(evt) &&
+		!isGoalUsageLifecycle(evt) {
 		return fmt.Errorf("runtime state: thread %q started turn %q while turn %q is %s", evt.ThreadID, evt.TurnID, thread.ActiveTurnID, thread.Status)
 	}
 	if thread.ActiveTurnID == evt.TurnID &&
@@ -1633,6 +1662,7 @@ func validateRuntimeTransition(thread *runtimeThreadState, evt QueryEvent) error
 		!isExternalPlanStateTransition(evt) &&
 		!isExternalWorktreeLifecycle(evt) &&
 		!isExternalGoalLifecycle(evt) &&
+		!isGoalUsageLifecycle(evt) &&
 		(evt.Type != EventGoalLifecycle ||
 			evt.GoalLifecycle == nil ||
 			evt.GoalLifecycle.Phase != GoalLifecycleTurnFinished) {
@@ -2330,6 +2360,21 @@ func isExternalGoalLifecycle(evt QueryEvent) bool {
 		GoalLifecycleResumed,
 		GoalLifecycleBudgetUpdated,
 		GoalLifecycleCleared:
+		return true
+	default:
+		return false
+	}
+}
+
+func isGoalUsageLifecycle(evt QueryEvent) bool {
+	if evt.Type != EventGoalLifecycle || evt.GoalLifecycle == nil {
+		return false
+	}
+	switch evt.GoalLifecycle.Phase {
+	case GoalLifecycleUsageRecorded,
+		GoalLifecycleUsageAdmissionReleased,
+		GoalLifecycleUsageLimited,
+		GoalLifecycleBudgetLimited:
 		return true
 	default:
 		return false

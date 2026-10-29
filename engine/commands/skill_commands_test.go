@@ -2,11 +2,30 @@ package commands
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/abietic/yhc/engine/skills"
 )
+
+func TestSkillCommandsIncludeBundleDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bundle with spaces", "SKILL.md")
+	source := skills.NewSkillRegistry()
+	source.Register(&skills.Skill{Name: "inspect-source", FilePath: path, Content: "Read references/check.txt for {{target}}.", Args: []skills.SkillArg{{Name: "target", Required: true}}})
+	registry := NewRegistry()
+	registry.SetSkillRegistry(source)
+	for _, entrypoint := range []Entrypoint{EntrypointTUI, EntrypointPlain} {
+		result, err := registry.Dispatch(context.Background(), entrypoint, nil, "/skill:inspect-source target")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "Skill: inspect-source\nSource: " + path + "\nBase directory: " + filepath.Dir(path) + "\n\nRead references/check.txt for target."
+		if result.Action != ActionPrompt || result.Output != want {
+			t.Fatalf("skill source context = %#v", result)
+		}
+	}
+}
 
 func TestSkillCommandsProjectionAndDispatch(t *testing.T) {
 	source := skills.NewSkillRegistry()

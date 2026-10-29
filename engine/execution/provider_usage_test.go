@@ -191,6 +191,38 @@ func TestP242bSideQueryCommitsOneFinalCumulativeUsage(t *testing.T) {
 	}
 }
 
+func TestSideQueryAccountsUsageWithoutInventingAssistantContent(t *testing.T) {
+	t.Parallel()
+
+	tracker, err := NewRunUsage(RunUsageLimits{MaxProviderCalls: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chatModel := &sideQueryCaptureModel{response: []*schema.Message{{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: "stop",
+			Usage: &schema.TokenUsage{
+				PromptTokens: 20, CompletionTokens: 2, TotalTokens: 22,
+				PromptTokenDetails:      schema.PromptTokenDetails{CachedTokens: 4},
+				CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: 1},
+			},
+		},
+	}}}
+	message, err := SideQuery(t.Context(), chatModel, SideQueryOptions{
+		ProviderUsage: tracker, UsageLogicalRoundID: tracker.NewLogicalRoundID(),
+	})
+	if message != nil || err == nil || err.Error() != "side query returned no assistant message" {
+		t.Fatalf("metadata must not become assistant content: message=%+v err=%v", message, err)
+	}
+	usage := tracker.Snapshot()
+	if !usage.Complete || usage.KnownCalls != 1 || usage.UnknownCalls != 0 ||
+		usage.PromptTokens != 20 || usage.CompletionTokens != 2 || usage.TotalTokens != 22 ||
+		usage.CachedPromptTokens != 4 || usage.ReasoningTokens != 1 {
+		t.Fatalf("valid metadata-only usage was lost: %+v", usage)
+	}
+}
+
 type p242bUsageReporter struct {
 	mu      sync.Mutex
 	next    int

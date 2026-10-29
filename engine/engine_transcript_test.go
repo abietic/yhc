@@ -399,6 +399,11 @@ func TestQueryEngineReloadsCompactedTranscriptShape(t *testing.T) {
 	})
 
 	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "2000")
+	eng.SetResumedMessages([]*schema.Message{
+		{Role: schema.User, Content: "original requirements"},
+		{Role: schema.Assistant, Content: strings.Repeat("discardable investigation ", 500)},
+		{Role: schema.Assistant, Content: "recent observation"},
+	})
 	events, _ := eng.SubmitMessage(context.Background(), strings.Repeat("hello world ", 260))
 	for range events {
 	}

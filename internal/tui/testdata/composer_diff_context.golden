@@ -1,0 +1,56 @@
+== 40 ==
+  ────────────────────────────────────
+   Git diff context
+   all | Hunks
+   file.txt
+   1. @@ -1 +1 @@ first
+   2. @@ -20 +20 @@ second
+   1 of 2 | captured snapshot
+   131 B | text/x-diff
+   -old one
+   +KEEP_HUNK
+   Preview clipped; full patch kept
+   Left/Right source | Tab file/hunk
+   Enter attach | Esc cancel
+== 80 ==
+  ────────────────────────────────────────────────────────────────────────────
+   Git diff context
+   all | Hunks
+   file.txt
+   1. @@ -1 +1 @@ first
+   2. @@ -20 +20 @@ second
+   1 of 2 | captured snapshot
+   131 B | text/x-diff
+   -old one
+   +KEEP_HUNK
+   Preview clipped; full patch kept
+   Left/Right source | Tab file/hunk
+   Enter attach | Esc cancel
+== 120 ==
+               ──────────────────────────────────────────────────────────────────────────────────────────
+                Git diff context
+                all | Hunks
+                file.txt
+                1. @@ -1 +1 @@ first
+                2. @@ -20 +20 @@ second
+                1 of 2 | captured snapshot
+                131 B | text/x-diff
+                -old one
+                +KEEP_HUNK
+                Preview clipped; full patch kept
+                Left/Right source | Tab file/hunk
+                Enter attach | Esc cancel
+== 180 ==
+                                             ──────────────────────────────────────────────────────────────────────────────────────────
+                                              Git diff context
+                                              all | Hunks
+                                              file.txt
+                                              1. @@ -1 +1 @@ first
+                                              2. @@ -20 +20 @@ second
+                                              1 of 2 | captured snapshot
+                                              131 B | text/x-diff
+                                              -old one
+                                              +KEEP_HUNK
+                                              Preview clipped; full patch kept
+                                              Left/Right source | Tab file/hunk
+                                              Enter attach | Esc cancel

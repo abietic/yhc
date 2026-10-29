@@ -2,7 +2,7 @@
 
 **Status:** current
 **Wiring:** query enrichers are active; the standalone runner is outside production wiring
-**Last verified:** 2026-08-07
+**Last verified:** 2026-10-22
 
 > **Ownership:** This file owns asynchronous memory/skill enrichment used by
 > canonical ProjectGraph round preparation and the separate generic prefetch library. Prompt construction
@@ -27,10 +27,10 @@ sequenceDiagram
     loop each query iteration
         Q->>S: Start(current messages)
         Q->>Q: model stream and tool round
-        Q->>M: Collect()
-        M-->>Q: bounded memory attachment
-        Q->>S: Collect()
-        S-->>Q: up to two skill attachments
+        Q->>M: CollectMissing(active messages)
+        M-->>Q: missing bounded memory attachment
+        Q->>S: CollectMissing(active messages)
+        S-->>Q: up to two missing skill attachments
         Q->>R: append attachments to continuation
     end
 ```
@@ -42,9 +42,19 @@ the compact memory store, ranks entries against the latest user query, formats
 them under an approximate character budget, and returns a system attachment.
 `Collect` waits for that goroutine.
 
-The result is non-consuming: later Graph iterations can collect the same memory
-attachment again. The canonical lifecycle, not the prefetcher, owns whether that
-attachment is appended to another continuation.
+The result remains non-consuming. At the after-tool safe point, the canonical
+lifecycle uses `CollectMissing` against the active model context. A system-role
+meta attachment of kind `memory_prefetch` with exactly the same rendered content
+suppresses another delivery. Ordinary text and other roles or attachment kinds
+do not suppress it. Collection preserves both history and the completed result;
+it does not set a lifetime delivery flag.
+
+Memory removed by compaction can be attached again at a later after-tool safe
+point in the same query. A new query still loads and ranks its own snapshot; a
+changed snapshot remains eligible even if some entries overlap earlier memory.
+Existing duplicates are not rewritten. The shared QueryEngine/ProjectGraph path
+therefore avoids adding the same visible attachment on every tool round without
+changing memory extraction, ranking, budgets, or the initial delivery timing.
 
 ### Skill prefetch
 
@@ -52,10 +62,12 @@ A new `SkillPrefetch` is created for every loop iteration. It scans the latest
 user message against skill names, tags, and description words, invokes at most
 two matches, truncates each result, and returns user-role meta attachments.
 
-This path is explicitly best-effort. `Start` schedules work in a goroutine,
-while `Collect` closes the same `sync.Once`; if collection wins the race, the
-iteration receives no skill attachment. Explicit `Skill` tool invocation
-remains the deterministic path.
+Discovery runs in a background worker; collection waits for an accepted
+`Start`. At the after-tool safe point, `CollectMissing` filters identical skill
+attachments already present in the active model context. The matching,
+collection, source-generation, and re-delivery contracts are owned by
+[Skills](../capabilities/skills.md). Explicit `Skill` invocation remains the
+path for a requested invocation rather than automatic discovery.
 
 ## Standalone Prefetch Library
 
@@ -78,7 +90,7 @@ and skill-directory listings. No production composition root constructs a
 | query construction | [`newCanonicalQueryRuntime`](../../../engine/query_runtime.go) and [`runCanonicalRoundPreparation`](../../../engine/round_lifecycle.go) | Starts memory once and skill discovery per iteration. |
 | attachment collection | [canonical prefetch drain](../../../engine/round_lifecycle.go) | Adds results after a tool round for the next continuation. |
 | memory ranking and budget | [`MemoryPrefetch.Start`](../../../engine/prefetch/memory.go) | Implements the blocking collect contract and result shape. |
-| skill matching | [`SkillPrefetch.Start`](../../../engine/prefetch/skill.go) and [`findMatchingSkills`](../../../engine/prefetch/skill.go) | Shows the best-effort race and match limit. |
+| skill matching | [`SkillPrefetch.Start`](../../../engine/prefetch/skill.go) and [`findMatchingSkills`](../../../engine/prefetch/skill.go) | Owns matching and bounded rendering; collection semantics belong to the skill owner. |
 | library runner | [`PrefetchRunner.RunPrefetch`](../../../engine/prefetch/runner.go) | Implements the disconnected generic runner. |
 | cache eviction | [`PrefetchCache.Set`](../../../engine/prefetch/cache.go) | Defines TTL/priority library behavior. |
 

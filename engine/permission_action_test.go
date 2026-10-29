@@ -275,7 +275,7 @@ func TestP512PermissionActionBindsGuestIdentity(t *testing.T) {
 		action.WorkingDirIdentity != identity.Root {
 		t.Fatalf("descriptor Guest identity = %#v, want %#v", action, identity)
 	}
-	if identity.Availability == containment.BindingAvailable {
+	if darwinAutoProofAvailable(engine) {
 		if allowed, reason := completeProofBoundBashAdmission(action); !allowed {
 			t.Fatalf("available Darwin proof rejected: %s", reason)
 		}

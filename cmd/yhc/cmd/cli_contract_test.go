@@ -56,7 +56,7 @@ func TestCLICommandTreeAndFlagScope(t *testing.T) {
 		names = append(names, command.Name())
 	}
 	sort.Strings(names)
-	if got, want := strings.Join(names, ","), "completion,config,doctor,exec,goal,mcp,migrate-state,permission-review-audit,plugins,resume,serve,sessions,version"; got != want {
+	if got, want := strings.Join(names, ","), "completion,config,doctor,exec,goal,mcp,migrate-state,permission-review-audit,plugins,resume,serve,sessions,usage,version"; got != want {
 		t.Fatalf("root commands = %q, want %q", got, want)
 	}
 	if root.PersistentFlags().HasFlags() {

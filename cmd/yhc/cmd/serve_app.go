@@ -67,7 +67,7 @@ func runServeApp(cmd *cobra.Command, options serveAppOptions) error {
 	factory := func(ctx context.Context, input appserver.EngineOptions) (appserver.SessionEngine, error) {
 		appServerEngineInitializationMu.Lock()
 		defer appServerEngineInitializationMu.Unlock()
-		engineConfig, _, _, err := buildEngineConfigForCWD(ctx, options.runtime, input.CWD, cmd.ErrOrStderr())
+		engineConfig, _, appConfig, err := buildEngineConfigForCWD(ctx, options.runtime, input.CWD, cmd.ErrOrStderr())
 		if err != nil {
 			return nil, err
 		}
@@ -79,6 +79,7 @@ func runServeApp(cmd *cobra.Command, options serveAppOptions) error {
 		engineConfig.PermissionPrompt = input.PermissionPrompt
 		engineConfig.RepeatedToolCallPrompt = input.RepeatedToolCallPrompt
 		engineConfig.EnableLongSessionServices = true
+		engineConfig.EnablePromptSuggestions = appConfig.PromptSuggestions == nil || *appConfig.PromptSuggestions
 		engineConfig.CommandEntrypoint = commands.EntrypointAppServer
 		queryEngine := engine.NewQueryEngine(engineConfig)
 		if input.Resume {

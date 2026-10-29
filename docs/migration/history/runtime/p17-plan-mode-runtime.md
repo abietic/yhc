@@ -423,14 +423,14 @@ git diff --check
 
 | Boundary | Source |
 |---|---|
-| model-visible projection | [`QueryEngine.modelVisibleTools`](../../../../engine/engine.go#L1377) |
+| model-visible projection | [`QueryEngine.modelVisibleTools`](../../../../engine/engine.go) |
 | central Plan capability decision | [`evaluatePlanToolPolicy`](../../../../engine/plan_tool_policy.go#L47) |
 | canonical tool admission and transition | [`executeToolCall`](../../../../engine/tool_execution.go#L30) |
 | exact plan-file guard | [`isExactPlanFileMutation`](../../../../engine/plan_tool_policy.go#L171) |
 | Enter/Exit tools and plan store helpers | [`tools/plan_mode.go`](../../../../tools/plan_mode.go#L64) |
 | versioned Plan checkpoint | [`persistSessionCheckpointMessages`](../../../../engine/session_checkpoint.go#L26) |
 | Plan validation and cold normalization | [`restorePersistedPlanState`](../../../../engine/plan_persistence.go#L15) |
-| session identity/mode restore | [`QueryEngine.resumeSessionWithOptionsForTurn`](../../../../engine/engine.go#L4103) |
+| session identity/mode restore | [`QueryEngine.resumeSessionWithOptionsForTurn`](../../../../engine/engine.go) |
 | exact tool Plan capability | [`WithPlanFileIdentity`](../../../../tools/plan_mode.go#L51) |
 | ACP external mode change | [`Agent.SetSessionMode`](../../../../server/acp/agent.go#L900) |
 | TUI approval projection | [`NewPlanDialog`](../../../../internal/tui/plan_dialog.go#L111) |

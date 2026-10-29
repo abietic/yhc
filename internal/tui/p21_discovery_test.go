@@ -40,14 +40,6 @@ func paletteCommandNames(items []commandPaletteItem) []string {
 	return names
 }
 
-func paletteAllCommandNames(items []*commands.Command) []string {
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		names = append(names, item.Name)
-	}
-	return names
-}
-
 func TestP21CommandPaletteEmptyQueryUsesRecentThenPrimary(t *testing.T) {
 	registry := p21DiscoveryRegistry(t)
 	palette := NewCommandPalette(defaultStyles())
@@ -134,8 +126,14 @@ func TestP21CommandPaletteActiveTurnProjectsExactFour(t *testing.T) {
 	})
 
 	want := []string{"agent", "team", "queue", "keybindings"}
-	if got := paletteAllCommandNames(palette.all); !reflect.DeepEqual(got, want) {
-		t.Fatalf("active command snapshot = %v, want %v", got, want)
+	var supported []string
+	for _, command := range palette.all {
+		if command.Availability == commands.AvailabilitySupported {
+			supported = append(supported, command.Name)
+		}
+	}
+	if !reflect.DeepEqual(supported, want) {
+		t.Fatalf("active executable commands = %v, want %v", supported, want)
 	}
 	if len(palette.filtered) != 0 {
 		t.Fatalf("idle-only recent leaked into active empty palette: %v", paletteCommandNames(palette.filtered))
@@ -145,6 +143,11 @@ func TestP21CommandPaletteActiveTurnProjectsExactFour(t *testing.T) {
 	palette.applyFilter()
 	if got := paletteCommandNames(palette.filtered); len(got) == 0 || got[0] != "agent" {
 		t.Fatalf("active search = %v, want agent first", got)
+	}
+	palette.query = "status"
+	palette.applyFilter()
+	if len(palette.filtered) == 0 || palette.filtered[0].command.Name != "status" || palette.filtered[0].command.Availability == commands.AvailabilitySupported || palette.filtered[0].command.AvailabilityReason == "" {
+		t.Fatalf("unavailable command missing explanation: %#v", palette.filtered)
 	}
 }
 
@@ -234,12 +237,8 @@ func TestP21PaletteSelectionRechecksAdmissionBeforeRecording(t *testing.T) {
 		if len(app.commandPalette.recent) != 0 {
 			t.Fatalf("stale selection was recorded: %v", app.commandPalette.recent)
 		}
-		plain := stripANSIForTest(app.chat.RenderAllExpanded(100))
-		if !strings.Contains(
-			plain,
-			"/status is unavailable: command is available only while no request is running.",
-		) {
-			t.Fatalf("stale phase did not produce the precise denial:\n%s", plain)
+		if !app.commandPalette.Visible() || app.commandPalette.feedback != "command is available only while no request is running" {
+			t.Fatalf("stale phase did not keep the palette with precise denial: visible=%v reason=%q", app.commandPalette.Visible(), app.commandPalette.feedback)
 		}
 	})
 

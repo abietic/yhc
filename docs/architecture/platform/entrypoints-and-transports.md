@@ -2,7 +2,7 @@
 
 **Status:** current
 **Wiring:** supported composition roots are active; legacy structured and remote transport surfaces remain inactive
-**Last verified:** 2026-08-26
+**Last verified:** 2026-10-26
 
 > **Ownership:** This file owns executable entrypoints, process-level protocol
 > surfaces, and whether transport packages are production-wired. MCP client and
@@ -45,6 +45,7 @@ flowchart TD
 | `yhc serve app` | authenticated loopback HTTP/SSE; optional same-origin Web UI | `server/appserver.Server` owns bounded Desktop sessions, typed event/snapshot projection, browser pairing, and one on-demand `QueryEngine` per activated session. |
 | `yhc serve mcp` | MCP SDK over stdio | Exposes registered tools directly; it is not a conversation `QueryEngine` transport. |
 | `yhc version` / `completion` | text or JSON build identity / shell script | Initializes neither a model runtime nor a conversation engine. |
+| `yhc usage inspect` | validated invocation accounting JSON | Reads the private opt-in [usage checkpoint](../../guides/invocation-usage-checkpoints.md); constructs neither a provider nor QueryEngine and grants no continuation or spending authority. |
 | `yhc sessions {list,resume,rename,export,fork,delete,recover-workboard}` | text or one versioned JSON administration result | Creates a provider-free administration `QueryEngine` only to reuse its engine-owned `SessionService`; it performs no model call and opens no TUI. Delete owns contained artifact cleanup; destructive WorkBoard recovery requires exact identity, revision, and acknowledgement. |
 | `yhc config show` / `doctor` | text or one versioned JSON diagnostic result | Creates a provider-free inspection host and calls the existing source-derived diagnostic snapshot; provider routing is resolved as data without constructing a provider runtime or probing connectivity. |
 | `yhc mcp {list,get}` | configured-server text or versioned JSON | Loads only configured server names/enabled state into an unconnected inventory; health is `unprobed` and connection material is omitted. |

@@ -29,6 +29,7 @@ import (
 	modelcaps "github.com/abietic/yhc/engine/model"
 	"github.com/abietic/yhc/engine/notify"
 	"github.com/abietic/yhc/engine/permission"
+	"github.com/abietic/yhc/engine/provider"
 	"github.com/abietic/yhc/engine/services"
 	"github.com/abietic/yhc/engine/session"
 	"github.com/abietic/yhc/engine/skills"
@@ -80,10 +81,13 @@ type QueryEngine struct {
 	contentReplacementState      *ContentReplacementState
 	fileStateCache               *FileStateCache
 	commandRegistry              *commands.Registry
+	sideQuestions                sideQuestionController
+	workspaceRevisions           workspaceRevisionController
 	pluginDirs                   []string
 	skillRegistry                *skills.SkillRegistry
 	approvalTracker              *permission.ApprovalTracker
 	permissionRules              *permission.RulesEngine
+	permissionRulesReloadMu      sync.Mutex
 	permissionRegistry           *PermissionCoordinatorRegistry
 	permissionCoordinator        *PermissionCoordinator
 	permissionProjectIdentity    PermissionProjectIdentity
@@ -244,6 +248,8 @@ type QueryEngineConfig struct {
 	AgentGeneration           int64  // current durable child execution generation
 	goalBinding               *goalExecutionIdentity
 	goalUsageReporter         *goalUsageReporter
+	RunUsage                  *execution.RunUsage // optional invocation-wide collector shared with descendants
+	RunDeadline               time.Time           // optional invocation cutoff, including resumed children; never persisted
 	RuntimeState              *RuntimeStateStore
 	AdditionalDirs            []string // extra working directories added via /add-dir
 	PluginDirs                []string // explicit plugin roots; defaults to user and project plugin directories
@@ -251,7 +257,7 @@ type QueryEngineConfig struct {
 	WorktreePath              string
 	WorktreeBranch            string
 	EnableLongSessionServices bool // interactive main-thread memory, extraction, and auto-dream
-	EnablePromptSuggestions   bool // model-backed next-prompt suggestions for the root TUI only
+	EnablePromptSuggestions   bool // model-backed next-prompt suggestions for root interactive clients
 	CommandEntrypoint         commands.Entrypoint
 	WorkspaceCommandRunner    WorkspaceCommandRunner
 	WorkspaceCommandTimeout   time.Duration
@@ -760,6 +766,8 @@ func newQueryEngineWithOptions(
 		subExec.WebFetchModel = eng.webFetchModel
 		subExec.goalBindingSnapshot = eng.currentGoalExecutionIdentity
 		subExec.goalUsageReporterFactory = eng.bindGoalUsageReporterForChild
+		subExec.RunUsage = config.RunUsage
+		subExec.RunDeadline = config.RunDeadline
 		if strings.TrimSpace(config.AgentID) == "" {
 			subExec.beginGoalChildWait = eng.goalService.beginForegroundChildWait
 		}
@@ -795,12 +803,12 @@ func newQueryEngineWithOptions(
 	}
 
 	// Prompt suggestions are synchronous from the service's point of view. The
-	// TUI owns the cancellable Bubble Tea command, so no resident goroutine or
+	// Interactive client owns the cancellable request, so no resident goroutine or
 	// additional Close boundary is introduced here.
 	if config.ChatModel != nil &&
 		config.AgentID == "" &&
 		config.EnablePromptSuggestions &&
-		config.CommandEntrypoint == commands.EntrypointTUI &&
+		(config.CommandEntrypoint == commands.EntrypointTUI || config.CommandEntrypoint == commands.EntrypointAppServer) &&
 		!construction.administration &&
 		!construction.restoreStaging {
 		eng.promptSuggestionService = services.NewPromptSuggestionService(
@@ -1231,6 +1239,19 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		}()
 		return events, terminal
 	}
+	var restoreNotice string
+	var restoreContextErr error
+	ctx, restoreNotice, restoreContextErr = e.workspaceRestoreQueryContext(ctx)
+	if restoreContextErr == nil {
+		restoreContextErr = e.workspaceCaptureBoundary(ctx, turnID)
+	}
+	if restoreContextErr != nil {
+		e.releaseRuntimeItem(initialRuntimeItemID)
+		e.endPlanTurn(turnID)
+		terminal := Terminal{Reason: TerminalPersistenceError, Err: restoreContextErr}
+		go func() { defer close(events); events <- QueryEvent{Type: EventTerminal, TerminalInfo: &terminal} }()
+		return events, terminal
+	}
 	if admittedPrompt != nil {
 		if err := e.activateAdmittedPrompt(
 			admittedPrompt,
@@ -1371,6 +1392,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		}
 	}
 
+	ctx, cancelRunDeadline := execution.WithRunDeadline(ctx, e.config.RunDeadline)
 	e.mu.Lock()
 	baseMessages := append([]*schema.Message(nil), e.messages...)
 	turnAbortController := newAbortControllerFromContext(ctx)
@@ -1393,6 +1415,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		if admittedPrompt != nil {
 			defer e.releaseAdmittedPrompt(admittedPrompt)
 		}
+		defer cancelRunDeadline()
 		defer e.finishRuntimeInputTurn(
 			turnAbortController,
 			inputCoordinator,
@@ -1637,6 +1660,9 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 			basePrompt = basePrompt + "\n\n" + claudeMdContent
 		}
 
+		if restoreNotice != "" {
+			basePrompt += "\n\n" + restoreNotice
+		}
 		systemPrompt := &schema.Message{
 			Role:    schema.System,
 			Content: basePrompt,
@@ -1811,6 +1837,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 		toolUseSummary := e.toolUseSummaryModelCall(ctx)
 
 		params := QueryParams{
+			RunUsage:                e.config.RunUsage,
 			Messages:                baseMessages,
 			SystemPrompt:            systemPrompt,
 			SessionID:               e.config.SessionID,
@@ -1895,7 +1922,8 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 				ReportFileStateSnapshotFailure: func(error) {
 					fileStateSnapshotRepairRequired.Store(true)
 				},
-				ProviderUsage: e.currentGoalProviderUsageAdmitter(),
+				ProviderUsage:       e.currentProviderUsageAdmitter(),
+				RecordWorkspaceTool: e.workspaceRecorderForTurn(turnID),
 			},
 		}
 		params.modelDispatchGuard = e.checkModelDispatch
@@ -2020,6 +2048,7 @@ func (e *QueryEngine) submitMessageWithRuntimeItem(
 				e.observeCompactBoundaryUsageMessage(evt.CompactBoundaryMessage)
 			}
 			if evt.Type == EventToolResult &&
+				!evt.modelRoundRejected &&
 				e.backgroundServices != nil &&
 				!e.goalProviderUsageRequired() {
 				e.backgroundServices.RecordToolCall(backgroundMessageStrings(history.Messages()))
@@ -2530,7 +2559,7 @@ func (e *QueryEngine) toolExecutor(ctx context.Context, toolName, jsonInput stri
 	}
 	ctx = execution.WithProviderUsageScope(
 		ctx,
-		e.currentGoalProviderUsageAdmitter(),
+		e.currentProviderUsageAdmitter(),
 		e.goalProviderUsageRequired(),
 	)
 	ctx = tools.WithMediaSupport(ctx, modelcaps.GetCapabilities(e.config.Model).SupportsImages)
@@ -2613,6 +2642,8 @@ func (e *QueryEngine) Close() {
 
 func (e *QueryEngine) closeWithPersistence(persist bool) {
 	e.closeOnce.Do(func() {
+		e.closeSideQuestions()
+		e.closeWorkspaceRevisions()
 		e.mediaLifecycleMu.Lock()
 		e.mediaLifecycleClosed = true
 		e.mediaLifecycleMu.Unlock()
@@ -2702,7 +2733,9 @@ func cloneMessageExtra(extra map[string]any) map[string]any {
 
 func shouldCheckpointTranscript(evt QueryEvent) bool {
 	switch evt.Type {
-	case EventToolResult, EventUserInterruption:
+	case EventToolResult:
+		return !evt.modelRoundRejected
+	case EventUserInterruption:
 		return true
 	case EventAttachment:
 		return evt.AttachmentMessage != nil
@@ -2826,6 +2859,17 @@ type promptSuggestionCallSnapshot struct {
 	routeGeneration uint64
 }
 
+// CommandCompletionRevision fences ephemeral completions across route changes,
+// including changes that retain the same model selector.
+func (e *QueryEngine) CommandCompletionRevision() uint64 {
+	if e == nil {
+		return 0
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.promptRouteGeneration
+}
+
 func (e *QueryEngine) promptSuggestionProviderCall() (
 	promptSuggestionCallSnapshot,
 	error,
@@ -2882,41 +2926,60 @@ func (e *QueryEngine) generatePromptSuggestionProvider(
 	ctx context.Context,
 	conversation []string,
 ) (string, error) {
+	return e.generateAuxiliarySuggestionProvider(ctx, conversation, services.GetSuggestionPrompt(), "prompt_suggestion_generation")
+}
+
+// generateAuxiliarySuggestionProvider is the shared, tool-free auxiliary
+// request boundary for prompt and explicitly requested argument suggestions.
+func (e *QueryEngine) generateAuxiliarySuggestionProvider(ctx context.Context, conversation []string, systemPrompt, querySource string) (string, error) {
 	if e == nil || ctx == nil {
 		return "", fmt.Errorf("prompt suggestion provider entry is unavailable")
 	}
 	e.goalProviderBoundary.RLock()
 	defer e.goalProviderBoundary.RUnlock()
 	if e.goalProviderUsageRequired() {
-		return "", fmt.Errorf(
-			"prompt suggestion is disabled while an unfinished Goal requires exact provider accounting",
-		)
+		return "", errPromptSuggestionGoal
 	}
 	if e.permissionCoordinator != nil &&
 		e.permissionCoordinator.PendingCount() > 0 {
-		return "", fmt.Errorf(
-			"prompt suggestion is disabled while permission input is pending",
-		)
+		return "", errPromptSuggestionPermission
 	}
 	call, err := e.promptSuggestionProviderCall()
 	if err != nil {
 		return "", err
 	}
-	call.options.Messages = make([]*schema.Message, 0, len(conversation))
-	for _, entry := range conversation {
-		call.options.Messages = append(call.options.Messages, &schema.Message{
-			Role:    schema.User,
-			Content: entry,
-		})
+	call.options.SystemPrompt = systemPrompt
+	call.options.QuerySource = querySource
+	if querySource == "prompt_suggestion_generation" && call.options.Provider == string(provider.ProviderAgenticDeepSeek) {
+		// DeepSeek counts reasoning against the same small output budget. This
+		// per-call control leaves the admitted main route and its effort intact.
+		call.options.EffortValue = "none"
+		// Draft prediction should use a narrow sampler without changing the
+		// admitted model's sampling settings for main or argument calls.
+		temperature := float32(0)
+		call.options.Temperature = &temperature
+	}
+	if querySource == "prompt_suggestion_generation" {
+		call.options.Messages = promptSuggestionInputMessages(conversation)
+	} else {
+		call.options.Messages = make([]*schema.Message, 0, len(conversation))
+		for _, entry := range conversation {
+			call.options.Messages = append(call.options.Messages, &schema.Message{
+				Role:    schema.User,
+				Content: entry,
+			})
+		}
 	}
 	// Permission state can change while the route snapshot is being built. The
 	// dispatch admission is the last safe fail-closed check; an already-issued
 	// provider request is governed by caller cancellation.
 	if e.permissionCoordinator != nil &&
 		e.permissionCoordinator.PendingCount() > 0 {
-		return "", fmt.Errorf(
-			"prompt suggestion is disabled while permission input is pending",
-		)
+		return "", errPromptSuggestionPermission
+	}
+	call.options.ProviderUsage = e.currentProviderUsageAdmitter()
+	if call.options.ProviderUsage != nil {
+		call.options.UsageLogicalRoundID = call.options.ProviderUsage.NewLogicalRoundID()
 	}
 	response, err := execution.SideQuery(ctx, call.chatModel, call.options)
 	if err != nil || response == nil {
@@ -2931,6 +2994,12 @@ func (e *QueryEngine) generatePromptSuggestionProvider(
 	if !routeUnchanged {
 		return "", fmt.Errorf("prompt suggestion model route changed")
 	}
+	if response.ResponseMeta != nil {
+		switch strings.ToLower(strings.TrimSpace(response.ResponseMeta.FinishReason)) {
+		case "length", "max_tokens", "max_output_tokens":
+			return "", nil
+		}
+	}
 	return response.Content, nil
 }
 
@@ -2939,47 +3008,8 @@ func (e *QueryEngine) generatePromptSuggestionProvider(
 // failures, cancellation, ineligible modes, and filtered output all return an
 // empty string. The caller owns request cancellation and stale-result fencing.
 func (e *QueryEngine) GeneratePromptSuggestion(ctx context.Context) string {
-	if e == nil || ctx == nil || ctx.Err() != nil {
-		return ""
-	}
-
-	e.mu.Lock()
-	service := e.promptSuggestionService
-	mode := e.config.PermissionMode
-	routeGeneration := e.promptRouteGeneration
-	conversation := backgroundMessageStrings(e.messages)
-	assistantTurnCount := 0
-	for _, message := range e.messages {
-		if message != nil && message.Role == schema.Assistant {
-			assistantTurnCount++
-		}
-	}
-	e.mu.Unlock()
-	if service == nil {
-		return ""
-	}
-
-	hasPendingPermission := e.permissionCoordinator != nil &&
-		e.permissionCoordinator.PendingCount() > 0
-	if reason := services.SuggestionSuppressReason(
-		service.IsEnabled(),
-		mode == permission.ModePlan,
-		hasPendingPermission,
-	); reason != "" {
-		return ""
-	}
-	suggestion := service.GenerateSuggestion(
-		ctx,
-		conversation,
-		assistantTurnCount,
-	)
-	e.mu.Lock()
-	routeUnchanged := e.promptRouteGeneration == routeGeneration
-	e.mu.Unlock()
-	if !routeUnchanged {
-		return ""
-	}
-	return suggestion
+	result, _ := e.GeneratePromptSuggestionResult(ctx)
+	return result.Suggestion
 }
 
 func (e *QueryEngine) callBackgroundProvider(
@@ -2998,7 +3028,10 @@ func (e *QueryEngine) callBackgroundProvider(
 			"long-session provider entry is disabled while an unfinished Goal requires exact provider accounting",
 		)
 	}
-	return chatModel.Generate(ctx, messages, opts...)
+	e.mu.Lock()
+	modelName := e.config.Model
+	e.mu.Unlock()
+	return execution.GenerateWithUsage(ctx, chatModel, messages, e.currentProviderUsageAdmitter(), execution.ProviderUsageDescriptor{Model: modelName, QuerySource: "long_session_background"}, opts...)
 }
 
 func (e *QueryEngine) rebindLongSessionServices() {
@@ -3171,11 +3204,26 @@ func (e *QueryEngine) resetPermissionDenials() {
 }
 
 func (e *QueryEngine) reloadPermissionRules() {
-	rules, _ := permission.LoadPermissionRules(e.config.PermissionProjectRoot)
+	_ = e.reloadPermissionRulesWithLoader(permission.LoadPermissionRules)
+}
+
+func (e *QueryEngine) reloadPermissionRulesWithLoader(load func(string) ([]permission.PermissionRule, error)) error {
+	e.permissionRulesReloadMu.Lock()
+	defer e.permissionRulesReloadMu.Unlock()
+	return e.reloadPermissionRulesLocked(load, false)
+}
+
+func (e *QueryEngine) reloadPermissionRulesLocked(load func(string) ([]permission.PermissionRule, error), keepCurrentOnLoadError bool) error {
+	root := e.permissionSettingsProjectRoot()
+	rules, err := load(root)
+	if err != nil && keepCurrentOnLoadError {
+		return err
+	}
 	rules = append(rules, toolSelectionDenyRules(e.toolRegistry, e.config.ToolSelection)...)
 	e.mu.Lock()
 	e.permissionRules = permission.NewRulesEngine(rules)
 	e.mu.Unlock()
+	return err
 }
 
 func (e *QueryEngine) permissionRulesSnapshot() *permission.RulesEngine {
@@ -3193,26 +3241,25 @@ func (e *QueryEngine) permissionRulesSnapshot() *permission.RulesEngine {
 // query/turn boundaries through ToolUseOptions.RefreshTools.
 func (e *QueryEngine) modelVisibleTools() []*schema.ToolInfo {
 	active := planPhaseRequiresContainment(e.PlanState().Phase)
-	var projected []*schema.ToolInfo
-	if e.toolRegistry == nil {
-		projected = filterPlanModelVisibleTools(
-			append([]*schema.ToolInfo(nil), e.config.Tools...),
-			active,
-			nil,
-		)
-	} else {
+	projected := e.config.Tools
+	if projected == nil && e.toolRegistry != nil {
+		projected = e.toolRegistry.List()
+	}
+	// Freeze the complete visible name scope before assembly can evaluate
+	// tool instructions. Hidden Plan/Goal capabilities must not run callbacks.
+	projected = filterPlanModelVisibleTools(projected, active, e.toolRegistry)
+	projected = filterUnavailableBuiltinToolInfos(projected)
+	if !e.goalModelToolsVisible() {
+		projected = filterGoalToolInfos(projected)
+	}
+	if e.toolRegistry != nil {
 		projected = assembleModelVisibleTools(
 			e.toolRegistry,
-			e.config.Tools,
+			projected,
 			e.config.ToolSelection,
 			e.config.SimpleTools,
 			e.permissionRulesSnapshot(),
 		)
-		projected = filterPlanModelVisibleTools(projected, active, e.toolRegistry)
-	}
-	projected = filterUnavailableBuiltinToolInfos(projected)
-	if !e.goalModelToolsVisible() {
-		projected = filterGoalToolInfos(projected)
 	}
 	return projected
 }
@@ -4540,6 +4587,12 @@ func newConversationHistory(base []*schema.Message) *conversationHistory {
 }
 
 func (h *conversationHistory) Observe(evt QueryEvent) {
+	if evt.modelRoundRejected {
+		h.pendingAssistant = nil
+		if evt.Type == EventToolResult {
+			return
+		}
+	}
 	switch evt.Type {
 	case EventAssistant:
 		if evt.AssistantMessage != nil {
@@ -4862,6 +4915,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 	}
 	defer releaseRestore()
 
+	e.invalidateSideQuestions()
 	turnID = strings.TrimSpace(turnID)
 	e.goalProviderBoundary.Lock()
 	providerBoundaryLocked := true
@@ -4877,6 +4931,9 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 			e.planMu.Unlock()
 		}
 	}()
+	if e.hasExternalWorkspaceWriters() {
+		return nil, fmt.Errorf("wait for terminal work before switching sessions")
+	}
 	if e.planActiveTurnID != "" && e.planActiveTurnID != turnID {
 		return nil, fmt.Errorf(
 			"%w: turn %s owns the boundary",
@@ -5252,6 +5309,7 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 	// Session activation is a route-generation boundary even when the restored
 	// model spelling matches the previous session.
 	e.promptRouteGeneration++
+	e.resetWorkspaceRevisions()
 	e.config.Model = firstSessionValue(
 		modelAdmission.selector,
 		resumed.Metadata.Model,
@@ -5308,6 +5366,8 @@ func (e *QueryEngine) resumeSessionWithOptionsForTurn(
 		e.subagentExecutor.ParentFileState = e.fileStateCache
 		e.subagentExecutor.goalBindingSnapshot = e.currentGoalExecutionIdentity
 		e.subagentExecutor.goalUsageReporterFactory = e.bindGoalUsageReporterForChild
+		e.subagentExecutor.RunUsage = e.config.RunUsage
+		e.subagentExecutor.RunDeadline = e.config.RunDeadline
 		if strings.TrimSpace(e.config.AgentID) == "" {
 			e.subagentExecutor.beginGoalChildWait = e.goalService.beginForegroundChildWait
 		} else {
@@ -5550,37 +5610,12 @@ func (e *QueryEngine) syncLegacyTotalUsageLocked() {
 // until the next main-loop response. The method returns 0,0 when either fact
 // is unavailable; callers must not substitute message-size estimates.
 func (e *QueryEngine) GetContextUsage() (percent, tokens int) {
-	e.mu.Lock()
-	model := e.config.Model
-	binding := e.modelBinding.Clone()
-	contextPromptTokens := e.usageSummary.CurrentContextPromptTokens
-	usageKnown := e.usageSummary.CurrentContextUsageKnown
-	e.mu.Unlock()
-
-	if !usageKnown || contextPromptTokens < 0 || model == "" {
+	snapshot := e.GetContextUsageSnapshot()
+	if !snapshot.InputKnown || snapshot.WindowTokens <= 0 {
 		return 0, 0
 	}
-	var window int
-	if binding != nil {
-		if binding.ValidateV1() != nil {
-			return 0, 0
-		}
-		if binding.ContextWindowTokens == nil {
-			return 0, 0
-		}
-		window = *binding.ContextWindowTokens
-	} else {
-		var windowKnown bool
-		window, windowKnown = modelcaps.KnownContextWindow(model)
-		if !windowKnown {
-			return 0, 0
-		}
-	}
-	if window <= 0 {
-		return 0, 0
-	}
-	tokens = contextPromptTokens
-	percent = tokens * 100 / window
+	tokens = snapshot.InputTokens
+	percent = tokens * 100 / snapshot.WindowTokens
 	if percent > 100 {
 		percent = 100
 	}

@@ -257,7 +257,7 @@ privacy-safe evidence owner and non-zero representative data.
 | Failover requirements and attempt lifecycle | [`newModelAttemptCoordinator`](../../../engine/model_failover.go#L64) | Coordinator and query fallback event-order tests. |
 | Candidate metadata admission | [`Runtime.ResolveFailoverChain`](../../../engine/provider/role_resolver.go#L197) | Provider role-resolver no-call skip tests. |
 | Runtime attempt truth | [`ModelAttemptEvent`](../../../engine/events.go#L275) and [`RuntimeStateStore`](../../../engine/runtime_state.go#L379) | Runtime reducer/trace assertions. |
-| TUI presentation | [`App.handleEngineEvent`](../../../internal/tui/app.go#L1956) | Exact-attempt removal and warning projection tests. |
+| TUI presentation | [`App.handleEngineEvent`](../../../internal/tui/app.go) | Exact-attempt removal and warning projection tests. |
 | Plain projection | [`drivePlainQueryEvents`](../../../cmd/yhc/cmd/root.go#L461) | stdout/stderr separation test. |
 | Headless projection | [`collectHeadlessEvents`](../../../cmd/yhc/cmd/headless.go#L212) | result/stderr separation test. |
 | ACP projection | [`Agent.streamEvent`](../../../server/acp/agent.go#L1913) | status-update/no-assistant-chunk contract test. |

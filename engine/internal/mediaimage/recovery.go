@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
+	"math"
 
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/webp"
@@ -36,6 +37,20 @@ func DeriveForRecovery(
 	mimeType string,
 	maxBytes int,
 ) (RecoveryDerivative, error) {
+	return deriveRaster(ctx, data, mimeType, maxBytes, derivativeProfile{
+		maxLongEdge: recoveryMaxLongEdge,
+		maxPixels:   recoveryMaxPixels,
+		jpegQuality: recoveryJPEGQuality,
+	})
+}
+
+type derivativeProfile struct {
+	maxLongEdge int
+	maxPixels   int
+	jpegQuality int
+}
+
+func deriveRaster(ctx context.Context, data []byte, mimeType string, maxBytes int, profile derivativeProfile) (RecoveryDerivative, error) {
 	if err := recoveryContextError(ctx); err != nil {
 		return RecoveryDerivative{}, err
 	}
@@ -63,9 +78,10 @@ func DeriveForRecovery(
 		return RecoveryDerivative{}, errors.New("media recovery decode failed")
 	}
 
-	targetWidth, targetHeight := recoveryDimensions(
+	targetWidth, targetHeight := derivativeDimensions(
 		decoded.Bounds().Dx(),
 		decoded.Bounds().Dy(),
+		profile,
 	)
 	resampled := decoded
 	if targetWidth != decoded.Bounds().Dx() ||
@@ -106,7 +122,7 @@ func DeriveForRecovery(
 		err = jpeg.Encode(
 			&encoded,
 			resampled,
-			&jpeg.Options{Quality: recoveryJPEGQuality},
+			&jpeg.Options{Quality: profile.jpegQuality},
 		)
 	}
 	if err != nil {
@@ -126,10 +142,10 @@ func DeriveForRecovery(
 	if reason != "" ||
 		derivedInfo.Width != targetWidth ||
 		derivedInfo.Height != targetHeight ||
-		derivedInfo.Width > recoveryMaxLongEdge ||
-		derivedInfo.Height > recoveryMaxLongEdge ||
+		derivedInfo.Width > profile.maxLongEdge ||
+		derivedInfo.Height > profile.maxLongEdge ||
 		uint64(derivedInfo.Width)*uint64(derivedInfo.Height) >
-			recoveryMaxPixels {
+			uint64(profile.maxPixels) {
 		clear(output)
 		return RecoveryDerivative{}, errors.New(
 			"media recovery derivative failed strict inspection",
@@ -157,19 +173,22 @@ func decodeRecoveryImage(data []byte, mimeType string) (image.Image, error) {
 	}
 }
 
-func recoveryDimensions(width, height int) (int, int) {
+func derivativeDimensions(width, height int, profile derivativeProfile) (int, int) {
 	if width <= 0 || height <= 0 {
 		return 1, 1
 	}
 	longEdge := max(width, height)
-	if longEdge <= recoveryMaxLongEdge &&
-		uint64(width)*uint64(height) <= recoveryMaxPixels {
+	if longEdge <= profile.maxLongEdge &&
+		uint64(width)*uint64(height) <= uint64(profile.maxPixels) {
 		return width, height
 	}
-	scale := float64(recoveryMaxLongEdge) / float64(longEdge)
+	scale := min(1.0,
+		float64(profile.maxLongEdge)/float64(longEdge),
+		math.Sqrt(float64(profile.maxPixels)/(float64(width)*float64(height))),
+	)
 	targetWidth := max(1, int(float64(width)*scale))
 	targetHeight := max(1, int(float64(height)*scale))
-	for uint64(targetWidth)*uint64(targetHeight) > recoveryMaxPixels {
+	for uint64(targetWidth)*uint64(targetHeight) > uint64(profile.maxPixels) {
 		if targetWidth >= targetHeight {
 			targetWidth--
 		} else {

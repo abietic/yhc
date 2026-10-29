@@ -61,7 +61,7 @@ func TestDetectExistingProviders_WithEnvVars(t *testing.T) {
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"ZAI_API_KEY", "ZHIPUAI_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}
@@ -94,12 +94,29 @@ func TestDetectExistingProviders_WithEnvVars(t *testing.T) {
 	}
 }
 
+func TestKimiProviderDetectionAndPortfolioNormalization(t *testing.T) {
+	for _, v := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "PROV_API_KEY"} {
+		t.Setenv(v, "")
+	}
+	t.Setenv("MOONSHOT_API_KEY", "sentinel-provider-credential")
+	detected := DetectExistingProviders()
+	if len(detected) != 1 || detected[0].Provider != model.ProviderKimi || detected[0].EnvVar != "MOONSHOT_API_KEY" || detected[0].DefaultModel != "kimi-k3" {
+		t.Fatalf("detected = %#v", detected)
+	}
+	for _, raw := range []string{"kimi", "moonshot", "agentickimi"} {
+		got, err := normalizePortfolioProvider(raw)
+		if err != nil || got != model.ProviderKimi {
+			t.Fatalf("normalizePortfolioProvider(%q) = %q, %v", raw, got, err)
+		}
+	}
+}
+
 func TestDetectExistingProviders_NoneConfigured(t *testing.T) {
 	// Clear all env vars.
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"ZAI_API_KEY", "ZHIPUAI_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}
@@ -114,7 +131,7 @@ func TestSuggestProvider_AnthropicPreferred(t *testing.T) {
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"ZAI_API_KEY", "ZHIPUAI_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}
@@ -135,7 +152,7 @@ func TestSuggestProvider_FallsBackToOpenAI(t *testing.T) {
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"ZAI_API_KEY", "ZHIPUAI_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}
@@ -155,7 +172,7 @@ func TestSuggestProvider_NoneAvailable(t *testing.T) {
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"ZAI_API_KEY", "ZHIPUAI_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}
@@ -222,7 +239,7 @@ func TestProviderSetupSummary_WithProviders(t *testing.T) {
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}
@@ -245,7 +262,7 @@ func TestProviderSetupSummary_NoProviders(t *testing.T) {
 	for _, v := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
 		"GEMINI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY",
-		"QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
+		"MOONSHOT_API_KEY", "KIMI_API_KEY", "QWEN_API_KEY", "ARK_API_KEY", "PROV_API_KEY",
 	} {
 		t.Setenv(v, "")
 	}

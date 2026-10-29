@@ -117,6 +117,11 @@ type QueryEvent struct {
 	// history owner uses it to mirror a boundary that was already committed.
 	compactBoundaryMessages  []*schema.Message
 	compactBoundaryCommitted bool
+
+	// modelRoundRejected keeps failed model output presentation-only. History
+	// drops its pending assistant and excludes synthetic rejected-tool results;
+	// the diagnostic itself remains eligible for persistence.
+	modelRoundRejected bool
 }
 
 // QueryEventType enumerates all event types.

@@ -226,7 +226,7 @@ func TestP244PlanAndDisabledScopesExposeNoGoalAuthority(t *testing.T) {
 			name:       "disabled",
 			permission: permission.ModeDefault,
 			enabled:    false,
-			wantReason: "saved root TUI, Plain, or dedicated headless Goal session",
+			wantReason: "enabled saved root",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

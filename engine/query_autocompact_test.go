@@ -76,8 +76,8 @@ func TestQueryAutoCompactUsesPostCompactMessages(t *testing.T) {
 		t.Fatalf("expected summary after boundary in model input, got %#v", input[compactStart+1])
 		return
 	}
-	if input[compactStart+2].Content != "latest question" || input[compactStart+3].Content != "latest answer" {
-		t.Fatalf("expected preserved tail after summary, got %#v", input)
+	if input[compactStart+2].Role != schema.User || input[compactStart+2].Content != messages[0].Content+"\n\nlatest question" || input[compactStart+3].Content != "latest answer" {
+		t.Fatalf("expected original requirements and preserved tail after summary, got %#v", input)
 	}
 
 	var compactBoundaryEvents []*schema.Message

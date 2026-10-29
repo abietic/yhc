@@ -24,16 +24,13 @@ entrypoint classifies local ownership, `Registry.Dispatch` is the only strict
 parse, validation, live phase/capability revalidation, cancellation, and
 execution boundary; the test-only `CommandDispatcher` has been removed.
 
-The registry contains exactly 40 executable compiled core commands. A separate
-catalog contains 27 canonical removed-command tombstones and reserves 33
-canonical-or-alias keys without making any of them executable or discoverable.
-The default embedded workflow pack contributes 2 additional TUI/plain prompt
-commands, so the ordinary active snapshot contains 42 commands and its
-maximum static discovery is 42 for TUI, 32 for plain, 18 for headless, 14
-for ACP, and none for CLI administration or the dedicated headless Goal
-entrypoint. Contextual discovery may narrow those sets. During an active TUI
-turn only `/agent`, `/team`, `/keybindings`, and
-`/queue` remain reachable; other entrypoints expose no active-turn slash
+The registry contains 45 executable compiled core commands, plus the two
+TUI/plain prompts in the embedded pack. Removed-command tombstones reserve
+canonical names and aliases without making them executable or discoverable.
+Static and contextual projections are checked in the
+[catalog tests](../../../engine/commands/p21_catalog_test.go). Contextual discovery may narrow those sets. During an active TUI
+turn only `/agent`, `/team`, `/keybindings`, `/queue`, and the explicitly requested
+`/btw`, `/changes`, and `/recap` remain reachable; other entrypoints expose no active-turn slash
 projection. `/effort` is omitted when the active resolved provider/model does
 not support the exact request field, and `/copy` is omitted without an
 interactive clipboard-capable TUI. One engine command executor now
@@ -123,12 +120,12 @@ and MCP arguments are rejected before manager side effects.
 
 | Entrypoint | How it dispatches | Current observable boundary |
 |---|---|---|
-| TUI | Discovery, help, completion, palette, and dispatch use the TUI-filtered registry snapshot. `/search`, `/team`, `/queue`, `/keybindings`, `/terminal`, and capability-gated `/copy` are registered TUI-only commands whose panels, diagnostics, or side effects remain local. | Engine-owned commands enter `QueryEngine`; the TUI only projects the typed result and local presentation. |
+| TUI | Discovery, help, completion, palette, and dispatch use the TUI-filtered registry snapshot. `/search`, `/team`, `/queue`, `/btw`, `/changes`, `/recap`, `/keybindings`, `/terminal`, and capability-gated `/copy` are registered TUI-only commands whose panels, diagnostics, or side effects remain local. | Engine-owned commands enter `QueryEngine`; the TUI only projects the typed result and local presentation. |
 | Plain REPL | Uses the plain-filtered registry snapshot. Engine-owned commands, including runtime-gated `/goal`, enter `QueryEngine`; entrypoint-owned presentation/workflow actions remain local. | TUI-only commands are excluded before handler execution; enabled saved-root Plain shares Goal command authority but not TUI panels. |
 | Headless `exec` / compatibility `-p` | Passes input through a headless-configured `QueryEngine`; lifecycle, model, effort, plan, permissions, diagnostics, `/diff`, `/files`, and explicit `/add-dir` are in scope when contextual capability admits them. | One text/JSON renderer projects typed success and stable failure/cancellation status. Prompt workflows and TUI-only commands remain outside this projection. |
 | Dedicated headless Goal | `yhc goal run` resumes an exact saved Session and calls only the engine's dedicated Goal continuation claim/submission boundary. It does not dispatch slash input. | Requires an explicit Session and positive continuation limit; emits one final text/JSON `goal_run` result and exits `0` only for durable Goal completion. |
 | ACP | Passes prompt text through an ACP-configured session `QueryEngine`; clear, compact, model, effort, plan, permissions, diagnostics, `/diff`, `/files`, and explicit `/add-dir` are in scope when contextual capability admits them. | Slash `/sessions` and identity-changing slash `/new`, `/resume`, and `/fork` fail registry admission before mutation; explicit ACP protocol list/load/resume/fork remains protocol-owned. |
-| CLI administration | `sessions {list,resume,rename,export,fork,delete,recover-workboard}` calls the existing `SessionService`; `config show`, `doctor`, `mcp {list,get}`, and `plugins {list,validate,reload}` call the existing diagnostic, inventory, candidate-validation, and atomic-generation owners. | The provider-free hosts open no TUI or model/Graph turn. Delete is exact owned-artifact cleanup. WorkBoard recovery requires exact Session/Board/revision identity plus explicit data-loss acknowledgement and is not exposed to slash, ACP, tools, hooks, or standalone MCP. MCP is configuration-only with `unprobed` health; plugin reload changes only its short-lived inspection process. |
+| CLI administration | `sessions {list,resume,rename,export,fork,delete,recover-workboard,recover-history}` calls the existing `SessionService`; `config show`, `doctor`, `mcp {list,get}`, and `plugins {list,validate,reload}` call the existing diagnostic, inventory, candidate-validation, and atomic-generation owners. | The provider-free hosts open no TUI or model/Graph turn. Delete is exact owned-artifact cleanup. WorkBoard recovery requires exact Session/Board/revision identity plus explicit data-loss acknowledgement. [History import](../../guides/workspace-session-cold-recovery.md#import-closed-workspace-history) requires an externally anchored proof and admitted closed workspace. Both recovery operations are absent from slash, ACP, tools, hooks and standalone MCP. MCP is configuration-only with `unprobed` health; plugin reload changes only its short-lived inspection process. |
 | Standalone MCP | Does not use `QueryEngine` or the slash registry. | Tool server only; slash parity does not apply. |
 
 `/goal` is an engine-owned, idle-only TUI/Plain command whose runtime
@@ -170,7 +167,7 @@ results after exactly one validated mutation.
 | `/mode`, `/bypass`, `/yolo` | Reserved tombstones; the TUI cannot pre-apply them. | `/permissions mode ...` and the exact `/permissions bypass confirm` form are the canonical typed safety surface. |
 | `/agent`, `/team`, `/queue`, `/search` | Supported only in the TUI-filtered snapshot. Other entrypoints reject them at the registry scope boundary before a local action can execute. | `/agents` and read-only `/tasks` remain the portable runtime vocabulary; search/thread pickers remain TUI projections. |
 | `/login`, `/logout`, `/env`, `/output-style`, `/session` (`/remote`) | Former hidden records are now tombstones only. | Guidance keeps authentication/credential ownership outside the project, points diagnostics to `/doctor` or `/config`, output style to project config, and legacy session access to `/sessions`. |
-| `/stats` (`/cost`), `/settings`, `/allowed-tools`, `/bashes` | Expired aliases no longer execute `/usage`, `/config`, `/permissions`, or `/tasks`. | Direct dispatch returns replacement guidance; stable `/reset`, `/exit`, `/ctx`, and `/teams` aliases remain warning-free. |
+| `/stats` (`/cost`), `/allowed-tools`, `/bashes` | Expired aliases no longer execute `/usage`, `/permissions`, or `/tasks`. | Direct dispatch returns replacement guidance; stable `/reset`, `/exit`, `/ctx`, and `/teams` aliases remain warning-free. `/settings` now owns persistent defaults rather than aliasing `/config`. |
 | `/summary`, `/onboarding`, `/pr-comments`, `/issue`, `/commit-push-pr` (`/cpr`) | Removed from the P21.2 default workflow pack and absent from active discovery. | Guidance keeps summaries as ordinary requests, reserves `/compact` for compaction, points onboarding to `/init`, and keeps issue/PR/push operations behind explicit requests or qualified configured-plugin workflows. |
 | `/history`, `/rename`, `/export` | Removed from registration and direct dispatch at P16.7b. | Canonical interactive use is `/sessions`; provider-free process use is `yhc sessions ...`. |
 
@@ -217,7 +214,7 @@ the original reproduction and adoption boundary remain in the
 [`recent-delivery remediation audit`](../../migration/reference/runtime/recent-delivery-remediation-audit.md#repair-contract-g27-result-bound-recent-commands).
 
 The typed phase environment defaults to idle. During an active TUI turn only
-`/agent`, `/team`, `/keybindings`, and `/queue` are discoverable. A command
+`/agent`, `/team`, `/keybindings`, `/queue`, `/btw`, `/changes`, and `/recap` are discoverable. A command
 seen while idle but dispatched after the phase changes is revalidated by
 `Registry.Dispatch` and fails with `ActionNone` before its handler. This does
 not broaden plain, headless, ACP, administration, or standalone MCP ownership.
@@ -249,8 +246,7 @@ state.
   is rendered without an authoritative provider/model billing catalog;
 - `/config` resolves the active provider route through the injected runtime,
   reports per-field winning sources and precedence, renders credential presence
-  as a boolean, and reduces an endpoint to scheme plus host. `/settings` is an
-  expired tombstone name that guides to `/config`; and
+  as a boolean, and reduces an endpoint to scheme plus host; and
 - `/doctor` emits a stable ordered check-ID set for engine, provider route and
   credential, transcript, bounded JSON settings files, tools, permission mode,
   and connectivity. Connectivity is explicitly skipped because the read-only
@@ -297,6 +293,18 @@ complete execution metadata commit through a synced no-clobber install before
 activation. TUI picker fork mode calls the same service. ACP keeps slash fork
 unavailable and projects the equivalent lifecycle only through its explicit
 protocol operation, registering the child handle after durable restore.
+
+## Persistent Defaults
+
+`/settings [user|project [<key> <JSON value>]]` is an idle-only TUI
+command backed by `engine/config`. It reads or atomically patches the same
+non-secret defaults as `yhc config {settings,set,reset}` and the AppServer
+settings API. `null` removes a scoped override. The caller context reaches
+the locked persistence boundary; cancelled or stale writes do not publish.
+It does not alter the current execution model, credentials, or permission
+bypass, and is not admitted by Plain, headless, ACP, administration slash,
+or standalone MCP discovery. See the
+[configuration guide](../../guides/configuration-and-providers.md#edit-persistent-defaults).
 
 ## Execution And Safety Controls
 
@@ -364,10 +372,10 @@ than retained as a successful-looking setup command.
   and failed bundled or configured candidate validation leaves the old snapshot live;
 - every supported engine-owned command reaches one executor, validates its
   intent, and mutates canonical engine/session state at most once;
-- the compiled core contract is exactly 40 supported active commands plus 27
-  canonical tombstones reserving 33 removed names and aliases; the default
-  2-command bundled pack produces 42 active commands; maximum
-  TUI/plain/headless/ACP/administration discovery is 42/32/18/14/0,
+- the compiled core contract is exactly 41 supported active commands plus 26
+  canonical tombstones reserving 32 removed names and aliases; the default
+  2-command bundled pack produces 43 active commands; maximum
+  TUI/plain/headless/ACP/administration discovery is 43/32/18/14/0,
   with `/effort` and `/copy` removed contextually for incompatible runtime or
   terminal capabilities;
 - `/new` creates a different durable identity; `/clear` appends a reset boundary
@@ -471,3 +479,23 @@ The refreshed post-P16 comparison and selected simplification contract are in
 | atomic prompt-command replacement | [`Registry.ReplacePromptCommandGeneration`](../../../engine/commands/registry.go) | Commits the complete bundled/configured prompt set and generation metadata together or retains the prior generation. |
 | non-mutating generation validation | [`Registry.ValidatePromptCommandGeneration`](../../../engine/commands/registry.go) | Applies the same source/name/alias/live-registry collision checks and returns the retained live generation under one read lock. |
 | removed-command catalog | [`RemovedCommand`](../../../engine/commands/registry.go), [`registerRemovedDefaults`](../../../engine/commands/registry.go) | Returns cloned typed guidance with `ActionNone`, reserves unqualified removed names, and keeps `/logout` credential ownership non-mutating. |
+
+## Captured history commands
+
+[`registerWorkspaceHistoryCommands`](../../../engine/commands/workspace_history.go)
+registers TUI-only `/changes` and `/recap` as read-only UI actions, with no model
+invocation. They require the open leader session and an explicit absolute
+workspace; discovery and dispatch use the same availability reason. Their
+panels read engine-owned facts and revalidate source identity before adding
+captured content to a draft. The removed `/summary` workflow remains a P21.2
+tombstone; `/recap` is a factual projection with no summarization request.
+The [session contract](../tui/contracts/sessions.md#captured-changes-and-execution-facts)
+owns capture, persistence, coverage and replay semantics.
+
+
+The history panel's **r** action is a separate engine-owned filesystem
+transition, not a side effect of dispatching `/changes`. Its preview confirms
+the bounded path set before a fresh native allow-once permission is requested;
+**t** and **b** prepare interrupted recovery with the same fences. These actions
+make no model request. The [guarded restore contract](../tui/contracts/sessions.md#guarded-file-restore)
+owns their eligibility, durability, cancellation and read-guard behavior.

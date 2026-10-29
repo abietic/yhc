@@ -136,6 +136,40 @@ type responseUsage struct {
 		ReasoningTokens int `json:"reasoning_tokens"`
 	} `json:"output_tokens_details"`
 	TotalTokens int `json:"total_tokens"`
+
+	finalReceiptValid bool
+}
+
+func (u *responseUsage) UnmarshalJSON(data []byte) error {
+	type wireUsage responseUsage
+	var wire wireUsage
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	// Pointer presence distinguishes explicit zero usage from absent/null
+	// counters; zero-valued Go fields alone are not a financial receipt.
+	var present struct {
+		Input        *int `json:"input_tokens"`
+		Output       *int `json:"output_tokens"`
+		Total        *int `json:"total_tokens"`
+		InputDetails struct {
+			Cached *int `json:"cached_tokens"`
+		} `json:"input_tokens_details"`
+		OutputDetails struct {
+			Reasoning *int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	}
+	if err := json.Unmarshal(data, &present); err != nil {
+		return err
+	}
+	*u = responseUsage(wire)
+	u.finalReceiptValid = present.Input != nil && present.Output != nil && present.Total != nil &&
+		present.InputDetails.Cached != nil && present.OutputDetails.Reasoning != nil &&
+		u.InputTokens >= 0 && u.OutputTokens >= 0 && u.TotalTokens >= u.InputTokens &&
+		u.TotalTokens-u.InputTokens >= u.OutputTokens &&
+		u.InputTokensDetails.CachedTokens >= 0 && u.InputTokensDetails.CachedTokens <= u.InputTokens &&
+		u.OutputTokensDetails.ReasoningTokens >= 0 && u.OutputTokensDetails.ReasoningTokens <= u.OutputTokens
+	return nil
 }
 
 func buildResponseRequest(
@@ -282,7 +316,7 @@ func convertSystemOrUserMessage(
 			if role != "user" {
 				return nil, conversionError(messageIndex, blockIndex, "image_role_unsupported")
 			}
-			if modelID != VisionModel {
+			if !supportsImageInput(modelID) {
 				return nil, conversionError(messageIndex, blockIndex, "image_model_unsupported")
 			}
 			part, err := convertImage(block.UserInputImage, block.Extra)
@@ -377,7 +411,7 @@ func convertFunctionToolResult(
 			}
 			output = append(output, contentPart{Type: "input_text", Text: block.Text.Text})
 		case schema.FunctionToolResultContentBlockTypeImage:
-			if modelID != VisionModel {
+			if !supportsImageInput(modelID) {
 				return inputItem{}, conversionError(messageIndex, blockIndex, "image_model_unsupported")
 			}
 			part, err := convertImage(block.Image, block.Extra)
@@ -393,6 +427,17 @@ func convertFunctionToolResult(
 		output = append(output, contentPart{Type: "input_text", Text: ""})
 	}
 	return inputItem{Type: "function_call_output", CallID: result.CallID, Output: output}, nil
+}
+
+// Exact compatibility names remain image-capable because the official API
+// serves them with current Flash. Never infer vision from a name substring.
+func supportsImageInput(modelID string) bool {
+	switch modelID {
+	case FlashModel, "deepseek-v4-flash", "deepseek-v4-flash-vision-exp":
+		return true
+	default:
+		return false
+	}
 }
 
 func convertImage(image *schema.UserInputImage, extra map[string]any) (contentPart, error) {
@@ -571,7 +616,7 @@ func responseToAgentic(response *responseObject) (*schema.AgenticMessage, error)
 		return nil, &ProtocolError{ReasonCode: "response_object_invalid"}
 	}
 	if response.Status == ResponseStatusFailed {
-		return nil, apiErrorFromResponse(response)
+		return nil, failedResponseError(response)
 	}
 	if response.Status != ResponseStatusCompleted && response.Status != ResponseStatusIncomplete {
 		return nil, &ProtocolError{ReasonCode: "response_status_not_terminal"}
@@ -635,7 +680,10 @@ func responseMeta(response *responseObject) *schema.AgenticResponseMeta {
 			LogProbs:         logProbs,
 		},
 	}
-	if response.Usage != nil {
+	// A successful terminal status does not turn omitted/null counters into
+	// known zero usage. Preserve its content and status, but publish a receipt
+	// only after the same validation used for failed terminal responses.
+	if response.Usage != nil && response.Usage.finalReceiptValid {
 		meta.TokenUsage = &schema.TokenUsage{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
@@ -728,6 +776,16 @@ func apiErrorFromResponse(response *responseObject) *APIError {
 	if response != nil && response.Error != nil {
 		err.Code = boundedText(response.Error.Code, 128)
 		err.Message = boundedText(response.Error.Message, 1024)
+	}
+	return err
+}
+
+func failedResponseError(response *responseObject) *APIError {
+	err := apiErrorFromResponse(response)
+	if response != nil && response.Object == "response" && response.ID != "" && response.Model != "" &&
+		response.Status == ResponseStatusFailed && response.Usage != nil && response.Usage.finalReceiptValid {
+		err.finalUsage = responseMeta(response).TokenUsage
+		err.responseModel = response.Model
 	}
 	return err
 }

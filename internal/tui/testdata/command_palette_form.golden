@@ -1,0 +1,126 @@
+== 40x12 details=false ==
+╭──────────────────────────────────────╮
+│ Parameters /form-golden              │
+│ > 1/2 package*: engine/commands      │
+│   2/2 mode: safe                     │
+│                                      │
+│ Source: skill:project (configured)   │
+│ Availability: supported              │
+│ Effect: none (direct)                │
+│ Model: yes, after prompt submit      │
+│ Tab · Enter stage Skill · F1 · Esc   │
+╰──────────────────────────────────────╯
+== 40x12 details=true ==
+╭──────────────────────────────────────╮
+│ Command details /form-golden         │
+│ Review a package                     │
+│ Usage:                               │
+│ Source: skill:project (configured)   │
+│ Availability: supported              │
+│ Effect: none (direct)                │
+│ Model: yes, after prompt submit      │
+│ Path: .agents/skills/review/SKILL.md │
+│ Prompt execution may use tools under │
+│ ↑/↓ scroll · F1/Esc back             │
+╰──────────────────────────────────────╯
+== 40x24 details=false ==
+╭──────────────────────────────────────╮
+│ Parameters /form-golden              │
+│ > 1/2 package*: engine/commands      │
+│   2/2 mode: safe                     │
+│                                      │
+│ Source: skill:project (configured)   │
+│ Availability: supported              │
+│ Effect: none (direct)                │
+│ Model: yes, after prompt submit      │
+│ Tab · Enter stage Skill · F1 · Esc   │
+╰──────────────────────────────────────╯
+== 40x24 details=true ==
+╭──────────────────────────────────────╮
+│ Command details /form-golden         │
+│ Review a package                     │
+│ Usage:                               │
+│ Source: skill:project (configured)   │
+│ Availability: supported              │
+│ Effect: none (direct)                │
+│ Model: yes, after prompt submit      │
+│ Path: .agents/skills/review/SKILL.md │
+│ Prompt execution may use tools under │
+│ normal permissions.                  │
+│ ↑/↓ scroll · F1/Esc back             │
+╰──────────────────────────────────────╯
+== 80x24 details=false ==
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Parameters /form-golden                                                      │
+│ > 1/2 package*: engine/commands                                              │
+│   2/2 mode: safe                                                             │
+│                                                                              │
+│ Source: skill:project (configured)                                           │
+│ Availability: supported                                                      │
+│ Effect: none (direct)                                                        │
+│ Model: yes, after prompt submit                                              │
+│ Tab fields · Enter stage Skill · Esc back                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+== 80x24 details=true ==
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Command details /form-golden                                                 │
+│ Review a package                                                             │
+│ Usage:                                                                       │
+│ Source: skill:project (configured)                                           │
+│ Availability: supported                                                      │
+│ Effect: none (direct)                                                        │
+│ Model: yes, after prompt submit                                              │
+│ Path: .agents/skills/review/SKILL.md                                         │
+│ Prompt execution may use tools under normal permissions.                     │
+│ ↑/↓ scroll · F1/Esc back                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+== 120x24 details=false ==
+              ╭──────────────────────────────────────────────────────────────────────────────────────────╮
+              │ Parameters /form-golden                                                                  │
+              │ > 1/2 package*: engine/commands                                                          │
+              │   2/2 mode: safe                                                                         │
+              │                                                                                          │
+              │ Source: skill:project (configured)                                                       │
+              │ Availability: supported                                                                  │
+              │ Effect: none (direct)                                                                    │
+              │ Model: yes, after prompt submit                                                          │
+              │ Tab fields · Enter stage Skill · Esc back                                                │
+              ╰──────────────────────────────────────────────────────────────────────────────────────────╯
+== 120x24 details=true ==
+              ╭──────────────────────────────────────────────────────────────────────────────────────────╮
+              │ Command details /form-golden                                                             │
+              │ Review a package                                                                         │
+              │ Usage:                                                                                   │
+              │ Source: skill:project (configured)                                                       │
+              │ Availability: supported                                                                  │
+              │ Effect: none (direct)                                                                    │
+              │ Model: yes, after prompt submit                                                          │
+              │ Path: .agents/skills/review/SKILL.md                                                     │
+              │ Prompt execution may use tools under normal permissions.                                 │
+              │ ↑/↓ scroll · F1/Esc back                                                                 │
+              ╰──────────────────────────────────────────────────────────────────────────────────────────╯
+== 180x24 details=false ==
+                                            ╭──────────────────────────────────────────────────────────────────────────────────────────╮
+                                            │ Parameters /form-golden                                                                  │
+                                            │ > 1/2 package*: engine/commands                                                          │
+                                            │   2/2 mode: safe                                                                         │
+                                            │                                                                                          │
+                                            │ Source: skill:project (configured)                                                       │
+                                            │ Availability: supported                                                                  │
+                                            │ Effect: none (direct)                                                                    │
+                                            │ Model: yes, after prompt submit                                                          │
+                                            │ Tab fields · Enter stage Skill · Esc back                                                │
+                                            ╰──────────────────────────────────────────────────────────────────────────────────────────╯
+== 180x24 details=true ==
+                                            ╭──────────────────────────────────────────────────────────────────────────────────────────╮
+                                            │ Command details /form-golden                                                             │
+                                            │ Review a package                                                                         │
+                                            │ Usage:                                                                                   │
+                                            │ Source: skill:project (configured)                                                       │
+                                            │ Availability: supported                                                                  │
+                                            │ Effect: none (direct)                                                                    │
+                                            │ Model: yes, after prompt submit                                                          │
+                                            │ Path: .agents/skills/review/SKILL.md                                                     │
+                                            │ Prompt execution may use tools under normal permissions.                                 │
+                                            │ ↑/↓ scroll · F1/Esc back                                                                 │
+                                            ╰──────────────────────────────────────────────────────────────────────────────────────────╯

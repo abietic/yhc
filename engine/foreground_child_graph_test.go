@@ -844,7 +844,7 @@ func TestP512ProjectGraphChildBashUsesDerivedGuestAuthority(t *testing.T) {
 				return PermissionInteractionResult{Decision: PermissionAllowOnce}
 			},
 		)
-		if childBindings.Guest().Availability() != containment.BindingAvailable {
+		if childBindings.Guest().Availability() != containment.BindingAvailable || childBindings.Guest().AdapterFamily() != containment.AdapterDarwinSeatbelt {
 			t.Skip("complete Darwin Guest proof is unavailable")
 		}
 		assertWorkspaceOutsideTempRoots(t, childBindings)
@@ -874,7 +874,7 @@ func TestP512ProjectGraphChildBashUsesDerivedGuestAuthority(t *testing.T) {
 				return PermissionInteractionResult{Decision: PermissionAllowOnce}
 			},
 		)
-		if childBindings.Guest().Availability() != containment.BindingAvailable {
+		if childBindings.Guest().Availability() != containment.BindingAvailable || childBindings.Guest().AdapterFamily() != containment.AdapterDarwinSeatbelt {
 			t.Skip("complete Darwin Guest proof is unavailable")
 		}
 		assertWorkspaceOutsideTempRoots(t, childBindings)

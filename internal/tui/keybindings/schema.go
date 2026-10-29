@@ -86,22 +86,24 @@ const (
 
 // Chat input actions
 const (
-	ActionChatCancel         Action = "chat:cancel"
-	ActionChatKillAgents     Action = "chat:killAgents"
-	ActionChatCycleMode      Action = "chat:cycleMode"
-	ActionChatModelPicker    Action = "chat:modelPicker"
-	ActionChatFastMode       Action = "chat:fastMode"
-	ActionChatThinkingToggle Action = "chat:thinkingToggle"
-	ActionChatSubmit         Action = "chat:submit"
-	ActionChatNewline        Action = "chat:newline"
-	ActionChatUndo           Action = "chat:undo"
-	ActionChatExternalEditor Action = "chat:externalEditor"
-	ActionChatStash          Action = "chat:stash"
-	ActionChatImagePaste     Action = "chat:imagePaste"
-	ActionChatMessageActions Action = "chat:messageActions"
-	ActionChatRewriteMessage Action = "chat:rewriteMessage"
-	ActionChatPreviousAgent  Action = "chat:previousAgent"
-	ActionChatNextAgent      Action = "chat:nextAgent"
+	ActionChatCancel          Action = "chat:cancel"
+	ActionChatKillAgents      Action = "chat:killAgents"
+	ActionChatCycleMode       Action = "chat:cycleMode"
+	ActionChatModelPicker     Action = "chat:modelPicker"
+	ActionChatFastMode        Action = "chat:fastMode"
+	ActionChatThinkingToggle  Action = "chat:thinkingToggle"
+	ActionChatSubmit          Action = "chat:submit"
+	ActionChatNewline         Action = "chat:newline"
+	ActionChatUndo            Action = "chat:undo"
+	ActionChatExternalEditor  Action = "chat:externalEditor"
+	ActionChatArgumentSuggest Action = "chat:argumentSuggest"
+	ActionChatManageContext   Action = "chat:manageContext"
+	ActionChatStash           Action = "chat:stash"
+	ActionChatImagePaste      Action = "chat:imagePaste"
+	ActionChatMessageActions  Action = "chat:messageActions"
+	ActionChatRewriteMessage  Action = "chat:rewriteMessage"
+	ActionChatPreviousAgent   Action = "chat:previousAgent"
+	ActionChatNextAgent       Action = "chat:nextAgent"
 )
 
 // Autocomplete actions
@@ -166,15 +168,16 @@ const (
 
 // Scroll actions
 const (
-	ActionScrollPageUp   Action = "scroll:pageUp"
-	ActionScrollPageDown Action = "scroll:pageDown"
-	ActionScrollHalfUp   Action = "scroll:halfPageUp"
-	ActionScrollHalfDown Action = "scroll:halfPageDown"
-	ActionScrollLineUp   Action = "scroll:lineUp"
-	ActionScrollLineDown Action = "scroll:lineDown"
-	ActionScrollTop      Action = "scroll:top"
-	ActionScrollBottom   Action = "scroll:bottom"
-	ActionSelectionCopy  Action = "selection:copy"
+	ActionScrollPageUp    Action = "scroll:pageUp"
+	ActionScrollPageDown  Action = "scroll:pageDown"
+	ActionScrollHalfUp    Action = "scroll:halfPageUp"
+	ActionScrollHalfDown  Action = "scroll:halfPageDown"
+	ActionScrollLineUp    Action = "scroll:lineUp"
+	ActionScrollLineDown  Action = "scroll:lineDown"
+	ActionScrollTop       Action = "scroll:top"
+	ActionScrollBottom    Action = "scroll:bottom"
+	ActionSelectionCopy   Action = "selection:copy"
+	ActionSelectionAttach Action = "selection:attachContext"
 )
 
 // Attachment actions
@@ -278,7 +281,9 @@ var SupportedActionContexts = map[Action][]Context{
 	ActionChatSubmit:            {ContextChat},
 	ActionChatNewline:           {ContextChat},
 	ActionChatUndo:              {ContextChat},
+	ActionChatManageContext:     {ContextChat},
 	ActionChatExternalEditor:    {ContextChat},
+	ActionChatArgumentSuggest:   {ContextChat},
 	ActionChatImagePaste:        {ContextChat},
 	ActionChatRewriteMessage:    {ContextChat},
 	ActionChatPreviousAgent:     {ContextChat},
@@ -303,6 +308,7 @@ var SupportedActionContexts = map[Action][]Context{
 	ActionScrollTop:             {ContextScroll},
 	ActionScrollBottom:          {ContextScroll},
 	ActionSelectionCopy:         {ContextScroll},
+	ActionSelectionAttach:       {ContextScroll},
 	ActionMessageSelectorUp:     {ContextMessageSelector},
 	ActionMessageSelectorDown:   {ContextMessageSelector},
 	ActionMessageSelectorTop:    {ContextMessageSelector},

@@ -142,8 +142,34 @@ function executionUpdate(payload) {
 }
 
 function desktopOperation(operation, payload = {}) {
+	if (operation === 'getPermissionSettings' || operation === 'updatePermissionSettings') {
+		const update = operation === 'updatePermissionSettings';
+		if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !['scope', 'sessionID', ...(update ? ['revision', 'changes'] : [])].includes(key))) throw new TypeError('invalid permission settings payload');
+		const scope = payload.scope ?? 'user';
+		if (!['user', 'project', 'local'].includes(scope) || (scope !== 'user' && !payload.sessionID)) throw new TypeError('invalid permission settings scope');
+		const query = new URLSearchParams({scope});
+		if (payload.sessionID !== undefined) query.set('session_id', requireSessionID(payload.sessionID));
+		if (update && (typeof payload.revision !== 'string' || !/^[a-f0-9]{64}$/i.test(payload.revision) || !Array.isArray(payload.changes) || !payload.changes.length || payload.changes.length > 32 || payload.changes.some(change => !change || typeof change !== 'object' || Array.isArray(change) || Object.keys(change).some(key => !['operation', 'action', 'rule'].includes(key)) || !['add', 'remove'].includes(change.operation) || !['allow', 'deny', 'ask'].includes(change.action) || typeof change.rule !== 'string' || !change.rule.isWellFormed() || !change.rule.trim() || change.rule.includes('\0') || [...change.rule].length > 4096))) throw new TypeError('invalid permission rule changes');
+		return [`/v1/permission-settings?${query}`, update ? 'PATCH' : 'GET', update ? {revision: payload.revision, changes: payload.changes.map(({operation, action, rule}) => ({operation, action, rule}))} : undefined];
+	}
+  if (operation === 'getSettings' || operation === 'updateSettings') {
+    const scope = payload.scope || 'user';
+    if (!['user', 'project'].includes(scope)) throw new TypeError('invalid settings scope');
+    const query = new URLSearchParams({ scope });
+    if (payload.sessionID) query.set('session_id', requireSessionID(payload.sessionID));
+    return [`/v1/settings?${query}`, operation === 'getSettings' ? 'GET' : 'PATCH',
+      operation === 'getSettings' ? undefined : { revision: payload.revision, changes: payload.changes }];
+  }
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
+    case 'getGoal':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('invalid goal payload');
+      return [`/v1/sessions/${id()}/goal`, 'GET'];
+    case 'controlGoal':
+      return [`/v1/sessions/${id()}/goal/control`, 'POST', goalControlPayload(payload)];
+    case 'getMCPInventory':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('MCP inventory requires only a session id');
+      return [`/v1/sessions/${id()}/mcp-inventory`, 'GET'];
     case 'health':
       return ['/v1/health', 'GET'];
     case 'listSessions':
@@ -171,6 +197,38 @@ function desktopOperation(operation, payload = {}) {
       return [`/v1/sessions/${id()}`, 'DELETE'];
     case 'snapshot':
       return [`/v1/sessions/${id()}/snapshot`, 'GET'];
+    case 'getTaskExplorer':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+          Object.keys(payload).some((key) => key !== 'sessionID')) {
+        throw new TypeError('task overview requires only a session id');
+      }
+      return [`/v1/sessions/${id()}/tasks`, 'GET'];
+    case 'getAgentTranscript':
+    case 'getAgentExecutionDetail': {
+      const paging = operation === 'getAgentTranscript';
+      const fields = new Set(['sessionID', 'agentID', 'generation', 'executionSessionID', 'threadID', ...(paging ? ['cursor', 'limit'] : ['includeOutput'])]);
+      const validID = value => typeof value === 'string' && value.length > 0 && value.trim() === value &&
+        [...value].length <= 512 && !/\p{Cc}/u.test(value) && value.isWellFormed();
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+          Object.keys(payload).some(key => !fields.has(key)) ||
+          ![payload.agentID, payload.executionSessionID, payload.threadID].every(validID) ||
+          typeof payload.generation !== 'string' || !/^[1-9][0-9]{0,18}$/.test(payload.generation) ||
+          BigInt(payload.generation) > 9223372036854775807n ||
+          (payload.includeOutput !== undefined && typeof payload.includeOutput !== 'boolean') ||
+          (paging && payload.cursor !== undefined && (typeof payload.cursor !== 'string' || !/^[!-~]{1,128}$/.test(payload.cursor))) ||
+          (paging && payload.limit !== undefined && (!Number.isInteger(payload.limit) || payload.limit < 1 || payload.limit > 32))) {
+        throw new TypeError('Exact execution identity required.');
+      }
+      const query = new URLSearchParams({ agent_id: payload.agentID, generation: payload.generation,
+        execution_session_id: payload.executionSessionID, thread_id: payload.threadID });
+      if (paging) {
+        if (payload.cursor !== undefined) query.set('cursor', payload.cursor);
+        query.set('limit', String(payload.limit ?? 32));
+        return [`/v1/sessions/${id()}/agent-transcript?${query}`, 'GET'];
+      }
+      query.set('include_output', String(payload.includeOutput === true));
+      return [`/v1/sessions/${id()}/agent-execution-detail?${query}`, 'GET'];
+    }
     case 'transcriptPage': {
       const query = new URLSearchParams();
       if (payload.cursor) query.set('cursor', payload.cursor);
@@ -234,6 +292,11 @@ function desktopOperation(operation, payload = {}) {
       return [`/v1/sessions/${id()}/interactions/${encodeURIComponent(requireRequestID(payload.requestID))}/plan`, 'GET'];
     case 'getExecutionSettings':
       return [`/v1/sessions/${id()}/execution-settings`, 'GET'];
+    case 'completeCommand':
+      return [`/v1/sessions/${id()}/command-completions`, 'POST', commandCompletionInput(payload)];
+    case 'promptSuggestion':
+      if (Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('suggestion accepts only a session id');
+      return [`/v1/sessions/${id()}/prompt-suggestion`, 'POST', {}];
     case 'updateExecutionSetting':
       return [
         `/v1/sessions/${id()}/execution-settings`,
@@ -245,4 +308,26 @@ function desktopOperation(operation, payload = {}) {
   }
 }
 
+function goalControlPayload(payload) {
+  const allowed = new Set(['sessionID', 'operation', 'expected_goal_id', 'expected_revision', 'objective', 'token_budget']);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !allowed.has(key)) || !['create', 'edit', 'pause', 'resume', 'budget', 'clear', 'continue'].includes(payload.operation) || typeof payload.expected_goal_id !== 'string' || typeof payload.expected_revision !== 'string' || !/^(0|[1-9][0-9]*)$/.test(payload.expected_revision) || (payload.objective !== undefined && (typeof payload.objective !== 'string' || !payload.objective.isWellFormed() || payload.objective.includes('\0') || [...payload.objective].length > 4000)) || (payload.token_budget !== undefined && (typeof payload.token_budget !== 'string' || !/^[1-9][0-9]*$/.test(payload.token_budget)))) throw new TypeError('invalid goal payload');
+  if (payload.expected_goal_id.length > 256 || !payload.expected_goal_id.isWellFormed() || payload.expected_goal_id.includes('\0') || (payload.operation === 'create' && (payload.expected_goal_id !== '' || payload.expected_revision !== '0' || typeof payload.objective !== 'string')) || (payload.operation === 'edit' && (typeof payload.objective !== 'string' || payload.token_budget !== undefined)) || (payload.operation === 'budget' && (typeof payload.token_budget !== 'string' || payload.objective !== undefined)) || (!['create', 'edit', 'budget'].includes(payload.operation) && (payload.objective !== undefined || payload.token_budget !== undefined))) throw new TypeError('invalid goal payload');
+  if (payload.expected_revision.length > 20 || BigInt(payload.expected_revision) > 18446744073709551615n || (payload.token_budget !== undefined && (payload.token_budget.length > 20 || BigInt(payload.token_budget) > 18446744073709551615n)) || (payload.operation !== 'create' && (!payload.expected_goal_id || payload.expected_revision === '0')) || (['create', 'edit'].includes(payload.operation) && !payload.objective.trim())) throw new TypeError('invalid goal payload');
+  requireSessionID(payload.sessionID);
+  const result = { operation: payload.operation, expected_goal_id: payload.expected_goal_id, expected_revision: payload.expected_revision };
+  if (payload.objective !== undefined) result.objective = payload.objective;
+  if (payload.token_budget !== undefined) result.token_budget = payload.token_budget;
+  return result;
+}
+
 module.exports = { desktopOperation, requireSessionID, requireWorkspaceHandle };
+
+function commandCompletionInput(payload) {
+  if (Object.keys(payload).some(key => !['sessionID', 'input', 'cursor'].includes(key)) ||
+      typeof payload.input !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(payload.input) ||
+      !Number.isInteger(payload.cursor) || payload.cursor < 0 || payload.cursor > [...payload.input].length || [...payload.input].length > 2048 ||
+      /[\uD800-\uDFFF]/u.test(payload.input)) {
+    throw new TypeError('valid bounded command input and rune cursor required');
+  }
+  return { input: payload.input, cursor: payload.cursor };
+}

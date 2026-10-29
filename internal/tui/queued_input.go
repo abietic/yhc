@@ -28,6 +28,7 @@ type goalContinuationReadyMsg struct {
 func threadQueuedInputFromSnapshot(snapshot engine.QueuedPromptSnapshot) threadQueuedInput {
 	return threadQueuedInput{
 		ID:          snapshot.ID,
+		Delivery:    snapshot.Delivery,
 		Content:     snapshot.Display,
 		Parts:       cloneQueuedPromptParts(snapshot.Parts),
 		EnqueuedAt:  snapshot.EnqueuedAt,
@@ -117,6 +118,7 @@ func (a *App) startNextQueuedInput() tea.Cmd {
 			display = preview.Content
 		}
 		a.appendQueuedUserToThread(a.leaderThreadViewID(), display, nil)
+		a.markInputDeliveryPromoted(item.ID)
 		a.showToast("Starting queued input")
 	} else {
 		a.showNotification(runtimeInputNotice(item), NotifyWarning)
@@ -154,6 +156,19 @@ func (a *App) hydrateQueuedInputPreview() {
 		hydrated = append(hydrated, threadQueuedInputFromSnapshot(queued))
 	}
 	a.queuedInputPreview = hydrated
+	pendingIDs := make(map[string]bool, len(hydrated))
+	for _, item := range hydrated {
+		pendingIDs[item.ID] = true
+	}
+	for i := range a.inputDeliveryReceipts {
+		r := &a.inputDeliveryReceipts[i]
+		if r.engine == a.engine && r.status == string(engine.PromptDeliveryPending) && !pendingIDs[r.item.ID] {
+			r.status = "unknown"
+		}
+	}
+	for _, item := range hydrated {
+		a.rememberInputDelivery(item)
+	}
 }
 
 func runtimeInputNotice(item engine.RuntimeItem) string {
@@ -216,11 +231,17 @@ func (a *App) appendQueuedUserToThread(threadID, content string, elements []thre
 }
 
 func (a *App) handleQueuedCommandStarted(threadID, inputID string) {
+	a.recordInputDeliveryStarted(inputID)
 	preview, ok := a.consumeQueuedPreview(threadID, inputID)
 	if !ok {
+		a.promoteEarlyInputDelivery(inputID)
+		return
+	}
+	if a.inputDeliveryWasPromoted(inputID) {
 		return
 	}
 	a.appendQueuedUserToThread(threadID, preview.Content, nil)
+	a.markInputDeliveryPromoted(inputID)
 }
 
 func (a *App) renderQueuedInputRows() string {
@@ -234,8 +255,12 @@ func (a *App) renderQueuedInputRows() string {
 		lines = append(lines, a.styles.Subtle.Render(fmt.Sprintf(" %d earlier queued", start)))
 	}
 	for _, queued := range a.queuedInputPreview[start:] {
-		content := strings.Join(strings.Fields(queued.Content), " ")
-		line := fmt.Sprintf(" queued %-8s %s", shortQueueID(queued.ID), content)
+		content := strings.Join(strings.Fields(composerContextLabel(queued.Content)), " ")
+		metadata := ""
+		if queued.Delivery != "" || queued.State != "" {
+			metadata = fmt.Sprintf("[%s / %s] ", promptDeliveryLabel(queued.Delivery), queued.State)
+		}
+		line := fmt.Sprintf(" queued %-8s %s%s", shortQueueID(queued.ID), metadata, content)
 		line = contentEllipsize(
 			a.renderEnvironment.profile,
 			line,
@@ -313,6 +338,7 @@ func (a *App) handleQueueSlashCommand(value string) {
 			a.showNotification("Queued input is already processing", NotifyWarning)
 			return
 		}
+		a.markInputDeliveryAction(queued.ID, "editing")
 		a.consumeQueuedPreview(a.activeThreadViewID(), queued.ID)
 		if err := a.restoreQueuedPromptDraft(draft); err != nil {
 			clearQueuedPromptDraftBytes(&draft)
@@ -380,7 +406,7 @@ func (a *App) queueSummary() string {
 	}
 	lines := []string{fmt.Sprintf("Queued input (%d):", len(a.queuedInputPreview))}
 	for _, queued := range a.queuedInputPreview {
-		lines = append(lines, fmt.Sprintf("%s  %s", shortQueueID(queued.ID), strings.Join(strings.Fields(queued.Content), " ")))
+		lines = append(lines, fmt.Sprintf("%s [%s / %s] %s", shortQueueID(queued.ID), promptDeliveryLabel(queued.Delivery), queued.State, strings.Join(strings.Fields(queued.Content), " ")))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -406,6 +432,9 @@ func (a *App) cancelQueuedPreview(queued threadQueuedInput) bool {
 			return false
 		}
 		cancelled, err := a.engine.CancelQueuedPrompt(queued.ID)
+		if err == nil && cancelled {
+			a.markInputDeliveryAction(queued.ID, "withdrawn")
+		}
 		return err == nil && cancelled
 	}
 	if a.taskExplorerSnapshotSource == nil ||

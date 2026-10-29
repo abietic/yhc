@@ -1,7 +1,7 @@
 # Runtime Services
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-10-24
 
 > **Ownership:** entrypoint-specific background-service construction, rebinding, shutdown, and disconnected helpers
 
@@ -70,6 +70,11 @@ it fails closed when a workspace-local denied path crosses a symlink, but does
 not reserve absent names against later creation. These are write protections,
 not read secrecy. Permission mode cannot remove or widen them.
 
+Linux's fixed runtime read roots retain system aliases such as `/bin` and
+`/lib64` alongside their canonical targets, so the live namespace can resolve
+the fixed Bash path and ELF interpreters. These aliases remain read-only;
+extra user roots and toolchain/cache roots retain canonical path selection.
+
 On Darwin amd64/arm64, the default Guest binding is
 `workspace-write`/`degraded` through the fixed
 `/usr/bin/sandbox-exec` Seatbelt adapter. On Linux amd64/arm64 it uses fixed
@@ -79,6 +84,18 @@ Each adapter performs a real capability probe before the binding becomes
 available. The launch path proves declared reads/writes, network denial, root
 identity, descendant confinement, process-group cleanup, wall time, and
 bounded retained output.
+
+The Darwin policy allows exact `kern.hostname` and `hw.machine` sysctl reads,
+providing the OS metadata required by `uname(3)` and Node's test runner.
+This exposes the host name and machine type, not blanket sysctl access or
+sysctl writes. It does not widen filesystem roots or network access. The
+adapter capability generation changes with this policy; the executable
+regressions are `TestSeatbeltProfileAllowsOnlyRuntimeSysctls` and
+`TestSeatbeltDarwinIntegration` in
+[`seatbelt_test.go`](../../../engine/containment/seatbelt_test.go), plus real
+allowed/denied sysctl calls in `TestSeatbeltDarwinSysctlAllowlist` in
+[`seatbelt_darwin_test.go`](../../../engine/containment/seatbelt_darwin_test.go).
+
 `ShellManager` passes the current `os.Environ()` byte-for-byte, pins the exact
 binding before persistent Bash starts, and rechecks both binding digest and
 workspace device/inode before every start/command. A missing executable,
@@ -113,12 +130,12 @@ configuration, hooks, tool input, and ACP clients cannot broaden the matrix.
 
 Entrypoints that construct an engine must close it. Adding a goroutine without a corresponding owner, cancellation path, and join boundary is a lifecycle bug.
 
-## TUI prompt suggestions
+## Interactive prompt suggestions
 
 The root TUI sets `EnablePromptSuggestions` from the merged
 `prompt_suggestions` setting. `NewQueryEngine` constructs
 [`PromptSuggestionService`](../../../engine/services/prompt_suggestion.go) only
-for a non-nil model, empty `AgentID`, TUI entrypoint, and non-administration,
+for a non-nil model, empty `AgentID`, TUI or AppServer entrypoint, and non-administration,
 non-restore-staging engine. Plain, headless, ACP, child, and administration
 engines do not construct it.
 
@@ -127,11 +144,69 @@ generation method inside a cancellable Bubble Tea command. The service applies
 a 30-second deadline, requires at least two assistant message records, and
 filters unsafe or implausible output. The request uses the current engine chat
 model through the controlled side-query seam, preserving the admitted model,
-provider, main role, profile, reasoning effort, and Session identity. It sends
+provider, main role, profile, and Session identity. It sends
 a bounded conversation snapshot with no tools, allows at most one provider
 dispatch with a 64-token output cap, and is disabled in Plan mode, while
 permission input is pending at dispatch admission, or while an unfinished Goal
 requires exact provider accounting.
+
+Historical user and assistant text keeps its native speaker role in the
+suggestion request. Main-system text and tool results are sent as assistant-side
+evidence rather than suggestion policy, user messages, or live tool calls.
+Only the engine-owned outer role prefix is decoded, so role-looking text
+inside a message remains content. A separate final user message asks for the
+next-user draft, keeping the last assistant report out of the live request
+position. Argument suggestions retain their dedicated input format.
+
+The project-owned [`GetSuggestionPrompt`](../../../engine/services/prompt_suggestion.go)
+asks the model to continue only an explicit, unfinished user request whose
+explicitly required prerequisites are reported complete or ready, preserving
+its action, target and scope. A draft stays at the user's level of detail: an
+already selected plan or target can retain its name without inventing internal
+steps. Omitted execution details alone do not block drafting that continuation.
+Completed explanations or summaries, reported missing required information and
+unresolved choices call for abstention. Commit, push, edit and research are not
+inferred from task completion.
+For an explicitly requested test after a fix, an edit or file summary does not
+count as a test result: the original test remains pending until a post-fix result
+is reported. A short draft may reuse the user's test name or scope without
+inventing a literal command; actual reported blockers still call for abstention.
+The prompt uses the existing `no suggestion` marker for abstention, which
+`FilterSuggestion` hides as meta text. These are model instructions, not a
+deterministic semantic authorization check; the filter still checks text shape
+and meta replies rather than proving that a candidate matches user intent.
+
+Prompt suggestions on an admitted DeepSeek route explicitly request
+`reasoning.effort=none`: the provider's
+[output limit includes reasoning tokens](https://api-docs.deepseek.com/api/create-response/),
+so thinking can otherwise consume the entire short suggestion budget. These
+non-thinking Ghost calls also set `temperature=0` to narrow sampling variance;
+this is not a semantic correctness guarantee. Both are per-call controls: the
+main route and argument suggestions retain their reasoning and sampling settings.
+Other providers keep their admitted settings. The shared
+auxiliary suggestion boundary records usage and discards known token-truncated
+responses before text can become a candidate; it never retries to fill the gap.
+
+[`GeneratePromptSuggestionResult`](../../../engine/prompt_suggestion.go) returns
+one ephemeral [`PromptSuggestionResult`](../../../engine/services/prompt_suggestion_result.go).
+The result separates `available`, `suppressed`, `empty`, `filtered`, `timed_out`,
+`cancelled`, `failed`, and `stale`. Only `available` carries candidate text.
+Suppression codes distinguish disabled or unavailable generation, missing or
+early conversation, Plan mode, pending permission, an active Goal, and a
+request still in flight. AppServer additionally classifies busy sessions.
+Provider errors remain internal errors; clients receive fixed categories and
+render their own allowlisted explanations. Invalid UTF-8 and control-bearing
+suggestions are filtered. Empty/whitespace suggestion text differs from a
+stream rejected by the existing side-query contract, which remains a failed
+request. The compatibility `GeneratePromptSuggestion` API retains its
+best-effort string return.
+
+One service permits one generation at a time. Caller cancellation does not
+release that slot until the provider returns, so repeated manual requests
+cannot accumulate overlapping provider calls. TUI manual requests and the
+existing Workbench button consume this same result. Neither explicit request
+bypasses `prompt_suggestions`, minimum assistant records, permissions, Goal
+admission, or the selected model/effort/output budget.
 
 The service starts no resident goroutine and therefore adds no engine shutdown
 join. App-owned cancellation and generation/thread/revision/query fences reject
@@ -145,6 +220,33 @@ not consume the completed query's API task budget or continuation token
 tracker; the selected provider may still bill it. Set `prompt_suggestions` to
 `false` to remove that request entirely. Speculative execution and the
 service's legacy speculation API remain outside production wiring.
+
+Desktop/Web uses this same generator behind an explicit **Suggest next step**
+action, not an automatic post-turn request. `runServeApp` initializes enablement
+from the merged preference. The authenticated
+`POST /v1/sessions/{session_id}/prompt-suggestion` accepts only an empty object;
+it does not attach saved sessions or accept client conversation, paths or routes.
+The response retains `session_id` and `suggestion`, adding `status` and an
+optional project-owned `reason`; provider error text is never returned.
+
+[`session.promptSuggestion`](../../../server/appserver/prompt_suggestion.go)
+admits one request for an owned idle session and checks the shared effective
+preference before dispatch and before returning text. It releases the
+turn-admission lock before calling the provider. Direct/queued turn admission,
+execution-control changes and session shutdown cancel the request; shutdown
+joins it before closing the engine. Cancellation is cooperative, and request
+identity rejects late output. Re-enabling a startup-disabled session requires
+a new session; disabling the shared preference suppresses requests in existing
+sessions.
+
+The renderer fences an ephemeral candidate to the session, draft edit, runtime
+cursor, execution settings and request generation. Acceptance is one undoable
+plain-text draft edit, never Send. Typing, switching sessions or dismissing the
+candidate invalidates its UI projection; it does not undo provider cost or
+promise immediate IPC cancellation. No suggestion text is published as a
+durable event or stored until accepted into an ordinary draft. Evidence owners:
+[`prompt_suggestion_test.go`](../../../server/appserver/prompt_suggestion_test.go)
+and [`prompt_suggestion.test.mjs`](../../../desktop/test/prompt_suggestion.test.mjs).
 
 ## Other active service-like behavior
 

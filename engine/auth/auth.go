@@ -310,6 +310,8 @@ func providerEnvKeys(provider string) []string {
 		return []string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}
 	case "deepseek":
 		return []string{"DEEPSEEK_API_KEY"}
+	case "glm":
+		return []string{"ZAI_API_KEY", "ZHIPUAI_API_KEY"}
 	default:
 		return []string{strings.ToUpper(provider) + "_API_KEY"}
 	}
@@ -339,6 +341,8 @@ func DetectProvider(model string) string {
 		return "google"
 	case strings.HasPrefix(lower, "deepseek-"):
 		return "deepseek"
+	case strings.HasPrefix(lower, "glm-"):
+		return "glm"
 	default:
 		return "anthropic"
 	}
