@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -14,8 +15,11 @@ from uuid import uuid4
 from harbor.agents.base import BaseAgent
 from harbor.environments.docker.docker import _sanitize_docker_compose_project_name
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
+from harbor.models.task.config import EnvironmentConfig as TaskEnvironment, NetworkMode, NetworkPolicy
+from harbor.models.trial.paths import TrialPaths
+from harbor.trial.trial import Trial
 
-from scripts.terminal_bench.harbor_trial import IsolatedVerifierTrial, collect_verifier_proofs
+from scripts.terminal_bench.harbor_trial import IsolatedDockerEnvironment, IsolatedVerifierTrial, collect_verifier_proofs
 
 
 class FixtureAgent(BaseAgent):
@@ -77,6 +81,28 @@ if test "$value" = zero; then printf '0\\n'; else printf '1\\n'; fi > /logs/veri
     @staticmethod
     def docker(*args):
         return subprocess.check_output(["docker", *args], text=True, stderr=subprocess.PIPE, timeout=180).strip()
+
+    @unittest.skipUnless(os.environ.get("YHC_BENCH_CACHED_REFERENCE"), "explicit cached digest reference required")
+    async def test_repository_digest_starts_with_the_cached_content_id(self):
+        reference = os.environ["YHC_BENCH_CACHED_REFERENCE"]
+        expected = json.loads(self.docker("image", "inspect", reference))[0]["Id"]
+        root = self.root / 'repository-reference'
+        directory = root / 'environment'
+        directory.mkdir(parents=True)
+        paths = TrialPaths(root / 'trial')
+        config = TaskEnvironment(docker_image=reference)
+        environment = IsolatedDockerEnvironment(environment_dir=directory, environment_name='generic-pinned-image',
+            session_id='tb4-verifier-reference-' + uuid4().hex[:12], trial_paths=paths,
+            task_env_config=config, mounts=Trial._verifier_env_mounts(SimpleNamespace(paths=paths), config),
+            network_policy=NetworkPolicy(network_mode=NetworkMode.NO_NETWORK), verifier_proof_dir=str(root / 'proofs'))
+        try:
+            await environment.start(False)
+            proof = json.loads(environment.verifier_proof_path.read_text())
+            self.assertEqual(proof['image_id'], expected)
+            self.assertEqual(proof['image_reference'], reference)
+            self.assertEqual(proof['network_mode'], 'none')
+        finally:
+            await environment.stop(delete=True)
 
     async def test_actual_upload_grading_and_failure_are_isolated(self):
         from harbor.trial.artifact_handler import ArtifactHandler
