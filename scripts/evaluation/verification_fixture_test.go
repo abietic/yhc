@@ -399,9 +399,15 @@ func TestNormalUpdateKeepsItsOwnResult(t *testing.T) {
 `
 
 func runKeyedStoreTests(t *testing.T, sourceRoot, source string, includeOracle bool, probes ...string) verificationVerdict {
+	return runVerificationFixtureTests(t, sourceRoot, "store.go", "store_test.go", source, includeOracle, probes...)
+}
+
+// Only trusted repository-owned calibration sources may reach this runner.
+// This process owner is not a sandbox for model-generated submissions.
+func runVerificationFixtureTests(t *testing.T, sourceRoot, sourceName, publicTests, source string, includeOracle bool, probes ...string) verificationVerdict {
 	t.Helper()
 	directory := t.TempDir()
-	for _, name := range []string{"go.mod", "store_test.go"} {
+	for _, name := range []string{"go.mod", publicTests} {
 		data, err := os.ReadFile(filepath.Join(sourceRoot, "fixture", name))
 		if err != nil {
 			t.Fatal(err)
@@ -410,7 +416,7 @@ func runKeyedStoreTests(t *testing.T, sourceRoot, source string, includeOracle b
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(directory, "store.go"), []byte(source), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, sourceName), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for index, probe := range probes {
