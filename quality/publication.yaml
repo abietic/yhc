@@ -6214,6 +6214,11 @@ rules:
     class: project-owned-original
     decision: include
     evidence: [docs/publication/README.md]
+  - id: chroma-notice-checkout-policy
+    include: [third_party/notices/.gitattributes]
+    class: project-owned-original
+    decision: include
+    evidence: [docs/publication/README.md]
   - id: acp-sdk-license
     include: [third_party/acp-go-sdk/LICENSE]
     class: license-compatible-third-party

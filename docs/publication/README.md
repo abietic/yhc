@@ -115,7 +115,12 @@ also refreshes the license sidecars in each platform directory. Distribute the
 whole package rather than extracting a binary and discarding its notices.
 Desktop packaging copies the same two Chroma files into `resources/licenses/`.
 The after-pack verifier checks their exact bytes and digest against the reviewed
-source; file presence alone is insufficient. Both delivery entrypoints use Go's
+source; file presence alone is insufficient. The notice directory's
+`.gitattributes` retains upstream COPYING line endings during Windows Git
+checkout, including `core.autocrlf=true`; the digest check still rejects CRLF
+conversion or any other byte change. This checkout rule is separately classified
+as project-owned control metadata and grants no permission to other notice files.
+Both delivery entrypoints use Go's
 read-only module resolver with `GOWORK=off` and offline lookup to bind the selected
 Chroma version and reject active replacements. They inspect the actual backend's
 Go build information, reject missing or changed Chroma dependencies and
@@ -131,6 +136,8 @@ an older launcher can use an already cached newer compiler.
 `go test ./scripts/publication` checks archive contents, source digest drift,
 license-scope separation, changed detector sets, module and binary version drift,
 replacements, unknown identifiers and unsafe inputs. Desktop tests use real Go
-binary fixtures for each supported package layout. Local
+binary fixtures for each supported package layout. A real Git CRLF-checkout
+regression verifies both license bundling and Windows CLI packaging, including
+rejection without the checkout rule and after license-byte changes. Local
 build and package evidence does not establish code signing, notarization or
 permission to publish a release.
