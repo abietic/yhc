@@ -181,6 +181,32 @@ class StreamTests(unittest.TestCase):
         with self.assertRaises(OSError) as failure: self.opened()
         self.assertIsNone(failure.exception.stream_diagnostics["request_attempt_seconds"])
 
+    def test_connect_failures_keep_first_cause_without_claiming_usage(self):
+        for error in (socket.timeout("private timeout"), OSError("private endpoint")):
+            with self.subTest(error=type(error).__name__):
+                self.now = 100
+                self.connection.reset_mock()
+                def fail():
+                    self.now = 130
+                    raise error
+                self.connection.connect.side_effect = fail
+                self.connection.close.side_effect = OSError("private cleanup")
+                with self.assertRaises(type(error)) as caught: self.opened()
+                self.assertIs(caught.exception, error)
+                data = error.stream_diagnostics
+                self.assertEqual(data["first_error_code"], "connect_error")
+                self.assertEqual(data["first_error_seconds"], 30)
+                expected = "connect_timeout" if isinstance(error, socket.timeout) else None
+                self.assertEqual(data["first_timeout_reason"], expected)
+                self.assertEqual(data["timeout_reason"], expected)
+                self.assertEqual(data["first_timeout_source"], "socket_timeout" if expected else None)
+                self.assertEqual(data["authority"], "diagnostic_only")
+                self.assertIsNone(data["request_attempt_seconds"])
+                self.assertIsNone(data["terminal_event"])
+                self.assertEqual(data["cleanup_error"], "connection_close_error")
+                self.connection.request.assert_not_called()
+                self.assertNotIn("private", json.dumps(data))
+
     def test_body_read_tail_is_bounded_without_losing_totals(self):
         stream = self.opened()
         self.response.read1.return_value = b"x\n"

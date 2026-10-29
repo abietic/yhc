@@ -9,6 +9,10 @@ shortened deadlines as shutdown_drain or downstream_drain. Terminal events
 are recorded only after the caller's independent protocol validation. Neither
 HTTP EOF nor a terminal observation proves closed usage or resumability.
 
+Connection setup errors also retain first-cause timing. A socket timeout in
+connect is labeled connect_timeout, not an expired response-stream deadline;
+it preserves the original exception and does not authorize reservation release.
+
 Body timestamps describe decoded HTTP body reads, including partial lines,
 not TCP packets. Only the latest 64 reads are retained, with full counters
 and an explicit dropped-event count. No body, URL, header or exception text
@@ -268,6 +272,15 @@ def open_http_stream(connection, path, data, headers, deadline):
             diagnostic = stream.diagnostics()
         else:
             diagnostic = initial_data(started)
+            # No HTTPStream exists yet, so its first-cause recorder cannot run.
+            # Capture the connect failure before cleanup; this remains timing
+            # evidence only, never a receipt of zero provider usage.
+            failed_at = round(max(0, time.monotonic() - started[0]), 6)
+            reason = "connect_timeout" if isinstance(exc, socket.timeout) else None
+            source = "socket_timeout" if reason else None
+            diagnostic.update(first_error_code="connect_error", first_error_seconds=failed_at,
+                              timeout_reason=reason, first_timeout_reason=reason,
+                              timeout_source=source, first_timeout_source=source)
             try: connection.close()
             except OSError: diagnostic["cleanup_error"] = "connection_close_error"
             diagnostic.update(error_code="connect_error", close_reason="setup_failed",
