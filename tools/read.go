@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -255,7 +256,11 @@ func formatReadResult(_ string, startLine int, lines []string) string {
 		// for Edit's exact matching. Terminal consumers own tab rendering.
 		// Truncate long lines.
 		if len(line) > maxCharsPerLine {
-			line = line[:maxCharsPerLine] + "..."
+			end := maxCharsPerLine
+			for end > 0 && !utf8.RuneStart(line[end]) {
+				end--
+			}
+			line = line[:end] + "..."
 		}
 
 		// Right-aligned line number with arrow: "     N→"

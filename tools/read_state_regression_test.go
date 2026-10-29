@@ -95,3 +95,42 @@ func TestFileReadGuardFailureIsAnErrorAndDoesNotMutate(t *testing.T) {
 		}
 	}
 }
+
+func TestEditRejectionPreservesExternalChanges(t *testing.T) {
+	for _, state := range []string{"changed-target", "ambiguous-target", "deleted-file"} {
+		t.Run(state, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "source.txt")
+			if err := os.WriteFile(path, []byte("target\noriginal\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ctx := WithFileReadGuards(t.Context(), NewFileReadGuards())
+			if _, err := ReadTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"file_path": path})); err != nil {
+				t.Fatal(err)
+			}
+			changed := "external replacement\n"
+			if state == "ambiguous-target" {
+				changed = "target\ntarget\nexternal change\n"
+			}
+			if state == "deleted-file" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, []byte(changed), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := EditTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+				"file_path": path, "old_string": "target", "new_string": "updated",
+			})); err == nil {
+				t.Fatal("conflicting edit did not report a tool error")
+			}
+			data, err := os.ReadFile(path)
+			if state == "deleted-file" {
+				if !os.IsNotExist(err) {
+					t.Fatal("rejected edit recreated the deleted file")
+				}
+			} else if err != nil || string(data) != changed {
+				t.Fatal("rejected edit overwrote external changes")
+			}
+		})
+	}
+}
