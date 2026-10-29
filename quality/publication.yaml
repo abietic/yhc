@@ -35,6 +35,7 @@ privacy:
     - learn.chatgpt.com
     - mermaid.js.org
     - openai.com
+    - openfontlicense.org
     - open.bigmodel.cn
     - pkg.go.dev
     - platform.claude.com
@@ -4431,12 +4432,12 @@ privacy:
       match_sha256: ed7fc132a73d586f1cac3e03a77e10e343effb98e2c111e214670618bf324531
       purpose: synthetic-security-fixture
     - path: scripts/publication/dependencies.go
-      line: 487
+      line: 502
       rule_id: home-path
       match_sha256: 46fc9ca045f9ef5c7bcce09b6c89957b8346524752f3388c0b1dd865853e283a
       purpose: detector-definition
     - path: scripts/publication/dependencies.go
-      line: 487
+      line: 502
       rule_id: home-path
       match_sha256: 5fcdcf8aa3a9751454b6ea0a7431fdfc94ac6a560eb1b8cb382d44c6ce12b545
       purpose: detector-definition
@@ -6199,6 +6200,17 @@ rules:
     evidence: [docs/publication/README.md]
   - id: desktop
     include: [desktop/**]
+    class: project-owned-original
+    decision: include
+    evidence: [docs/publication/README.md]
+  - id: chroma-retained-copying
+    include: [third_party/notices/chroma.COPYING]
+    class: license-compatible-third-party
+    decision: include
+    license: MIT AND OFL-1.1-RFN
+    evidence: [third_party/notices/chroma.COPYING, third_party/notices/chroma.PROVENANCE.json]
+  - id: chroma-reviewed-provenance
+    include: [third_party/notices/chroma.PROVENANCE.json]
     class: project-owned-original
     decision: include
     evidence: [docs/publication/README.md]

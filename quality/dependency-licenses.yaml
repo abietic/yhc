@@ -91,14 +91,18 @@ dependencies:
     compatibility: allow
     notice: none
   - module: github.com/alecthomas/chroma/v2
-    version: v2.20.0
-    source_url: https://pkg.go.dev/github.com/alecthomas/chroma/v2@v2.20.0
+    version: v2.27.0
+    source_url: https://github.com/alecthomas/chroma/tree/v2.27.0
     licenses:
       - spdx: MIT
         license_file: COPYING
-        license_url: https://pkg.go.dev/github.com/alecthomas/chroma/v2@v2.20.0?tab=licenses
+        license_url: https://github.com/alecthomas/chroma/blob/v2.27.0/COPYING
+      - spdx: OFL-1.1-RFN
+        license_file: COPYING
+        license_url: https://github.com/alecthomas/chroma/blob/v2.27.0/COPYING
     compatibility: allow
-    notice: none
+    notice: retain
+    detector_override: mixed-license-scope-reviewed
   - module: github.com/anthropics/anthropic-sdk-go
     version: v1.56.0
     source_url: https://pkg.go.dev/github.com/anthropics/anthropic-sdk-go@v1.56.0
@@ -527,13 +531,13 @@ dependencies:
         license_url: https://pkg.go.dev/github.com/creack/pty@v1.1.24?tab=licenses
     compatibility: allow
     notice: none
-  - module: github.com/dlclark/regexp2
-    version: v1.11.5
-    source_url: https://pkg.go.dev/github.com/dlclark/regexp2@v1.11.5
+  - module: github.com/dlclark/regexp2/v2
+    version: v2.2.1
+    source_url: https://pkg.go.dev/github.com/dlclark/regexp2/v2@v2.2.1
     licenses:
       - spdx: MIT
         license_file: LICENSE
-        license_url: https://pkg.go.dev/github.com/dlclark/regexp2@v1.11.5?tab=licenses
+        license_url: https://pkg.go.dev/github.com/dlclark/regexp2/v2@v2.2.1?tab=licenses
     compatibility: allow
     notice: none
   - module: github.com/dustin/go-humanize

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "module": "github.com/alecthomas/chroma/v2",
+  "version": "v2.27.0",
+  "source_url": "https://github.com/alecthomas/chroma/blob/v2.27.0/COPYING",
+  "source_sha256": "13654b052f885cb3fa47d7343e13975d9c8a64c3bcd84993c35d5eb01f22b23f",
+  "font_source_url": "https://github.com/alecthomas/chroma/blob/v2.27.0/formatters/svg/font_liberation_mono.go",
+  "font_encoded_sha256": "08a76705aa3a34ece73a65398252e0df807f7671231a0d2a3f6fd4719e851380",
+  "reviewed_licenses": [
+    "MIT",
+    "OFL-1.1-RFN"
+  ],
+  "reserved_font_names": [
+    "Arimo",
+    "Tinos",
+    "Cousine",
+    "Liberation"
+  ],
+  "copyright_holders": [
+    "Google Corporation (2010)",
+    "Red Hat, Inc. (2012)"
+  ],
+  "detector": {
+    "tool": "cyclonedx-gomod",
+    "version": "v1.10.0",
+    "observed_licenses": [
+      "OFL-1.1-no-RFN"
+    ]
+  },
+  "review_basis": "Chroma code is MIT; the embedded font has OFL-1.1 and explicit reserved font names. Detector output is retained as observed evidence and does not replace the reviewed scopes."
+}

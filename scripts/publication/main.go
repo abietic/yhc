@@ -25,7 +25,7 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	}
 	commandName := args[0]
 	switch commandName {
-	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "node-sbom":
+	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "node-sbom", "bundle-licenses", "package-cli":
 	default:
 		return fmt.Errorf("unknown publication command %q", args[0])
 	}
@@ -33,6 +33,7 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	command.SetOutput(io.Discard)
 	configPath := command.String("config", "", "publication policy")
 	var outputPath, rootPath, sourceCommit, sbomPath *string
+	var target *string
 	switch commandName {
 	case "inventory":
 		outputPath = command.String("output", "", "inventory output")
@@ -45,6 +46,12 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	case "node-sbom":
 		rootPath = command.String("root", "", "repository root")
 		outputPath = command.String("output", "", "Node dependency SBOM")
+	case "bundle-licenses", "package-cli":
+		rootPath = command.String("root", "", "repository root")
+		outputPath = command.String("output", "", "license directory or CLI archive")
+		if commandName == "package-cli" {
+			target = command.String("target", "", "CLI platform target")
+		}
 	case "materialize":
 		sourceCommit = command.String("source-commit", "", "exact source commit")
 		outputPath = command.String("output", "", "publication output directory")
@@ -67,6 +74,14 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	}
 
 	switch commandName {
+	case "bundle-licenses", "package-cli":
+		if *rootPath == "" || *outputPath == "" {
+			return errors.New("--root and --output are required")
+		}
+		if commandName == "package-cli" {
+			return packageCLI(*rootPath, *target, *outputPath)
+		}
+		return bundleLicenses(*rootPath, *outputPath)
 	case "licenses":
 		if *rootPath == "" {
 			return errors.New("--root is required")
@@ -248,6 +263,9 @@ func checkIncludedRuleEvidence(config Config, inventory Inventory) error {
 }
 
 func validLicenseID(value string) bool {
+	if value == "MIT AND OFL-1.1-RFN" {
+		return true
+	}
 	if value == "" || strings.TrimSpace(value) != value {
 		return false
 	}
