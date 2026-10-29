@@ -330,6 +330,7 @@ test-glm-live:
 test-provider-costs:
 	python3 -m unittest scripts.terminal_bench.test_http_stream
 	python3 -m unittest scripts.terminal_bench.test_history_state
+	python3 -m unittest scripts.terminal_bench.test_compare_runs scripts.terminal_bench.test_prefix_audit
 	python3 -m unittest scripts.terminal_bench.test_costs scripts.terminal_bench.test_recovery scripts.terminal_bench.test_service_clock scripts.terminal_bench.test_service_snapshot scripts.terminal_bench.test_recovery_bundle scripts.terminal_bench.test_native_handoff_fixture scripts.terminal_bench.test_paused_recovery scripts.terminal_bench.test_cold_dispatch scripts.terminal_bench.test_cohort_admission scripts.terminal_bench.test_host_gateway_pipe scripts.terminal_bench.test_host_gateway_transport
 
 # ── Debug ───────────────────────────────────────────────

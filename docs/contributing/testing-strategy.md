@@ -160,6 +160,66 @@ own model/binary, inputs, budget, and independent grading conditions. The
 calibration runner executes only trusted repository fixtures; it is not an OS
 sandbox for submitted code and must not be used to run untrusted agent tests.
 
+The independent `bounded-map-v1` fixture adds bounded parallel work, queued
+progress, input-ordered results, first-error cancellation, joining started
+callbacks, and preserving caller input. Pool and semaphore controls are accepted;
+single-fault controls distinguish unbounded work, completion-order results,
+missing cancellation/join, discarded errors, and changed input. The sequential
+starter passes its public example but fails the concurrency contract:
+
+```bash
+EINO_VERIFICATION_CALIBRATION=1 go test ./scripts/evaluation \
+  -run '^TestBoundedMapVerificationCalibration$' -count=1 -v -timeout=4m
+```
+
+These checks reuse the owned-process runner and `-race`. The grader uses
+`testing/synctest` and channel barriers rather than scheduling sleeps. Callbacks
+are required to cooperate with cancellation; this does not prove termination of
+arbitrary callback code. As with the keyed-store fixture, only `task.md` and
+`fixture/` belong in a future independent agent workspace. Calibration tests the
+oracle against repository-owned implementations, without invoking an agent or
+changing the production verification role.
+
+## Offline Harness Diagnostics
+
+The local operator-artifact adapters in
+[`compare_runs.py`](../../scripts/terminal_bench/compare_runs.py) compare DSH and
+YHC scoreboards with their closed per-call gateway ledgers. Supply explicit
+immutable run directories; do not read a run while its writer is still active:
+
+```bash
+python3 -m scripts.terminal_bench.compare_runs \
+  --run "$YHC_RUN_ROOT" --run "$DSH_RUN_ROOT" \
+  --output build/evaluation/harness-comparison.json \
+  --markdown build/evaluation/harness-comparison.md
+```
+
+The report retains unknown reservations, derives cache ratio from summed known
+input/cache token counters including the first request, and keeps unavailable
+thinking counters separate from zero. An unstarted plan has no reward; synthetic
+preflight controls cannot form a recorded DSH/YHC pair. Missing per-call evidence
+stays summary-only, and contradictory counters are rejected. Request-duration
+sums do not imply wall time or tool time: absent tool-time, Edit-rejection, and
+compaction evidence remains unavailable. Neither scoreboards nor generated
+reports are provider bills, recovery proofs, or stability estimates.
+
+[`prefix_audit.py`](../../scripts/terminal_bench/prefix_audit.py) reads captured
+request JSON only from the explicitly supplied wire directory:
+
+```bash
+python3 -m scripts.terminal_bench.prefix_audit \
+  --wire "$WIRE_ROOT" --output build/evaluation/prefix-audit.json
+```
+
+It distinguishes append-only message history, changes to static instructions or
+tool definitions, and JSON representation differences. Missing request bodies
+break adjacency. Canonical JSON and byte prefixes are not provider tokenization
+or cache keys; the audit does not predict cache-hit tokens or claim that a field
+change caused a cache miss. Reports export identifiers, counters, structural
+positions and digests, without request text, tool arguments, or thinking text.
+Keep raw input artifacts private. Both commands refuse to replace existing
+reports and make no network, model, funding, or agent-dispatch calls.
+
 ## Persisted Iteration Evidence
 
 `make verify` remains the ordinary full-suite gate. Iteration evidence is an
