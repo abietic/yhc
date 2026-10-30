@@ -132,6 +132,11 @@ func checkDependencyLicenses(ctx context.Context, repoRoot, policyPath, sbomPath
 	if err := reconcileDependencyPolicy(policy, modules); err != nil {
 		return DependencyReport{}, err
 	}
+	if _, present := modules[chromaModule+"@"+chromaVersion]; present {
+		if _, err := loadChromaNoticeProof(repoRoot); err != nil {
+			return DependencyReport{}, err
+		}
+	}
 	if err := validateLocalDependencyLicenses(repoRoot, policy, modules); err != nil {
 		return DependencyReport{}, err
 	}
@@ -322,6 +327,16 @@ func validateDependencyEntry(entry dependencyPolicyEntry) error {
 	if len(entry.Licenses) == 0 {
 		return fmt.Errorf("dependency policy module %q has no licenses", entry.Module)
 	}
+	for _, license := range entry.Licenses {
+		if license.SPDX == "OFL-1.1-RFN" && entry.Notice != "retain" {
+			return errors.New("OFL font attribution must be retained")
+		}
+	}
+	if entry.Module == chromaModule && entry.Version == chromaVersion {
+		if !sameSPDX(spdxSet(entry.Licenses), map[string]struct{}{"MIT": {}, "OFL-1.1-RFN": {}}) || entry.Notice != "retain" || entry.DetectorOverride != "mixed-license-scope-reviewed" {
+			return errors.New("chroma policy must retain both reviewed scopes and the explicit detector review")
+		}
+	}
 	seen := map[string]struct{}{}
 	for _, license := range entry.Licenses {
 		if !supportedSPDX(license.SPDX) {
@@ -370,7 +385,7 @@ func validateDependencyURL(value string) error {
 
 func supportedSPDX(value string) bool {
 	switch value {
-	case "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "BSD-Source-Code", "ISC", "MPL-2.0", "Unlicense", "CC-BY-4.0":
+	case "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "BSD-Source-Code", "ISC", "MPL-2.0", "Unlicense", "CC-BY-4.0", "OFL-1.1-RFN":
 		return true
 	}
 	return false
@@ -526,6 +541,9 @@ func reconcileSBOM(policy dependencyPolicy, modules map[string]*dependencyModule
 			}
 		}
 		expected := spdxSet(entry.Licenses)
+		if module.path == chromaModule && module.version == chromaVersion && !sameSPDX(observed, map[string]struct{}{chromaObservedSPDX: {}}) {
+			return DependencyReport{}, errors.New("chroma detector observation changed; renewed source review is required")
+		}
 		if entry.DetectorOverride == "" && !sameSPDX(expected, observed) {
 			return DependencyReport{}, fmt.Errorf("dependency module %q SPDX does not match policy", module.path)
 		}
@@ -555,7 +573,8 @@ func componentSPDX(component cycloneDXComponent) (map[string]struct{}, error) {
 	licenses := append(append([]cycloneDXLicense{}, component.Evidence.Licenses...), component.Licenses...)
 	result := map[string]struct{}{}
 	for _, item := range licenses {
-		if !supportedSPDX(item.License.ID) {
+		observedChromaClassification := component.Name == chromaModule && component.Version == chromaVersion && item.License.ID == chromaObservedSPDX
+		if !supportedSPDX(item.License.ID) && !observedChromaClassification {
 			return nil, errors.New("unsupported SPDX")
 		}
 		result[item.License.ID] = struct{}{}

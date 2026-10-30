@@ -33,6 +33,14 @@ runtime are retained under `resources/licenses/` together with the YHC and
 Marked license/notice material. Electron Builder is a build-time development
 dependency and is not bundled into the application runtime.
 
+Chroma v2.27.0 and its embedded Liberation Mono font are retained in
+third_party/notices/chroma.COPYING. This contains the MIT license for Chroma
+and the SIL Open Font License 1.1, including the original Google and Red Hat
+copyright statements and reserved font names. The reviewed license scopes,
+upstream source digest, and separate detector observation are recorded in
+third_party/notices/chroma.PROVENANCE.json. CLI distribution packages and
+Desktop resources/licenses/ carry both files with this NOTICE.
+
 Contributor Covenant
 --------------------
 

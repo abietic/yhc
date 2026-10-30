@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
 
 from harbor.models.task.config import NetworkMode, NetworkPolicy, EnvironmentConfig as TaskEnvironment, TaskConfig as TaskDefinition
@@ -23,6 +23,29 @@ IMAGE = "sha256:" + "1" * 64
 
 
 class TaskPolicyTests(unittest.TestCase):
+    def test_repository_digest_keeps_task_and_agent_configuration(self):
+        reference = 'registry.example:5000/team/grader:v1@sha256:' + '1' * 64
+        cfg = TaskDefinition.model_validate({
+            'environment': {'docker_image': IMAGE},
+            'verifier': {'environment_mode': 'separate', 'environment': {'docker_image': reference}},
+        })
+        task = SimpleNamespace(config=cfg, instruction='ordinary task', paths=object())
+        original = cfg.model_dump()
+        copied = isolated_task(task)
+        self.assertEqual(copied.config.verifier.environment.docker_image, reference)
+        self.assertEqual(copied.config.environment, cfg.environment)
+        self.assertEqual(cfg.model_dump(), original)
+        self.assertIs(copied.paths, task.paths)
+
+    def test_mutable_or_malformed_image_references_are_not_qualified(self):
+        for reference in ('registry.example/grader:latest', 'grader', '--image@' + IMAGE,
+                          'https://registry.example/grader@' + IMAGE, 'grader@sha256:123',
+                          'grader@@' + IMAGE, 'grader@' + IMAGE + '\n'):
+            cfg = TaskDefinition.model_validate({'verifier': {'environment_mode': 'separate',
+                                                'environment': {'docker_image': reference}}})
+            with self.subTest(reference=reference), self.assertRaises(PolicyError):
+                isolated_task(SimpleNamespace(config=cfg))
+
     def test_inherited_steps_are_copied_without_changing_agent_or_files(self):
         cfg = TaskDefinition.model_validate({
             "environment": {"docker_image": IMAGE},
@@ -46,7 +69,7 @@ class ActualTrialCreateTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.task = self.root / "task"
         for name in ("environment", "tests", "solution"):
             (self.task / name).mkdir(parents=True)
@@ -118,6 +141,48 @@ class ActualTrialCreateTests(unittest.IsolatedAsyncioTestCase):
         for broken in ("", '{"session_id":', "[]", "null"):
             path.write_text(broken)
             self.assertEqual(collect_verifier_proofs(trial), [])
+
+    def isolated_environment(self, reference):
+        paths = TrialPaths(self.root / 'trials' / 'digest-fixture')
+        return IsolatedDockerEnvironment(environment_dir=self.task / 'environment', environment_name='fixture',
+            session_id='digest-fixture__verifier', trial_paths=paths, task_env_config=TaskEnvironment(docker_image=reference),
+            network_policy=NetworkPolicy(network_mode=NetworkMode.NO_NETWORK), verifier_proof_dir=str(self.root / 'proofs'))
+
+    async def test_named_digest_is_resolved_to_cached_content_id_before_attestation(self):
+        from harbor.environments.docker.docker import DockerEnvironment
+        reference = 'registry.example/grader@' + IMAGE
+        content_id = 'sha256:' + '2' * 64
+        env = self.isolated_environment(reference)
+        env._compose_verified = True
+        row = dict(Id='container', Image=content_id, State={'Running': True},
+                   HostConfig={'NetworkMode': 'none'}, NetworkSettings={'Networks': {'none': {}}},
+                   Mounts=[dict(Type='bind', Source=env._log_dir, Destination='/logs/verifier', RW=True)])
+        try:
+            with patch.object(env, '_inspect', AsyncMock(side_effect=[{'Id': content_id, 'Os': 'linux'}, row])) as inspect, \
+                 patch.object(DockerEnvironment, 'start', AsyncMock()), \
+                 patch.object(DockerEnvironment, '_run_docker_compose_command', AsyncMock(return_value=SimpleNamespace(stdout='container\n'))):
+                await env.start(False)
+            self.assertEqual(inspect.await_args_list[0].args, ('image', reference))
+            import json
+            proof = json.loads(env.verifier_proof_path.read_text())
+            self.assertEqual(proof['image_id'], content_id)
+            self.assertEqual(proof['image_reference'], reference)
+        finally:
+            env._isolation_overlay_dir.cleanup()
+
+    async def test_invalid_cached_image_stops_before_container_start(self):
+        from harbor.environments.docker.docker import DockerEnvironment
+        for image in ({'Id': IMAGE, 'Os': 'windows'}, {'Id': 'not-an-image-id', 'Os': 'linux'}, {'Id': None, 'Os': 'linux'},
+                      {'Id': 'sha256:' + '2' * 64, 'Os': 'linux'}):
+            env = self.isolated_environment(IMAGE)
+            try:
+                with patch.object(env, '_inspect', AsyncMock(return_value=image)), \
+                     patch.object(DockerEnvironment, 'start', AsyncMock()) as start:
+                    with self.subTest(image=image), self.assertRaises(PolicyError):
+                        await env.start(False)
+                    start.assert_not_awaited()
+            finally:
+                env._isolation_overlay_dir.cleanup()
 
 
 if __name__ == "__main__":

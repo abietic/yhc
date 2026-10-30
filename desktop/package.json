@@ -18,7 +18,7 @@
     "electron": "43.8.3",
     "electron-builder": "26.15.7"
   },
-    "build": {
+  "build": {
     "appId": "com.abietic.yhc.desktop",
     "productName": "YHC",
     "icon": "assets/icon.png",
@@ -60,6 +60,14 @@
       {
         "from": "node_modules/electron/dist/LICENSES.chromium.html",
         "to": "licenses/electron-third-party.LICENSES.html"
+      },
+      {
+        "from": "../third_party/notices/chroma.COPYING",
+        "to": "licenses/chroma.COPYING"
+      },
+      {
+        "from": "../third_party/notices/chroma.PROVENANCE.json",
+        "to": "licenses/chroma.PROVENANCE.json"
       }
     ],
     "mac": {
