@@ -1,7 +1,7 @@
 # Isolated Benchmark Verification
 
 **Status:** current
-**Last verified:** 2026-10-29
+**Last verified:** 2026-10-30
 
 > **Ownership:** operator admission, network isolation and terminal classification for the opt-in Harbor evaluator
 
@@ -23,7 +23,8 @@ host bindings. Proof lookup uses Harbor's actual session IDs, including its
 shortened IDs for long trial names.
 
 Each effective task or step verifier must declare a separate Linux environment
-with an immutable, already cached `sha256:` image ID. Its image must contain
+with an immutable, already cached `sha256:` image ID or `repository@sha256:`
+reference (optionally including a tag before `@`). Its image must contain
 the official tests and their dependencies. Shared verifiers, image builds,
 Windows graders, sidecars and additional verifier mounts remain unqualified.
 Tasks that require these need their own verified isolation contract before use.
@@ -35,11 +36,13 @@ runtime configuration and makes each verifier's baseline and phase policies
 network policy. [`IsolatedDockerEnvironment`](../../scripts/terminal_bench/harbor_trial.py)
 then performs these checks in order:
 
-1. Inspect the cached image; do not pull or build a grading image at dispatch.
+1. Inspect the exact cached reference and resolve its Linux content ID; do not
+   pull or build a grading image at dispatch.
 2. Append a native Docker `network_mode: none` override and render the complete
    Compose configuration. Admit only the standalone grader and its own log bind.
-3. Start the container and independently inspect its actual image, networking,
-   privileges and mounts.
+3. Start the container and compare its actual image with the resolved content
+   ID, independently checking networking, privileges and mounts. A repository
+   manifest digest can differ from that content ID; record both reference and ID.
 4. Write an exclusive host-owned proof before `start()` returns. Harbor can
    upload model-produced artifacts only after this point.
 
@@ -89,6 +92,11 @@ or calls a model. Supply its immutable base image ID:
 YHC_BENCH_DOCKER_TEST=1 YHC_BENCH_CACHED_IMAGE="$CACHED_FIXTURE_IMAGE_ID" \
   python -m unittest scripts.terminal_bench.test_harbor_trial_docker
 ```
+
+To also exercise repository-digest resolution, supply an already cached
+`YHC_BENCH_CACHED_REFERENCE=repository@sha256:...`. This additional case starts
+and inspects the disconnected environment, comparing the reference with the
+resolved content ID; it does not run that image's grader or install its tests.
 
 The check runs Harbor's actual trial, artifact upload and grading path for
 reward one, reward zero and a failed grader. At upload it verifies that the

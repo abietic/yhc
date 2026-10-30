@@ -5182,6 +5182,12 @@ privacy:
       rule_id: private-key
       match_sha256: 3021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d
       purpose: synthetic-security-fixture
+    # Reserved example URI rejected as an invalid Docker image reference.
+    - path: scripts/terminal_bench/test_harbor_trial.py
+      line: 42
+      rule_id: private-url
+      match_sha256: 01d229b083b5ed4ff0576c84c4c8fc73191dac49059334cfcaefe15bdf62a14e
+      purpose: synthetic-security-fixture
     # Fixed non-secret bearer header used by the stream-diagnostic privacy test.
     - path: scripts/terminal_bench/test_http_stream.py
       line: 42
