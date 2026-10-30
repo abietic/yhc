@@ -42,22 +42,44 @@ test('packaged Electron stays above the known sandbox-bypass floor', async () =>
     `Electron ${declared} is below the 41.10.3 sandbox-bypass fix`,
   );
   assert.equal(lock.packages?.['node_modules/electron']?.version, declared);
+  assert.equal(lock.packages?.['']?.devDependencies?.electron, declared);
 });
 
-test('packaged Electron includes the permission-origin security fixes', async () => {
-  const manifest = JSON.parse(await readFile(packagePath, 'utf8'));
-  const declared = manifest.devDependencies?.electron;
+function assertElectronSecurityFixes(declared) {
   assert.match(declared, /^\d+\.\d+\.\d+$/);
   const [major, minor, patch] = declared.split('.').map(Number);
-  // GHSA-x562-297c-g43g is the highest fix floor among the seven advisories
-  // reported for the previous pin. Keep each supported branch's floor distinct.
-  const branchFloor = new Map([[43, [7, 6]], [44, [5, 0]]]).get(major);
+  // GHSA-jr5w-w6x2-84p9 revokes compromised eMudhra certificates. Its floors
+  // also include the earlier GHSA-x562-297c-g43g permission-origin fixes.
+  // https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9
+  const branchFloor = new Map([[43, [8, 1]], [44, [9, 1]]]).get(major);
   assert.ok(
     major >= 45 || (branchFloor && (
       minor > branchFloor[0] || (minor === branchFloor[0] && patch >= branchFloor[1])
     )),
-    `Electron ${declared} requires 43.7.6, 44.5.0, or a later fixed stable branch`,
+    `Electron ${declared} requires 43.8.1, 44.9.1, or a later fixed stable branch`,
   );
+}
+
+test('packaged Electron includes the permission-origin and certificate security fixes', async () => {
+  const manifest = JSON.parse(await readFile(packagePath, 'utf8'));
+  assertElectronSecurityFixes(manifest.devDependencies?.electron);
+});
+
+test('Electron security floor rejects vulnerable certificate and permission releases', () => {
+  for (const version of ['43.7.5', '43.8.0', '44.4.1', '44.9.0']) {
+    assert.throws(() => assertElectronSecurityFixes(version), { code: 'ERR_ASSERTION' }, version);
+  }
+  for (const version of ['43.8.1', '43.8.3', '44.9.1', '44.10.0', '45.0.0']) {
+    assert.doesNotThrow(() => assertElectronSecurityFixes(version), version);
+  }
+  for (const version of ['^44.10.0', '44.10.0-beta.1', '44.10', 'latest']) {
+    assert.throws(() => assertElectronSecurityFixes(version), { code: 'ERR_ASSERTION' }, version);
+  }
+});
+
+test('macOS package declares the Electron 44 minimum supported system', async () => {
+  const manifest = JSON.parse(await readFile(packagePath, 'utf8'));
+  assert.equal(manifest.build?.mac?.minimumSystemVersion, '13.0.0');
 });
 
 test('desktop install materializes the pinned Electron distribution before packaging', async () => {

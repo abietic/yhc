@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-10-22
+**Last verified:** 2026-10-30
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -25,6 +25,8 @@ workspace.
 
 ## Prerequisites
 
+- macOS 13 (Ventura) or later for the Intel and Apple Silicon Desktop builds.
+  Electron 44 no longer supports macOS 12 (Monterey).
 - Go and Node/npm compatible with this repository's lockfile.
 - A provider configuration that can run YHC tool calls. Environment-derived
   configuration may be used; the Desktop provider dialog can store a replacement
