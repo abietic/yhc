@@ -110,7 +110,7 @@ class ToolFeedbackTests(unittest.TestCase):
         event = dict(type="response.completed", response=dict(output=[
             dict(type="message", text="PRIVATE_SENTINEL\u2028still data"),
             dict(type="function_call", name="PRIVATE_SENTINEL", call_id="private-call", arguments="PRIVATE_SENTINEL")]))
-        (self.root / "one.response.sse").write_text("data: " + json.dumps(event, ensure_ascii=False) + "\n\n")
+        (self.root / "one.response.sse").write_text("data: " + json.dumps(event, ensure_ascii=False) + "\n\n", encoding="utf-8")
         self.native_events(tool="PRIVATE_SENTINEL", tool_id="private-call")
         got = self.collect()
         self.assertEqual(got["emitted_counts"], {"other": 1})
