@@ -1,0 +1,2 @@
+# Preserve the upstream bytes pinned by the Chroma provenance checks.
+chroma.COPYING text eol=lf
