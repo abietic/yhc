@@ -93,6 +93,27 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["retained_unknown_cny"])
         self.assertIsNone(got["thinking"]["reported_calls"])
 
+    def test_child_tool_inventory_does_not_require_parent_native_events(self):
+        root = self.write(records=[call("1"), call("2")])
+        wire = root / "wire/sample-a"
+        for identifier, name, tool_id in (("1", "Edit", "parent-edit"), ("2", "Bash", "child-bash")):
+            item = dict(type="function_call", name=name, call_id=tool_id, arguments="PRIVATE_SENTINEL")
+            event = dict(type="response.completed", response=dict(output=[item]))
+            (wire / (identifier + ".response.sse")).write_text("data: " + json.dumps(event) + "\n\n")
+        agent = root / "trials/sample-a/agent"
+        agent.mkdir(parents=True)
+        events = [dict(schema_version=1, type="event", event=dict(kind=kind, tool=tool)) for kind, tool in (
+            ("tool_start", dict(tool_call_id="parent-edit", tool_name="Edit")),
+            ("tool_terminal", dict(tool_call_id="parent-edit", outcome="completed", raw_output="PRIVATE_SENTINEL")))]
+        (agent / "yhc.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+        report = build_report([root])
+        got = report["samples"][0]
+        self.assertEqual(got["tool_feedback"]["emitted_counts"], {"Edit": 1, "Bash": 1})
+        self.assertEqual(got["tool_feedback"]["unmatched_emitted_calls"], 1)
+        self.assertEqual(got["edit_rejections"], 0)
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+        self.assertIn("Bash=1, Edit=1", markdown(report))
+
     def test_duplicate_call_or_sample_bad_counters_and_conflicting_summary_fail(self):
         cases = [[call("1"), call("1")], [call("1", cached=51), call("2")],
                  [dict(call("1"), input_tokens=True), call("2")],
