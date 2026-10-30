@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -86,6 +87,57 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(report["paired_tasks"])
         self.assertIsNone(report["samples"][1]["thinking"]["known_tokens"])
         self.assertIn("synthetic_preflight", markdown(report))
+
+    def mark_scoreboard_synthetic(self, root, entry):
+        path = root / "report.json"
+        path.write_text(json.dumps(dict(all_usage_synthetic=True, real_provider_calls=0,
+            case=entry["sample"]["agent"] + "-healthy", totals=entry["summary"],
+            private_payload="PRIVATE_SENTINEL")))
+        return path
+
+    def test_synthetic_scoreboard_preserves_ledger_but_cannot_pair_with_real(self):
+        entry = row()
+        synthetic = self.write(entry, [call("1"), call("2")])
+        marker = self.mark_scoreboard_synthetic(synthetic, entry)
+        real = self.write(row("dsh", "sample-b"), [call("3"), call("4")], name="two")
+        report = build_report([synthetic, real])
+        got = report["samples"][0]
+        self.assertEqual(got["evidence_kind"], "synthetic_preflight")
+        self.assertEqual(got["call_evidence"], "per_call_checked")
+        self.assertEqual((got["calls"], got["reward"]), (2, 1))
+        self.assertEqual(got["classification_source_sha256"], hashlib.sha256(marker.read_bytes()).hexdigest())
+        self.assertFalse(report["paired_tasks"])
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+
+    def test_malformed_or_contradictory_synthetic_marker_fails_closed(self):
+        for index, change in enumerate((dict(all_usage_synthetic=1), dict(real_provider_calls=1),
+                                        dict(real_provider_calls=False))):
+            root = self.write(records=[call("1"), call("2")], name=str(index))
+            marker = self.mark_scoreboard_synthetic(root, row())
+            data = json.loads(marker.read_text())
+            data.update(change)
+            marker.write_text(json.dumps(data))
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                load_run(root)
+
+    def test_synthetic_marker_must_cover_the_same_scoreboard(self):
+        for index, field in enumerate(("totals", "case")):
+            root = self.write(records=[call("1"), call("2")], name=str(index))
+            marker = self.mark_scoreboard_synthetic(root, row())
+            data = json.loads(marker.read_text())
+            if field == "totals":
+                data[field]["calls"] += 1
+            else:
+                data[field] = "dsh-healthy"
+            marker.write_text(json.dumps(data))
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                load_run(root)
+
+    def test_recorded_scoreboard_with_other_report_keeps_its_classification(self):
+        for index, extra in enumerate((dict(all_usage_synthetic=False, real_provider_calls=2), dict(status="completed"))):
+            root = self.write(records=[call("1"), call("2")], name=str(index))
+            (root / "report.json").write_text(json.dumps(extra))
+            self.assertEqual(load_run(root)[0]["evidence_kind"], "recorded_run")
 
     def test_summary_only_remains_unverified_at_call_level(self):
         got = load_run(self.write())[0]

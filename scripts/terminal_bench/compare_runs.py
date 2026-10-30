@@ -162,14 +162,34 @@ def _usage(summary, ledger):
 
 def load_run(root):
     root = Path(root).resolve()
+    report_path = root / "report.json"
+    control = read_json(report_path) if report_path.is_file() else None
+    synthetic = False
+    if control is not None:
+        if not isinstance(control, dict):
+            raise ValueError("invalid report adapter")
+        if "all_usage_synthetic" in control and type(control["all_usage_synthetic"]) is not bool:
+            raise ValueError("invalid synthetic evidence marker")
+        synthetic = control.get("all_usage_synthetic") is True
+        if synthetic and "real_provider_calls" in control and count(control["real_provider_calls"]) != 0:
+            raise ValueError("synthetic evidence contains real provider calls")
     board = root / "scoreboard.json"
-    if board.is_file():
+    scoreboard_layout = board.is_file()
+    if scoreboard_layout:
         data = read_json(board)
-        entries, kind = data["samples"], "recorded_run"
-    elif (root / "report.json").is_file():
-        board = root / "report.json"
-        data = read_json(board)
-        if data.get("all_usage_synthetic") is not True:
+        entries = data["samples"]
+        kind = "synthetic_preflight" if synthetic else "recorded_run"
+        if synthetic:
+            # Actual-entry controls publish the same scoreboard and nested wire
+            # layout as paid runs. Storage layout cannot establish provenance.
+            if (len(entries) != 1
+                    or atom(control.get("case", "")).split("-", 1)[0] != entries[0]["sample"]["agent"]
+                    or json.dumps(control.get("totals"), sort_keys=True, allow_nan=False)
+                    != json.dumps(entries[0]["summary"], sort_keys=True, allow_nan=False)):
+                raise ValueError("synthetic marker and scoreboard disagree")
+    elif control is not None:
+        board, data = report_path, control
+        if not synthetic:
             raise ValueError("unsupported report adapter")
         ledger = read_json(root / "wire/ledger.json")
         agent = data["case"].split("-", 1)[0]
@@ -189,7 +209,7 @@ def load_run(root):
         identifier = atom(sample["sample_id"])
         if "/" in identifier or identifier in (".", ".."):
             raise ValueError("unsafe sample identifier")
-        path = root / "wire" / identifier / "ledger.json" if kind == "recorded_run" else root / "wire/ledger.json"
+        path = root / "wire" / identifier / "ledger.json" if scoreboard_layout else root / "wire/ledger.json"
         if path.is_file() and (not path.resolve().is_relative_to(root) or path.resolve() != path):
             raise ValueError("ledger must not use symbolic links")
         ledger = read_json(path) if path.is_file() else None
@@ -203,6 +223,7 @@ def load_run(root):
         deadline = entry.get("deadline") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),
             task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=fingerprint(board),
+            classification_source_sha256=fingerprint(report_path) if synthetic else None,
             ledger_sha256=fingerprint(path) if ledger is not None else None,
             status="completed" if entry.get("normal_completion") is True else "interrupted_or_unverified",
             reward=reward(entry.get("official_reward")), agent_seconds=seconds(deadline.get("agent_elapsed_seconds")),
