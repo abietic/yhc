@@ -1,7 +1,7 @@
 # Public Source And Release Boundary
 
 **Status:** current
-**Last verified:** 2026-08-13
+**Last verified:** 2026-10-29
 
 > **Ownership:** public-source classification, provenance clearance, privacy
 > review, and clean-root release boundary
@@ -93,3 +93,59 @@ not copy those objects merely to preserve blame or commit identifiers.
 Remote preparation and public visibility are distinct approval boundaries. If
 any repository identity, scan result, signature, ruleset, or exact-root CI
 fact differs at either boundary, the release remains private and stops.
+
+## Native dependency notices
+
+Chroma's formatter registry embeds Liberation Mono in the native executable,
+even when YHC selects terminal output. The reviewed scopes are MIT for Chroma
+and OFL-1.1-RFN for the font. The retained
+[`COPYING`](../../third_party/notices/chroma.COPYING) includes both complete
+licenses and the font copyright and reserved-name statements.
+[`provenance`](../../third_party/notices/chroma.PROVENANCE.json) pins the
+upstream version and source digest. Its detector observation remains separate:
+CycloneDX reports OFL-1.1-no-RFN, which does not replace the reviewed scopes.
+The dependency checker admits that raw observation only for the exact reviewed
+Chroma version, requires both scopes and notice retention, and rejects unknown
+license identifiers. The actual SBOM observation must equal the reviewed set;
+another known SPDX identifier or an additional observation requires new review.
+
+Use `make cli-package` for CLI delivery. Each of the four platform ZIP packages
+contains its executable and readable license/provenance files. `make build`
+also refreshes the license sidecars in each platform directory. Distribute the
+whole package rather than extracting a binary and discarding its notices.
+Desktop packaging copies the same two Chroma files into `resources/licenses/`.
+The after-pack verifier checks their exact bytes and digest against the reviewed
+source; file presence alone is insufficient. The notice directory's
+`.gitattributes` retains upstream COPYING line endings during Windows Git
+checkout, including `core.autocrlf=true`; the digest check still rejects CRLF
+conversion or any other byte change. This checkout rule is separately classified
+as project-owned control metadata and grants no permission to other notice files.
+Both delivery entrypoints use Go's
+read-only module resolver with `GOWORK=off` and offline lookup to bind the selected
+Chroma version and reject active replacements. They inspect the actual backend's
+Go build information, reject missing or changed Chroma dependencies and
+replacements, and check both GOOS and GOARCH against the supported package
+architecture. Missing architectures and universal backends are rejected.
+Desktop inspection bootstraps the backend's build Go version with the launcher,
+then selects that exact existing version from PATH or Go's standard toolchain
+module cache. It never requests a toolchain download or disables checksum
+validation, and all inspection commands share a 30-second deadline. Packaging
+therefore needs the actual build toolchain and resolved module metadata in cache;
+an older launcher can use an already cached newer compiler.
+
+Publication outputs retain file-data synchronization and same-directory rooted
+rename promotion, with directory identities revalidated around promotion. Unix
+platforms also synchronize the parent directory and reject synchronization errors.
+Windows verifies and closes the directory handle without issuing the unsupported
+read-only directory flush; this does not provide Unix parent-directory crash
+durability. File write, data-sync, rename and close failures remain fatal on every
+platform, as do unexpected directory inspection and close failures.
+
+`go test ./scripts/publication` checks archive contents, source digest drift,
+license-scope separation, changed detector sets, module and binary version drift,
+replacements, unknown identifiers and unsafe inputs. Desktop tests use real Go
+binary fixtures for each supported package layout. A real Git CRLF-checkout
+regression verifies both license bundling and Windows CLI packaging, including
+rejection without the checkout rule and after license-byte changes. Local
+build and package evidence does not establish code signing, notarization or
+permission to publish a release.

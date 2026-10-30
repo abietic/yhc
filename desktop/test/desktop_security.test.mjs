@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
@@ -121,6 +122,8 @@ test('platform package resources match each staged desktop backend name', async 
     { from: '../internal/webui/assets/vendor/marked.NOTICE.txt', to: 'licenses/marked.NOTICE.txt' },
     { from: 'node_modules/electron/dist/LICENSE', to: 'licenses/electron.LICENSE' },
     { from: 'node_modules/electron/dist/LICENSES.chromium.html', to: 'licenses/electron-third-party.LICENSES.html' },
+    { from: '../third_party/notices/chroma.COPYING', to: 'licenses/chroma.COPYING' },
+    { from: '../third_party/notices/chroma.PROVENANCE.json', to: 'licenses/chroma.PROVENANCE.json' },
   ]);
   assert.equal(build.afterPack, 'scripts/verify_packaged_artifact.cjs');
   assert.deepEqual(build.mac.extraResources, [
@@ -182,12 +185,20 @@ test('desktop backend builds inject reproducible source identity', async () => {
 test('packaged artifact retains project, Marked, Electron, and Chromium license material', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yhc-package-notices-'));
   try {
-    const linuxContext = { electronPlatformName: 'linux', appOutDir: root };
+    const linuxContext = { electronPlatformName: 'linux', arch: 1, appOutDir: root,
+      packager: { projectDir: fileURLToPath(new URL('desktop', repositoryPath)) } };
     const licenses = path.join(resourcesDirectory(linuxContext), 'licenses');
     fs.mkdirSync(licenses, { recursive: true });
     for (const filename of REQUIRED_LICENSE_FILES) {
       fs.writeFileSync(path.join(licenses, filename), 'retained');
     }
+    for (const name of ['chroma.COPYING', 'chroma.PROVENANCE.json']) {
+      fs.copyFileSync(new URL(`third_party/notices/${name}`, repositoryPath), path.join(licenses, name));
+    }
+    const resources = resourcesDirectory(linuxContext);
+    fs.mkdirSync(path.join(resources, 'bin'), { recursive: true });
+    const { chromaFixtureBinary } = require('./chroma_fixture.cjs');
+    fs.writeFileSync(path.join(resources, 'bin/yhc'), chromaFixtureBinary('linux'));
     assert.doesNotThrow(() => verifyPackagedNotices(linuxContext));
 
     fs.writeFileSync(path.join(licenses, 'electron.LICENSE'), '');

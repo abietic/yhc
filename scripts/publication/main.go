@@ -25,7 +25,7 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	}
 	commandName := args[0]
 	switch commandName {
-	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "node-sbom":
+	case "inventory", "check", "scan-expression", "materialize", "check-tree", "manifest", "licenses", "node-sbom", "bundle-licenses", "package-cli":
 	default:
 		return fmt.Errorf("unknown publication command %q", args[0])
 	}
@@ -33,6 +33,7 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	command.SetOutput(io.Discard)
 	configPath := command.String("config", "", "publication policy")
 	var outputPath, rootPath, sourceCommit, sbomPath *string
+	var target *string
 	switch commandName {
 	case "inventory":
 		outputPath = command.String("output", "", "inventory output")
@@ -45,6 +46,12 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	case "node-sbom":
 		rootPath = command.String("root", "", "repository root")
 		outputPath = command.String("output", "", "Node dependency SBOM")
+	case "bundle-licenses", "package-cli":
+		rootPath = command.String("root", "", "repository root")
+		outputPath = command.String("output", "", "license directory or CLI archive")
+		if commandName == "package-cli" {
+			target = command.String("target", "", "CLI platform target")
+		}
 	case "materialize":
 		sourceCommit = command.String("source-commit", "", "exact source commit")
 		outputPath = command.String("output", "", "publication output directory")
@@ -67,6 +74,14 @@ func run(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	}
 
 	switch commandName {
+	case "bundle-licenses", "package-cli":
+		if *rootPath == "" || *outputPath == "" {
+			return errors.New("--root and --output are required")
+		}
+		if commandName == "package-cli" {
+			return packageCLI(*rootPath, *target, *outputPath)
+		}
+		return bundleLicenses(*rootPath, *outputPath)
 	case "licenses":
 		if *rootPath == "" {
 			return errors.New("--root is required")
@@ -248,6 +263,9 @@ func checkIncludedRuleEvidence(config Config, inventory Inventory) error {
 }
 
 func validLicenseID(value string) bool {
+	if value == "MIT AND OFL-1.1-RFN" {
+		return true
+	}
 	if value == "" || strings.TrimSpace(value) != value {
 		return false
 	}
@@ -264,6 +282,10 @@ func validLicenseID(value string) bool {
 }
 
 func writeInventory(outputPath string, contents []byte) error {
+	return writeInventoryWithDirectorySync(outputPath, contents, syncInventoryDirectory)
+}
+
+func writeInventoryWithDirectorySync(outputPath string, contents []byte, syncDirectory func(*os.File) error) (resultErr error) {
 	directory := filepath.Dir(outputPath)
 	base := filepath.Base(outputPath)
 	if err := validateInventoryOutputPath(outputPath, directory, base); err != nil {
@@ -273,7 +295,11 @@ func writeInventory(outputPath string, contents []byte) error {
 	if err != nil {
 		return err
 	}
-	defer outputDirectory.Close()
+	defer func() {
+		if err := outputDirectory.Close(); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("close inventory output roots: %w", err))
+		}
+	}()
 	root := outputDirectory.root
 	initialTarget, err := lstatRegularOrAbsent(root, base)
 	if err != nil {
@@ -289,16 +315,8 @@ func writeInventory(outputPath string, contents []byte) error {
 			_ = root.Remove(temporary)
 		}
 	}()
-	if _, err := file.Write(contents); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write inventory output: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("sync inventory output: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close inventory output: %w", err)
+	if err := writeSyncedInventoryFile(file, contents); err != nil {
+		return err
 	}
 	if err := outputDirectory.revalidate(); err != nil {
 		return err
@@ -317,8 +335,12 @@ func writeInventory(outputPath string, contents []byte) error {
 	if err != nil {
 		return fmt.Errorf("open inventory output directory for sync: %w", err)
 	}
-	defer directoryFile.Close()
-	if err := directoryFile.Sync(); err != nil {
+	defer func() {
+		if err := directoryFile.Close(); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("close inventory output directory after sync: %w", err))
+		}
+	}()
+	if err := syncDirectory(directoryFile); err != nil {
 		return fmt.Errorf("sync inventory output directory: %w", err)
 	}
 	return nil

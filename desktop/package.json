@@ -60,6 +60,14 @@
       {
         "from": "node_modules/electron/dist/LICENSES.chromium.html",
         "to": "licenses/electron-third-party.LICENSES.html"
+      },
+      {
+        "from": "../third_party/notices/chroma.COPYING",
+        "to": "licenses/chroma.COPYING"
+      },
+      {
+        "from": "../third_party/notices/chroma.PROVENANCE.json",
+        "to": "licenses/chroma.PROVENANCE.json"
       }
     ],
     "mac": {
