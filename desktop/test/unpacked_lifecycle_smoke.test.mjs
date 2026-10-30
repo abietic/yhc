@@ -23,6 +23,7 @@ const {
   combineSmokeFailure,
   crashContainmentMatches,
   decodeSeedSession,
+  finishSmoke,
   killVerifiedBackend,
   makeIsolatedEnvironment,
   observeStable,
@@ -492,6 +493,57 @@ test('Linux cleanup remains unguarded and cleanup diagnostics preserve the prima
   assert.match(combined.message, /^renderer bootstrap failed\nCleanup failed:/);
   assert.ok(combined.cause instanceof AggregateError);
   assert.deepEqual(combined.cause.errors, [primary, cleanup]);
+});
+
+test('smoke completion preserves primary and directory cleanup failures without publishing pass', () => {
+  const primary = new Error('Desktop exit timed out');
+  const locked = Object.assign(new Error('profile file is locked'), { code: 'EBUSY' });
+  const output = [];
+  assert.throws(() => finishSmoke('/test-owned/smoke', undefined, primary, {
+    remove() { throw locked; },
+    write: (text) => output.push(text),
+  }), (error) => {
+    assert.match(error.message, /^Desktop exit timed out\nCleanup failed: profile file is locked$/);
+    assert.ok(error.cause instanceof AggregateError);
+    assert.deepEqual(error.cause.errors, [primary, locked]);
+    return true;
+  });
+  assert.deepEqual(output, []);
+});
+
+test('smoke directory cleanup failure invalidates an otherwise passing result', () => {
+  const output = [];
+  const locked = new Error('profile file is locked');
+  assert.throws(() => finishSmoke('/test-owned/smoke', { status: 'pass' }, undefined, {
+    remove() { throw locked; },
+    write: (text) => output.push(text),
+  }), (error) => {
+    assert.equal(error.message, 'Cleanup failed: profile file is locked');
+    assert.equal(error.cause, locked);
+    return true;
+  });
+  assert.deepEqual(output, []);
+});
+
+test('smoke completion cleans up before publishing pass and retains a prior failure', () => {
+  const events = [];
+  const proof = { status: 'pass', platform: 'win32-x64' };
+  const options = {
+    remove(directory, controls) {
+      assert.equal(directory, '/test-owned/smoke');
+      assert.deepEqual(controls, { recursive: true, force: true });
+      events.push('removed');
+    },
+    write: (text) => events.push(JSON.parse(text)),
+  };
+  finishSmoke('/test-owned/smoke', proof, undefined, options);
+  assert.deepEqual(events, ['removed', proof]);
+
+  events.length = 0;
+  const primary = new Error('renderer bootstrap failed');
+  assert.throws(() => finishSmoke('/test-owned/smoke', undefined, primary, options),
+    (error) => error === primary);
+  assert.deepEqual(events, ['removed']);
 });
 
 test('smoke arguments admit one explicit crash mode and reject ambiguity', () => {
