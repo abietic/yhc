@@ -329,7 +329,7 @@ test-glm-live:
 .PHONY: test-provider-costs
 test-provider-costs:
 	python3 -m unittest scripts.terminal_bench.test_http_stream
-	python3 -m unittest scripts.terminal_bench.test_history_state scripts.terminal_bench.test_compare_runs scripts.terminal_bench.test_prefix_audit scripts.terminal_bench.test_trial_policy
+	python3 -m unittest scripts.terminal_bench.test_history_state scripts.terminal_bench.test_compare_runs scripts.terminal_bench.test_tool_feedback scripts.terminal_bench.test_prefix_audit scripts.terminal_bench.test_trial_policy
 	python3 -m unittest scripts.terminal_bench.test_costs scripts.terminal_bench.test_recovery scripts.terminal_bench.test_service_clock scripts.terminal_bench.test_service_snapshot scripts.terminal_bench.test_recovery_bundle scripts.terminal_bench.test_native_handoff_fixture scripts.terminal_bench.test_paused_recovery scripts.terminal_bench.test_cold_dispatch scripts.terminal_bench.test_cohort_admission scripts.terminal_bench.test_host_gateway_pipe scripts.terminal_bench.test_host_gateway_transport
 
 # ── Debug ───────────────────────────────────────────────

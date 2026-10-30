@@ -17,6 +17,8 @@ import math
 from pathlib import Path
 import re
 
+from scripts.terminal_bench.tool_feedback import collect_tool_feedback
+
 
 def atom(value):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.:/-]{1,180}", value):
@@ -194,6 +196,10 @@ def load_run(root):
         if ledger is not None and ledger["sample"] != identifier:
             raise ValueError("ledger sample mismatch")
         usage = _usage(entry["summary"], ledger)
+        if ledger is not None:
+            feedback = collect_tool_feedback(path.parent, ledger["records"], ledger["protocol"],
+                                             root / "trials" / identifier / "agent/yhc.jsonl")
+            usage.update(tool_feedback=feedback, edit_rejections=feedback["edit_rejections"])
         deadline = entry.get("deadline") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),
             task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=fingerprint(board),
@@ -238,6 +244,20 @@ def markdown(report):
                      f"{value('retained_unknown_cny')} | "
                      f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
                      f"{thinking if thinking is not None else 'unavailable'} |")
+    lines += ["", "Emitted tool requests and native terminal receipts have separate coverage; neither proves side effects.", "",
+              "| Agent | Wire inventory | Emitted tool requests | Unmatched emitted calls | Edit completed/failed/emitted | Edit rejections |",
+              "|---|---|---|---:|---:|---:|"]
+    for r in report["samples"]:
+        feedback = r.get("tool_feedback") or {}
+        counts = feedback.get("emitted_counts")
+        counts = ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) if counts else (
+            "0" if counts == {} else "unavailable")
+        edit = feedback.get("edit") or {}
+        value = lambda v: "unavailable" if v is None else str(v)
+        lines.append(f"| {r['agent']} | {feedback.get('wire_inventory', 'unavailable')} | {counts} | "
+                     f"{value(feedback.get('unmatched_emitted_calls'))} | "
+                     f"{value(edit.get('completed'))}/{value(edit.get('failed'))}/{value(edit.get('emitted'))} "
+                     f"({edit.get('coverage', 'unavailable')}) | {value(r.get('edit_rejections'))} |")
     return "\n".join(lines) + "\n"
 
 

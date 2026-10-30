@@ -199,9 +199,19 @@ input/cache token counters including the first request, and keeps unavailable
 thinking counters separate from zero. An unstarted plan has no reward; synthetic
 preflight controls cannot form a recorded DSH/YHC pair. Missing per-call evidence
 stays summary-only, and contradictory counters are rejected. Request-duration
-sums do not imply wall time or tool time: absent tool-time, Edit-rejection, and
-compaction evidence remains unavailable. Neither scoreboards nor generated
+sums do not imply wall time or tool time: absent tool-time and compaction
+evidence remains unavailable. Neither scoreboards nor generated
 reports are provider bills, recovery proofs, or stability estimates.
+
+`collect_tool_feedback` in [`tool_feedback.py`](../../scripts/terminal_bench/tool_feedback.py)
+counts tool requests from complete captured Responses or Messages replies,
+including child replies absent from the parent's native event stream. It reports
+emitted requests separately from native terminal receipts; neither proves a tool's
+side effects. Missing, unknown, or truncated replies keep inventory incomplete.
+Only a complete Edit inventory matched to unique successful native terminals
+establishes zero Edit rejections. Failed outcomes are counted separately and do
+not identify a rejection category. Custom tool names are grouped as `other`;
+arguments, output, and error text are excluded from the report.
 
 [`prefix_audit.py`](../../scripts/terminal_bench/prefix_audit.py) reads captured
 request JSON only from the explicitly supplied wire directory:
