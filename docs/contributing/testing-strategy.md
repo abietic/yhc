@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-09-29
+**Last verified:** 2026-10-31
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -229,6 +229,46 @@ change caused a cache miss. Reports export identifiers, counters, structural
 positions and digests, without request text, tool arguments, or thinking text.
 Keep raw input artifacts private. Both commands refuse to replace existing
 reports and make no network, model, funding, or agent-dispatch calls.
+
+Before a new cohort, [`fresh_budget.py`](../../scripts/terminal_bench/fresh_budget.py)
+assesses explicit per-sample caps whose sum must fit the shared cap. Every cap
+must cover a complete request reservation before any sample starts. An early
+sample cannot borrow another sample's unused cap, including after completion.
+This is a new-sample operator component and offline CLI; existing sealed paid
+launchers, native YHC accounting, and the cold-recovery journal are unchanged.
+
+```bash
+python3 -m scripts.terminal_bench.fresh_budget \
+  --plan "$FRESH_PLAN" --plan-sha256 "$FRESH_PLAN_SHA256"
+```
+
+The plan anchor is `fresh_budget.digest(plan)`, the canonical JSON object hash,
+not a hash of the formatted file bytes. The CLI only assesses that separately
+pinned plan and returns nonzero when the
+batch is unaffordable. It does not read credentials, claim samples, allocate
+funds, dispatch, or resume. `ready_offline` is not paid authorization. A future
+caller must separately prove funding, price and model-contract freshness,
+account coverage, time windows, single-use claims, and checkpoint capture.
+
+[`reservation_bound.py`](../../scripts/terminal_bench/reservation_bound.py)
+uses the documented full context ceiling and the worst input rate in a pinned
+upper-bound price card. It does not infer hard bounds from character ratios,
+recorded usage or cache hits. Responses uses its explicit output cap. Because
+the documented Messages compatibility path can raise `max_tokens`, that dialect
+conservatively reserves the model output ceiling until exclusion of that path
+is proved. A post-response bound check cannot prevent an initial overspend.
+Model and tariff ceilings must be refreshed before live use; these are
+conditional upper-bound estimates, not provider invoices. Server-side tools
+without a separately bounded price are rejected.
+
+`FreshBudget` durably reserves a frozen request before returning it to its
+caller. Unknown, malformed or over-bound usage keeps the full liability and
+blocks new admission; a larger reported liability is not clipped to the cap.
+Storage faults block further requests. Existing directories are never reopened
+for dispatch, and retained files do not authorize recovery. Tests exercise
+execution-order permutations, concurrent reservations, storage tampering,
+process interruption and independent expected amounts through
+`make test-provider-costs`; all provider calls in these fixtures are absent.
 
 ## Persisted Iteration Evidence
 
