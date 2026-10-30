@@ -497,6 +497,21 @@ function combineSmokeFailure(primary, cleanup) {
   });
 }
 
+function finishSmoke(
+  temporaryRoot,
+  result,
+  failure,
+  { remove = fs.rmSync, write = (text) => process.stdout.write(text) } = {},
+) {
+  try {
+    remove(temporaryRoot, { recursive: true, force: true });
+  } catch (cleanupError) {
+    failure = combineSmokeFailure(failure, cleanupError);
+  }
+  if (failure) throw failure;
+  write(`${JSON.stringify(result)}\n`);
+}
+
 function killVerifiedBackend(
   identity,
   {
@@ -1802,6 +1817,7 @@ async function runSmoke(
   let failure;
   let passed = false;
   let settingsProof;
+  let smokeResult;
   try {
     if (options.crashActiveTurn || options.sharedSettings) {
       const workspaceCandidate = path.join(temporaryRoot, 'workspace');
@@ -2141,7 +2157,7 @@ async function runSmoke(
       );
     }
     passed = true;
-    process.stdout.write(`${JSON.stringify({
+    smokeResult = {
       status: 'pass',
       protocol_version: probe.protocolVersion,
       surface: probe.surface,
@@ -2153,7 +2169,7 @@ async function runSmoke(
       shared_settings: settingsProof || 'not_run',
       crash_cleanup: crashRequested ? crashCleanup : 'not_run',
       no_restart_observation_ms: crashRequested ? NO_RESTART_OBSERVATION_MS : 0,
-    })}\n`);
+    };
   } catch (error) {
     if (xvfbErrorPath) {
       try {
@@ -2217,9 +2233,8 @@ async function runSmoke(
         failure = combineSmokeFailure(failure, cleanupError);
       }
     }
-    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+    finishSmoke(temporaryRoot, smokeResult, failure);
   }
-  if (failure) throw failure;
 }
 
 async function main() {
@@ -2254,6 +2269,7 @@ module.exports = {
   combineSmokeFailure,
   crashContainmentMatches,
   decodeSeedSession,
+  finishSmoke,
   killVerifiedBackend,
   makeIsolatedEnvironment,
   normalizeWindowsExecutable,
