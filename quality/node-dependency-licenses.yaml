@@ -362,7 +362,7 @@ dependencies:
     license: "Apache-2.0"
     decision: allow
   - package: "electron"
-    version: "43.8.3"
+    version: "44.10.0"
     license: "MIT"
     decision: allow
   - package: "electron-builder"

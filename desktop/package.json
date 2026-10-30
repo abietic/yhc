@@ -15,10 +15,10 @@
   },
   "devDependencies": {
     "@electron/asar": "4.3.0",
-    "electron": "43.8.3",
+    "electron": "44.10.0",
     "electron-builder": "26.15.7"
   },
-    "build": {
+  "build": {
     "appId": "com.abietic.yhc.desktop",
     "productName": "YHC",
     "icon": "assets/icon.png",
@@ -63,6 +63,7 @@
       }
     ],
     "mac": {
+      "minimumSystemVersion": "13.0.0",
       "extraResources": [
         {
           "from": "resources/bin/yhc",
