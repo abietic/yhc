@@ -632,20 +632,31 @@ func (s *Selection) ExtractExpandText(
 	lines []string,
 	profile DisplayCellProfile,
 ) string {
+	text, _ := s.extractExpandText(lines, profile, 0)
+	return text
+}
+
+func (s *Selection) extractExpandText(lines []string, profile DisplayCellProfile, maxBytes int) (string, error) {
 	if s.expandAnchor == nil || s.expandFocus == nil {
-		return ""
+		return "", nil
 	}
 	if *s.expandAnchor == *s.expandFocus {
-		return ""
+		return "", nil
 	}
 	start, end := s.expandAnchor, s.expandFocus
 	if start.row > end.row || (start.row == end.row && start.col > end.col) {
 		start, end = end, start
 	}
+	if maxBytes > 0 && (start.row < 0 || end.row >= len(lines)) {
+		return "", errSelectedOutputUnavailable
+	}
 	var result strings.Builder
 	for row := start.row; row <= end.row && row < len(lines); row++ {
 		if row < 0 {
 			continue
+		}
+		if maxBytes > 0 && len(lines[row]) > maxBytes {
+			return "", errSelectedOutputTooLarge
 		}
 		lineCells := selectionLineCells(profile, lines[row])
 		cs, ce := 0, lineCells
@@ -664,12 +675,30 @@ func (s *Selection) ExtractExpandText(
 		if cs > ce {
 			cs = ce
 		}
+		text := selectionSliceCells(profile, lines[row], cs, ce)
+		additional := len(text)
+		if result.Len() > 0 {
+			additional++
+		}
+		if maxBytes > 0 && additional > maxBytes-result.Len() {
+			return "", errSelectedOutputTooLarge
+		}
 		if result.Len() > 0 {
 			result.WriteByte('\n')
 		}
-		result.WriteString(selectionSliceCells(profile, lines[row], cs, ce))
+		result.WriteString(text)
 	}
-	return result.String()
+	return result.String(), nil
+}
+
+func (s *Selection) clearExpandSelection() {
+	if s == nil {
+		return
+	}
+	if s.expandAnchor != nil || s.expandFocus != nil {
+		s.isDragging = false
+	}
+	s.expandAnchor, s.expandFocus = nil, nil
 }
 
 // HasExpandSelection returns true if expand-view selection exists.

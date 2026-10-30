@@ -23,6 +23,20 @@ func (contextAwareSummaryGenerator) Identity() (string, string) {
 	return "test", "context-aware"
 }
 
+type cancellationBarrierSummaryGenerator struct {
+	started chan struct{}
+}
+
+func (g cancellationBarrierSummaryGenerator) Generate(ctx context.Context, _ string) (string, error) {
+	close(g.started)
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (cancellationBarrierSummaryGenerator) Identity() (string, string) {
+	return "test", "cancellation-barrier"
+}
+
 func TestSummarizeUpdateFilesUsesOnlyNewUpdatesAndPersistsSummary(t *testing.T) {
 	t.Parallel()
 
@@ -159,6 +173,67 @@ func TestSummarizeUpdateFilesPersistsFailureWhenContextIsCanceled(t *testing.T) 
 	}
 	if !strings.Contains(string(data), "Status: `failed`") || !strings.Contains(string(data), "context canceled") {
 		t.Fatalf("canceled summary = %s", data)
+	}
+}
+
+func TestSummarizeUpdateFilesPersistsFailureWhenCanceledDuringGenerate(t *testing.T) {
+	t.Parallel()
+
+	memoryRoot := t.TempDir()
+	projectDir := t.TempDir()
+	updatePath := filepath.Join(memoryRoot, "updates", "one.md")
+	const update = "immutable update evidence"
+	if err := os.MkdirAll(filepath.Dir(updatePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(updatePath, []byte(update), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	generator := cancellationBarrierSummaryGenerator{started: make(chan struct{})}
+	type outcome struct {
+		result postUpdateSummaryResult
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		defer close(done)
+		result, err := summarizeUpdateFiles(
+			ctx, projectDir, memoryRoot,
+			time.Date(2026, 8, 26, 1, 0, 0, 0, time.UTC),
+			[]string{updatePath},
+			SubagentSummary{MaxInputBytes: 4096, TimeoutSeconds: 60},
+			func(context.Context, string, string) (modelSummaryGenerator, error) {
+				return generator, nil
+			},
+		)
+		done <- outcome{result, err}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	select {
+	case <-generator.started:
+		cancel()
+	case got := <-done:
+		t.Fatalf("summary returned before the cancellation barrier: %v", got.err)
+	}
+	got := <-done
+	if !errors.Is(got.err, context.Canceled) || got.result.Status != "failed" || got.result.Path == "" {
+		t.Fatalf("result=%#v error=%v, want a persisted cancellation failure", got.result, got.err)
+	}
+	data, err := os.ReadFile(filepath.Join(memoryRoot, filepath.FromSlash(got.result.Path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Status: `failed`") || !strings.Contains(string(data), "context canceled") {
+		t.Fatalf("summary did not persist the in-flight cancellation: %s", data)
+	}
+	data, err = os.ReadFile(updatePath)
+	if err != nil || string(data) != update {
+		t.Fatalf("cancellation changed the original update: data=%q error=%v", data, err)
 	}
 }
 

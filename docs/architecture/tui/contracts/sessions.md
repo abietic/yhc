@@ -2,7 +2,7 @@
 
 **Status:** current
 
-**Last verified:** 2026-08-10
+**Last verified:** 2026-10-26
 
 **Ownership:** `engine/session` owns durable discovery and transcript loading;
 `QueryEngine` owns execution-context restore; `ResumeDialog` owns picker state;
@@ -182,6 +182,50 @@ engine restore path. ACP reports the restored Plan phase through its status
 extension; external ACP mode changes still use `SetPermissionMode` and lose an
 active-turn race without mutation.
 
+## Captured changes and execution facts
+
+[`WorkspaceChanges`](../../../../engine/workspace_revisions.go) owns a separate,
+private `<session-id>.workspace-history/revisions.jsonl` journal under the active
+transcript directory. The leader records Write/Edit before admission to the
+actual executor and immediately observes the result, including a failed tool
+that partially changed a file. Permission denial never captures a revision.
+Other mutating tools are explicit coverage gaps; Git, Bash, child tools and
+external edits are not reconstructed from conversation text.
+
+Content capture accepts regular, non-symlink UTF-8 text up to 1 MiB per file;
+`.git` and paths outside the exact workspace are rejected. The append-only log
+is bounded to 32 MiB, 200 file records and 200 turn records, with private file
+permissions, durable root identity and synced intents. Missing results, unsupported content, capacity
+limits and persistence failures remain visible as incomplete coverage. They do
+not change the executed tool's result. File data stays in this private journal,
+not skill telemetry. Session deletion preflights this exact private directory,
+rejects links or unknown entries before deleting the transcript, and retries
+partial cleanup without requiring the transcript to remain. It removes private
+records and content while retaining an empty 0700 directory: path-based removal
+cannot atomically prove that another process has not substituted its name.
+Fork and export
+do not copy or expose these private bytes.
+
+The canonical runtime emitter also records minimal start and terminal facts,
+including retained tool counts. A successful Goal terminal pair uses the same
+observer after canonical reduction. No model output or reasoning is stored in
+these facts. A restart without a terminal leaves the turn incomplete; bounded
+runtime tool rings cannot establish a complete action count.
+
+The TUI-only `/changes` panel groups this history by turn, previews captured
+content and selected hunks, and can add literal content to the draft. Its
+snapshot is independent of current Git or workspace contents. `/recap` joins
+these durable facts with current retained task and accepted-input projections.
+Execution completion, cancelled/completed tasks and verification remain
+separate: no independent verification receipt is currently recorded here.
+Opening either view and replaying this journal dispatches no model or tool.
+Session changes invalidate stale panels and callbacks by owner generation.
+
+Source and regression boundaries: [`revisions.go`](../../../../engine/filehistory/revisions.go),
+[`execution_summary.go`](../../../../engine/execution_summary.go),
+[`workspace_revisions_test.go`](../../../../engine/workspace_revisions_test.go),
+and [`workspace_history_pty_unix_test.go`](../../../../scripts/e2e/workspace_history_pty_unix_test.go).
+
 ## View Sidecar
 
 [`PersistedSessionViewState`](../../../../engine/session/view_state.go) is a
@@ -247,3 +291,76 @@ unseen count.
 - safe sidecar restore: [`TestPersistSessionViewStateKeepsOnlySafePresentationFields`](../../../../internal/tui/session_view_state_test.go)
 - ProjectGraph child attach-mode and switch compatibility:
   [`TestP139dProjectGraphRestartProjectsReplayAndEvictedViewsWithoutDispatch`](../../../../internal/tui/project_graph_child_projection_test.go)
+
+
+## Guarded file restore
+
+The leader TUI can restore a captured file or the captured file set before an
+eligible turn. In `/changes`, **r** opens a current-disk-to-target preview;
+Enter confirms that exact preview and then requests a separate native
+allow-once permission. Opening the history view remains read-only. Recovery
+never invokes a model, rewrites conversation messages, stages files or resets
+Git. `/rewind` remains a removed-command tombstone.
+
+[`PrepareWorkspaceRestore`](../../../../engine/workspace_restore.go) owns the
+live preview, Session/thread/generation identity, policy revision and two-minute
+expiry. The filesystem service also requires a non-serialized, one-use preview
+admission tied to its current journal replay and observed file states. A saved
+confirmation or permission revision cannot authorize a restart. Changes after
+preview, including a switch between known before/after states, require a new
+preview. Permission rules and execution write roots still apply; bypass,
+acceptEdits and Auto cannot replace the fresh allow-once interaction.
+
+Only new, complete capture boundaries can authorize restoration. The v2 journal
+adds explicit turn-boundary proof and parent-directory existence; v1 history
+remains reviewable and cannot acquire this proof through replay. Hooks, Bash,
+direct terminal commands, MCP processes, children, custom permission callbacks,
+unsupported file captures and unfinished later turns prevent a full-turn
+restore. The same exclusions apply when selecting one file. No new directory,
+link or hard-link ambiguity is restored. Capture-boundary persistence failure
+must stop new admitted work when it would otherwise leave an older positive
+proof unaware of a later writer. Direct terminal execution records its durable
+coverage gap before launch and blocks if that cannot be persisted.
+
+The native writer supports macOS and Linux. A plan contains at most 32 regular
+UTF-8 paths, 8 MiB of combined original/target bytes and a 12 MiB encoded private
+operation. It stores synced intent in the Session's 0600 `restore.json`, then
+uses anchored no-follow access, exclusive sibling temporary files and
+no-replace renames. Originals stay in intent-bound sibling backups until the
+transition is verified. Per-path progress is synced before the next path;
+unknown or conflicting bytes are preserved. Completed operations append file
+receipts and remove only matching owned siblings. The operation is not a model
+turn or a verification receipt. Other platforms retain read-only history.
+
+An interrupted operation blocks ordinary model admission. Reopen `/changes`:
+**t** previews retry and **b** previews rollback to the recorded pre-restore
+states. Both require new confirmation and permission. There is no automatic
+apply on restart. Cancellation stops at a file boundary and reports the durable
+state rather than claiming an atomic multi-file undo. Directory locking
+excludes concurrent journal writes; a stale process must explicitly reopen the
+Session before recording again. Session deletion refuses unfinished recovery
+or remaining sibling artifacts, then removes only the fixed private sidecars.
+
+After any potentially started transition, the engine invalidates its affected
+file-state cache and creates a private tool read-guard owner. The next main
+request receives a factual reread notice; actual Write/Edit requires a new
+Read. Another engine's compatibility map is unchanged. An external explicit
+read-guard scope cannot bypass this fence: model admission refuses it for that
+restored Session and advises a fresh Session. Conversation replay and model
+context are not silently replaced with captured bytes.
+
+Regressions: [`workspace_restore_test.go`](../../../../engine/workspace_restore_test.go),
+[`restore_apply_test.go`](../../../../engine/filehistory/restore_apply_test.go),
+[`history_restore_delete_test.go`](../../../../engine/session/history_restore_delete_test.go),
+[`workspace_restore_ui_test.go`](../../../../internal/tui/workspace_restore_ui_test.go),
+and [`TestWorkspaceHistoryRealCLIPTY`](../../../../scripts/e2e/workspace_history_pty_unix_test.go).
+
+
+A prior uncaptured writer keeps this Session review-only for restoration: a
+foreground shell can leave descendants after its command returns. Direct TUI
+shell execution is bound to the engine's CWD, containment and shell lifecycle;
+it never borrows a process-global shell. Existing shell sessions also prevent
+positive capture proof. Start a fresh Session after stopping such work rather
+than treating a later file-only turn as proof that earlier writers disappeared.
+
+Pending recovery also blocks model-invoking commands, prompt expansion, workspace/external commands and Session forks before dispatch. Local inspection and explicit Session escape remain available.

@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('yhcDesktop', Object.freeze({
   configureProvider: (input) => ipcRenderer.invoke('app:configure-provider', input),
   selectWorkspace: () => ipcRenderer.invoke('app:select-workspace'),
   api: (operation, payload = {}) => ipcRenderer.invoke('app:api', operation, payload),
+  apiResult: (operation, payload = {}) => ipcRenderer.invoke('app:api-result', operation, payload),
   startEvents: (sessionID, after) => (
     ipcRenderer.invoke('app:events-start', { sessionID, after })
   ),

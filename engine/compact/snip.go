@@ -9,16 +9,15 @@ type SnipResult struct {
 	TokensFreed     int
 }
 
-// snipThreshold is the message count above which snipping is triggered.
-// Conversations shorter than this are left untouched.
+// snipThreshold is the minimum message count for opportunistic snipping.
+// Context pressure is also required.
 const snipThreshold = 40
 
-// SnipCompactIfNeeded snips old messages from long-running conversations.
-// Mirrors query.ts:401-409.
-// Delegates to the real Snip() implementation when the conversation is long enough.
-func SnipCompactIfNeeded(messages []*schema.Message) *SnipResult {
-	// Only attempt snipping on long conversations.
-	if len(messages) < snipThreshold {
+// SnipCompactIfNeeded snips long-running conversations only at the
+// preparation-time model's auto-compact threshold. Empty models use the
+// same conservative capacity fallback as auto-compaction.
+func SnipCompactIfNeeded(messages []*schema.Message, modelName string) *SnipResult {
+	if len(messages) < snipThreshold || EstimateTokenCount(messages) < GetAutoCompactThreshold(modelName) {
 		return &SnipResult{
 			Messages:    messages,
 			TokensFreed: 0,

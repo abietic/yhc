@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -35,7 +36,7 @@ func TestLiveDeepSeekResponsesAndFilesLifecycle(t *testing.T) {
 	textModel, err := New(ctx, &Config{
 		APIKey:          apiKey,
 		BaseURL:         baseURL,
-		Model:           "deepseek-v4-flash",
+		Model:           FlashModel,
 		Timeout:         90 * time.Second,
 		MaxOutputTokens: &maxOutputTokens,
 		ReasoningEffort: ReasoningEffortNone,
@@ -56,7 +57,7 @@ func TestLiveDeepSeekResponsesAndFilesLifecycle(t *testing.T) {
 	vision, err := New(ctx, &Config{
 		APIKey:          apiKey,
 		BaseURL:         baseURL,
-		Model:           VisionModel,
+		Model:           FlashModel,
 		Timeout:         90 * time.Second,
 		MaxOutputTokens: &maxOutputTokens,
 		ReasoningEffort: ReasoningEffortNone,
@@ -122,7 +123,7 @@ func TestLiveDeepSeekResponsesAndFilesLifecycle(t *testing.T) {
 		Order:   FileOrderDesc,
 		Purpose: FilePurposeUserData,
 	}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("files list: %v", err)
 	}
 
 	fileOut, err := vision.Generate(ctx, []*schema.AgenticMessage{{
@@ -145,10 +146,82 @@ func TestLiveDeepSeekResponsesAndFilesLifecycle(t *testing.T) {
 	deleted = true
 }
 
+// Exercise the TUI's streaming transport with image input and max effort,
+// including semantic completion and another request on the same client.
+func TestLiveDeepSeekFlashVisionStream(t *testing.T) {
+	if os.Getenv("DEEPSEEK_LIVE_TEST") != "1" {
+		t.Skip("set DEEPSEEK_LIVE_TEST=1 to run the billable external canary")
+	}
+	apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
+	if apiKey == "" {
+		t.Fatal("DEEPSEEK_API_KEY is required when DEEPSEEK_LIVE_TEST=1")
+	}
+	pngBytes, err := makeLiveCanaryPNG()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	// The output cap also includes reasoning tokens in max-effort mode.
+	maxOutputTokens := 8192
+	m, err := New(ctx, &Config{
+		APIKey: apiKey, BaseURL: os.Getenv("DEEPSEEK_BASE_URL"), Model: FlashModel,
+		Timeout: 60 * time.Second, MaxOutputTokens: &maxOutputTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, effort := range []ReasoningEffort{ReasoningEffortNone, ReasoningEffortMax} {
+		t.Run(string(effort), func(t *testing.T) {
+			stream, streamErr := m.Stream(ctx, []*schema.AgenticMessage{{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputText{Text: "Name the dominant color in one English word."}),
+					schema.NewContentBlock(&schema.UserInputImage{
+						MIMEType: "image/png", Base64Data: base64.StdEncoding.EncodeToString(pngBytes),
+					}),
+				},
+			}}, WithReasoningEffort(effort))
+			if streamErr != nil {
+				t.Fatal(streamErr)
+			}
+			defer stream.Close()
+			var output strings.Builder
+			var sawUsage bool
+			var status ResponseStatus
+			var outputTokens, reasoningTokens int
+			for {
+				chunk, recvErr := stream.Recv()
+				if recvErr == io.EOF {
+					break
+				}
+				if recvErr != nil {
+					t.Fatal(recvErr)
+				}
+				output.WriteString(agenticOutputText(chunk))
+				if chunk.ResponseMeta != nil && chunk.ResponseMeta.TokenUsage != nil {
+					sawUsage = chunk.ResponseMeta.TokenUsage.TotalTokens > 0
+					outputTokens = chunk.ResponseMeta.TokenUsage.CompletionTokens
+					reasoningTokens = chunk.ResponseMeta.TokenUsage.CompletionTokensDetails.ReasoningTokens
+				}
+				if chunk.ResponseMeta != nil {
+					if extension, ok := chunk.ResponseMeta.Extension.(*ResponseMetaExtension); ok {
+						status = extension.Status
+					}
+				}
+			}
+			if !strings.Contains(strings.ToLower(output.String()), "red") || !sawUsage || status != ResponseStatusCompleted {
+				t.Fatalf("stream oracle failed: completed=%t usage=%t output_nonempty=%t output_tokens=%d reasoning_tokens=%d",
+					status == ResponseStatusCompleted, sawUsage, output.Len() > 0, outputTokens, reasoningTokens)
+			}
+		})
+	}
+}
+
 func makeLiveCanaryPNG() ([]byte, error) {
-	imageData := image.NewRGBA(image.Rect(0, 0, 32, 32))
-	for y := range 32 {
-		for x := range 32 {
+	imageData := image.NewRGBA(image.Rect(0, 0, 256, 256))
+	for y := range 256 {
+		for x := range 256 {
 			imageData.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
 		}
 	}

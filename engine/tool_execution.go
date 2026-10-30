@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/engine/storage"
@@ -21,6 +22,9 @@ type toolExecutionOutcome struct {
 	Result              *schema.Message
 	AfterResults        []*schema.Message
 	PreventContinuation bool
+	// usageErr retains the typed admission/settlement failure through the
+	// complete tool round. It is control state, never model-visible metadata.
+	usageErr error
 	// ContextModifier optionally modifies the ToolUseContext after this tool
 	// completes. Only honored for tools that run serially (not concurrency-safe).
 	// Mirrors ToolResult.contextModifier from the reference.
@@ -420,12 +424,29 @@ func executeToolCall(
 		}
 		yieldFn(inputEvent)
 	}
+	var finishWorkspaceRevision func(string)
+	if params.Deps != nil && params.Deps.RecordWorkspaceTool != nil {
+		finishWorkspaceRevision = params.Deps.RecordWorkspaceTool(canonicalToolName, toolUseID, cloneInputMap(currentInput), settledPermissionAction)
+	}
 	result, execErr := params.ToolExecutor(ctx, toolName, jsonInput)
+	if finishWorkspaceRevision != nil {
+		outcome := "succeeded"
+		if execErr != nil {
+			outcome = "failed"
+			if ctx.Err() != nil {
+				outcome = "cancelled"
+			}
+		}
+		finishWorkspaceRevision(outcome)
+	}
 	attachmentMu.Lock()
 	attachmentOpen = false
 	collectedAttachments := append([]*schema.Message(nil), toolAttachments...)
 	attachmentMu.Unlock()
 	if execErr != nil {
+		if execution.IsProviderUsageTerminalError(execErr) {
+			outcome.usageErr = execErr
+		}
 		if hookExecutor != nil {
 			failureResult := hookExecutor.ExecutePostToolFailure(ctx, toolName, toolUseID, cloneInputMap(currentInput), execErr)
 			if failureResult != nil {

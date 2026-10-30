@@ -76,6 +76,8 @@ type QueryDeps struct {
 	// returns. It must preserve the successful tool result and avoid I/O.
 	ReportFileStateSnapshotFailure func(error)
 	ProviderUsage                  execution.ProviderUsageAdmitter
+	// RecordWorkspaceTool returns a post-execution observer, after permissions.
+	RecordWorkspaceTool func(name, toolUseID string, input map[string]any, action *PermissionActionDescriptor) func(outcome string)
 }
 
 // ToolExecutor executes a tool by name with the given JSON input and returns the result.
@@ -109,6 +111,7 @@ type RuntimeItemAdmission func(context.Context, RuntimeItem) error
 // QueryParams holds immutable parameters for a single query() call.
 // Mirrors query.ts:181-199.
 type QueryParams struct {
+	RunUsage                  *execution.RunUsage // live invocation budget projection; never persisted
 	Messages                  []*schema.Message
 	SystemPrompt              *schema.Message
 	SessionID                 string
@@ -120,6 +123,7 @@ type QueryParams struct {
 	FallbackModel             string
 	QuerySource               QuerySource
 	MaxOutputTokensOverride   *int
+	modelOutputTokenLimit     int // invocation ceiling; recovery cannot raise it
 	MaxTurns                  *int
 	SkipCacheWrite            bool
 	TaskBudget                *TaskBudget

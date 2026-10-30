@@ -165,6 +165,40 @@ flowchart LR
     ReadModel --> Selector
 ```
 
+## Verification and terminal results
+
+The built-in `verification` role receives the task explicitly supplied in
+`Agent.prompt`; it does not inherit the parent transcript. The caller must
+include the original request, subsequent constraints, changed files, and the
+approach taken. Verification checks each requirement against independent
+expected behavior, including relevant unchanged code. Missing task context or
+required checks leave a PARTIAL verdict; observed mismatches produce FAIL.
+
+The default root, general-purpose, and verification prompts distinguish hard
+constraints from optimization goals. They ask the model to preserve the original
+inputs and scope, and to check final saved deliverables against those inputs.
+An objective improvement cannot excuse a constraint violation. These are model
+workflow instructions, not an automatic feasibility checker or a guarantee of
+task success; explicit custom prompts keep their existing replacement behavior.
+
+Verification exposes Read, Glob, Grep, Bash, WebFetch, and WebSearch. Explicit
+caller tool scopes narrow that list. Edit, Write, NotebookEdit, and recursive
+Agent calls remain unavailable. Its restricted role is not an OS filesystem
+read-only sandbox: Bash still passes ordinary inherited permissions and
+containment. The role permits generated build/test artifacts and temporary
+scripts, but instructs the child not to edit project sources, tests, or
+configuration, install packages, or perform Git writes.
+
+Only a child query with `TerminalCompleted` is a successful execution.
+`TerminalMaxTurns`, missing terminal events, and runtime/model errors return
+errors; cancellation retains aborted status. If the child produced findings
+before stopping, `SubAgentExecutor` returns partial output and messages together
+with the error. `AgentRunner` persists available output/history before its
+terminal completion record. Foreground Agent tool errors include partial
+findings, and background notifications carry both failure status and findings;
+restart delivery uses that same durable completion record. A successful child
+execution does not itself prove a PASS verdict or finish the parent's work.
+
 ## Lifecycle Notes
 
 - Task updates append output and deduplicate dependency edges.

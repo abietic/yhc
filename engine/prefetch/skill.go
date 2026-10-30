@@ -3,6 +3,7 @@ package prefetch
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/skills"
 	"github.com/cloudwego/eino/schema"
@@ -13,7 +14,8 @@ import (
 // matching skill content as attachment messages for the query context.
 type SkillPrefetch struct {
 	registry *skills.SkillRegistry
-	once     sync.Once
+	mu       sync.Mutex
+	done     chan struct{}
 	result   []*schema.Message
 }
 
@@ -39,15 +41,76 @@ func (p *SkillPrefetch) Start(messages []*schema.Message) {
 		return
 	}
 
-	go p.once.Do(func() {
+	// Claim the start before returning. Collect must not be able to consume
+	// the worker's right to run while that goroutine is still unscheduled.
+	p.mu.Lock()
+	if p.done != nil {
+		p.mu.Unlock()
+		return
+	}
+	done := make(chan struct{})
+	p.done = done
+	p.mu.Unlock()
+
+	go func() {
+		defer close(done)
 		p.result = p.findMatchingSkills(lastUserMsg)
-	})
+	}()
 }
 
-// Collect returns prefetched skill content as attachment messages.
+// Collect waits for an accepted Start and returns its attachment messages.
+// Without a Start it returns nil, leaving a later valid Start available.
 func (p *SkillPrefetch) Collect() []*schema.Message {
-	p.once.Do(func() {}) // ensure Start completed
+	p.mu.Lock()
+	done := p.done
+	p.mu.Unlock()
+	if done == nil {
+		return nil
+	}
+	// Closing done publishes result to every collector. There is only one
+	// worker per instance and the result is not changed after publication.
+	<-done
 	return p.result
+}
+
+// CollectMissing returns only skill attachments absent from the active context.
+// Check at collection because compaction may remove an attachment after Start.
+// Neither the history nor the shared discovery result is modified.
+func (p *SkillPrefetch) CollectMissing(messages []*schema.Message) []*schema.Message {
+	seen := make(map[skillPrefetchKey]struct{})
+	for _, message := range messages {
+		if key, ok := prefetchedSkillKey(message); ok {
+			seen[key] = struct{}{}
+		}
+	}
+	var missing []*schema.Message
+	for _, message := range p.Collect() {
+		if key, ok := prefetchedSkillKey(message); ok {
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		missing = append(missing, message)
+	}
+	return missing
+}
+
+type skillPrefetchKey struct {
+	name    string
+	content string
+}
+
+func prefetchedSkillKey(message *schema.Message) (skillPrefetchKey, bool) {
+	if message == nil || message.Role != schema.User ||
+		message.Extra["is_meta"] != true || message.Extra["attachment_kind"] != "skill_prefetch" {
+		return skillPrefetchKey{}, false
+	}
+	name, ok := message.Extra["skill_name"].(string)
+	if !ok || name == "" {
+		return skillPrefetchKey{}, false
+	}
+	return skillPrefetchKey{name: name, content: message.Content}, true
 }
 
 func (p *SkillPrefetch) findMatchingSkills(userMsg string) []*schema.Message {
@@ -66,16 +129,32 @@ func (p *SkillPrefetch) findMatchingSkills(userMsg string) []*schema.Message {
 		if !p.skillMatchesMessage(skill, lower) {
 			continue
 		}
-		content, err := p.registry.Invoke(skill.Name, nil)
+		// Render the same detached generation that supplied the source path and
+		// invocation flags, rather than looking up its name a second time.
+		content, err := skill.Render(nil)
 		if err != nil || strings.TrimSpace(content) == "" {
 			continue
 		}
-		if len(content) > 4000 {
-			content = content[:4000] + "\n...(truncated)"
+		prefix := ""
+		if skill.FilePath != "" {
+			prefix = skill.InvocationPrompt("")
+		}
+		// Never truncate the locator itself. The full skill remains available
+		// through explicit invocation when its header cannot fit prefetch.
+		const maxContentBytes = 4000
+		if len(prefix) >= maxContentBytes {
+			continue
+		}
+		if limit := maxContentBytes - len(prefix); len(content) > limit {
+			end := limit
+			for end > 0 && !utf8.RuneStart(content[end]) {
+				end--
+			}
+			content = content[:end] + "\n...(truncated)"
 		}
 		matches = append(matches, &schema.Message{
 			Role:    schema.User,
-			Content: content,
+			Content: prefix + content,
 			Extra: map[string]any{
 				"is_meta":         true,
 				"attachment_kind": "skill_prefetch",

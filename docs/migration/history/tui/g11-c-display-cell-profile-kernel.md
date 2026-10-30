@@ -27,7 +27,7 @@ an EGC.
 
 ## App And Compatibility Boundary
 
-[`App.New`](../../../../internal/tui/app.go#L308) copies a valid injected
+[`App.New`](../../../../internal/tui/app.go) copies a valid injected
 profile or the deterministic default. No setter, engine event, transcript,
 durable schema, permission, replay, terminal-name guess, or hidden probe was
 added. [`App.terminalDiagnostics`](../../../../internal/tui/app.go#L4987)

@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-08-24
+**Last verified:** 2026-10-25
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -45,7 +45,7 @@ participate in conflict detection rather than forming one universal precedence
 step.
 
 Supported canonical adapters are Agentic Claude, OpenAI, Gemini, DeepSeek,
-Qwen, and Ark. Public aliases normalize to those IDs.
+GLM, Kimi, Qwen, and Ark. Public aliases normalize to those IDs.
 
 ## Trusted portfolio compilation
 
@@ -182,6 +182,39 @@ terminal. The deferred model-round collector cannot execute a tool. Only a
 completely classified successful attempt enters canonical assistant/tool
 history.
 
+All DeepSeek terminal responses publish usage only when input, output, total,
+cached-input and reasoning counters are explicit, nonnegative and internally
+consistent. A completed or incomplete response keeps its content and status
+when its usage is missing or invalid, but exposes no token receipt; strict
+accounting stops before committing its tools and retains the reservation.
+Explicit zero counters remain known usage. Failed terminal responses retain a
+valid receipt on the typed error, and shared execution settles it while
+preserving the original failure. Reserved bounds still apply, interrupted
+streams remain unknown, and a known cost never makes a failed response
+successful.
+
+DeepSeek streaming attempts also publish bounded transport evidence into the
+optional `RunUsageRecord.Diagnostics` field. The adapter reports HTTP status,
+SHA-256 hashes of allowlisted request IDs and typed response IDs, transport
+phase, body bytes read, validated SSE event count/sequence, terminal-event and
+usage presence, and a finite termination category. An early response ID remains
+available when the stream disconnects before its terminal event. A validated
+failed response can carry authoritative usage while remaining a failure.
+
+[`providerdiag.Observer`](../../../engine/internal/providerdiag/providerdiag.go)
+owns the per-call observation; `withProviderUsageResponseObserver` in
+[`run_usage_ledger.go`](../../../engine/execution/run_usage_ledger.go) associates
+it with the admitted call. Observations cannot alter settlement, release a
+reservation, authorize retry, or mutate a settled record. The sink is
+synchronous under the observer mutex and takes only the usage-owner mutex;
+usage snapshots do not acquire the observer mutex. No raw identifiers,
+headers, endpoints, credentials, prompt, reasoning or response text enter this
+diagnostic.
+
+Non-streaming calls and adapters without a bridge omit the field.
+The observation describes the configured HTTP hop; a proxy's disconnect does
+not establish whether its upstream provider or another network hop failed.
+
 TUI attaches assistant, thinking, and uncommitted tool projection to the exact
 attempt, removes only a tombstoned attempt, and shows one bounded warning for a
 later `started` attempt. Plain and Headless write the same safe notice only to
@@ -265,17 +298,78 @@ monotonically ordered `response.completed` or `response.incomplete` terminal
 event. `response.failed`, malformed events, a truncated stream, or the legacy
 `data: [DONE]` marker fail the attempt.
 
-[`deepseek-v4-flash-vision-exp`](https://api-docs.deepseek.com/zh-cn/news/news260821/)
-is the exact image-capable DeepSeek model. Following the official
+[`deepseek-flash`](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+is the current text-and-image DeepSeek API model (V4.1 Flash), with a 1M
+context window and a 384K maximum output. The
+[Models API catalog](https://api-docs.deepseek.com/api/list-models/) gives the
+exact limits as 1,048,576 context tokens and 393,216 output tokens for both
+Flash and V4 Pro, rather than decimal approximations. The exact compatibility names
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` now serve current Flash;
+their metadata remains image-capable and carries a deprecation/successor notice.
+The default route, short `deepseek` alias, and curated picker use the current
+name. Explicit legacy API model identities are preserved for configured routes
+and Session resume. Rich-prompt admission reads detached exact catalog
+capabilities through `LookupExactCapabilities`, independently of picker
+membership; substring-matched custom models receive no built-in authority.
+Following the official
 [vision contract](https://api-docs.deepseek.com/zh-cn/guides/vision/), the
 adapter preserves mixed text/image order and accepts HTTP(S), supported base64
 data URLs, and DeepSeek Files API `file_id` references in user input; Responses
 tool outputs may also carry images. Image input fails locally for every other
-DeepSeek model instead of relying on the provider's placeholder or downgrade
+DeepSeek model, including V4 Pro, instead of relying on placeholder or downgrade
 behavior. Request size, per-image inline size, image count, URL scheme/length,
 MIME type, detail, and file-ID shape are bounded before dispatch. The classic
 YHC message bridge currently supplies URL and base64 images; direct Eino callers
-can use the adapter's typed file-ID block constructors.
+can use the adapter's typed file-ID block constructors. Flash and V4 Pro admit
+the exact Responses efforts `none`, `low`, `high`, and `max`; compatibility
+effort aliases that the provider would clamp remain rejected locally.
+
+The YHC DeepSeek factory enables attempt-local image transport preparation.
+For `auto` (or omitted) detail, a valid inline PNG between 256 KiB and 5 MiB
+may be replaced only in the wire request by a smaller delivery copy. The
+profile preserves aspect ratio, limits the long edge to 8192 and pixels to
+1,690,000, and uses JPEG quality 85 for opaque images or PNG for transparency.
+This follows the official vision guide's approximately 1300×1300 pre-model
+pixel budget instead of uploading full-resolution clipboard PNGs on every
+stateless round. A derivative must reduce bytes by at least half. Small,
+invalid, animated, already compact, and over-bound images remain unchanged;
+`high` and `original` preserve exact encoding. Canonical messages, durable
+media, input order, and explicit detail remain unchanged. There is no hidden
+Files upload, remote retention, or cross-request image cache. Direct SDK callers
+keep exact encoding unless they enable `Config.OptimizeImageTransport`.
+`TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy` covers the production
+factory and classic bridge through both Generate and Stream.
+
+Transport errors keep the original cause available through `Unwrap` for
+cancellation and failure classification. Their public message exposes only a
+finite `reason` and `phase` categories, never arbitrary transport text, hostnames, URLs, or
+credentials. This does not add transport retry or cross-provider failover.
+Responses transport phases record the furthest observed trace milestone: DNS,
+connect, TLS handshake, request upload, request sent, and response headers.
+`request_sent` means upload completed but no response header byte was observed;
+`response_headers` requires `GotFirstResponseByte`. These are progress markers,
+not proof of the network fault's location. Per-request atomic trace state
+composes with the caller's trace and cannot regress because of a late parallel
+connection event.
+SSE reader failures after the HTTP response was accepted carry
+`phase=response_body`, preserving the original error identity and bounded
+reason. This identifies a body-read failure, without attributing it to a
+particular server, proxy, or network component.
+The shared model round emits a stream failure as a diagnostic attachment,
+separate from any assistant text already delivered. It cannot replace that
+text under the same message identity; the original failure remains the terminal
+cause and failed streamed tool calls remain uncommitted.
+When the global default is a standard `*http.Transport`, default Responses and
+Files clients share a provider-owned clone with a bounded 30-second TLS
+handshake instead of the standard 10 seconds, preserving connection reuse
+across model roles and file operations. A caller's nonstandard global transport
+is reused unchanged. Request
+timeouts and context cancellation still bound the entire call; HTTP/2 and
+certificate verification remain unchanged. An explicit `HTTPClient` remains
+authoritative and is never modified.
+`TestDeepSeekFlashRichTurnSurvivesHistorySnip` exercises typed prompt admission,
+history snipping, route resolution, max effort, and the actual Responses wire
+while preserving the current image bytes and text/image order.
 
 The same package exposes a separate project-owned DeepSeek
 [`FilesClient`](../../../engine/provider/agenticdeepseek/files.go) for image
@@ -287,6 +381,82 @@ days. This resource client shares typed, bounded, redacted API and transport
 failures with the Responses adapter but does not become conversation or Session
 state; callers remain responsible for deleting files they no longer need.
 
+GLM uses the project-owned
+[`agenticglm`](../../../engine/provider/agenticglm/model.go) Eino adapter. The
+audited Eino Ext snapshot has no GLM/Zhipu/Z.ai AgenticModel, while its
+DeepSeek and Qwen adapters delegate to an OpenAI Chat Completions ACL. YHC keeps
+the familiar `Config`, `New`, `Generate`, `Stream`, callback, and per-call tool
+shape, but posts directly to GLM's documented
+[`/chat/completions`](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)
+endpoint with project-owned wire types. This is a dedicated provider contract,
+not use of an OpenAI SDK.
+
+Only the exact `glm-5.3`, `glm-5.3-flash`, and `glm-5.3-flashx` models
+are admitted. The adapter preserves
+historical `reasoning_content`, sends `thinking.type=enabled` with
+`clear_thinking=false` by default, lowers only `low`, `high`, or `max`
+reasoning effort, and enables `tool_stream` for streaming tool calls. It accepts
+ordered text; only Flash and FlashX accept HTTP(S)/base64 images, HTTP(S)
+video, and URL/base64/`file_id` files. Images with omitted or `auto` detail
+use GLM's native image representation without a wire detail field; explicit
+quality levels remain unsupported. This preserves the neutral product-input
+default without changing canonical image metadata. The effective per-call model
+is checked before dispatch. Unsupported forced tool choice, multimodal tool results, malformed
+provider envelopes, an SSE stream without `[DONE]`, and a stream without a
+finish reason fail locally or fail the attempt rather than downgrading.
+
+GLM terminal usage is validated before conversion and published exactly once,
+after `[DONE]`, including a final usage-only event after the finish reason.
+Callers abandoning an idle SSE stream must cancel its request context as well
+as close the Eino reader; Pipe Close alone cannot interrupt an HTTP read.
+Absent usage stays nil; malformed counts cannot become known-zero accounting.
+Cached input and reasoning output details survive both the Eino callback and
+classic runtime bridge. Native CNY prices are not inserted into the legacy
+USD-only cost fields or presented as free access. The opt-in canary exports
+counts for the offline native-currency reporter; the reproducible workflow and
+billing exclusions are owned by the
+[provider guide](../../guides/configuration-and-providers.md).
+
+The same package exposes a bounded
+[`FilesClient`](../../../engine/provider/agenticglm/files.go) for the official
+[`/files`](https://docs.bigmodel.cn/api-reference/%E6%96%87%E4%BB%B6-api/%E4%B8%8A%E4%BC%A0%E6%96%87%E4%BB%B6)
+resource lifecycle. It implements exact-size upload up to a conservative 20
+MiB, purpose-filtered cursor listing, and explicit deletion for the official
+`agent` and `user_data` purposes. `agent` resources belong to the Agent API;
+Chat Completions `file_id` input uses `user_data` and one of that purpose's
+document formats. The upload client sends a deterministic MIME type and rejects
+purpose/extension mismatches before dispatch. Remote file IDs are caller
+resources and are not persisted as conversation or Session state.
+
+Kimi uses the project-owned
+[`agentickimi`](../../../engine/provider/agentickimi/model.go) adapter with the
+[Responses contract](https://platform.kimi.ai/docs/api/responses). The initial
+slice admits only exact `kimi-k3` text, function tools and plain reasoning.
+YHC applies a conservative 1,000,000-token context bound and a 131,072-token
+output cap; this cap is the API default, below its documented maximum. K3.1,
+K2.x, media, namespace/custom/server tools and forced tool choice are not part
+of this slice. Missing USD prices remain unknown rather than free.
+
+K3 lowers only `low/high/max`, defaults to `max`, omits fixed sampling fields,
+and explicitly requests implicit `5m` cache writes. Historical reasoning is
+replayed as `reasoning_text`, including across user turns. The current OpenAPI
+states that encrypted reasoning is null; signatures and non-null encrypted
+content are rejected. No opaque continuation authority is inferred.
+
+The SSE parser checks event type, monotonic sequence, response identity and
+terminal consistency. It streams text/reasoning and publishes function calls
+only after a completed terminal snapshot; truncation and conflicting snapshots
+fail the attempt. Redirects and hidden retries are disabled. Missing usage
+stays nil; present usage requires complete valid counts, with cache read/write
+as disjoint input subsets and reasoning as an output subset. Counts reach the
+Eino callback and classic bridge without being added twice. Cache TTL is
+retained in the native response extension and invocation call record only when
+actually returned. Explicit cache-write zero remains distinct from missing detail
+through the typed terminal receipt; failed terminal usage is retained as well.
+Abandoning an idle stream requires context cancellation and reader close.
+Offline HTTP/SSE and QueryEngine tool-loop fixtures establish this wiring;
+real-provider acceptance and a Kimi price/reservation contract remain separate.
+
 `engine/auth` supplies provider-default credentials and exact named
 credentials only at client construction. `engine/model` owns model aliases,
 context-window and deprecation metadata, profile override validation,
@@ -295,7 +465,7 @@ the engine role resolver consume that policy but do not redefine it.
 
 The project-owned `agenticChatModel` bridge also preserves terminal-only Eino
 chunks. It extracts Claude stop reasons, OpenAI and Ark response
-status/incomplete details, Gemini finish reasons, and DeepSeek/Qwen extension
+status/incomplete details, Gemini finish reasons, and DeepSeek/GLM/Kimi/Qwen extension
 finish reasons into the legacy `schema.ResponseMeta.FinishReason`. The query
 execution layer classifies those raw values centrally; the bridge does not
 choose tool disposition or alter provider routes.
@@ -491,12 +661,13 @@ exact value and the selected adapter to support exact lowering:
 | Agentic OpenAI Responses | `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | typed Responses reasoning |
 | Agentic Ark Responses | `minimal`, `low`, `medium`, `high` | typed Ark reasoning |
 | Agentic Gemini | `low`, `high` | typed Gemini thinking level |
-| Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
+| Agentic DeepSeek V4 Pro/Flash/Vision Exp | `none`, `low`, `high`, `max` | typed DeepSeek Responses `reasoning.effort` |
+| Agentic GLM 5.3 / Flash / FlashX | `low`, `high`, `max` | native Chat Completion `reasoning_effort` with thinking enabled |
 | Agentic Qwen | none | provider default only |
 
-For DeepSeek V4, all three explicit values are emitted unchanged as Responses
+For DeepSeek V4, all four explicit values are emitted unchanged as Responses
 `reasoning.effort`; the old Chat Completions `thinking` and
-`reasoning_effort` fields are never sent. Compatibility aliases such as `low`,
+`reasoning_effort` fields are never sent. Compatibility aliases such as `minimal`,
 `medium`, or `xhigh` are rejected instead of silently mapped. Empty effort
 emits no provider option. A profile default applies when the Session/call has
 no override, and `/effort default` restores that profile default or provider
@@ -616,6 +787,8 @@ the explicit startup preflight owns network/auth probing.
 | Portfolio compilation | [`CompilePortfolio`](../../../engine/config/portfolio.go) | Validates account/profile authority, metadata, roles, failover policy, and the immutable non-secret snapshot. |
 | Request capability policy | [`ResolveAdapterReasoningEffort`](../../../engine/model/reasoning_effort.go) | Separates canonical request intent, exact-model defaults, ordered adapter support, and provider wire dialects. |
 | Request lowering | [`buildProviderEffortOption`](../../../engine/execution/call.go) | Produces the final typed provider SDK option immediately before provider admission and dispatch. |
+| DeepSeek image delivery | [`optimizeResponseImages`](../../../engine/provider/agenticdeepseek/image_transport.go) | Prepares only automatic-detail wire copies while preserving canonical media, explicit detail, and ordered input. |
+| Bounded image codec | [`DeriveForTransport`](../../../engine/internal/mediaimage/transport.go) | Shares strict raster decoding and derivative construction with recovery, without changing Recovery Profile v1. |
 | Named credentials | [`ResolveNamedCredential`](../../../engine/auth/auth.go) | Resolves opaque user-owned credential references only when a selected route is constructed. |
 | Configured runtime | [`NewConfiguredRuntime`](../../../engine/provider/configured_runtime.go) | Joins source-aware configuration with the single shared CLI/ACP provider runtime. |
 | Client isolation | [`NewRouteIdentity`](../../../engine/provider/route_identity.go) | Defines the complete non-secret identity used to isolate and reuse provider clients. |

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	engineconfig "github.com/abietic/yhc/engine/config"
+	"github.com/abietic/yhc/engine/internal/providercost"
 	"github.com/abietic/yhc/engine/internal/providerorigin"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -630,6 +631,36 @@ type preparedRoute struct {
 	published *publishedRoute
 	apiModel  string
 	opts      []model.Option
+}
+
+func (r *routingChatModel) PrepareBudgetStream(ctx context.Context, input []*schema.Message, outputCap int, opts ...model.Option) (providercost.Stream, error) {
+	prepared, err := r.prepareRoute(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	chatModel := prepared.published.client
+	if len(r.tools) > 0 {
+		if toolModel, ok := chatModel.(model.ToolCallingChatModel); ok {
+			chatModel, err = toolModel.WithTools(r.tools)
+			if err != nil {
+				return nil, fmt.Errorf("bind routed tools: %w", err)
+			}
+		}
+	}
+	agentic, ok := chatModel.(*agenticChatModel)
+	if !ok {
+		return nil, providercost.ErrUnsupported
+	}
+	transportInput, proof := r.routes.prepareTransport(ctx, prepared, chatModel, input, "stream")
+	stream, err := agentic.prepareBudgetStreamTrusted(ctx, transportInput, proof, outputCap, prepared.opts...)
+	if err != nil {
+		return nil, err
+	}
+	b := stream.CostBound()
+	if b.Provider != string(prepared.published.provider) || b.Model != prepared.apiModel {
+		return nil, providercost.ErrUnsupported
+	}
+	return stream, nil
 }
 
 func (p *preparedRoute) origin() providerorigin.Origin {

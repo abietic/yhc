@@ -456,3 +456,35 @@ func entryTimestamps(entries []DurableEntry) []time.Time {
 	}
 	return timestamps
 }
+
+func TestTranscriptEntryDigestPreservesPreCacheWriteEncoding(t *testing.T) {
+	t.Parallel()
+	// This is the exact message encoding emitted before Eino v0.9.21.
+	const legacy = `{"role":"assistant","content":"answer","response_meta":{"usage":{"prompt_tokens":1,"prompt_token_details":{"cached_tokens":0},"completion_tokens":2,"total_tokens":3,"completion_token_details":{}}},"extra":{"cache_write_tokens":0}}`
+	var message schema.Message
+	if err := json.Unmarshal([]byte(legacy), &message); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		entry   recordEntry
+		payload string
+	}{
+		{name: "single", entry: recordEntry{Message: &message}, payload: `{"message":` + legacy + `}`},
+		{name: "batch", entry: recordEntry{Messages: []*schema.Message{&message, nil}}, payload: `{"messages":[` + legacy + `,null]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := fmt.Sprintf("%x", sha256.Sum256([]byte(tc.payload)))
+			got, err := transcriptEntryPayloadDigest(tc.entry)
+			if err != nil || got != expected {
+				t.Fatalf("legacy payload digest = %s, %v; want %s", got, err, expected)
+			}
+			message.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens = 1
+			changed, err := transcriptEntryPayloadDigest(tc.entry)
+			if err != nil || changed == expected {
+				t.Fatalf("nonzero cache write lost from digest: %s, %v", changed, err)
+			}
+			message.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens = 0
+		})
+	}
+}

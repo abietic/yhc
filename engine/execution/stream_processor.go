@@ -14,6 +14,7 @@ import (
 // Mirrors query.ts:551-557.
 type StreamResult struct {
 	AssistantMessages   []*schema.Message
+	Usage               *schema.TokenUsage
 	ToolUseBlocks       []*schema.ToolCall
 	ToolResults         []*schema.Message
 	NeedsFollowUp       bool
@@ -83,6 +84,12 @@ func ProcessStream(
 
 	}
 
+	// Accounting must survive a valid terminal without assistant content. Keep
+	// its detached usage outside history rather than inventing an empty message.
+	if accumulated.ResponseMeta != nil && accumulated.ResponseMeta.Usage != nil {
+		usage := *accumulated.ResponseMeta.Usage
+		result.Usage = &usage
+	}
 	if accumulated.Content != "" || accumulated.ReasoningContent != "" || len(accumulated.AssistantGenMultiContent) > 0 || len(accumulated.ToolCalls) > 0 {
 		if merged, err := messages.ConcatAssistantOutputParts(accumulated.AssistantGenMultiContent); err == nil {
 			accumulated.AssistantGenMultiContent = merged

@@ -43,6 +43,33 @@ test('packaged Electron stays above the known sandbox-bypass floor', async () =>
   assert.equal(lock.packages?.['node_modules/electron']?.version, declared);
 });
 
+test('packaged Electron includes the permission-origin security fixes', async () => {
+  const manifest = JSON.parse(await readFile(packagePath, 'utf8'));
+  const declared = manifest.devDependencies?.electron;
+  assert.match(declared, /^\d+\.\d+\.\d+$/);
+  const [major, minor, patch] = declared.split('.').map(Number);
+  // GHSA-x562-297c-g43g is the highest fix floor among the seven advisories
+  // reported for the previous pin. Keep each supported branch's floor distinct.
+  const branchFloor = new Map([[43, [7, 6]], [44, [5, 0]]]).get(major);
+  assert.ok(
+    major >= 45 || (branchFloor && (
+      minor > branchFloor[0] || (minor === branchFloor[0] && patch >= branchFloor[1])
+    )),
+    `Electron ${declared} requires 43.7.6, 44.5.0, or a later fixed stable branch`,
+  );
+});
+
+test('desktop install materializes the pinned Electron distribution before packaging', async () => {
+  const { stdout } = await execFileAsync('make', ['-n', 'desktop-install', 'NODE=node'], {
+    cwd: repositoryPath,
+  });
+  const commands = stdout.trim().split(/\r?\n/);
+  const dependencies = commands.indexOf('npm --prefix desktop ci --no-audit --no-fund');
+  const distribution = commands.indexOf('node desktop/node_modules/electron/install.js');
+  assert.ok(dependencies >= 0, 'install the locked npm dependencies first');
+  assert.ok(distribution > dependencies, 'materialize the pinned binary and notices after npm ci');
+});
+
 test('platform package resources match each staged desktop backend name', async () => {
   const [manifest, makefile] = await Promise.all([
     readFile(packagePath, 'utf8').then(JSON.parse),

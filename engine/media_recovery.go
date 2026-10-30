@@ -324,8 +324,9 @@ func mediaRecoveryFailure(
 	releasePendingMediaRecovery(input.state)
 	message := recovery.TerminalMessage(stage)
 	input.yield(QueryEvent{
-		Type:             EventAssistant,
-		AssistantMessage: message,
+		modelRoundRejected: true,
+		Type:               EventAssistant,
+		AssistantMessage:   message,
 	})
 	if input.hookExecutor != nil {
 		input.hookExecutor.ExecuteStopFailure(message)

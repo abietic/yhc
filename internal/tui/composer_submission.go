@@ -12,10 +12,12 @@ import (
 )
 
 type composerAdmissionRequest struct {
+	Engine    *engine.QueryEngine
 	ID        uint64
 	ThreadID  string
 	Revision  uint64
 	Busy      bool
+	Delivery  engine.PromptDeliveryMode
 	Display   string
 	SafeText  string
 	Elements  []threadComposerElement
@@ -24,6 +26,7 @@ type composerAdmissionRequest struct {
 }
 
 type composerAdmissionSettledMsg struct {
+	Engine    *engine.QueryEngine
 	RequestID uint64
 	ThreadID  string
 	Revision  uint64
@@ -42,7 +45,11 @@ func (a *App) markComposerChanged() {
 	if a == nil {
 		return
 	}
+	a.removeDialog(StateDiffContext)
+	a.removeDialog(StateInputDelivery)
 	a.dismissComposerSuggestion()
+	a.cancelArgumentCompletion()
+	a.argumentCompletion.Dismissed = nil
 	a.composerRevision++
 	if a.composerRevision == 0 {
 		a.composerRevision++
@@ -52,6 +59,14 @@ func (a *App) markComposerChanged() {
 func (a *App) beginComposerAdmission(
 	snapshot composerSubmissionSnapshot,
 	busy bool,
+) tea.Cmd {
+	return a.beginComposerAdmissionWithDelivery(snapshot, busy, "")
+}
+
+func (a *App) beginComposerAdmissionWithDelivery(
+	snapshot composerSubmissionSnapshot,
+	busy bool,
+	delivery engine.PromptDeliveryMode,
 ) tea.Cmd {
 	if a == nil || a.engine == nil {
 		if a != nil {
@@ -74,9 +89,11 @@ func (a *App) beginComposerAdmission(
 	ctx, cancel := context.WithCancel(context.Background())
 	request := &composerAdmissionRequest{
 		ID:       a.composerAdmissionSerial,
+		Engine:   a.engine,
 		ThreadID: a.activeThreadViewID(),
 		Revision: a.composerRevision,
 		Busy:     busy,
+		Delivery: delivery,
 		Display:  snapshot.Display,
 		SafeText: snapshot.SafeText,
 		Elements: cloneThreadComposerElements(snapshot.Elements),
@@ -88,23 +105,23 @@ func (a *App) beginComposerAdmission(
 	display := snapshot.Display
 	return func() tea.Msg {
 		if busy {
-			queued, err := eng.EnqueuePromptInput(ctx, display, input)
+			queued, err := eng.EnqueuePromptInputWithDelivery(ctx, display, input, request.Delivery)
 			return composerAdmissionSettledMsg{
-				RequestID: request.ID,
-				ThreadID:  request.ThreadID,
-				Revision:  request.Revision,
-				Busy:      true,
-				Queued:    queued,
-				Err:       err,
+				Engine: eng, RequestID: request.ID,
+				ThreadID: request.ThreadID,
+				Revision: request.Revision,
+				Busy:     true,
+				Queued:   queued,
+				Err:      err,
 			}
 		}
 		events, terminal := eng.SubmitPromptInput(ctx, input)
 		return composerAdmissionSettledMsg{
-			RequestID: request.ID,
-			ThreadID:  request.ThreadID,
-			Revision:  request.Revision,
-			Events:    events,
-			Terminal:  terminal,
+			Engine: eng, RequestID: request.ID,
+			ThreadID: request.ThreadID,
+			Revision: request.Revision,
+			Events:   events,
+			Terminal: terminal,
 		}
 	}
 }
@@ -113,20 +130,33 @@ func (a *App) handleComposerAdmissionSettled(msg composerAdmissionSettledMsg) te
 	request := a.composerAdmissionPending
 	if request == nil ||
 		request.ID != msg.RequestID ||
+		request.Engine != msg.Engine ||
 		request.ThreadID != msg.ThreadID ||
 		request.Revision != msg.Revision {
-		if msg.Busy && msg.Queued.ID != "" && a.engine != nil {
-			_, _ = a.engine.CancelQueuedPrompt(msg.Queued.ID)
+		if msg.Busy && msg.Queued.ID != "" && msg.Engine != nil {
+			_, _ = msg.Engine.CancelQueuedPrompt(msg.Queued.ID)
 		}
 		return nil
 	}
 	a.composerAdmissionPending = nil
+	if request.Engine != a.engine {
+		request.Cancel()
+		message := "Previous session submission discarded; draft retained"
+		if msg.Busy && msg.Queued.ID != "" && msg.Engine != nil {
+			cancelled, err := msg.Engine.CancelQueuedPrompt(msg.Queued.ID)
+			if err != nil || !cancelled {
+				message = "Previous session accepted input before the switch; inspect its queue"
+			}
+		}
+		a.showNotification(message, NotifyWarning)
+		return nil
+	}
 	if request.Cancel != nil && msg.Busy {
 		request.Cancel()
 	}
 	if request.Cancelled {
-		if msg.Busy && msg.Queued.ID != "" && a.engine != nil {
-			cancelled, err := a.engine.CancelQueuedPrompt(msg.Queued.ID)
+		if msg.Busy && msg.Queued.ID != "" && msg.Engine != nil {
+			cancelled, err := msg.Engine.CancelQueuedPrompt(msg.Queued.ID)
 			if err == nil && cancelled {
 				return nil
 			}
@@ -161,20 +191,23 @@ func (a *App) handleComposerAdmissionSettled(msg composerAdmissionSettledMsg) te
 		return nil
 	}
 	if request.ThreadID != a.activeThreadViewID() || request.Revision != a.composerRevision {
-		if msg.Busy && msg.Queued.ID != "" && a.engine != nil {
-			_, _ = a.engine.CancelQueuedPrompt(msg.Queued.ID)
+		if msg.Busy && msg.Queued.ID != "" && msg.Engine != nil {
+			_, _ = msg.Engine.CancelQueuedPrompt(msg.Queued.ID)
 		}
 		request.Cancel()
 		return nil
 	}
 
 	if msg.Busy {
-		a.queuedInputPreview = cloneThreadQueuedInputs(append(
-			a.queuedInputPreview,
-			threadQueuedInputFromSnapshot(msg.Queued),
-		))
+		a.rememberInputDelivery(threadQueuedInputFromSnapshot(msg.Queued))
+		a.hydrateQueuedInputPreview()
+		a.refreshInputDeliveryReceipts()
+		a.promoteEarlyInputDelivery(msg.Queued.ID)
 		a.clearAcceptedComposer(request)
-		a.showToast("Input queued")
+		a.showToast(promptDeliveryLabel(msg.Queued.Delivery) + " accepted; /queue to manage")
+		if !a.running {
+			return tea.Batch(a.scheduleNextRuntimeWork(), a.scheduleSessionViewSave())
+		}
 		return a.scheduleSessionViewSave()
 	}
 

@@ -1,7 +1,7 @@
 # Desktop Workbench
 
 **Status:** current
-**Last verified:** 2026-08-30
+**Last verified:** 2026-10-22
 
 > **Ownership:** how an operator builds, starts, uses, and recovers the local
 > YHC Electron workbench. Runtime and protocol detail belong to the
@@ -9,12 +9,19 @@
 
 ## Outcome
 
-The Desktop workbench gives one local three-panel view of sessions, chat, and
-semantic activity. It starts a loopback YHC app-server, keeps the renderer out
+The Desktop workbench puts session navigation beside the conversation, with
+Activity and Changes available on demand. It starts a loopback YHC app-server, keeps the renderer out
 of direct filesystem and process access, and sends normal coding turns through
 the existing `QueryEngine` only after the user submits a prompt. While one Turn
 is active, the same composer can durably queue later text prompts without
 interrupting it.
+
+The Home screen is a safe starting view: it shows shared defaults and recent
+sessions without creating an empty session or calling a provider. On Desktop,
+review shared settings or open the existing secure credential flow first, then
+choose a workspace when you explicitly start work. The Web companion can show
+host-managed guidance but cannot manage local credentials or choose a native
+workspace.
 
 ## Prerequisites
 
@@ -27,6 +34,14 @@ interrupting it.
 The provider dialog intentionally refuses to change a profile while live
 Desktop sessions exist. Close them first so one process cannot silently mix
 provider credentials or routing inside an active conversation.
+
+Wait for workspace selection/creation to finish before opening provider setup;
+new creation is disabled during a provider save. If failed workspace creation
+is followed by a successful credential save, the restarted backend opens the
+native picker again. Choose the workspace anew; cancelling creates no session.
+A failed credential save keeps its error and does not reopen the picker. A
+successful creation clears only its earlier creation-error banner, preserving
+new unrelated errors and notices in existing conversations.
 
 On macOS, starting with no saved provider profile does not probe Keychain or
 request secure-storage approval. Saving the first profile or opening an
@@ -197,6 +212,74 @@ browser-only transport can also be started explicitly with:
 yhc serve app --web
 ```
 
+## Edit shared defaults
+
+Open **Settings** in the sidebar or press Cmd/Ctrl+comma. Desktop and the Web
+companion use the same Go settings service as TUI `/settings` and CLI
+`yhc config settings`. Credentials remain separate; the editor neither returns
+keys nor tests a provider connection.
+
+1. Choose **User defaults**, or **Workspace overrides** when a live session is
+   open. Project scope is resolved from that session, not a page-supplied path.
+2. The editor starts with model settings. Filter by category or search across
+   categories; changing filters preserves field nodes and unsaved edits.
+3. Inspect the stored value, effective value and source before editing. A model
+   profile is selected from the host's catalog, never typed into an empty list.
+   Switching between a profile and explicit model overrides requires a
+   confirmation before one revision-bound save removes conflicting overrides.
+   A non-editable blocking setting must be changed outside this editor.
+4. **Reset override** / **Use user default** stages a deletion, including for
+   stored false or zero values. **Undo reset** restores the prior draft. No
+   file changes until **Save changes**.
+5. A concurrent-write conflict preserves the draft and requires an explicit
+   **Reload**; YHC does not silently overwrite another writer. Leaving a dirty
+   editor also requires confirmation.
+
+Model, provider, turn limit and permission defaults apply to new sessions;
+the model/effort/access controls beside the composer still change only the
+current session. Theme and reduced-motion preferences preview their effective
+values in the current interface. Saving `prompt_suggestions` does not itself
+generate or send a prompt.
+
+Enter integer fields using nonnegative decimal digits, at most
+`9007199254740991` in this browser editor. Invalid input stays in the draft and
+disables Save with field-specific guidance. If a stored or effective integer
+exceeds that browser-safe range, use TUI/CLI to change it and Reload; the form
+does not display or save a rounded value. The shared Go setting range is unchanged.
+
+On normal-height windows, only the settings body scrolls. Short windows fall
+back to scrolling the whole dialog so an invalid field remains reachable.
+Credential guidance is a native expandable section near model settings;
+Desktop can open its existing secure-profile dialog after confirming any
+discarded draft, while Web only shows host-side guidance.
+
+The Desktop vault is a fallback, not a second defaults store: shared routing
+and existing host credentials take precedence, and a saved key is reused only
+for the same provider and endpoint. Opening a workspace lets the runtime
+resolve that configuration; missing vault metadata alone does not block it.
+
+### Edit permission rules deliberately
+
+Use the permission-rules section only with the scope shown by Settings. A
+workspace scope requires the selected live session; no path can be entered or
+chosen here. Build an add/remove batch with the typed controls, then select
+**Save** to submit its revision-bound changes.
+
+**Cancel** and **Discard** do not submit a write; a revision or validation
+rejection leaves the batch unapplied. A timeout or network failure is
+indeterminate: Desktop and Web abort the request after 15 seconds, including
+a stalled response body. The editor keeps the exact draft but disables editing
+and saving until an explicit **Reload** reads a fresh revision; cancelling its
+discard confirmation preserves the draft, and a late response cannot clear it. A
+`runtime_reload_failed` diagnostic means the rule file may already be committed
+but the current runtime did not reload it; it is not evidence that the save was
+rolled back. YHC will not use this editor to answer a pending permission or
+Plan-approval interaction.
+
+See [configuration](configuration-and-providers.md#edit-persistent-defaults)
+for the nine-field whitelist and [experience boundaries](../architecture/workbench-experience.md)
+for ownership and verification limits.
+
 ## Use a session
 
 1. Select **New session** and choose a workspace in the native picker.
@@ -222,6 +305,86 @@ yhc serve app --web
 6. When a decision is needed, use the card in the conversation: permissions,
    questions, Plan approval, and repeated-tool calls each have their own typed
    controls. Do not answer one kind of card by pasting JSON into chat.
+
+### Inspect tasks without controlling them
+
+Open **Tasks** only while the selected session is live. Refresh reads that
+session's work items and Agent executions; it does not attach saved history or
+control an Agent. Open an execution only when its full execution session and
+thread identity are available. Its terminal-output preview is limited to 64 KiB.
+That is the only explicitly requested full-output payload; shown metadata text
+is independently bounded.
+
+**Open conversation** reads the selected child transcript in pages of at most
+32 messages, within a total 256-item display window. It does not switch the
+parent session or alter its draft, cursor selection, or Undo history. If the
+execution is replay-only, pre-dispatch, incomplete, or has changed since the
+read began, return to Tasks and refresh instead of assuming a different Agent's
+data is equivalent.
+
+### View current MCP availability
+
+The MCP panel reports the selected live session's current servers, exposed
+tools, diagnostics, and revision. It is read-only: use the normal shared
+configuration and session lifecycle to change MCP setup. This screen neither
+authorizes a connection nor toggles, reconnects, refreshes, or restarts a
+server at runtime.
+
+An ordinary Send awaiting its admission reply does not prevent further typing.
+The reply clears only its untouched original draft. Later edits remain in their
+own session, even when edited back to the same text. Failure keeps the current
+draft; this does not introduce ordinary-Send retry idempotency. Closing a durable
+session similarly retains the latest draft when its reply arrives, without
+restoring already-cleared text or letting an old Send reply clear saved work.
+
+### Insert a command without running it
+
+In an idle live session, type `/` to browse commands admitted by the app-server.
+Up/Down previews a candidate without changing the draft. Tab inserts the
+selected or first candidate; Enter inserts only after selecting a row. Clicking
+a row also inserts it. Escape dismisses the list and preserves the draft.
+Cmd/Ctrl+Enter retains Send; ordinary Enter remains a newline when no row is
+selected. Input-method composition suspends the menu.
+
+For example, completing `/mod` inserts `/model `, then shows model candidates.
+Arguments and quoting share TUI's command registry. In Chromium, each accepted
+candidate is one native edit: Cmd/Ctrl+Z restores the prior draft and the
+platform Redo shortcut reapplies it. Neither sends a turn. The compatibility
+fallback still inserts text but does not guarantee undo history.
+
+Completion is unavailable in detached history or while a turn or decision is
+pending. It does not scan paths, enumerate session IDs or call a model. Only a
+later explicit Send executes the draft.
+
+### Suggest a next step explicitly
+
+For an empty draft in a live idle session, **Suggest next step** requests one
+ephemeral candidate through the current provider/model. This can incur model
+charges; there is no automatic Desktop/Web request. **Use** inserts one
+undoable draft edit, never a turn. Review it and send separately, or dismiss it.
+Typing and session/runtime changes invalidate old results rather than
+overwriting your draft.
+
+The shared `prompt_suggestions` preference disables these requests. Re-enabling
+a session that started disabled requires creating a new session. The request
+is unavailable during pending decisions, Plan mode or unfinished Goal accounting.
+
+### Run a Goal with explicit lifecycle controls
+
+In an idle live session, open **Goal**, enter an objective and optionally a
+positive token budget, then choose **Create and start**. Token and active-time
+accounting, plus usage coverage, remain owned by the existing Goal runtime;
+the panel projects its supported Goal state. Pause, Resume, Continue, budget edits, and Clear are separate
+revision-bound actions; a changed Goal requires reload rather than a blind
+retry. Clearing always asks for confirmation.
+
+While a Goal turn is active, Pause requests immediate cancellation; runtime
+aftercare owns final status. Other lifecycle mutations require idle state and
+no pending Plan approval. A saved
+transition can report that its initial turn did not start; reload and choose an
+explicit continuation if appropriate. The Desktop panel does not display or
+reserve upstream provider cost; headless cost-reservation flags do not create a
+Desktop cost control.
 
 When you quit while turns are active, choose **Quit and stop turns** only when
 you are ready to interrupt them. Normal shutdown is usually immediate, but YHC

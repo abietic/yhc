@@ -18,6 +18,8 @@ type GateEvidence struct {
 	DurationMillis   int64      `json:"duration_ms"`
 	FailureLogPath   string     `json:"failure_log_path,omitempty"`
 	FirstFailingSeed string     `json:"first_failing_seed,omitempty"`
+	TimeoutMillis    int64      `json:"timeout_ms,omitempty"`
+	BudgetReason     string     `json:"budget_reason,omitempty"`
 }
 
 type Evidence struct {
@@ -25,6 +27,7 @@ type Evidence struct {
 	Plan          Plan           `json:"plan"`
 	State         string         `json:"state"`
 	Gates         []GateEvidence `json:"gates"`
+	Attempt       *AttemptInfo   `json:"attempt,omitempty"`
 }
 
 func initialEvidence(plan Plan) Evidence {
@@ -86,6 +89,9 @@ func validateEvidence(evidence Evidence) error {
 	if evidence.SchemaVersion != 1 || evidence.Plan.SchemaVersion != 1 {
 		return errors.New("evidence schema_version must be 1")
 	}
+	if err := validateAttempt(evidence.Plan, evidence.Attempt); err != nil {
+		return err
+	}
 	if !oneOf(evidence.State, "planned", "changed", "focused_verified", "merge_verified", "evidence_ready") {
 		return fmt.Errorf("invalid evidence state %q", evidence.State)
 	}
@@ -113,6 +119,9 @@ func validateEvidence(evidence Evidence) error {
 		}
 		if gate.DurationMillis < 0 {
 			return fmt.Errorf("negative duration for evidence target %q", gate.Target)
+		}
+		if err := validateGateBudget(gate); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -150,6 +159,9 @@ func renderMarkdown(title string, evidence Evidence, writer io.Writer) error {
 	fmt.Fprintf(&output, "- Head: `%s`\n", plan.Head)
 	fmt.Fprintf(&output, "- Diff digest: `%s`\n", plan.DiffDigest)
 	fmt.Fprintf(&output, "- State: `%s`\n", evidence.State)
+	if evidence.Attempt != nil {
+		fmt.Fprintf(&output, "- Attempt: `%s` (%s)\n- Previous evidence: `%s`\n", evidence.Attempt.ID, evidence.Attempt.Reason, evidence.Attempt.PreviousPath)
+	}
 	fmt.Fprintf(&output, "- Outside-scope untracked count: `%d`\n", plan.OutsideUntracked)
 	if plan.Slice != nil {
 		fmt.Fprintf(
@@ -192,6 +204,11 @@ func renderMarkdown(title string, evidence Evidence, writer io.Writer) error {
 				escapeMarkdownCell(gate.Target),
 				escapeMarkdownCell(string(gate.Status)),
 			)
+		}
+	}
+	for _, gate := range evidence.Gates {
+		if gate.BudgetReason != "" {
+			fmt.Fprintf(&output, "\n- `%s` budget: `%d ms` (%s)\n", gate.Target, gate.TimeoutMillis, gate.BudgetReason)
 		}
 	}
 	if _, err := io.WriteString(writer, output.String()); err != nil {

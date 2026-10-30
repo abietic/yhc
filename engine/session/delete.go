@@ -63,6 +63,8 @@ type DeleteOptions struct {
 	beforeMutation func()
 	// removeWorkBoard is a deterministic post-transcript cleanup seam.
 	removeWorkBoard func(string) error
+	// removeHistory is a deterministic post-transcript cleanup seam.
+	removeHistory func(string) error
 }
 
 // DeleteResult contains information about a completed deletion.
@@ -130,7 +132,20 @@ func DeleteSession(opts DeleteOptions) (*DeleteResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if info == nil && mediaPlan == nil && workBoardPlan == nil {
+	historyPlan, err := preflightWorkspaceHistoryDelete(
+		filepath.Dir(transcriptPath),
+		opts.SessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer historyPlan.close()
+	if historyPlan.present {
+		if err := historyPlan.revalidate(); err != nil {
+			return nil, err
+		}
+	}
+	if info == nil && mediaPlan == nil && workBoardPlan == nil && !historyPlan.present {
 		return nil, fmt.Errorf(
 			"session %s does not exist: %w",
 			opts.SessionID,
@@ -198,6 +213,11 @@ func DeleteSession(opts DeleteOptions) (*DeleteResult, error) {
 			return nil, err
 		}
 	}
+	if historyPlan != nil {
+		if err := historyPlan.revalidate(); err != nil {
+			return nil, err
+		}
+	}
 
 	// Remove the transcript file.
 	transcriptRemoved := false
@@ -259,6 +279,16 @@ func DeleteSession(opts DeleteOptions) (*DeleteResult, error) {
 			return cleanupFailure(err)
 		}
 		mediaRemoved = true
+	}
+	if historyPlan != nil && historyPlan.present {
+		if opts.removeHistory != nil {
+			if err := opts.removeHistory(historyPlan.path); err != nil {
+				return cleanupFailure(fmt.Errorf("remove workspace history: %w", err))
+			}
+		}
+		if err := historyPlan.remove(); err != nil {
+			return cleanupFailure(err)
+		}
 	}
 	result.MediaRemoved = mediaRemoved
 	result.WorkBoardShadowRemoved = result.WorkBoardShadowRemoved || workBoardShadowRemoved

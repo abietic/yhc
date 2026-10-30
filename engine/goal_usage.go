@@ -931,6 +931,18 @@ func (e *QueryEngine) currentGoalProviderUsageAdmitter() execution.ProviderUsage
 	return reporter
 }
 
+// currentProviderUsageAdmitter retains the Goal owner as the wire identity.
+func (e *QueryEngine) currentProviderUsageAdmitter() execution.ProviderUsageAdmitter {
+	goal := e.currentGoalProviderUsageAdmitter()
+	if goal == nil && e.goalProviderUsageRequired() {
+		return unavailableGoalUsageAdmitter{}
+	}
+	if e.config.RunUsage == nil {
+		return goal
+	}
+	return execution.CombineProviderUsage(e.config.RunUsage, goal)
+}
+
 func (e *QueryEngine) goalProviderUsageRequired() bool {
 	if e == nil {
 		return false
@@ -949,12 +961,12 @@ func (e *QueryEngine) providerUsageForPotentialGoalCall() (
 ) {
 	admitter := e.currentGoalProviderUsageAdmitter()
 	if admitter != nil {
-		return admitter, nil
+		return e.currentProviderUsageAdmitter(), nil
 	}
 	if e.goalProviderUsageRequired() {
 		return nil, errGoalUsageCapabilityUnavailable
 	}
-	return nil, nil
+	return e.currentProviderUsageAdmitter(), nil
 }
 
 func (e *QueryEngine) bindGoalUsageReporterForChild(
@@ -988,4 +1000,12 @@ func (e *QueryEngine) bindGoalUsageReporterForChild(
 		binding: *binding,
 		subject: subject,
 	}
+}
+
+// An invocation collector must never mask a missing required Goal capability.
+type unavailableGoalUsageAdmitter struct{}
+
+func (unavailableGoalUsageAdmitter) NewLogicalRoundID() string { return "unavailable-goal" }
+func (unavailableGoalUsageAdmitter) AdmitProviderUsage(context.Context, execution.ProviderUsageDescriptor) (execution.ProviderUsageCall, error) {
+	return nil, &execution.ProviderUsageTerminalError{Err: errGoalUsageCapabilityUnavailable}
 }

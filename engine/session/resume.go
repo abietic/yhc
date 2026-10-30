@@ -206,15 +206,23 @@ func ValidateMessageHistory(messages []*schema.Message) []string {
 	var warnings []string
 
 	// Check 1: Role alternation.
-	// The reference enforces user/assistant alternation (with system/tool interspersed).
-	// We check that consecutive messages don't have the same user/assistant role
-	// (ignoring system and tool messages in the alternation check).
+	// A matched tool result permits an assistant continuation in the same user
+	// turn. Ignoring all tool results incorrectly rejects ordinary tool rounds.
 	prevConversationalRole := schema.RoleType("")
+	assistantCalls := make(map[string]struct{})
 	for i, msg := range messages {
 		if msg == nil {
 			continue
 		}
 		role := msg.Role
+		if role == schema.Tool && msg.ToolCallID != "" {
+			if _, matched := assistantCalls[msg.ToolCallID]; matched {
+				delete(assistantCalls, msg.ToolCallID)
+				if len(assistantCalls) == 0 {
+					prevConversationalRole = schema.Tool
+				}
+			}
+		}
 		// Only check alternation for user and assistant roles.
 		if role == schema.User || role == schema.Assistant {
 			if role == prevConversationalRole {
@@ -223,6 +231,14 @@ func ValidateMessageHistory(messages []*schema.Message) []string {
 				))
 			}
 			prevConversationalRole = role
+			clear(assistantCalls)
+			if role == schema.Assistant {
+				for _, call := range msg.ToolCalls {
+					if call.ID != "" {
+						assistantCalls[call.ID] = struct{}{}
+					}
+				}
+			}
 		}
 	}
 
@@ -270,9 +286,10 @@ func ValidateMessageHistory(messages []*schema.Message) []string {
 		if msg.Role == schema.Tool && msg.ToolCallID != "" {
 			if !seenToolCalls[msg.ToolCallID] {
 				warnings = append(warnings, fmt.Sprintf(
-					"orphaned tool_result for tool_call_id %q (no prior tool_use found)", msg.ToolCallID,
+					"orphaned tool_result for tool_call_id %q (no unresolved prior tool_use found)", msg.ToolCallID,
 				))
 			}
+			delete(seenToolCalls, msg.ToolCallID)
 		}
 	}
 

@@ -2,11 +2,22 @@ version: 1
 reference_dir: .reference
 memory_dir: .sync-memory
 max_commit_subjects: 80
+git_fetch:
+  # Fetch only the configured upstream branch. Bounded transport retries use
+  # command-only HTTP/1.1, and public
+  # github.com SSH origins can use HTTPS without changing checkout config.
+  timeout_seconds: 120
+  retry:
+    attempts: 2
+    backoff_seconds: 3
 model_summary:
   backend: codex
   model: gpt-5.6-luna
   max_input_bytes: 120000
   timeout_seconds: 120
+  retry:
+    attempts: 2
+    backoff_seconds: 3
 subagent_summary:
   # Both summary stages use the local Codex CLI with its ChatGPT/OpenAI auth;
   # they do not inherit YHC's provider or Anthropic environment variables.
@@ -14,6 +25,9 @@ subagent_summary:
   model: gpt-5.6-luna
   max_input_bytes: 80000
   timeout_seconds: 120
+  retry:
+    attempts: 2
+    backoff_seconds: 3
 
 # `enabled` references may be fetched and fast-forwarded by the scheduled job.
 # `frozen` references are inventory/evidence only: the job never fetches or

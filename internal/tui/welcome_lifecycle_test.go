@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/abietic/yhc/engine"
 )
 
 func prepareViewSizedApp(app *App) *App {
@@ -153,7 +154,9 @@ func TestWelcomeFirstSlashSubmitTransitionsToChat(t *testing.T) {
 }
 
 func TestWelcomeFirstShellSubmitTransitionsToChat(t *testing.T) {
-	app := New(Config{})
+	eng := engine.NewQueryEngine(engine.QueryEngineConfig{SessionID: "welcome-shell", CWD: t.TempDir(), TranscriptDir: t.TempDir()})
+	t.Cleanup(eng.Close)
+	app := New(Config{Engine: eng})
 	app.inputMode = InputShell
 	app.textarea.SetValue("pwd")
 
@@ -229,7 +232,7 @@ func TestWelcomeFileHintsRenderAfterCommandSelection(t *testing.T) {
 		return
 	}
 	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "alpha.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.Mkdir(filepath.Join(tmp, "alpha"), 0o755); err != nil {
 		t.Fatal(err)
 		return
 	}
@@ -246,17 +249,19 @@ func TestWelcomeFileHintsRenderAfterCommandSelection(t *testing.T) {
 
 	app.inputMode = InputCommand
 	app.textarea.SetValue("/add-dir a")
+	app.textarea.CursorEnd()
 	app.updateCommandHints()
+	finishArgumentCompletion(t, app)
 
 	if app.state != StateWelcome {
 		t.Fatalf("state before rendering file hints = %v, want welcome", app.state)
 	}
-	if len(app.fileHints) == 0 {
+	if len(app.argumentCandidates()) == 0 {
 		t.Fatal("expected file hints after valid command plus space")
 	}
 
 	view := stripANSIForTest(app.renderView())
-	if !strings.Contains(view, "alpha.txt") {
+	if !strings.Contains(view, "alpha"+string(filepath.Separator)) {
 		t.Fatalf("expected visible file hints in welcome view, got %q", view)
 	}
 }
@@ -337,5 +342,20 @@ func TestResumedConfigStartsInChat(t *testing.T) {
 	}
 	if got := app.textarea.Value(); got != "h" {
 		t.Fatalf("textarea after resumed typing = %q", got)
+	}
+}
+
+func TestWelcomeShellWithoutEnginePreservesUnsubmittedDraft(t *testing.T) {
+	app := New(Config{})
+	app.inputMode = InputShell
+	app.textarea.SetValue("pwd")
+	if cmd := app.sendMessage(); cmd != nil {
+		t.Fatal("unowned shell execution was scheduled")
+	}
+	if app.textarea.Value() != "pwd" {
+		t.Fatal("rejected shell request lost its draft")
+	}
+	if len(app.chat.items) != 0 {
+		t.Fatal("rejected shell request appeared started")
 	}
 }

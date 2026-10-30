@@ -38,7 +38,7 @@ func TestCommandArgumentGhostPTY(t *testing.T) {
 			case "/skill:inspect engine":
 				marker = "TYPED"
 			}
-			return fmt.Sprintf("HINT_%s %dx%d", marker, app.width, app.height), ""
+			return fmt.Sprintf("HINT_%s %dx%d active=%t", marker, app.width, app.height, app.hasArgumentCompletionActivity()), ""
 		}
 		program := tea.NewProgram(app)
 		app.SetProgram(program)
@@ -97,11 +97,14 @@ func TestCommandArgumentGhostPTY(t *testing.T) {
 		t.Fatalf("ghost missing after resize: %s", output.screenPlain())
 	}
 	writePTY(t, terminal, "\t\x1b[Cengine")
-	waitPTYContains(t, command, output, "HINT_TYPED")
+	waitPTYContains(t, command, output, "HINT_TYPED 40x24 active=true")
 	if strings.Contains(output.screenPlain(), "<package>") {
 		t.Fatalf("ghost survived real argument: %s", output.screenPlain())
 	}
 	mark := output.size()
+	writePTY(t, terminal, "\x1b")
+	waitPTYContainsAfter(t, command, output, mark, "HINT_TYPED 40x24 active=false")
+	mark = output.size()
 	writePTY(t, terminal, "\x1b")
 	waitPTYContainsAfter(t, command, output, mark, "HINT_EMPTY")
 	writePTY(t, terminal, "/quit\r")

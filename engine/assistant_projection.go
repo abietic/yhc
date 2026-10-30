@@ -58,6 +58,12 @@ func (e *assistantProjectionEmitter) Emit(event QueryEvent) {
 		e.delivered = nil
 		e.yield(event)
 	case EventAssistant:
+		if event.modelRoundRejected {
+			// A terminal diagnostic is a separate message, not a replacement
+			// for bytes already offered by the rejected provider stream.
+			e.messageID = ""
+			e.delivered = nil
+		}
 		e.emitAssistant(event)
 	default:
 		e.yield(event)

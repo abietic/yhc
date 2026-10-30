@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/permission"
 )
 
@@ -268,5 +269,27 @@ func approvalReviewerTestRequest() permission.PermissionReviewRequest {
 			ActionKind:    "runtime_state",
 			RedactedArgs:  []byte(`{"subject":{"kind":"text","bytes":4}}`),
 		},
+	}
+}
+
+func TestApprovalReviewerRunUsageBudget(t *testing.T) {
+	usage, _ := execution.NewRunUsage(execution.RunUsageLimits{MaxProviderCalls: 1})
+	calls := 0
+	request := approvalReviewerTestRequest()
+	valid := `{"schema_version":1,"request_id":"` + request.RequestID + `","tool_call_id":"tool-1","binding_nonce":"` + request.BindingNonce + `","decision":"approve","reason_code":"expected_safe","rationale":"bounded action"}`
+	reviewer := &approvalReviewer{timeout: time.Second, modelName: "review-model", client: &approvalReviewerTestModel{generate: func(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+		calls++
+		return &schema.Message{Role: schema.Assistant, Content: valid, ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{PromptTokens: 6, CompletionTokens: 2}}}, nil
+	}}}
+	ctx := execution.WithProviderUsageScope(context.Background(), usage, true)
+	if _, err := reviewer.Review(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reviewer.Review(ctx, request); !errors.Is(err, execution.ErrRunBudgetExceeded) {
+		t.Fatalf("review=%v", err)
+	}
+	snapshot := usage.Snapshot()
+	if calls != 1 || snapshot.TotalTokens != 8 || len(snapshot.Routes) != 1 || snapshot.Routes[0].Source != "approval_review" {
+		t.Fatalf("calls=%d usage=%+v", calls, snapshot)
 	}
 }

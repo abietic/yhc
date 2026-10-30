@@ -337,7 +337,8 @@ func workspaceGuestRoots(cwd string, extraReadRoots []string) ([]string, []strin
 	if runtime.GOOS == "linux" {
 		runtimeRoots = []string{"/bin", "/sbin", "/usr", "/lib", "/lib64", "/etc", "/nix/store", "/run/current-system/sw"}
 	}
-	for _, candidate := range append(runtimeRoots, goToolchainRoot(), filepath.Join(home, "go", "pkg", "mod")) {
+	readRoots = append(readRoots, workspaceRuntimeReadRoots(runtimeRoots, runtime.GOOS == "linux")...)
+	for _, candidate := range []string{goToolchainRoot(), filepath.Join(home, "go", "pkg", "mod")} {
 		if root, rootErr := canonicalExistingDirectory(candidate); rootErr == nil {
 			readRoots = append(readRoots, root)
 		}
@@ -401,6 +402,22 @@ func workspaceGuestRoots(cwd string, extraReadRoots []string) ([]string, []strin
 	sort.Strings(tempRoots)
 	sort.Strings(deniedRoots)
 	return compactPaths(readRoots), compactPaths(tempRoots), compactPaths(deniedRoots), nil
+}
+
+func workspaceRuntimeReadRoots(candidates []string, preserveAliases bool) []string {
+	roots := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if root, err := canonicalExistingDirectory(candidate); err == nil {
+			roots = append(roots, root)
+			// Fixed Linux runtime paths such as /bin and /lib64 can be
+			// aliases into /usr. Keep their namespace paths for executables
+			// and ELF interpreters as well as their canonical read targets.
+			if preserveAliases && filepath.Clean(candidate) != root {
+				roots = append(roots, filepath.Clean(candidate))
+			}
+		}
+	}
+	return roots
 }
 
 func pathCrossesSymlink(root, target string) bool {

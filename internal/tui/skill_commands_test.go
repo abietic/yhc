@@ -22,16 +22,20 @@ func TestSkillCommandLoadedIntoTUIAndPaletteStagesArguments(t *testing.T) {
 	if len(app.commandHints) != 1 || app.commandHints[0].Name != "skill:local-check" {
 		t.Fatalf("skill hints = %#v", app.commandHints)
 	}
-	app.commandPalette.ShowFor(app.commandRegistry, app.commandCapabilityContext())
+	app.openCommandPalette()
 	app.commandPalette.query = "local-check"
 	app.commandPalette.applyFilter()
-	app.pushDialog(StateCommandPalette)
 	_, cmd := app.handleActiveDialogKey(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || app.running || app.textarea.Value() != "/skill:local-check " || len(app.chat.items) != 0 {
-		t.Fatalf("palette executed skill: draft=%q running=%v cmd=%v", app.textarea.Value(), app.running, cmd != nil)
+	if cmd != nil || app.commandPalette.form == nil || app.textarea.Value() != "/local-ch" {
+		t.Fatal("selection did not open argument form with preserved draft")
 	}
-	if !strings.Contains(stripANSIForTest(app.renderEditor()), "<package>") {
-		t.Fatal("missing argument ghost")
+	if field := app.commandPalette.form.operation.Fields[0]; field.Name != "package" || !field.Required {
+		t.Fatalf("Skill field = %#v", field)
+	}
+	app.Update(tea.PasteMsg{Content: "engine/commands"})
+	_, cmd = app.handleActiveDialogKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd != nil || app.running || app.textarea.Value() != "/skill:local-check engine/commands " || len(app.chat.items) != 0 {
+		t.Fatalf("palette executed skill: draft=%q running=%v cmd=%v", app.textarea.Value(), app.running, cmd != nil)
 	}
 	result, err := app.commandRegistry.Dispatch(context.Background(), commands.EntrypointTUI, app.commandCapabilityContext(), `/local-check "engine/commands"`)
 	if err != nil || result.Action != commands.ActionPrompt || !strings.Contains(result.Output, "Review engine/commands.") {

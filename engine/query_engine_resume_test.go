@@ -391,8 +391,8 @@ func TestQueryEngineCheckpointsCompactBoundaryBatchBeforePartialAssistant(t *tes
 		CustomSystemPrompt: "You are helpful.",
 	})
 	msgs := reloaded.GetMessages()
-	if len(msgs) != 4 {
-		t.Fatalf("expected compact batch checkpoint to persist boundary, summary, and preserved tail, got %#v", msgs)
+	if len(msgs) != 6 {
+		t.Fatalf("expected compact batch checkpoint to persist boundary, summary, original requests, and preserved tail, got %#v", msgs)
 	}
 	if msgs[0].Extra == nil || msgs[0].Extra["subtype"] != "compact_boundary" {
 		t.Fatalf("expected compact boundary at checkpoint start, got %#v", msgs[0])
@@ -402,11 +402,14 @@ func TestQueryEngineCheckpointsCompactBoundaryBatchBeforePartialAssistant(t *tes
 		t.Fatalf("expected compact summary after boundary, got %#v", msgs[1])
 		return
 	}
-	if msgs[2].Role != schema.Assistant || msgs[2].Content != "latest answer" {
-		t.Fatalf("expected preserved assistant tail in compact checkpoint, got %#v", msgs[2])
+	if msgs[2].Role != schema.User || msgs[2].Content != strings.Repeat("older question ", 220) || msgs[3].Role != schema.User || msgs[3].Content != "latest question" {
+		t.Fatal("original user requests were changed or lost from compact checkpoint")
 	}
-	if msgs[3].Role != schema.User || msgs[3].Content != "new prompt" {
-		t.Fatalf("expected latest user prompt in compact checkpoint, got %#v", msgs[3])
+	if msgs[4].Role != schema.Assistant || msgs[4].Content != "latest answer" {
+		t.Fatalf("expected preserved assistant tail in compact checkpoint, got %#v", msgs[4])
+	}
+	if msgs[5].Role != schema.User || msgs[5].Content != "new prompt" {
+		t.Fatalf("expected latest user prompt in compact checkpoint, got %#v", msgs[5])
 	}
 	for _, msg := range msgs {
 		if msg != nil && msg.Content == "partial after compact" {

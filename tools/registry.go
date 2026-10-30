@@ -175,8 +175,9 @@ type ToolImpl struct {
 	// "cancel" tools are aborted on user interrupt; "block" tools complete naturally.
 	// Mirrors Tool.ts interruptBehavior().
 	InterruptBehavior string
-	// Prompt returns tool-specific system prompt content injected into model context.
-	// Reference: each tool directory has prompt.ts that contributes to the system prompt.
+	// Prompt returns host-owned instructions appended to this tool's model-visible
+	// description by AssembleToolPool. The callback must return stable guidance;
+	// it runs outside the registry lock after tool-pool selection.
 	Prompt func() string
 }
 

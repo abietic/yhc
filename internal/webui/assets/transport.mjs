@@ -1,3 +1,6 @@
+import { executionDetailQuery } from './agent_execution_detail.mjs';
+import { agentConversationQuery } from './agent_conversation.mjs';
+
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const UUID_PATTERN = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const ATTACH_TURN_FIELDS = new Set(['sessionID', 'prompt', 'clientTurnID']);
@@ -8,6 +11,14 @@ const EXECUTION_FIELDS = new Set([
   'reasoning_effort',
   'permission_mode',
 ]);
+const SETTINGS_REQUEST_TIMEOUT_MS = 15_000;
+const SETTINGS_TIMEOUT_MESSAGE = 'Settings request timed out. Reload before saving.';
+
+function settingsTimeoutError() {
+  const error = new Error(SETTINGS_TIMEOUT_MESSAGE);
+  error.code = 'settings_timeout';
+  return error;
+}
 
 function requireSessionID(value) {
   if (typeof value !== 'string' || !SESSION_ID_PATTERN.test(value)) {
@@ -153,8 +164,35 @@ function parseSSEFrames(input, emit) {
 }
 
 function operationPath(operation, payload = {}) {
+	if (operation === 'getPermissionSettings' || operation === 'updatePermissionSettings') {
+		const update = operation === 'updatePermissionSettings';
+		if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !['scope', 'sessionID', ...(update ? ['revision', 'changes'] : [])].includes(key))) throw new TypeError('invalid permission settings payload');
+		const scope = payload.scope ?? 'user';
+		if (!['user', 'project', 'local'].includes(scope) || (scope !== 'user' && !payload.sessionID)) throw new TypeError('invalid permission settings scope');
+		const query = new URLSearchParams({scope});
+		if (payload.sessionID !== undefined) query.set('session_id', requireSessionID(payload.sessionID));
+		if (update && (typeof payload.revision !== 'string' || !/^[a-f0-9]{64}$/i.test(payload.revision) || !Array.isArray(payload.changes) || !payload.changes.length || payload.changes.length > 32 || payload.changes.some(change => !change || typeof change !== 'object' || Array.isArray(change) || Object.keys(change).some(key => !['operation', 'action', 'rule'].includes(key)) || !['add', 'remove'].includes(change.operation) || !['allow', 'deny', 'ask'].includes(change.action) || typeof change.rule !== 'string' || !change.rule.isWellFormed() || !change.rule.trim() || change.rule.includes('\0') || [...change.rule].length > 4096))) throw new TypeError('invalid permission rule changes');
+		return [`/v1/permission-settings?${query}`, update ? 'PATCH' : 'GET', update ? {revision: payload.revision, changes: payload.changes.map(({operation, action, rule}) => ({operation, action, rule}))} : undefined];
+	}
   const id = () => encodeURIComponent(requireSessionID(payload.sessionID));
   switch (operation) {
+    case 'getGoal':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('invalid goal payload');
+      return [`/v1/sessions/${id()}/goal`, 'GET'];
+    case 'controlGoal':
+      return [`/v1/sessions/${id()}/goal/control`, 'POST', goalControlPayload(payload)];
+    case 'getMCPInventory':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('MCP inventory requires only a session id');
+      return [`/v1/sessions/${id()}/mcp-inventory`, 'GET'];
+    case 'getSettings':
+    case 'updateSettings': {
+      const scope = payload.scope || 'user';
+      if (!['user', 'project'].includes(scope)) throw new TypeError('invalid settings scope');
+      const query = new URLSearchParams({ scope });
+      if (payload.sessionID) query.set('session_id', requireSessionID(payload.sessionID));
+      return [`/v1/settings?${query}`, operation === 'getSettings' ? 'GET' : 'PATCH',
+        operation === 'getSettings' ? undefined : { revision: payload.revision, changes: payload.changes }];
+    }
     case 'health':
       return ['/v1/health', 'GET'];
     case 'listSessions':
@@ -175,6 +213,20 @@ function operationPath(operation, payload = {}) {
       return [`/v1/sessions/${id()}`, 'DELETE'];
     case 'snapshot':
       return [`/v1/sessions/${id()}/snapshot`, 'GET'];
+    case 'getTaskExplorer':
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+          Object.keys(payload).some((key) => key !== 'sessionID')) {
+        throw new TypeError('task overview requires only a session id');
+      }
+      return [`/v1/sessions/${id()}/tasks`, 'GET'];
+    case 'getAgentExecutionDetail': {
+      const query = executionDetailQuery(payload);
+      return [`/v1/sessions/${id()}/agent-execution-detail?${query}`, 'GET'];
+    }
+    case 'getAgentTranscript': {
+      const query = agentConversationQuery(payload);
+      return [`/v1/sessions/${id()}/agent-transcript?${query}`, 'GET'];
+    }
     case 'transcriptPage': {
       const query = new URLSearchParams();
       if (payload.cursor) query.set('cursor', payload.cursor);
@@ -242,6 +294,11 @@ function operationPath(operation, payload = {}) {
       return [`/v1/sessions/${id()}/interactions/${encodeURIComponent(requireInteractionRequestID(payload.requestID))}/plan`, 'GET'];
     case 'getExecutionSettings':
       return [`/v1/sessions/${id()}/execution-settings`, 'GET'];
+    case 'completeCommand':
+      return [`/v1/sessions/${id()}/command-completions`, 'POST', commandCompletionInput(payload)];
+    case 'promptSuggestion':
+      if (Object.keys(payload).some(key => key !== 'sessionID')) throw new TypeError('suggestion accepts only a session id');
+      return [`/v1/sessions/${id()}/prompt-suggestion`, 'POST', {}];
     case 'updateExecutionSetting':
       return [
         `/v1/sessions/${id()}/execution-settings`,
@@ -251,6 +308,28 @@ function operationPath(operation, payload = {}) {
     default:
       throw new TypeError('unsupported client API operation');
   }
+}
+
+function goalControlPayload(payload) {
+  const allowed = new Set(['sessionID', 'operation', 'expected_goal_id', 'expected_revision', 'objective', 'token_budget']);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).some(key => !allowed.has(key)) || !['create', 'edit', 'pause', 'resume', 'budget', 'clear', 'continue'].includes(payload.operation) || typeof payload.expected_goal_id !== 'string' || typeof payload.expected_revision !== 'string' || !/^(0|[1-9][0-9]*)$/.test(payload.expected_revision) || (payload.objective !== undefined && (typeof payload.objective !== 'string' || !payload.objective.isWellFormed() || payload.objective.includes('\0') || [...payload.objective].length > 4000)) || (payload.token_budget !== undefined && (typeof payload.token_budget !== 'string' || !/^[1-9][0-9]*$/.test(payload.token_budget)))) throw new TypeError('invalid goal payload');
+  if (payload.expected_goal_id.length > 256 || !payload.expected_goal_id.isWellFormed() || payload.expected_goal_id.includes('\0') || (payload.operation === 'create' && (payload.expected_goal_id !== '' || payload.expected_revision !== '0' || typeof payload.objective !== 'string')) || (payload.operation === 'edit' && (typeof payload.objective !== 'string' || payload.token_budget !== undefined)) || (payload.operation === 'budget' && (typeof payload.token_budget !== 'string' || payload.objective !== undefined)) || (!['create', 'edit', 'budget'].includes(payload.operation) && (payload.objective !== undefined || payload.token_budget !== undefined))) throw new TypeError('invalid goal payload');
+  if (payload.expected_revision.length > 20 || BigInt(payload.expected_revision) > 18446744073709551615n || (payload.token_budget !== undefined && (payload.token_budget.length > 20 || BigInt(payload.token_budget) > 18446744073709551615n)) || (payload.operation !== 'create' && (!payload.expected_goal_id || payload.expected_revision === '0')) || (['create', 'edit'].includes(payload.operation) && !payload.objective.trim())) throw new TypeError('invalid goal payload');
+  requireSessionID(payload.sessionID);
+  const result = { operation: payload.operation, expected_goal_id: payload.expected_goal_id, expected_revision: payload.expected_revision };
+  if (payload.objective !== undefined) result.objective = payload.objective;
+  if (payload.token_budget !== undefined) result.token_budget = payload.token_budget;
+  return result;
+}
+
+function commandCompletionInput(payload) {
+  if (Object.keys(payload).some(key => !['sessionID', 'input', 'cursor'].includes(key)) ||
+      typeof payload.input !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(payload.input) ||
+      !Number.isInteger(payload.cursor) || payload.cursor < 0 || payload.cursor > [...payload.input].length || [...payload.input].length > 2048 ||
+      /[\uD800-\uDFFF]/u.test(payload.input)) {
+    throw new TypeError('valid bounded command input and rune cursor required');
+  }
+  return { input: payload.input, cursor: payload.cursor };
 }
 
 async function exchangeBrowserPairing() {
@@ -294,16 +373,29 @@ function browserTransport() {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
       headers['X-YHC-CSRF'] = csrfToken;
     }
-    const response = await fetch(pathname, {
-      method,
-      credentials: 'same-origin',
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!response.ok) {
-      throw await responseError(response, 'browser request failed');
+    const requestPath = new URL(pathname, window.location.origin).pathname;
+    const settingsRequest = ((operation === 'getSettings' || operation === 'updateSettings') && requestPath === '/v1/settings') ||
+      ((operation === 'getPermissionSettings' || operation === 'updatePermissionSettings') && requestPath === '/v1/permission-settings');
+    const controller = settingsRequest ? new AbortController() : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), SETTINGS_REQUEST_TIMEOUT_MS) : null;
+    try {
+      const response = await fetch(pathname, {
+        method,
+        credentials: 'same-origin',
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+      if (!response.ok) {
+        throw await responseError(response, 'browser request failed');
+      }
+      return response.status === 204 ? null : await response.json();
+    } catch (error) {
+      if (controller?.signal.aborted) throw settingsTimeoutError();
+      throw error;
+    } finally {
+      if (timeout !== null) clearTimeout(timeout);
     }
-    return response.status === 204 ? null : response.json();
   }
 
   return {
@@ -397,13 +489,38 @@ function browserTransport() {
   };
 }
 
+async function desktopAPI(bridge, operation, payload) {
+  if (typeof bridge.apiResult !== 'function') return bridge.api(operation, payload);
+  const result = await bridge.apiResult(operation, payload);
+  if (result?.ok === true && Object.hasOwn(result, 'value')) return result.value;
+  const failure = result?.error;
+  if (
+    result?.ok !== false || !failure ||
+    typeof failure.message !== 'string' || !failure.message ||
+    (failure.code !== undefined && (
+      typeof failure.code !== 'string' || !/^[a-z][a-z0-9_]{0,127}$/.test(failure.code)
+    )) ||
+    (failure.status !== undefined && (
+      !Number.isInteger(failure.status) || failure.status < 400 || failure.status > 599
+    ))
+  ) {
+    throw new Error('invalid desktop API result');
+  }
+  // Construct Error in the renderer: IPC and contextBridge drop custom Error
+  // properties, whereas the plain result envelope crosses both boundaries.
+  const error = new Error(failure.message);
+  error.code = failure.code || '';
+  if (failure.status !== undefined) error.status = failure.status;
+  throw error;
+}
+
 function desktopTransport(bridge) {
   return {
     getInfo: async () => ({ ...(await bridge.getInfo()), surface: 'desktop' }),
     getProviderStatus: () => bridge.getProviderStatus(),
     configureProvider: (input) => bridge.configureProvider(input),
     selectWorkspace: () => bridge.selectWorkspace(),
-    api: (operation, payload) => bridge.api(operation, payload),
+    api: (operation, payload) => desktopAPI(bridge, operation, payload),
     startEvents: (sessionID, after) => bridge.startEvents(sessionID, after),
     stopEvents: (sessionID) => bridge.stopEvents(sessionID),
     onEventStream: (listener) => bridge.onEventStream(listener),

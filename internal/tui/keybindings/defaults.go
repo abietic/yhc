@@ -46,7 +46,9 @@ func DefaultBindings() []Block {
 				"ctrl+n":      ActionHistoryNext,
 				"ctrl+r":      ActionHistorySearch,
 				"ctrl+g":      ActionChatExternalEditor,
+				"ctrl+space":  ActionChatArgumentSuggest,
 				"ctrl+z":      ActionChatUndo,
+				"alt+c":       ActionChatManageContext,
 				"ctrl+b":      ActionTaskBackground,
 				"ctrl+v":      ActionChatImagePaste,
 			},
@@ -108,6 +110,7 @@ func DefaultBindings() []Block {
 				"ctrl+end":     ActionScrollBottom,
 				"y":            ActionSelectionCopy,
 				"ctrl+shift+c": ActionSelectionCopy,
+				"alt+a":        ActionSelectionAttach,
 			},
 		},
 		{

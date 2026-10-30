@@ -196,13 +196,18 @@ test('renderer turns an unexpected backend exit into fixed restart guidance', as
   );
   assert.match(render, /const backendReady = backendAvailable\(state\)/);
   assert.match(render, /BACKEND_UNAVAILABLE_NOTICE/);
-  assert.match(render, /\$\('prompt'\)\.disabled = !backendReady/);
-  assert.match(render, /\$\('send'\)\.disabled = !backendReady/);
-  assert.match(render, /\$\('cancel'\)\.disabled = !backendReady/);
+  assert.match(render, /\$\('prompt'\)\.disabled = agentConversationView\.isOpen\(\) \|\| !backendReady/);
+  assert.match(render, /\$\('send'\)\.disabled = agentConversationView\.isOpen\(\) \|\| !backendReady/);
+  assert.match(render, /\$\('cancel'\)\.disabled = agentConversationView\.isOpen\(\) \|\| !backendReady/);
   assert.match(render, /\$\('open-web'\)\.disabled = !backendReady/);
   assert.match(render, /loadEarlier\.disabled = !backendReady/);
-  assert.match(app, /button\.disabled = creating \|\| !backendAvailable\(state\)/);
-  assert.match(app, /settings\.disabled = providerSetupBusy \|\| !backendAvailable\(state\)/);
+  assert.match(app, /button\.disabled = creating \|\| providerSetupBusy \|\| !backendAvailable\(state\)/);
+  const providerControls = app.slice(
+    app.indexOf('function renderProviderSetup()'),
+    app.indexOf('function renderEmptyState()'),
+  );
+  assert.match(providerControls, /const backendReady = backendAvailable\(state\)/);
+  assert.match(providerControls, /settings\.disabled = providerSetupBusy \|\| sessionCreation\.busy\(\) \|\| !backendReady/);
   assert.match(app, /providerButton\.disabled = !backendReady/);
   assert.match(app, /workspaceButton\.disabled = !backendReady/);
   assert.match(app, /loadMore\.disabled = !backendAvailable\(state\)/);

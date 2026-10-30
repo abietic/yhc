@@ -1,13 +1,10 @@
 package tui
 
 import (
-	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/abietic/yhc/engine/commands"
 )
 
 // DialogAction is the result of a stackable dialog handling a key event.
@@ -168,7 +165,7 @@ func isDialogState(state AppState) bool {
 	case StatePermission, StateResume, StateHelp,
 		StateBypassConfirm, StateMCPApproval, StateModelPicker,
 		StateBackgroundTasks, StateMCPSettings, StateAgentWizard, StateTeams,
-		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker:
+		StateCommandPalette, StatePlanApproval, StateAskUser, StateAgentPicker, StateContextManager, StateDiffContext, StateInputDelivery, StateInputQueue, StateSideQuestion, StateChangeReview:
 		return true
 	default:
 		return false
@@ -178,6 +175,9 @@ func isDialogState(state AppState) bool {
 func (a *App) pushDialog(state AppState) {
 	if a == nil || !isDialogState(state) {
 		return
+	}
+	if state == StateContextManager || state == StateDiffContext || state == StateChangeReview || a.hasDialog(StateContextManager) || a.hasDialog(StateDiffContext) || a.hasDialog(StateChangeReview) {
+		a.keybindResolver.ResetPending()
 	}
 	if a.dialogs == nil {
 		a.dialogs = &appDialogStack{}
@@ -200,10 +200,16 @@ func (a *App) popDialog(expected AppState) bool {
 	if a == nil {
 		return false
 	}
+	if expected == StateContextManager {
+		a.keybindResolver.ResetPending()
+	}
 	if a.dialogs != nil {
 		if top, ok := a.dialogs.topFrame(); ok {
 			if expected != top.state {
 				return false
+			}
+			if expected == StateDiffContext {
+				a.closeComposerDiffContext()
 			}
 			frame, _ := a.dialogs.popFrame()
 			a.state = frame.returnState
@@ -211,6 +217,9 @@ func (a *App) popDialog(expected AppState) bool {
 		}
 	}
 	if a.state == expected && isDialogState(expected) {
+		if expected == StateDiffContext {
+			a.closeComposerDiffContext()
+		}
 		a.state = StateChat
 		return true
 	}
@@ -218,6 +227,9 @@ func (a *App) popDialog(expected AppState) bool {
 }
 
 func (a *App) removeDialog(expected AppState) bool {
+	if a != nil && expected == StateContextManager {
+		a.keybindResolver.ResetPending()
+	}
 	if a == nil || a.dialogs == nil {
 		return a.popDialog(expected)
 	}
@@ -225,6 +237,9 @@ func (a *App) removeDialog(expected AppState) bool {
 		frame := a.dialogs.frames[i]
 		if frame.state != expected {
 			continue
+		}
+		if expected == StateDiffContext {
+			a.closeComposerDiffContext()
 		}
 		wasTop := i == len(a.dialogs.frames)-1
 		if i+1 < len(a.dialogs.frames) {
@@ -316,6 +331,18 @@ func (a *App) renderDialogState(state AppState, base string) string {
 		return a.planDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	case StateAskUser:
 		return a.questionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateContextManager:
+		return a.composerContextManagerOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateDiffContext:
+		return a.composerDiffContextOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateInputDelivery:
+		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, false)
+	case StateChangeReview:
+		return a.renderWorkspaceRestoreOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateSideQuestion:
+		return a.sideQuestionDialog.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
+	case StateInputQueue:
+		return a.inputDeliveryOverlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height, true)
 	case StateAgentPicker:
 		return a.agentPicker.Overlay(base, a.layout.overlayRect.Width, a.layout.overlayRect.Height)
 	default:
@@ -417,6 +444,23 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 			}
 		}
 		return true, nil
+	case StateContextManager:
+		return true, a.handleComposerContextManagerKey(msg)
+	case StateDiffContext:
+		return true, a.handleComposerDiffContextKey(msg)
+	case StateInputDelivery:
+		return true, a.handleInputDeliveryKey(msg)
+	case StateChangeReview:
+		if handled, cmd := a.handleWorkspaceRestoreKey(msg); handled {
+			return true, cmd
+		}
+		a.handleChangeReviewKey(msg)
+		return true, nil
+	case StateSideQuestion:
+		return true, a.handleSideQuestionKey(msg)
+	case StateInputQueue:
+		a.handleInputQueueKey(msg)
+		return true, nil
 	case StateAgentPicker:
 		threadID, selected, dismissed, cmd := a.agentPicker.HandleKey(msg)
 		if dismissed {
@@ -441,38 +485,7 @@ func (a *App) handleActiveDialogKey(msg tea.KeyPressMsg) (bool, tea.Cmd) {
 		}
 		return true, nil
 	case StateCommandPalette:
-		selected, dismissed := a.commandPalette.HandleKey(msg)
-		if dismissed {
-			a.popDialog(state)
-			if selected != "" {
-				if a.commandRegistry != nil {
-					command := a.commandRegistry.GetForContext(context.Background(), commands.EntrypointTUI, a.commandCapabilityContext(), selected)
-					if command != nil && strings.HasPrefix(command.Source, "skill:") {
-						before := a.captureComposerUndoEntry()
-						a.textarea.SetValue("/" + command.Name + " ")
-						a.reconcileComposerElements(before.Text, a.textarea.Value())
-						a.markComposerChanged()
-						a.recordComposerUndo(before)
-						a.textarea.CursorEnd()
-						a.syncInputModeFromText()
-						return true, nil
-					}
-				}
-				// Re-admit after a possibly stale palette snapshot before
-				// creating presentation provenance. Recent commits only after
-				// the matching local or engine-owned result succeeds.
-				if a.commandRegistry != nil {
-					if cmd := a.commandRegistry.GetForContext(context.Background(), commands.EntrypointTUI, a.commandCapabilityContext(), selected); cmd != nil && cmd.ValidateArgs(nil) == nil {
-						a.beginCommandPaletteSubmission(cmd.Name)
-					}
-				}
-				a.textarea.SetValue("/" + selected)
-				a.composerElements = nil
-				a.inputMode = InputCommand
-				return true, a.sendMessage()
-			}
-		}
-		return true, nil
+		return true, a.handleCommandPaletteKey(msg)
 	case StateBypassConfirm:
 		return true, a.handleBypassConfirmKey(msg)
 	default:
@@ -555,6 +568,12 @@ func (a *App) closeActiveDialog() (handled, continueInterrupt bool) {
 		a.mcpSettings.Close()
 	case StateTeams:
 		a.teamsPanel.Close()
+	case StateChangeReview:
+		a.dismissChangeReview()
+		return true, false
+	case StateSideQuestion:
+		a.dismissSideQuestion()
+		return true, false
 	case StateCommandPalette:
 		a.commandPalette.Close()
 	case StateAgentPicker:

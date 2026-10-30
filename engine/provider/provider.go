@@ -16,8 +16,12 @@ import (
 	openaischema "github.com/cloudwego/eino/schema/openai"
 	"google.golang.org/genai"
 
+	"github.com/abietic/yhc/engine/execution"
+	"github.com/abietic/yhc/engine/internal/providercost"
 	enginemessages "github.com/abietic/yhc/engine/messages"
 	"github.com/abietic/yhc/engine/provider/agenticdeepseek"
+	"github.com/abietic/yhc/engine/provider/agenticglm"
+	"github.com/abietic/yhc/engine/provider/agentickimi"
 )
 
 // Provider enumerates supported model providers.
@@ -25,6 +29,8 @@ type Provider string
 
 const (
 	ProviderAgenticDeepSeek Provider = "agenticdeepseek"
+	ProviderAgenticGLM      Provider = "agenticglm"
+	ProviderAgenticKimi     Provider = "agentickimi"
 	ProviderAgenticClaude   Provider = "agenticclaude"
 	ProviderAgenticGemini   Provider = "agenticgemini"
 	ProviderAgenticOpenAI   Provider = "agenticopenai"
@@ -41,7 +47,8 @@ type Config struct {
 	// ModelAliases maps user-facing names to provider model identifiers.
 	ModelAliases map[string]string
 
-	// Claude-specific
+	// Maximum output tokens for native Claude, GLM and Kimi clients; zero uses the
+	// adapter default. Other adapters currently do not consume this field.
 	MaxTokens int
 }
 
@@ -59,6 +66,10 @@ func newAgenticModel(ctx context.Context, cfg Config) (model.AgenticModel, error
 	switch cfg.Provider {
 	case ProviderAgenticDeepSeek:
 		return newAgenticDeepSeek(ctx, cfg)
+	case ProviderAgenticGLM:
+		return newAgenticGLM(ctx, cfg)
+	case ProviderAgenticKimi:
+		return agentickimi.New(ctx, &agentickimi.Config{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, Model: cfg.Model, MaxTokens: cfg.MaxTokens})
 	case ProviderAgenticClaude:
 		return newAgenticClaude(ctx, cfg)
 	case ProviderAgenticGemini:
@@ -70,8 +81,36 @@ func newAgenticModel(ctx context.Context, cfg Config) (model.AgenticModel, error
 	case ProviderAgenticQwen:
 		return newAgenticQwen(ctx, cfg)
 	default:
-		return nil, fmt.Errorf("unknown provider: %q (supported: agenticdeepseek, agenticclaude, agenticgemini, agenticopenai, agenticark, agenticqwen)", cfg.Provider)
+		return nil, fmt.Errorf("unknown provider: %q (supported: agenticdeepseek, agenticglm, agentickimi, agenticclaude, agenticgemini, agenticopenai, agenticark, agenticqwen)", cfg.Provider)
 	}
+}
+
+func newAgenticGLM(ctx context.Context, cfg Config) (model.AgenticModel, error) {
+	if cfg.APIKey == "" {
+		cfg.APIKey = os.Getenv("ZAI_API_KEY")
+	}
+	if cfg.APIKey == "" {
+		cfg.APIKey = os.Getenv("ZHIPUAI_API_KEY")
+	}
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("API key required for Agentic GLM. Set PROV_API_KEY, ZAI_API_KEY, or ZHIPUAI_API_KEY env var")
+	}
+	if cfg.Model == "" {
+		cfg.Model = agenticglm.ModelGLM53Flash
+	}
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = os.Getenv("ZAI_BASE_URL")
+	}
+	var maxTokens *int
+	if cfg.MaxTokens != 0 {
+		maxTokens = &cfg.MaxTokens
+	}
+	return agenticglm.New(ctx, &agenticglm.Config{
+		BaseURL:   cfg.BaseURL,
+		APIKey:    cfg.APIKey,
+		Model:     cfg.Model,
+		MaxTokens: maxTokens,
+	})
 }
 
 func newAgenticDeepSeek(ctx context.Context, cfg Config) (model.AgenticModel, error) {
@@ -82,15 +121,16 @@ func newAgenticDeepSeek(ctx context.Context, cfg Config) (model.AgenticModel, er
 		return nil, fmt.Errorf("API key required for Agentic DeepSeek. Set PROV_API_KEY or DEEPSEEK_API_KEY env var")
 	}
 	if cfg.Model == "" {
-		cfg.Model = "deepseek-v4-flash"
+		cfg.Model = agenticdeepseek.FlashModel
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = os.Getenv("DEEPSEEK_BASE_URL")
 	}
 	return agenticdeepseek.New(ctx, &agenticdeepseek.Config{
-		BaseURL: cfg.BaseURL,
-		APIKey:  cfg.APIKey,
-		Model:   cfg.Model,
+		BaseURL:                cfg.BaseURL,
+		APIKey:                 cfg.APIKey,
+		Model:                  cfg.Model,
+		OptimizeImageTransport: true,
 	})
 }
 
@@ -246,6 +286,7 @@ func (a *agenticChatModel) generateTrusted(
 	if err != nil {
 		return nil, err
 	}
+	observeResponseModel(ctx, out)
 	return agenticToMessage(out), nil
 }
 
@@ -271,17 +312,57 @@ func (a *agenticChatModel) streamTrusted(
 	if err != nil {
 		return nil, err
 	}
+	return convertAgenticStream(ctx, sr), nil
+}
+
+func convertAgenticStream(ctx context.Context, sr *schema.StreamReader[*schema.AgenticMessage]) *schema.StreamReader[*schema.Message] {
 	acc := newToolCallAccumulator()
 	return schema.StreamReaderWithConvert(sr, func(am *schema.AgenticMessage) (*schema.Message, error) {
 		if am == nil {
 			return nil, nil
 		}
+		observeResponseModel(ctx, am)
 		converted := acc.convertChunk(am)
 		if converted.Content == "" && converted.ReasoningContent == "" && len(converted.AssistantGenMultiContent) == 0 && len(converted.ToolCalls) == 0 && converted.ResponseMeta == nil {
 			return nil, nil
 		}
 		return converted, nil
-	}), nil
+	})
+}
+
+func (a *agenticChatModel) PrepareBudgetStream(ctx context.Context, input []*schema.Message, outputCap int, opts ...model.Option) (providercost.Stream, error) {
+	return a.prepareBudgetStreamTrusted(ctx, input, nil, outputCap, opts...)
+}
+
+func (a *agenticChatModel) prepareBudgetStreamTrusted(ctx context.Context, input []*schema.Message, proof *routeProof, outputCap int, opts ...model.Option) (providercost.Stream, error) {
+	preparer, ok := a.inner.(providercost.AgenticPreparer)
+	if !ok {
+		return nil, providercost.ErrUnsupported
+	}
+	agenticInput, err := a.prepareAgenticInput(input, proof)
+	if err != nil {
+		return nil, err
+	}
+	opts = normalizeAgenticOptions(opts)
+	if len(a.tools) > 0 {
+		opts = append(opts, model.WithTools(a.tools))
+	}
+	prepared, err := preparer.PrepareBudgetStream(ctx, agenticInput, outputCap, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &budgetChatStream{inner: prepared}, nil
+}
+
+type budgetChatStream struct{ inner providercost.AgenticStream }
+
+func (s *budgetChatStream) CostBound() providercost.Bound { return s.inner.CostBound() }
+func (s *budgetChatStream) Stream(ctx context.Context) (*schema.StreamReader[*schema.Message], error) {
+	sr, err := s.inner.Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return convertAgenticStream(ctx, sr), nil
 }
 
 func (a *agenticChatModel) prepareAgenticInput(
@@ -904,10 +985,20 @@ func agenticFinishReason(am *schema.AgenticMessage) string {
 		if ext, ok := meta.Extension.(*agenticdeepseek.ResponseMetaExtension); ok && ext != nil {
 			return ext.FinishReason
 		}
+		if ext, ok := meta.Extension.(*agenticglm.ResponseMetaExtension); ok && ext != nil {
+			return ext.FinishReason
+		}
+		if ext, ok := meta.Extension.(*agentickimi.ResponseMetaExtension); ok && ext != nil {
+			return ext.FinishReason
+		}
 	}
 	for _, value := range am.Extra {
 		switch ext := value.(type) {
 		case *agenticdeepseek.ResponseMetaExtension:
+			if ext != nil && ext.FinishReason != "" {
+				return ext.FinishReason
+			}
+		case *agenticglm.ResponseMetaExtension:
 			if ext != nil && ext.FinishReason != "" {
 				return ext.FinishReason
 			}
@@ -946,4 +1037,34 @@ func defaultArgs(s string) string {
 		return "{}"
 	}
 	return s
+}
+
+// observeResponseModel projects typed metadata only. Missing identities remain
+// unknown in accounting; requested aliases and response text are never evidence.
+func observeResponseModel(ctx context.Context, am *schema.AgenticMessage) {
+	if am == nil || am.ResponseMeta == nil {
+		return
+	}
+	meta := am.ResponseMeta
+	if receipt, ok := meta.Extension.(interface{ ProviderCacheWriteReceipt() (int, bool, string) }); ok {
+		if tokens, known, ttl := receipt.ProviderCacheWriteReceipt(); known {
+			execution.ObserveProviderCacheWrite(ctx, tokens, ttl)
+		}
+	}
+	var name string
+	switch ext := meta.Extension.(type) {
+	case *agenticdeepseek.ResponseMetaExtension:
+		if ext != nil {
+			name = ext.Model
+		}
+	case *agenticglm.ResponseMetaExtension:
+		if ext != nil {
+			name = ext.Model
+		}
+	case *agentickimi.ResponseMetaExtension:
+		if ext != nil {
+			name = ext.Model
+		}
+	}
+	execution.ObserveProviderResponseModel(ctx, name)
 }

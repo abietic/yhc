@@ -281,7 +281,9 @@ type Command struct {
 	// Usage shows the command syntax.
 	Usage string
 	// Source, SourceVersion, and Trust identify where command content came from.
-	Source        string
+	Source string
+	// SourcePath is the optional concrete source location for extension commands.
+	SourcePath    string
 	SourceVersion string
 	Trust         CommandTrustClass
 	// Category, DiscoveryTier and DisplayOrder own layered command discovery.
@@ -291,6 +293,8 @@ type Command struct {
 	PhaseScope    PhaseScope
 	// Args defines the argument schema for validation.
 	Args []ArgDef
+	// Completion is advisory metadata, independent of execution validation.
+	Completion []ArgumentCompletion
 	// Kind, Entrypoints, Availability, Dependency, SideEffect, ResultKind and
 	// Compatibility form the canonical discovery and dispatch contract.
 	Kind               CommandKind
@@ -299,6 +303,7 @@ type Command struct {
 	AvailabilityReason string
 	Dependency         string
 	SideEffect         SideEffectKind
+	ModelInvocation    ModelInvocationKind
 	ResultKind         ResultKind
 	ExecutionOwner     ExecutionOwner
 	Compatibility      CommandCompatibility
@@ -310,6 +315,9 @@ type Command struct {
 	// legacyExecute is adapted and cleared before a built-in enters the
 	// registry. It is not observable through registry snapshots.
 	legacyExecute legacyCommandExecutor
+	// definitionToken is an in-memory source snapshot used only by operation tokens.
+	definitionToken string
+	operationArgs   []ArgDef // presentation schema; Skill.Render retains dispatch validation
 }
 
 // ArgDef defines a single command argument for validation.
@@ -656,6 +664,7 @@ type Registry struct {
 	promptCommandCanonicals map[string]struct{}
 	promptGeneration        PromptCommandGenerationSnapshot
 	skillRegistry           *skills.SkillRegistry
+	completionDirectories   map[string]completionDirectoryCache
 }
 
 // NewRegistry creates a new empty command registry.
@@ -728,6 +737,7 @@ func (r *Registry) mustRegisterRemoved(removed *RemovedCommand) {
 }
 
 func (r *Registry) mustRegister(cmd *Command) {
+	cmd.Completion = builtinArgumentCompletion(cmd.Name)
 	if err := r.Register(cmd); err != nil {
 		panic("commands: invalid built-in registry: " + err.Error())
 	}
@@ -853,6 +863,8 @@ func cloneCommand(cmd *Command) *Command {
 	cloned := *cmd
 	cloned.Aliases = append([]string(nil), cmd.Aliases...)
 	cloned.Args = append([]ArgDef(nil), cmd.Args...)
+	cloned.operationArgs = append([]ArgDef(nil), cmd.operationArgs...)
+	cloned.Completion = cloneArgumentCompletions(cmd.Completion)
 	cloned.Compatibility.DeprecatedAliases = append(
 		[]string(nil),
 		cmd.Compatibility.DeprecatedAliases...,
@@ -943,7 +955,7 @@ func applyCommandContractDefaults(cmd *Command) error {
 			cmd.ExecutionOwner = ExecutionOwnerEngine
 		}
 	}
-	return nil
+	return applyOperationDefaults(cmd)
 }
 
 type commandDiscoveryMetadata struct {
@@ -965,28 +977,30 @@ var coreDiscoveryMetadata = map[string]commandDiscoveryMetadata{
 	"files":       {category: CommandCategoryWorkspace, tier: DiscoveryTierPrimary, order: 90, phase: PhaseScopeIdleOnly},
 	"agents":      {category: CommandCategoryAgents, tier: DiscoveryTierPrimary, order: 100, phase: PhaseScopeIdleOnly},
 
-	"clear":    {category: CommandCategorySession, tier: DiscoveryTierSecondary, order: 1010, phase: PhaseScopeIdleOnly},
-	"resume":   {category: CommandCategorySession, tier: DiscoveryTierSecondary, order: 1020, phase: PhaseScopeIdleOnly},
-	"fork":     {category: CommandCategorySession, tier: DiscoveryTierSecondary, order: 1030, phase: PhaseScopeIdleOnly},
-	"terminal": {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2010, phase: PhaseScopeIdleOnly},
-	"suspend":  {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2020, phase: PhaseScopeIdleOnly},
-	"quit":     {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2030, phase: PhaseScopeIdleOnly},
-	"version":  {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2040, phase: PhaseScopeIdleOnly},
-	"usage":    {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2050, phase: PhaseScopeIdleOnly},
-	"context":  {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2060, phase: PhaseScopeIdleOnly},
-	"config":   {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2070, phase: PhaseScopeIdleOnly},
-	"effort":   {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2080, phase: PhaseScopeIdleOnly},
-	"hooks":    {category: CommandCategorySafety, tier: DiscoveryTierSecondary, order: 3010, phase: PhaseScopeIdleOnly},
-	"doctor":   {category: CommandCategorySafety, tier: DiscoveryTierSecondary, order: 3020, phase: PhaseScopeIdleOnly},
-	"init":     {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4010, phase: PhaseScopeIdleOnly},
-	"memory":   {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4020, phase: PhaseScopeIdleOnly},
-	"add-dir":  {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4030, phase: PhaseScopeIdleOnly},
-	"tasks":    {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5010, phase: PhaseScopeIdleOnly},
-	"agent":    {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5020, phase: PhaseScopeAny},
-	"team":     {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5030, phase: PhaseScopeAny},
-	"queue":    {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5040, phase: PhaseScopeAny},
-	"skills":   {category: CommandCategoryExtensions, tier: DiscoveryTierSecondary, order: 6010, phase: PhaseScopeIdleOnly},
-	"mcp":      {category: CommandCategoryExtensions, tier: DiscoveryTierSecondary, order: 6020, phase: PhaseScopeIdleOnly},
+	"clear":       {category: CommandCategorySession, tier: DiscoveryTierSecondary, order: 1010, phase: PhaseScopeIdleOnly},
+	"resume":      {category: CommandCategorySession, tier: DiscoveryTierSecondary, order: 1020, phase: PhaseScopeIdleOnly},
+	"fork":        {category: CommandCategorySession, tier: DiscoveryTierSecondary, order: 1030, phase: PhaseScopeIdleOnly},
+	"terminal":    {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2010, phase: PhaseScopeIdleOnly},
+	"suspend":     {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2020, phase: PhaseScopeIdleOnly},
+	"quit":        {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2030, phase: PhaseScopeIdleOnly},
+	"version":     {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2040, phase: PhaseScopeIdleOnly},
+	"usage":       {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2050, phase: PhaseScopeIdleOnly},
+	"context":     {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2060, phase: PhaseScopeIdleOnly},
+	"config":      {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2070, phase: PhaseScopeIdleOnly},
+	"settings":    {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2075, phase: PhaseScopeIdleOnly},
+	"effort":      {category: CommandCategoryRuntime, tier: DiscoveryTierSecondary, order: 2080, phase: PhaseScopeIdleOnly},
+	"hooks":       {category: CommandCategorySafety, tier: DiscoveryTierSecondary, order: 3010, phase: PhaseScopeIdleOnly},
+	"doctor":      {category: CommandCategorySafety, tier: DiscoveryTierSecondary, order: 3020, phase: PhaseScopeIdleOnly},
+	"init":        {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4010, phase: PhaseScopeIdleOnly},
+	"memory":      {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4020, phase: PhaseScopeIdleOnly},
+	"add-dir":     {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4030, phase: PhaseScopeIdleOnly},
+	"attach-diff": {category: CommandCategoryWorkspace, tier: DiscoveryTierSecondary, order: 4040, phase: PhaseScopeIdleOnly},
+	"tasks":       {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5010, phase: PhaseScopeIdleOnly},
+	"agent":       {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5020, phase: PhaseScopeAny},
+	"team":        {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5030, phase: PhaseScopeAny},
+	"queue":       {category: CommandCategoryAgents, tier: DiscoveryTierSecondary, order: 5040, phase: PhaseScopeAny},
+	"skills":      {category: CommandCategoryExtensions, tier: DiscoveryTierSecondary, order: 6010, phase: PhaseScopeIdleOnly},
+	"mcp":         {category: CommandCategoryExtensions, tier: DiscoveryTierSecondary, order: 6020, phase: PhaseScopeIdleOnly},
 	"reload-plugins": {
 		category: CommandCategoryExtensions,
 		tier:     DiscoveryTierSecondary,
@@ -2038,6 +2052,19 @@ Examples:
 	})
 
 	r.mustRegister(&Command{
+		Name:           "settings",
+		Description:    "Inspect or persist shared user/project settings for new sessions",
+		Usage:          "/settings [user|project [<key> <JSON value>]]",
+		DetailedHelp:   "Uses the shared settings service and yhc config. Values are JSON; null removes a scoped override. Changes apply to new sessions. /config still shows the current effective runtime configuration.",
+		Kind:           CommandKindAdministration,
+		Entrypoints:    EntrypointsTUI,
+		SideEffect:     SideEffectWorkspace,
+		ResultKind:     ResultKindText,
+		ExecutionOwner: ExecutionOwnerEntrypoint,
+		Execute:        executeSettings,
+	})
+
+	r.mustRegister(&Command{
 		Name:        "diff",
 		Description: "Show git diff summary for uncommitted changes",
 		Usage:       "/diff [full|staged|stat]",
@@ -2058,6 +2085,20 @@ Examples:
 		},
 		ExecutionOwner: ExecutionOwnerEngine,
 		legacyExecute:  executeDiff,
+	})
+
+	r.mustRegister(&Command{
+		Name:           "attach-diff",
+		Description:    "Select a captured Git file or hunk as draft context",
+		Usage:          "/attach-diff [all|staged|unstaged]",
+		DetailedHelp:   "Opens the TUI diff context selector. Choose a file or hunk without staging, applying, or reverting changes. The captured text is attached only after explicit selection. Also available with d in the Alt+C context manager.",
+		Kind:           CommandKindUIAction,
+		Entrypoints:    EntrypointsTUI,
+		SideEffect:     SideEffectProcessLocal,
+		ResultKind:     ResultKindUI,
+		ExecutionOwner: ExecutionOwnerEntrypoint,
+		Args:           []ArgDef{{Name: "source", Type: "string", Description: "all, staged, or unstaged", Default: "all"}},
+		Execute:        executeAttachDiff,
 	})
 
 	r.mustRegister(&Command{
@@ -2277,6 +2318,8 @@ Use quoted rule arguments so parsing is deterministic:
 	})
 
 	registerAdditionalCommands(r)
+	registerSideQuestionCommand(r)
+	registerWorkspaceHistoryCommands(r)
 	registerRemovedDefaults(r)
 }
 
@@ -2301,7 +2344,6 @@ func registerRemovedDefaults(r *Registry) {
 		{Name: "output-style", Reason: "output style belongs to project configuration", Replacement: "project config; /config reports effective state", RemovedIn: "P21.0"},
 		{Name: "session", Aliases: []string{"remote"}, Reason: "legacy remote session shortcuts are retired", Replacement: "/sessions", RemovedIn: "P21.0"},
 		{Name: "stats", Aliases: []string{"cost"}, Reason: "usage aliases expired", Replacement: "/usage", RemovedIn: "P21.0"},
-		{Name: "settings", Reason: "configuration alias expired", Replacement: "/config", RemovedIn: "P21.0"},
 		{Name: "allowed-tools", Reason: "permissions alias expired", Replacement: "/permissions", RemovedIn: "P21.0"},
 		{Name: "bashes", Reason: "tasks alias expired", Replacement: "/tasks", RemovedIn: "P21.0"},
 		{Name: "summary", Reason: "conversation summaries are ordinary requests, not a default workflow", Replacement: "ask for a summary normally; /compact only when context compaction is desired", RemovedIn: "P21.2"},

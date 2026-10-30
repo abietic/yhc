@@ -423,15 +423,15 @@ func (defaultPromptCapabilityResolver) ResolvePromptCapability(
 	providerID provider.Provider,
 	modelID string,
 ) PromptCapabilityDecision {
-	const source = "default-model-registry-v1"
-	entry := modelcaps.DefaultRegistry().Lookup(modelID)
-	if entry == nil {
+	const source = "exact-model-capabilities-v1"
+	capability, known := modelcaps.LookupExactCapabilities(modelID)
+	if !known {
 		return PromptCapabilityDecision{
 			Status: PromptCapabilityUnknown,
 			Source: source,
 		}
 	}
-	entryProvider, err := normalizeRegistryProvider(entry.Provider)
+	entryProvider, err := provider.NormalizeProvider(provider.Provider(modelcaps.DetectProvider(capability.Name)))
 	if err != nil || entryProvider != providerID {
 		return PromptCapabilityDecision{
 			Status: PromptCapabilityUnknown,
@@ -439,7 +439,7 @@ func (defaultPromptCapabilityResolver) ResolvePromptCapability(
 		}
 	}
 	status := PromptCapabilityUnsupported
-	if entry.SupportsMedia {
+	if capability.SupportsImages {
 		status = PromptCapabilitySupported
 	}
 	return PromptCapabilityDecision{Status: status, Source: source}
@@ -485,13 +485,6 @@ func selectedPromptCapabilityDecision(
 		resolved.Provider,
 		resolved.Model,
 	)
-}
-
-func normalizeRegistryProvider(raw string) (provider.Provider, error) {
-	if strings.EqualFold(strings.TrimSpace(raw), "ByteDance") {
-		return provider.ProviderAgenticArk, nil
-	}
-	return provider.NormalizeProvider(provider.Provider(raw))
 }
 
 // ProviderMediaPreparer is the sole lowering boundary from opaque MediaRef

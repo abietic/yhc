@@ -1,0 +1,74 @@
+== 40x16 choice ==
+  ────────────────────────────────────
+   Delivery: next turn
+     Steer now
+   > Next turn
+   Wait until the current task ends.
+   Tab/Arrows choose | Enter submit
+   Esc keep draft
+== 40x16 queue ==
+  ────────────────────────────────────
+   Input deliveries
+   > queued-1 [next turn / pending]
+     界面 \u001b[31munsafe control
+   Up/Down | e edit | d withdraw
+   Pending only | Esc close
+== 80x24 choice ==
+  ────────────────────────────────────────────────────────────────────────────
+   Delivery: next turn
+     Steer now
+   > Next turn
+   Wait until the current task ends.
+   Tab/Arrows choose | Enter submit
+   Esc keep draft
+== 80x24 queue ==
+  ────────────────────────────────────────────────────────────────────────────
+   Input deliveries
+   > queued-1 [next turn / pending]
+     界面 \u001b[31munsafe control
+   Up/Down | e edit | d withdraw
+   Pending only | Esc close
+== 120x28 choice ==
+               ──────────────────────────────────────────────────────────────────────────────────────────
+                Delivery: next turn
+                  Steer now
+                > Next turn
+                Wait until the current task ends.
+                Tab/Arrows choose | Enter submit
+                Esc keep draft
+== 120x28 queue ==
+               ──────────────────────────────────────────────────────────────────────────────────────────
+                Input deliveries
+                > queued-1 [next turn / pending]
+                  界面 \u001b[31munsafe control
+                Up/Down | e edit | d withdraw
+                Pending only | Esc close
+== 180x32 choice ==
+                                             ──────────────────────────────────────────────────────────────────────────────────────────
+                                              Delivery: next turn
+                                                Steer now
+                                              > Next turn
+                                              Wait until the current task ends.
+                                              Tab/Arrows choose | Enter submit
+                                              Esc keep draft
+== 180x32 queue ==
+                                             ──────────────────────────────────────────────────────────────────────────────────────────
+                                              Input deliveries
+                                              > queued-1 [next turn / pending]
+                                                界面 \u001b[31munsafe control
+                                              Up/Down | e edit | d withdraw
+                                              Pending only | Esc close
+== 40x7 choice ==
+  ────────────────────────────────────
+   Delivery: next turn
+     Steer now
+   > Next turn
+   Tab/Arrows choose | Enter submit
+   Esc keep draft
+== 40x7 queue ==
+  ────────────────────────────────────
+   Input deliveries
+   > queued-1 [next turn / pending]
+     界面 \u001b[31munsafe control
+   Up/Down | e edit | d withdraw
+   Pending only | Esc close

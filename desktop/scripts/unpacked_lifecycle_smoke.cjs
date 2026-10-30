@@ -4,6 +4,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { acceptSharedSettings } = require('./shared_settings_acceptance.cjs');
 
 const MAX_DIAGNOSTIC_CHARS = 32 << 10;
 const DEVTOOLS_TIMEOUT_MS = 30_000;
@@ -1461,6 +1462,7 @@ function validatePlatformOptions(
     crashBackend = false,
     disableSandbox = false,
     reopenWindow = false,
+    sharedSettings = false,
   } = {},
 ) {
   const normalized = {
@@ -1468,8 +1470,15 @@ function validatePlatformOptions(
     crashBackend: crashBackend === true,
     disableSandbox: disableSandbox === true,
     reopenWindow: reopenWindow === true,
+    sharedSettings: sharedSettings === true,
   };
   const crashModes = Number(normalized.crashBackend) + Number(normalized.crashActiveTurn);
+  if (normalized.sharedSettings && (crashModes > 0 || normalized.reopenWindow)) {
+    throw new Error('shared settings and lifecycle fault modes are mutually exclusive');
+  }
+  if (normalized.sharedSettings && platform !== 'darwin') {
+    throw new Error('--shared-settings is macOS-only');
+  }
   if (crashModes > 1 || (crashModes === 1 && normalized.reopenWindow)) {
     throw new Error('backend crash modes and window restoration smoke are mutually exclusive');
   }
@@ -1495,12 +1504,28 @@ function validatePlatformOptions(
   return normalized;
 }
 
+function buildUnpackedAppArguments(profilePath, {
+  platform = process.platform,
+  disableSandbox = false,
+} = {}) {
+  // Fixture cookie encryption must not use the user's login keychain.
+  return [
+    ...(disableSandbox ? ['--no-sandbox'] : []),
+    ...(platform === 'darwin' ? ['--use-mock-keychain'] : []),
+    '--disable-gpu',
+    '--remote-debugging-address=127.0.0.1',
+    '--remote-debugging-port=0',
+    `--user-data-dir=${profilePath}`,
+  ];
+}
+
 function parseArguments(argv) {
   let appPath;
   let crashActiveTurn = false;
   let crashBackend = false;
   let disableSandbox = false;
   let reopenWindow = false;
+  let sharedSettings = false;
   let invalid = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -1520,16 +1545,19 @@ function parseArguments(argv) {
       disableSandbox = true;
     } else if (argument === '--reopen-window' && !reopenWindow) {
       reopenWindow = true;
+    } else if (argument === '--shared-settings' && !sharedSettings) {
+      sharedSettings = true;
     } else {
       invalid = true;
       break;
     }
   }
   const crashModes = Number(crashBackend) + Number(crashActiveTurn);
-  if (invalid || !appPath || crashModes > 1 || (crashModes === 1 && reopenWindow)) {
+  if (invalid || !appPath || crashModes > 1 || (crashModes === 1 && reopenWindow) ||
+      (sharedSettings && (crashModes > 0 || reopenWindow))) {
     throw new Error(
       'usage: unpacked_lifecycle_smoke.cjs --app PATH ' +
-        '[--crash-backend|--crash-active-turn] [--no-sandbox] [--reopen-window]',
+        '[--crash-backend|--crash-active-turn|--shared-settings] [--no-sandbox] [--reopen-window]',
     );
   }
   return {
@@ -1538,6 +1566,7 @@ function parseArguments(argv) {
     crashBackend,
     disableSandbox,
     reopenWindow,
+    sharedSettings,
   };
 }
 
@@ -1712,6 +1741,7 @@ async function runSmoke(
     crashBackend = false,
     disableSandbox = false,
     reopenWindow = false,
+    sharedSettings = false,
   } = {},
 ) {
   let layout = resolveUnpackedLayout(appCandidate);
@@ -1720,6 +1750,7 @@ async function runSmoke(
     crashBackend,
     disableSandbox,
     reopenWindow,
+    sharedSettings,
   });
   const appPath = requireExecutable(layout.appPath, 'unpacked Desktop application', {
     platform: layout.platform,
@@ -1770,12 +1801,15 @@ async function runSmoke(
   let secondRootIdentity;
   let failure;
   let passed = false;
+  let settingsProof;
   try {
-    if (options.crashActiveTurn) {
+    if (options.crashActiveTurn || options.sharedSettings) {
       const workspaceCandidate = path.join(temporaryRoot, 'workspace');
       fs.mkdirSync(workspaceCandidate, { recursive: true, mode: 0o700 });
       fs.chmodSync(workspaceCandidate, 0o700);
       activeTurnWorkspace = fs.realpathSync(workspaceCandidate);
+    }
+    if (options.crashActiveTurn) {
       activeTurnProvider = await startActiveTurnProvider();
       environment = activeTurnFixtureEnvironment(environment, activeTurnProvider.baseURL);
       activeTurnSessionID = await seedActiveTurnSession({
@@ -1785,13 +1819,10 @@ async function runSmoke(
         workspace: activeTurnWorkspace,
       });
     }
-    const appArguments = [
-      ...(options.disableSandbox ? ['--no-sandbox'] : []),
-      '--disable-gpu',
-      '--remote-debugging-address=127.0.0.1',
-      '--remote-debugging-port=0',
-      `--user-data-dir=${path.join(temporaryRoot, 'profile')}`,
-    ];
+    const appArguments = buildUnpackedAppArguments(path.join(temporaryRoot, 'profile'), {
+      platform: layout.platform,
+      disableSandbox: options.disableSandbox,
+    });
     const activePortPath = path.join(temporaryRoot, 'profile', 'DevToolsActivePort');
     const launchCommand = layout.launcher === 'xvfb' ? xvfbRun : appPath;
     const launchArguments = layout.launcher === 'xvfb'
@@ -1806,7 +1837,7 @@ async function runSmoke(
       ]
       : appArguments;
     child = spawn(launchCommand, launchArguments, {
-      ...(options.crashActiveTurn ? { cwd: activeTurnWorkspace } : {}),
+      ...(activeTurnWorkspace ? { cwd: activeTurnWorkspace } : {}),
       detached: layout.platform !== 'win32',
       env: environment,
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -1872,6 +1903,28 @@ async function runSmoke(
       (layout.platform === 'darwin' && backend.pgid !== child.pid)
     ) {
       throw new Error('packaged backend process identity did not match');
+    }
+    if (options.sharedSettings) {
+      settingsProof = await acceptSharedSettings({
+        evaluate: (expression) => evaluate(connection, renderer.sessionId, expression),
+        poll,
+        reload: async () => {
+          await connection.send('Page.reload', {}, renderer.sessionId);
+          await poll(
+            () => evaluate(connection, renderer.sessionId,
+              'globalThis.__yhcSettingsBeforeReload === undefined'),
+            RENDERER_TIMEOUT_MS, 'fresh packaged settings renderer',
+          );
+          const refreshed = await waitForRendererBootstrap(connection, renderer.sessionId);
+          if (!rendererContractMatches(refreshed, expectedRendererURL) ||
+              refreshed.backendPID !== backend.pid || !originalProcessAlive(backend, readBackendIdentity)) {
+            throw new Error('shared settings reload changed the packaged backend');
+          }
+        },
+        backendPath: expectedBackend,
+        environment,
+        workspace: activeTurnWorkspace,
+      });
     }
     const crashRequested = options.crashBackend || options.crashActiveTurn;
     if (crashRequested) {
@@ -2097,6 +2150,7 @@ async function runSmoke(
       crash_containment: crashRequested ? 'pass' : 'not_run',
       active_turn_crash: options.crashActiveTurn ? 'pass' : 'not_run',
       window_reopen: options.reopenWindow ? 'pass' : 'not_run',
+      shared_settings: settingsProof || 'not_run',
       crash_cleanup: crashRequested ? crashCleanup : 'not_run',
       no_restart_observation_ms: crashRequested ? NO_RESTART_OBSERVATION_MS : 0,
     })}\n`);
@@ -2175,6 +2229,7 @@ async function main() {
     crashBackend: input.crashBackend,
     disableSandbox: input.disableSandbox,
     reopenWindow: input.reopenWindow,
+    sharedSettings: input.sharedSettings,
   });
 }
 
@@ -2194,6 +2249,7 @@ module.exports = {
   activeTurnProjectionMatches,
   activeTurnFixtureEnvironment,
   appendBounded,
+  buildUnpackedAppArguments,
   closePackagedDesktop,
   combineSmokeFailure,
   crashContainmentMatches,

@@ -20,20 +20,24 @@ const (
 // threadComposerElement owns only a typed placeholder and its rune range.
 // Image bytes live once in App.draftMedia and are addressed by ID.
 type threadComposerElement struct {
-	ID       string
-	Kind     string
-	Label    string
-	Name     string
-	Value    string
-	MIMEType string
-	Data     string
-	Start    int
-	End      int
+	ID         string
+	Kind       string
+	Label      string
+	Name       string
+	Value      string
+	MIMEType   string
+	Data       string
+	StartLine  int
+	EndLine    int
+	TotalLines int
+	Start      int
+	End        int
 }
 
 // threadQueuedInput is a non-dispatchable projection of an engine-owned
 // pending input. It never carries prompt media bytes, paths, refs, or IDs.
 type threadQueuedInput struct {
+	Delivery      engine.PromptDeliveryMode
 	ID            string
 	Content       string
 	Parts         []engine.QueuedPromptPart
@@ -328,6 +332,17 @@ func (a *App) switchThreadView(threadID string, mode engine.ThreadAttachmentMode
 		return err
 	}
 	previousThreadID := a.activeThreadViewID()
+	if previousThreadID != normalizeThreadViewID(threadID) {
+		a.dismissChangeReview()
+		a.dismissSideQuestion()
+		a.removeDialog(StateDiffContext)
+		a.removeDialog(StateInputDelivery)
+		a.removeDialog(StateInputQueue)
+		a.removeDialog(StateContextManager)
+	}
+	if previousThreadID != normalizeThreadViewID(threadID) && a.state == StateExpand && a.expandConversation {
+		a.leaveExpandView()
+	}
 	a.cancelHistorySearch()
 	a.captureActiveThreadView()
 	view, err := a.threadViews.activate(threadID, mode)

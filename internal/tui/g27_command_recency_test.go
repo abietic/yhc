@@ -37,6 +37,9 @@ func selectG27PaletteCommand(t *testing.T, app *App, name string) tea.Cmd {
 	if !handled {
 		t.Fatalf("palette selection %q was not handled", name)
 	}
+	if app.commandPalette.form != nil {
+		_, cmd = app.handleActiveDialogKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
 	return cmd
 }
 

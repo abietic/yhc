@@ -71,11 +71,11 @@ func (g *codexModelSummaryGenerator) Generate(ctx context.Context, prompt string
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := ownedprocess.Run(ctx, cmd); err != nil {
-		detail := strings.TrimSpace(stderr.String())
+		detail := codexFailureDetail(stdout.Bytes(), stderr.String())
 		if detail == "" {
 			return "", fmt.Errorf("codex exec failed: %w", err)
 		}
-		return "", fmt.Errorf("codex exec failed: %s", sanitizeSummaryError(detail))
+		return "", fmt.Errorf("codex exec failed: %s: %w", sanitizeSummaryError(detail), err)
 	}
 
 	message, err := parseCodexAgentMessage(stdout.Bytes())
@@ -108,11 +108,53 @@ func buildCodexSummaryPrompt(prompt string) string {
 }
 
 type codexExecEvent struct {
-	Type string `json:"type"`
-	Item struct {
+	Type    string          `json:"type"`
+	Message string          `json:"message"`
+	Error   json.RawMessage `json:"error"`
+	Item    struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"item"`
+}
+
+func (e codexExecEvent) failure() string {
+	if e.Type != "turn.failed" && e.Type != "error" {
+		return ""
+	}
+	var detail struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(e.Error, &detail) == nil && detail.Message != "" {
+		return detail.Message
+	}
+	var message string
+	if json.Unmarshal(e.Error, &message) == nil {
+		return message
+	}
+	return e.Message
+}
+
+func codexFailureDetail(stdout []byte, stderr string) string {
+	scanner := bufio.NewScanner(bytes.NewReader(stdout))
+	scanner.Buffer(make([]byte, 64*1024), maxModelSummaryBytes*8)
+	var failure string
+	for scanner.Scan() {
+		var event codexExecEvent
+		if json.Unmarshal(scanner.Bytes(), &event) == nil {
+			if detail := event.failure(); detail != "" {
+				failure = detail
+			}
+		}
+	}
+	if failure != "" {
+		return sanitizeSummaryError(failure)
+	}
+	// Startup warnings can be large; prefer the bounded, redacted terminal tail.
+	detail := strings.TrimSpace(sanitizeModelText(stderr))
+	if len(detail) > 512 {
+		detail = "..." + detail[len(detail)-509:]
+	}
+	return detail
 }
 
 func parseCodexAgentMessage(data []byte) (string, error) {
@@ -129,6 +171,9 @@ func parseCodexAgentMessage(data []byte) (string, error) {
 		var event codexExecEvent
 		if err := json.Unmarshal(line, &event); err != nil {
 			return "", fmt.Errorf("parse Codex JSON event: %w", err)
+		}
+		if detail := event.failure(); detail != "" {
+			return "", fmt.Errorf("codex turn failed: %s", sanitizeSummaryError(detail))
 		}
 		if event.Type == "item.completed" && event.Item.Type == "agent_message" && strings.TrimSpace(event.Item.Text) != "" {
 			message = event.Item.Text

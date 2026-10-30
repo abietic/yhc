@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -154,9 +155,13 @@ func runCanonicalToolRound(
 				toolCtx = tools.WithProgressFn(
 					toolCtx,
 					func(event tools.ToolProgressEvent) {
+						// Tool progress can contain external bytes or a split UTF-8 rune.
+						// Normalize this display text once for both outward projections;
+						// identities, assistant deltas and tool input retain their contracts.
+						content := strings.ToValidUTF8(event.Content, "�")
 						projection, projectionErr := buildCanonicalToolProgressProjection(
 							toolCall.ID,
-							event.Content,
+							content,
 						)
 						if projectionErr != nil {
 							projectionErrMu.Lock()
@@ -172,7 +177,7 @@ func runCanonicalToolRound(
 							ToolProgress: &ToolProgressEvent{
 								ToolName:  event.ToolName,
 								ToolUseID: event.ToolUseID,
-								Content:   event.Content,
+								Content:   content,
 								IsFinal:   event.IsFinal,
 							},
 						})
@@ -239,6 +244,7 @@ func runCanonicalToolRound(
 		)
 	}
 
+	var usageErr error
 	for index, planned := range schedule.Calls {
 		toolResult := completed[index]
 		if toolResult == nil || toolResult.ToolCallID != planned.CallID {
@@ -258,6 +264,9 @@ func runCanonicalToolRound(
 		outcomesMu.Unlock()
 		if outcome == nil {
 			outcome = canonicalOutcomeFromExecutionResult(toolResult)
+		}
+		if outcome.usageErr != nil {
+			usageErr = errors.Join(usageErr, outcome.usageErr)
 		}
 		result.outcomes = append(result.outcomes, toolRoundOutcome{
 			CallID:  planned.CallID,
@@ -300,7 +309,10 @@ func runCanonicalToolRound(
 		return canonicalToolRoundResult{}, err
 	}
 	result.decision = decision
-	return result, nil
+	// Publish every committed result before terminating so Session checkpoints
+	// remain paired and resumable. A paid tool's accounting failure must not
+	// become an ordinary recoverable error followed by another model request.
+	return result, usageErr
 }
 
 func canonicalToolInterruptBehavior(

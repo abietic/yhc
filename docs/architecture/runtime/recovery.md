@@ -83,6 +83,11 @@ probe.
 6. Any persistence, identity, preparation, capability, cancellation, stale
    route, or exhaustion failure terminates with a bounded redacted result.
 
+A terminal media-recovery diagnostic uses a separate assistant-message identity
+from any partial provider text already displayed. The partial display remains
+visible, but pending output from the failed attempt is excluded from conversation
+checkpoints; the bounded diagnostic and earlier committed work remain durable.
+
 The sequence is bounded to `1 + 1 + 1` provider calls: original, selected-route
 recovery, and one eligible fallback. Generic overload fallback is disabled
 inside this sequence so it cannot bypass those counters or reuse admission

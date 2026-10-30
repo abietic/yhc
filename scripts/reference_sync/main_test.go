@@ -177,11 +177,22 @@ func TestRunSyncContextCancellationDuringPostUpdateSummaryPersistsFailureAndRele
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Git preparation and the first summary are not part of the cancellation
+	// oracle. Bound the whole fixture by the runner budget, with time left for
+	// owned-process cleanup, rather than requiring all setup to finish in 10s.
+	testCtx := t.Context()
+	if deadline, ok := t.Deadline(); ok {
+		var deadlineCancel context.CancelFunc
+		cleanupHeadroom := min(5*time.Second, max(0, time.Until(deadline)/10))
+		testCtx, deadlineCancel = context.WithDeadline(testCtx, deadline.Add(-cleanupHeadroom))
+		defer deadlineCancel()
+	}
+	ctx, cancel := context.WithCancel(testCtx)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
+		defer close(done)
 		done <- runSyncContext(
 			ctx,
 			projectDir,
@@ -196,24 +207,57 @@ func TestRunSyncContextCancellationDuringPostUpdateSummaryPersistsFailureAndRele
 			&stderr,
 		)
 	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 
-	deadline := time.NewTimer(10 * time.Second)
 	ticker := time.NewTicker(10 * time.Millisecond)
-	defer deadline.Stop()
 	defer ticker.Stop()
 	startedPath := filepath.Join(fakeBin, "post-update-started")
+	var startupDeadline *time.Timer
+	var startupTimeout <-chan time.Time
+	defer func() {
+		if startupDeadline != nil {
+			startupDeadline.Stop()
+		}
+	}()
 waitForPostUpdate:
 	for {
 		select {
 		case code := <-done:
 			t.Fatalf("runSyncContext() = %d before post-update subagent started; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
-		case <-deadline.C:
+		case <-testCtx.Done():
 			cancel()
 			<-done
-			t.Fatal("post-update subagent did not start before the timeout")
+			t.Fatalf("fixture runner budget expired before post-update startup: %v", testCtx.Err())
+		case <-startupTimeout:
+			// A delayed observer can see both the marker and timer ready. The
+			// marker, not polling latency, decides whether cancellation is safe.
+			if _, err := os.Stat(startedPath); err == nil {
+				break waitForPostUpdate
+			}
+			cancel()
+			<-done
+			t.Fatal("post-update subagent did not start within 10s of the persisted update")
 		case <-ticker.C:
 			if _, err := os.Stat(startedPath); err == nil {
 				break waitForPostUpdate
+			} else if !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("observe post-update start: %v", err)
+			}
+			if startupDeadline == nil {
+				// Updates are atomically renamed only after Git preparation, the
+				// first summary and fast-forward have completed. Start the local
+				// missing-marker watchdog at this actual stage boundary.
+				updates, err := filepath.Glob(filepath.Join(memoryRoot, "updates", "*.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(updates) > 0 {
+					startupDeadline = time.NewTimer(10 * time.Second)
+					startupTimeout = startupDeadline.C
+				}
 			}
 		}
 	}

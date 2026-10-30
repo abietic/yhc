@@ -227,6 +227,7 @@ func TestResolveAPIKeyPrecedenceAndProviderDetection(t *testing.T) {
 		"o4-mini":       "openai",
 		"gemini-pro":    "google",
 		"deepseek-chat": "deepseek",
+		"glm-5.3-flash": "glm",
 		"unknown":       "anthropic",
 	}
 	for model, provider := range cases {
@@ -246,6 +247,7 @@ func TestResolveModelAPIKeyProviderEnvAndStoreFallback(t *testing.T) {
 		{"gpt-4o", "OPENAI_API_KEY", "openai-env"},
 		{"gemini-pro", "GOOGLE_API_KEY", "google-env"},
 		{"deepseek-chat", "DEEPSEEK_API_KEY", "deepseek-env"},
+		{"glm-5.3-flash", "ZAI_API_KEY", "glm-env"},
 		{"custom-model", "ANTHROPIC_API_KEY", "anthropic-env"},
 	}
 	for _, tc := range envCases {
@@ -266,6 +268,7 @@ func TestResolveModelAPIKeyProviderEnvAndStoreFallback(t *testing.T) {
 		"openai":   "openai-stored",
 		"google":   "google-stored",
 		"deepseek": "deepseek-stored",
+		"glm":      "glm-stored",
 	} {
 		if err := store.Set(&Credential{Provider: provider, Key: key}); err != nil {
 			t.Fatal(err)

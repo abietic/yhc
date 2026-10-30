@@ -41,6 +41,11 @@ func verify(
 		return Evidence{}, errors.New("invalid verify level")
 	}
 	if options.Level == VerifyFocused {
+		if budgeted, ok := runner.(testBudgetTargetRunner); ok {
+			if timeout, reason := budgeted.TestBudget(); timeout != 0 || reason != "" {
+				return Evidence{}, errors.New("explicit test budgets require merge verification")
+			}
+		}
 		return runTargetSequence(
 			ctx,
 			root,
@@ -81,6 +86,12 @@ func verifyMerge(
 	}
 	if !targetsSatisfied(current, string(VerifyFocused), focusedTargets(plan)) {
 		return current, errors.New("merge verification requires current focused evidence")
+	}
+	if budgeted, ok := runner.(testBudgetTargetRunner); ok {
+		timeout, reason := budgeted.TestBudget()
+		if err := validateAttemptBudget(plan, current, timeout, reason); err != nil {
+			return current, err
+		}
 	}
 
 	merge := mergeTargets(plan)
@@ -244,6 +255,8 @@ func gateFromRunResult(target string, level VerifyLevel, result RunResult) GateE
 		DurationMillis:   result.DurationMillis,
 		FailureLogPath:   result.FailureLogPath,
 		FirstFailingSeed: result.FirstFailingSeed,
+		TimeoutMillis:    result.TimeoutMillis,
+		BudgetReason:     result.BudgetReason,
 	}
 }
 

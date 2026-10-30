@@ -18,11 +18,11 @@
         "messages": [
           {
             "role": "user",
-            "content": "old context old context old context old context old context old context old context old context <...len=24000,digest=3bca2d37d82228f2...>old context old context old context old context old context old context old context old context "
+            "content": "original requirements"
           },
           {
             "role": "assistant",
-            "content": "older answer"
+            "content": "old investigation one old investigation one old investigation one old investigation one old inve<...len=45520,digest=6ac8afbf761c3c3b...>igation four old investigation four old investigation four old investigation four \n\nolder answer"
           },
           {
             "role": "user",
@@ -35,15 +35,15 @@
       "kind": "state_boundary",
       "state_boundary": {
         "name": "before_model_request",
-        "message_digest": "4a493f25b02961a6",
+        "message_digest": "6f978c57a719f8a6",
         "messages": [
           {
             "role": "user",
-            "content": "old context old context old context old context old context old context old context old context <...len=24000,digest=3bca2d37d82228f2...>old context old context old context old context old context old context old context old context "
+            "content": "original requirements"
           },
           {
             "role": "assistant",
-            "content": "older answer"
+            "content": "old investigation one old investigation one old investigation one old investigation one old inve<...len=45520,digest=6ac8afbf761c3c3b...>igation four old investigation four old investigation four old investigation four \n\nolder answer"
           },
           {
             "role": "user",
@@ -99,8 +99,12 @@
         "messages": [
           {
             "role": "user",
-            "content": "[system] Earlier context was collapsed after a prompt-too-long error.\nCollapsed context:\n- user:<...len=261,digest=03ccf2d59f46b682...>ext old context old context old context old conte...\nContinue from the preserved recent context.",
+            "content": "[system] Earlier context was collapsed after a prompt-too-long error.\nCollapsed context:\n- assis<...len=668,digest=ec6134373169e21d...> old investigation four old investigation four ol...\nContinue from the preserved recent context.",
             "subtype": "collapse_staged"
+          },
+          {
+            "role": "user",
+            "content": "original requirements"
           },
           {
             "role": "assistant",
@@ -117,12 +121,16 @@
       "kind": "state_boundary",
       "state_boundary": {
         "name": "before_model_request",
-        "message_digest": "170311be4acfb51c",
+        "message_digest": "0cb6176f4318f17f",
         "messages": [
           {
             "role": "user",
-            "content": "[system] Earlier context was collapsed after a prompt-too-long error.\nCollapsed context:\n- user:<...len=261,digest=03ccf2d59f46b682...>ext old context old context old context old conte...\nContinue from the preserved recent context.",
+            "content": "[system] Earlier context was collapsed after a prompt-too-long error.\nCollapsed context:\n- assis<...len=668,digest=ec6134373169e21d...> old investigation four old investigation four ol...\nContinue from the preserved recent context.",
             "subtype": "collapse_staged"
+          },
+          {
+            "role": "user",
+            "content": "original requirements"
           },
           {
             "role": "assistant",
@@ -187,8 +195,12 @@
           },
           {
             "role": "user",
-            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=235,digest=ee13e9b3d4f05db8...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
+            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=265,digest=f3178612ddd9b091...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
             "subtype": "compact_summary"
+          },
+          {
+            "role": "user",
+            "content": "original requirements"
           },
           {
             "role": "assistant",
@@ -205,7 +217,7 @@
       "kind": "state_boundary",
       "state_boundary": {
         "name": "before_model_request",
-        "message_digest": "4807ebda44a407d2",
+        "message_digest": "c84c1796826f26b7",
         "messages": [
           {
             "role": "user",
@@ -214,8 +226,12 @@
           },
           {
             "role": "user",
-            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=235,digest=ee13e9b3d4f05db8...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
+            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=265,digest=f3178612ddd9b091...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
             "subtype": "compact_summary"
+          },
+          {
+            "role": "user",
+            "content": "original requirements"
           },
           {
             "role": "assistant",
@@ -256,7 +272,7 @@
       "kind": "state_boundary",
       "state_boundary": {
         "name": "query_terminal",
-        "message_digest": "4807ebda44a407d2",
+        "message_digest": "c84c1796826f26b7",
         "messages": [
           {
             "role": "user",
@@ -265,8 +281,12 @@
           },
           {
             "role": "user",
-            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=235,digest=ee13e9b3d4f05db8...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
+            "content": "[system] Conversation was reactively compacted after a prompt-too-long error.\nPreserved recent c<...len=265,digest=f3178612ddd9b091...>atest question\nContinue from the preserved tail without repeating stripped or compacted history.",
             "subtype": "compact_summary"
+          },
+          {
+            "role": "user",
+            "content": "original requirements"
           },
           {
             "role": "assistant",

@@ -20,6 +20,7 @@ import (
 	"github.com/abietic/yhc/engine/commands"
 	"github.com/abietic/yhc/engine/config"
 	"github.com/abietic/yhc/engine/containment"
+	promptctx "github.com/abietic/yhc/engine/context"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/notify"
 	"github.com/abietic/yhc/engine/permission"
@@ -82,7 +83,7 @@ func newRootCommand() *cobra.Command {
 	bindRuntimeFlags(root.Flags(), &options.runtime)
 	root.Flags().BoolVarP(&options.print, "print", "p", false, "Compatibility headless mode; prefer the exec subcommand")
 	root.Flags().BoolVar(&options.plain, "plain", false, "Plain text REPL (no TUI)")
-	root.Flags().BoolVar(&options.mouse, "mouse", true, "Enable mouse tracking for scroll (use Shift+drag for text selection; YHC_DISABLE_MOUSE=1 disables it, with EINO_AGENT_DISABLE_MOUSE kept as an alias)")
+	root.Flags().BoolVar(&options.mouse, "mouse", true, "Enable mouse scroll and in-app selection (Shift+drag uses terminal selection; YHC_DISABLE_MOUSE=1 disables tracking, with EINO_AGENT_DISABLE_MOUSE kept as an alias)")
 	root.Flags().StringVar(&options.resume, "resume", "", "Resume a previous session by ID")
 	root.Flags().StringVar(&options.outputFormat, "output-format", string(outputFormatText), "Headless output format (text, json, or jsonl)")
 
@@ -94,6 +95,7 @@ func newRootCommand() *cobra.Command {
 	permissionReviewAuditCommand := newPermissionReviewAuditCommand()
 	root.AddCommand(
 		newExecCommand(),
+		newUsageCommand(),
 		newGoalCommand(),
 		newMigrateStateCommand(),
 		newServeCommand(),
@@ -147,7 +149,7 @@ func newResumeCommand() *cobra.Command {
 }
 
 func bindRuntimeFlags(flags *pflag.FlagSet, values *runtimeFlags) {
-	flags.StringVar(&values.provider, "provider", "", "Model provider (anthropic/claude, openai, google/gemini, deepseek, qwen, ark)")
+	flags.StringVar(&values.provider, "provider", "", "Model provider (anthropic/claude, openai, google/gemini, deepseek, glm/zhipu/zai, kimi/moonshot, qwen, ark)")
 	flags.StringVar(&values.model, "model", "", "Model name")
 	flags.StringVar(&values.modelProfile, "model-profile", "", "Configured user model profile")
 	flags.StringVar(&values.apiKey, "api-key", "", "API key")
@@ -287,6 +289,7 @@ func runTUI(
 		TerminalCaps:  &terminalCaps,
 		FocusState:    focusState,
 	})
+	defer app.CancelContextCapture()
 
 	engineCfg.PermissionPrompt = app.MakePermissionPromptFn()
 	engineCfg.RepeatedToolCallPrompt = app.MakeRepeatedToolCallPromptFn()
@@ -1218,7 +1221,7 @@ func buildEngineConfigForCWD(
 	if err != nil {
 		safeErr := redactSensitiveText(err.Error(), flags.apiKey)
 		fmt.Fprintf(stderr, "Model init error: %s\n", safeErr)
-		fmt.Fprintln(stderr, "\nSupported providers: anthropic/claude, openai, google/gemini, deepseek, qwen, ark")
+		fmt.Fprintln(stderr, "\nSupported providers: anthropic/claude, openai, google/gemini, deepseek, glm/zhipu/zai, kimi/moonshot, qwen, ark")
 		fmt.Fprintln(stderr, "Set provider-specific variables or PROV, PROV_API_KEY, PROV_MODEL; flags have highest priority")
 		return engine.QueryEngineConfig{}, provider.ResolvedConfig{}, appConfig, errors.New(safeErr)
 	}
@@ -1278,7 +1281,7 @@ func buildEngineConfigForCWD(
 
 	permMode := resolvePermissionMode(appConfig, flags)
 
-	systemPrompt := "You are a helpful AI assistant with access to tools. Use the available tools to accomplish tasks. When a tool would help answer a question or complete a task, call it directly rather than describing what you would do."
+	systemPrompt := promptctx.BaseIdentityPrompt
 	if appConfig.CustomSystemPrompt != "" {
 		systemPrompt = appConfig.CustomSystemPrompt
 	}

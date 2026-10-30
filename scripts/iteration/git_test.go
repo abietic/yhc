@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -91,7 +92,7 @@ func TestResolveSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSnapshot() error = %v", err)
 	}
-	wantDigest := sha256.Sum256([]byte("patch"))
+	wantDigest := sha256.Sum256([]byte("yhc-iteration-diff-v2\x00aaaa\x00patch"))
 	want := GitSnapshot{
 		BaseRef:          "origin/master",
 		Base:             "aaaa",
@@ -239,6 +240,53 @@ func TestCommandGitSourceTracksOnlyTrackedDiff(t *testing.T) {
 	}
 	if third.DiffDigest == first.DiffDigest {
 		t.Fatal("tracked content did not change diff digest")
+	}
+	runTestGit(t, repository, "add", "engine/a.go")
+	runTestGit(t, repository, "commit", "-m", "candidate")
+	committed, err := resolveSnapshot(t.Context(), repository, base, "HEAD", source)
+	if err != nil || committed.DiffDigest != third.DiffDigest {
+		t.Fatalf("committing an unchanged diff invalidated focused evidence: %v", err)
+	}
+}
+
+func TestCommandGitSourceSeparatesIdenticalPatchesOnDifferentBases(t *testing.T) {
+	repository := t.TempDir()
+	runTestGit(t, repository, "init")
+	runTestGit(t, repository, "config", "user.name", "Iteration Test")
+	runTestGit(t, repository, "config", "user.email", "iteration@example.invalid")
+	writeTestFile(t, repository, "engine/a.go", "package engine\n")
+	runTestGit(t, repository, "add", "engine/a.go")
+	runTestGit(t, repository, "commit", "-m", "base")
+	base := strings.TrimSpace(runTestGit(t, repository, "rev-parse", "HEAD"))
+	writeTestFile(t, repository, "engine/a.go", "package engine\n\nconst changed = true\n")
+	runTestGit(t, repository, "add", "engine/a.go")
+	runTestGit(t, repository, "commit", "-m", "candidate")
+	candidate := strings.TrimSpace(runTestGit(t, repository, "rev-parse", "HEAD"))
+	source := commandGitSource{root: repository}
+	before, err := resolveSnapshot(t.Context(), repository, base, "HEAD", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPatch, err := source.BinaryDiff(t.Context(), base, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repository, "switch", "-c", "advanced-base", base)
+	writeTestFile(t, repository, "README.md", "unrelated base advancement\n")
+	runTestGit(t, repository, "add", "README.md")
+	runTestGit(t, repository, "commit", "-m", "advance base")
+	advanced := strings.TrimSpace(runTestGit(t, repository, "rev-parse", "HEAD"))
+	runTestGit(t, repository, "cherry-pick", candidate)
+	after, err := resolveSnapshot(t.Context(), repository, advanced, "HEAD", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPatch, err := source.BinaryDiff(t.Context(), advanced, after.Head)
+	if err != nil || !bytes.Equal(oldPatch, newPatch) {
+		t.Fatalf("fixture does not preserve identical patches: %v", err)
+	}
+	if after.DiffDigest == before.DiffDigest {
+		t.Fatal("a new comparison base collided with the old evidence directory")
 	}
 }
 

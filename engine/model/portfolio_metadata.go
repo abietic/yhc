@@ -89,7 +89,9 @@ func ResolvePortfolioMetadataForProvider(
 		metadata.Images = MetadataField[bool]{Value: capabilities.SupportsImages, Source: source}
 		metadata.PDFs = MetadataField[bool]{Value: capabilities.SupportsPDFs, Source: source}
 		metadata.Thinking = MetadataField[bool]{Value: capabilities.SupportsThinking, Source: source}
-		metadata.CostTier = MetadataField[string]{Value: string(deriveCostTier(capabilities)), Source: source}
+		if tier := deriveCostTier(capabilities); tier != CostTierUnknown {
+			metadata.CostTier = MetadataField[string]{Value: string(tier), Source: source}
+		}
 		metadata.Deprecated = MetadataField[bool]{Value: capabilities.IsDeprecated(), Source: source}
 		metadata.Successor = MetadataField[string]{Value: capabilities.Successor, Source: source}
 		if efforts, known := DefaultReasoningEfforts(provider, modelID); known {
