@@ -25,6 +25,12 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
+def request_bytes(body):
+    # Keep tool-schema property order. Canonical plan hashing is not a request
+    # projection policy and must not reorder model-visible object fields.
+    return json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
 def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
@@ -70,7 +76,7 @@ def request_bound(body, protocol, card, output_cap):
     if protocol == "responses" and any(t.get("type") == "custom" and t.get("name") != "apply_patch" for t in tools):
         raise ValueError("unsupported_custom_tool")
     route = price_route(card)
-    raw = canonical(body)
+    raw = request_bytes(body)
     if len(raw) > MAX_BODY_BYTES:
         raise ValueError("request_body_bound")
     output = requested if protocol == "responses" else MODEL_OUTPUT_TOKENS

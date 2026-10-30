@@ -262,7 +262,9 @@ conditional upper-bound estimates, not provider invoices. Server-side tools
 without a separately bounded price are rejected.
 
 `FreshBudget` durably reserves a frozen request before returning it to its
-caller. Unknown, malformed or over-bound usage keeps the full liability and
+caller. Request serialization preserves object and tool-schema property order;
+canonical hashing of plans must not become a request-rewriting policy.
+Unknown, malformed or over-bound usage keeps the full liability and
 blocks new admission; a larger reported liability is not clipped to the cap.
 Storage faults block further requests. Existing directories are never reopened
 for dispatch, and retained files do not authorize recovery. Tests exercise

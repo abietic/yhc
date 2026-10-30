@@ -139,6 +139,16 @@ class FreshBudgetTests(unittest.TestCase):
         self.assertEqual(stored["calls"][0]["bound"]["body_sha256"], call.body_sha256)
         self.assertEqual(b.snapshot()["outstanding"], "2.621440000000")
 
+    def test_request_freeze_preserves_tool_schema_property_order(self):
+        b = self.create(); b.claim_sample("sample-0"); request = body()
+        request["tools"] = [dict(type="function", name="fixture", parameters=dict(type="object", properties=dict(
+            z_last_alphabetically=dict(type="string"), a_first_alphabetically=dict(type="integer"))))]
+        call = b.reserve("sample-0", request)
+        projected = json.loads(call.wire_body)
+        self.assertEqual(list(projected["tools"][0]["parameters"]["properties"]),
+                         ["z_last_alphabetically", "a_first_alphabetically"])
+        self.assertEqual(list(projected), list(request))
+
     def test_unknown_and_over_bound_usage_retain_liability_and_stop_all_samples(self):
         for kind in ("unknown", "over_bound", "invalid_usage"):
             root = Path(self.tmp.name).resolve() / kind; value = plan()

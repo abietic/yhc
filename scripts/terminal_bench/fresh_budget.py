@@ -26,7 +26,7 @@ except ImportError:
     fcntl = None
 
 from scripts.terminal_bench.native_cost import decimal_amount
-from scripts.terminal_bench.reservation_bound import canonical, digest, request_bound, token_cost
+from scripts.terminal_bench.reservation_bound import canonical, digest, request_bound, request_bytes, token_cost
 
 
 class BudgetStop(ValueError):
@@ -221,7 +221,7 @@ class FreshBudget:
             self._healthy(); spec = self._sample(sample)
             require(self._state["samples"][sample]["status"] == "running", "sample_not_running")
             require(sum(r["sample"] == sample for r in self._state["calls"]) < self._plan["max_provider_calls"], "sample_call_limit")
-            raw = canonical(body)
+            raw = request_bytes(body)
             bound = request_bound(json.loads(raw), spec["protocol"], self._plan["price_card"], self._plan["max_output_tokens_per_call"])
             reserve = amount(bound["reserved_amount"])
             require(self._exposure(sample) + reserve <= amount(spec["max_estimated_cost"]), "sample_budget_exhausted")
