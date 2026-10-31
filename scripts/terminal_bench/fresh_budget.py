@@ -97,6 +97,7 @@ class Reservation:
     call_id: str
     body_sha256: str
     wire_body: bytes = field(repr=False)
+    protocol: str
 
 
 class FreshBudget:
@@ -230,7 +231,7 @@ class FreshBudget:
             self._state["calls"].append(dict(id=call_id, sample=sample, state="reserved", bound=bound,
                                              liability=bound["reserved_amount"], known_cost=None))
             self._persist()  # The caller can only open upstream after this returns.
-            return Reservation(call_id, bound["body_sha256"], raw)
+            return Reservation(call_id, bound["body_sha256"], raw, bound["protocol"])
 
     def _open_call(self, call_id):
         rows = [r for r in self._state["calls"] if r["id"] == call_id]

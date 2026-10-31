@@ -272,6 +272,28 @@ execution-order permutations, concurrent reservations, storage tampering,
 process interruption and independent expected amounts through
 `make test-provider-costs`; all provider calls in these fixtures are absent.
 
+`forward_attempt` in
+[`budgeted_stream.py`](../../scripts/terminal_bench/budgeted_stream.py) connects
+that reservation to one HTTP POST. Its trusted caller supplies a fresh
+`http.client` connection factory; the factory is never called before durable
+reservation, and the POST sends the returned frozen bytes. The protocol and
+endpoint come from the same reservation. Native SSE closure and complete
+input/cache/output counters are required for settlement. EOF, redirects,
+connection failures and partial Messages usage retain the entire reservation.
+Tests compare the durable hash against bytes received by a local HTTP peer,
+exercise storage failures and bounded downstream-disconnect draining, and
+keep missing thinking counters unknown. A valid failed/incomplete model response
+can establish known spending without establishing task success. Output above
+the requested limit stops the caller even when its cost fits the conservative
+Messages financial ceiling.
+
+This is an operator transport component, exercised with synthetic peers. No
+paid benchmark launcher is wired to it by default; it supplies no funding,
+historical-liability certification, authorization, retry or recovery authority.
+The caller must stop on `AttemptFailure`, persist its typed code, usage-known
+flag and redacted stream diagnostics, and separately capture native sessions
+and cumulative usage before any dispatch claim can become ready.
+
 ## Persisted Iteration Evidence
 
 `make verify` remains the ordinary full-suite gate. Iteration evidence is an
