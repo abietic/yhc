@@ -23,6 +23,7 @@ from scripts.terminal_bench.no_dispatch import ReceiptError, request_binding, ve
 from scripts.terminal_bench.cohort_retirement import verify_retirement, project_funding
 
 
+@unittest.skipUnless(os.name == 'posix', 'private gateway requires POSIX')
 class ReceiptTests(unittest.TestCase):
     setUp = gateway_fixture.GatewayTests.setUp
     post = gateway_fixture.GatewayTests.post
