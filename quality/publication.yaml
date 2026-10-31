@@ -49,6 +49,22 @@ privacy:
   test_sentinels:
     - sentinel-provider-credential
   reviewed_findings:
+    # Generates a fresh opaque capability; this is code, not a provider key.
+    - path: scripts/terminal_bench/fresh_gateway.py
+      line: 65
+      rule_id: credential-assignment
+      match_sha256: 060ffdb084169e6c5a1fce5644102ea5a01fcca14c7945844ed1552b731fd849
+      purpose: runtime-loopback
+    - path: scripts/terminal_bench/test_fresh_gateway.py
+      line: 87
+      rule_id: credential-assignment
+      match_sha256: 1e0aa8fef6e23be690126110a4e33006bcb1bfd8fb31b604d8921c575fa60e08
+      purpose: synthetic-security-fixture
+    - path: scripts/terminal_bench/test_fresh_gateway.py
+      line: 162
+      rule_id: credential-assignment
+      match_sha256: 1e0aa8fef6e23be690126110a4e33006bcb1bfd8fb31b604d8921c575fa60e08
+      purpose: synthetic-security-fixture
     # Public DeepSeek model cards and machine-local benchmark artifact paths.
     # Keep reviews exact; this does not admit arbitrary Hugging Face URLs.
     - path: docs/migration/reference/runtime/dsh-flash-terminal-bench-audit.md

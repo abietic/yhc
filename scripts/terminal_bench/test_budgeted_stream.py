@@ -238,6 +238,31 @@ class ForwardingTests(unittest.TestCase):
         factory.assert_not_called()
         self.assertTrue(budget.snapshot()["accounting_error"])
 
+    def test_reservation_observer_runs_before_connection_and_failure_retains_full_liability(self):
+        budget=self.budget();factory=mock.Mock()
+        def observer(reservation):
+            view=budget.inspect_call(reservation.call_id)
+            self.assertEqual(view['call']['state'],'reserved')
+            self.assertEqual(view['call']['bound']['body_sha256'],reservation.body_sha256)
+            factory.assert_not_called()
+            raise OSError('private evidence storage failure')
+        with self.assertRaises(AttemptFailure):
+            forward_attempt(budget,'sample-0',body(),connection_factory=factory,headers={},
+                deadline=time.monotonic()+20,write_line=lambda line:None,on_reserved=observer)
+        factory.assert_not_called()
+        self.assertEqual(budget.snapshot()['retained'],'2.621440000000')
+
+    def test_open_observer_failure_closes_exact_attempt_and_retains_liability(self):
+        budget=self.budget();connection=self.fixture_connection(response_events())
+        observer=mock.Mock(side_effect=ValueError('private lifecycle failure'))
+        with self.assertRaises(AttemptFailure):
+            forward_attempt(budget,'sample-0',body(),connection_factory=lambda:connection,headers={},
+                deadline=time.monotonic()+20,write_line=lambda line:None,on_open=observer)
+        observer.assert_called_once()
+        self.assertEqual(connection.request.call_count,1)
+        self.assertTrue(connection.close.called)
+        self.assertEqual(budget.snapshot()['retained'],'2.621440000000')
+
     def test_settlement_publication_failure_after_terminal_keeps_full_reservation(self):
         budget = self.budget()
         replace = os.replace
