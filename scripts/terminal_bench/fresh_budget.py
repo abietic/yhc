@@ -115,6 +115,7 @@ class FreshBudget:
         self.root = Path(root).absolute()
         require(self.root.parent.resolve() == self.root.parent, "budget_parent_symlink")
         self.root.mkdir(mode=0o700)
+        self._owner_pid = os.getpid()
         self._mutex, self._failed, self._fd, self._lock_fd = threading.RLock(), False, None, None
         self._plan, self.plan_sha256, self._disk_sha = copy.deepcopy(plan), anchor, None
         self._state = dict(version=1, plan_sha256=anchor, currency=plan["currency"],
@@ -143,14 +144,27 @@ class FreshBudget:
         self.close()
 
     def close(self):
+        if os.getpid() != self._owner_pid:
+            # A fork inherits both the RLock's state and the flock's open-file
+            # description. Never take that copied mutex or explicitly unlock
+            # the parent's flock. Closing child FD references is safe.
+            self._close_fds()
+            return
         with self._mutex:
-            for name in ("_lock_fd", "_fd"):
-                fd = getattr(self, name)
-                if fd is not None:
-                    os.close(fd)
-                    setattr(self, name, None)
+            self._close_fds()
+
+    def _close_fds(self):
+        for name in ("_lock_fd", "_fd"):
+            fd = getattr(self, name)
+            if fd is not None:
+                os.close(fd)
+                setattr(self, name, None)
+
+    def _check_process(self):
+        require(os.getpid() == self._owner_pid, "budget_owner_process_changed")
 
     def _check_storage(self):
+        self._check_process()
         require(self._fd is not None, "accounting_unavailable")
         opened, current = os.fstat(self._fd), self.root.lstat()
         require(self.root.parent.resolve() == self.root.parent
@@ -197,6 +211,7 @@ class FreshBudget:
 
     def _healthy(self):
         self._available()
+        require('retirement' not in self._state, "dispatch_retired")
         require(not self._state["unknown_usage"], "unknown_usage")
 
     def _sample(self, sample):
@@ -209,6 +224,7 @@ class FreshBudget:
                     for r in self._state["calls"] if sample is None or r["sample"] == sample), Decimal(0))
 
     def claim_sample(self, sample):
+        self._check_process()
         with self._mutex:
             self._healthy(); self._sample(sample)
             require(self._state["samples"][sample]["status"] == "pending", "sample_already_started")
@@ -217,6 +233,7 @@ class FreshBudget:
             self._persist()
 
     def reserve(self, sample, body):
+        self._check_process()
         with self._mutex, localcontext() as context:
             context.prec = 90
             self._healthy(); spec = self._sample(sample)
@@ -239,6 +256,7 @@ class FreshBudget:
         return rows[0]
 
     def mark_unknown(self, call_id):
+        self._check_process()
         with self._mutex:
             self._available()
             row = self._open_call(call_id)
@@ -246,6 +264,7 @@ class FreshBudget:
             self._persist()
 
     def settle(self, call_id, *, input_tokens, cached_input_tokens, output_tokens):
+        self._check_process()
         with self._mutex:
             self._available()
             row = self._open_call(call_id)
@@ -273,6 +292,7 @@ class FreshBudget:
                 raise
 
     def finish_sample(self, sample, status):
+        self._check_process()
         with self._mutex:
             self._available()
             self._sample(sample)
@@ -285,6 +305,7 @@ class FreshBudget:
 
     def inspect_call(self, call_id):
         """Redacted diagnostic view, never funding or recovery authority."""
+        self._check_process()
         with self._mutex:
             if not self._failed and self._fd is not None:
                 self._available()
@@ -293,7 +314,30 @@ class FreshBudget:
             return dict(call=copy.deepcopy(rows[0]), accounting_error=self._failed,
                         closed=self._fd is None, plan_sha256=self.plan_sha256, can_resume_agent=False)
 
+    def retire_dispatch(self):
+        """Irreversibly retire all remaining NEW sample claims, without allocating funds.
+
+        Every started sample must already be terminal and every request known.
+        The same mutex as reserve/claim spans validation and durable retirement.
+        There is intentionally no reopen, rollback or native-resume operation.
+        """
+        self._check_process()
+        from scripts.terminal_bench.cohort_retirement import retirement_record, verify_retirement
+        with self._mutex:
+            self._healthy()
+            record = retirement_record(self._plan,self.plan_sha256,self._state)
+            try:
+                for sample in record['unstarted_samples']:
+                    self._state['samples'][sample]['status'] = 'retired'
+                self._state['retirement'] = record
+                self._persist()
+                return verify_retirement(self._plan,self.plan_sha256,self._state,digest(self._state))
+            except BaseException:
+                self._failed = True
+                raise
+
     def snapshot(self):
+        self._check_process()
         with self._mutex, localcontext() as context:
             context.prec = 90
             if not self._failed and self._fd is not None:
