@@ -19,6 +19,7 @@ from pathlib import Path
 from scripts.terminal_bench.budgeted_stream import AttemptFailure, forward_attempt, unique_object, no_constant
 from scripts.terminal_bench.fresh_budget import BudgetStop
 from scripts.terminal_bench.reservation_bound import MAX_BODY_BYTES, request_bytes
+from scripts.terminal_bench.no_dispatch import NONCE_HEADER, REASONS, ReceiptError, issue_receipt, request_binding
 
 
 class GatewayStop(ValueError):
@@ -40,11 +41,12 @@ def save(path, value):
 
 class FreshGateway:
     def __init__(self, root, budget, sample, protocol, *, connection_factory, headers, before_admit,
-                 bind_host='127.0.0.1', deadline, stream_timeout=900, drain_timeout=30):
+                 bind_host='127.0.0.1', deadline, stream_timeout=900, drain_timeout=30, receipt_key=None):
         if (os.name != 'posix' or protocol not in ('responses', 'messages') or bind_host not in ('127.0.0.1', '0.0.0.0')
                 or not callable(connection_factory) or not callable(before_admit)
                 or not isinstance(headers, dict) or not 0 < drain_timeout <= 30
-                or not drain_timeout <= stream_timeout <= 900 or time.monotonic() >= deadline):
+                or not drain_timeout <= stream_timeout <= 900 or time.monotonic() >= deadline
+                or (receipt_key is not None and (not isinstance(receipt_key,bytes) or len(receipt_key) != 32))):
             raise GatewayStop('gateway_configuration_invalid')
         self.root = Path(root).absolute()
         if self.root.parent.resolve() != self.root.parent:
@@ -63,6 +65,7 @@ class FreshGateway:
         self.connection_factory, self.headers, self.before_admit = connection_factory, dict(headers), before_admit
         self.deadline, self.stream_timeout, self.drain_timeout = deadline, stream_timeout, drain_timeout
         self.token = secrets.token_urlsafe(32)
+        self.receipt_key = receipt_key  # Host verifier only; never copied to task auth/headers/logs.
         self.lock = threading.RLock();self.condition = threading.Condition(self.lock)
         self.records, self.denials, self.streams = [], [], set()
         self.denials_dropped = 0
@@ -79,6 +82,7 @@ class FreshGateway:
 
             def do_POST(self):
                 record, upstream, capture = None, None, None
+                receipt_binding = None
                 authenticated = False
                 response_hash, response_bytes = hashlib.sha256(), 0
                 self.headers_sent = False
@@ -105,6 +109,10 @@ class FreshGateway:
                     try: body = json.loads(raw, object_pairs_hook=unique_object, parse_constant=no_constant)
                     except (ValueError, UnicodeError, RecursionError): raise GatewayStop('request_json') from None
                     if not isinstance(body, dict): raise GatewayStop('request_json')
+                    nonces = self.headers.get_all(NONCE_HEADER, [])
+                    if gateway.receipt_key is not None and len(nonces) == 1:
+                        try: receipt_binding = request_binding(gateway.budget.plan_sha256,gateway.sample,gateway.protocol,raw,nonces[0])
+                        except ReceiptError: pass  # No bound receipt; the ordinary denial remains conservative.
                     with gateway.lock:
                         if gateway.closing or gateway.closed or gateway.accounting_error or time.monotonic() >= gateway.deadline:
                             raise GatewayStop('sample_closed_or_unverified')
@@ -177,18 +185,39 @@ class FreshGateway:
                     record.update(result=result, usage_known=True)
                 except BaseException as exc:
                     code = str(exc) if isinstance(exc, (GatewayStop, BudgetStop, AttemptFailure)) else 'gateway_operation_failed'
+                    no_dispatch_receipt = None
                     with gateway.lock:
                         if authenticated: gateway.closing = True
                         if record is None:
                             if len(gateway.denials) == 128:
                                 gateway.denials.pop(0);gateway.denials_dropped += 1
-                            gateway.denials.append(dict(error=code, upstream_opened=False))
+                            denial = dict(error=code, upstream_opened=False)
+                            gateway.denials.append(denial)
+                            # Only an authenticated, parsed, request-bound denial
+                            # BEFORE reservation can make this assertion. A
+                            # capture, connection or stream failure never can.
+                            if receipt_binding is not None and code in REASONS and not gateway.accounting_error:
+                                try:
+                                    candidate = issue_receipt(gateway.receipt_key,receipt_binding,code)
+                                    name = 'denial-'+candidate['payload']['receipt_id']+'.no-dispatch.json'
+                                    raw_receipt = json.dumps(candidate,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+                                    with gateway._open_file(name) as out:
+                                        out.write(raw_receipt);out.flush();os.fsync(out.fileno())
+                                    os.fsync(gateway._root_fd)
+                                    denial['receipt'] = dict(path=name,sha256=hashlib.sha256(raw_receipt).hexdigest())
+                                    gateway.persist()  # Persist ledger reference BEFORE exposing the receipt.
+                                    no_dispatch_receipt = candidate
+                                except BaseException:
+                                    gateway.accounting_error = True
+                                    denial.pop('receipt',None)
                         else:
                             record.update(error=code, usage_known=getattr(exc, 'usage_known', False),
                                           stream_diagnostics=getattr(exc, 'stream_diagnostics', None))
                     if not self.headers_sent:
                         try:
-                            error_body = b'{"error":{"type":"evaluation_stopped","message":"evaluation_gateway_stopped"}}'
+                            error_value = dict(error=dict(type='evaluation_stopped',message='evaluation_gateway_stopped'))
+                            if no_dispatch_receipt is not None: error_value['no_dispatch_receipt'] = no_dispatch_receipt
+                            error_body = json.dumps(error_value,separators=(',',':')).encode()
                             self.send_response(402);self.send_header('Content-Type','application/json')
                             self.send_header('Content-Length', str(len(error_body)))
                             self.send_header('Connection','close');self.end_headers()

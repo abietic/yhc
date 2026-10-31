@@ -51,7 +51,7 @@ privacy:
   reviewed_findings:
     # Generates a fresh opaque capability; this is code, not a provider key.
     - path: scripts/terminal_bench/fresh_gateway.py
-      line: 65
+      line: 67
       rule_id: credential-assignment
       match_sha256: 060ffdb084169e6c5a1fce5644102ea5a01fcca14c7945844ed1552b731fd849
       purpose: runtime-loopback

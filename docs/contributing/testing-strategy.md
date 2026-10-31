@@ -321,6 +321,45 @@ and cumulative accounting through `make test-provider-costs` using local peers.
 Complete benchmark launchers still need matched adapter/checkpoint evidence and
 all funding, authorization and live guards before paid use.
 
+An operator can opt into host-only authenticated denial receipts with
+`FreshGateway(receipt_key=...)`. The independent 32-byte HMAC key stays in the
+host verifier; it is never the opaque task token or a provider credential and
+must never be given to the task. A client supplies one fresh 64-character hex
+`X-YHC-Request-Nonce`. Only an authenticated, fully parsed request rejected
+before any reservation can receive a receipt. The exact original request bytes,
+nonce, sample, protocol, route, model and plan digest are bound together. The
+private receipt file and its host-ledger reference must both be durable before
+the gateway emits it. Capture faults, upstream errors and ambiguous usage do
+not receive this evidence. The operator pins the ledger reference and request
+inputs independently and calls
+[`verify_stored_receipt`](../../scripts/terminal_bench/no_dispatch.py).
+HTTP 402 alone proves nothing. This is a host evidence protocol: native clients
+do not verify its HMAC or reconcile their unknown usage from it, and losing the
+host key leaves the receipt unverified. Existing unknown reservations remain.
+
+For a new isolated cohort, `FreshBudget.retire_dispatch()` irreversibly retires
+the unstarted sample inventory under the same lock as admission. Every started
+sample must already be terminal and every call known; pending requests,
+unknown usage or uncertain publication block the owner. Retirement records the
+exact started/unstarted partition, call inventory, known cost and arithmetic
+unused cap. Existing directories cannot be reopened, and neither remaining
+claims nor reservations can dispatch afterward. A forked child is rejected
+before it can acquire the inherited mutex or perform ledger I/O; closing its
+inherited descriptors does not unlock the parent's ownership lock.
+[`verify_retirement` and `project_funding`](../../scripts/terminal_bench/cohort_retirement.py)
+recompute the proof from independently anchored inputs. An exhaustive funding
+projection counts source spending outside those allocations, retired known
+cost, full active allocation caps and full historical holds. Duplicate
+allocation, cohort, retirement, call and hold identities within that manifest
+are rejected. Cross-manifest source deduplication requires an external pinned
+funding registry; this read-only projection may be repeated and does not claim
+that registry check. This projection performs no
+registry write and releases zero funds. Neither the arithmetic remainder nor
+retirement verifies native sessions, restores services, grants new spending or
+authorizes continuation. Legacy cohort ledgers are rejected, not migrated or
+silently reclassified by this helper. The same focused target covers receipts,
+partial retirement, conservation and negative paths with no provider calls.
+
 ## Persisted Iteration Evidence
 
 `make verify` remains the ordinary full-suite gate. Iteration evidence is an
