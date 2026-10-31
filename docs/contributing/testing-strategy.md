@@ -294,6 +294,33 @@ The caller must stop on `AttemptFailure`, persist its typed code, usage-known
 flag and redacted stream diagnostics, and separately capture native sessions
 and cumulative usage before any dispatch claim can become ready.
 
+[`FreshGateway`](../../scripts/terminal_bench/fresh_gateway.py) exposes that
+attempt to native Responses and Messages clients through an opaque token. It
+requires an already-claimed sample, an explicit connection factory and a
+`before_admit(body)` guard. It has no provider destination, key lookup, funding
+claim or resume operation. The guard can validate the native request but cannot
+rewrite it; external guard exception text is replaced with a fixed category.
+Request captures are published after reservation and before connection creation;
+wire records link their hashes and native terminal counters to budget call IDs.
+The gateway exclusively creates a private directory and pins its directory FD;
+owner, mode or identity changes block further I/O. Captures and atomic ledger
+publication use that FD rather than a replaceable pathname. Existing roots are
+never reopened.
+Loopback is the default bind address; an operator must explicitly select a
+broader bind for an isolated container topology.
+
+Native completion or cancellation revokes new admission. Shutdown drains active
+streams within a bounded interval, while incomplete usage retains its full
+liability. A wire-capture/publication fault blocks the gateway even if token
+spending was already durably known. These are separate states: known spending
+does not certify a complete native session, checkpoint or recovery transaction.
+The gateway and `FreshBudget.inspect_call` views are diagnostic, not financial
+reallocation or recovery authority. Tests cover both native HTTP dialects,
+unchanged request projection, redaction, capture/publication faults, cancellation
+and cumulative accounting through `make test-provider-costs` using local peers.
+Complete benchmark launchers still need matched adapter/checkpoint evidence and
+all funding, authorization and live guards before paid use.
+
 ## Persisted Iteration Evidence
 
 `make verify` remains the ordinary full-suite gate. Iteration evidence is an

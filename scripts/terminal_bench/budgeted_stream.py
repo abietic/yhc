@@ -169,7 +169,8 @@ def events(stream, deadline):
         yield line, value
 
 
-def forward_attempt(budget, sample, body, *, connection_factory, headers, deadline, write_line):
+def forward_attempt(budget, sample, body, *, connection_factory, headers, deadline, write_line,
+                    on_reserved=None, on_open=None):
     """Reserve -> one exact POST -> terminal receipt -> durable known settlement.
 
     Failures before a valid receipt retain the whole reservation, even connect
@@ -196,9 +197,13 @@ def forward_attempt(budget, sample, body, *, connection_factory, headers, deadli
     stream, connection, failure, result = None, None, None, None
     known, disconnected = False, False
     try:
+        if on_reserved is not None:
+            on_reserved(reservation)
         connection = connection_factory()  # Never called before durable admission.
         path = "/responses" if reservation.protocol == "responses" else "/anthropic/v1/messages"
         stream = open_http_stream(connection, path, reservation.wire_body, headers, deadline)
+        if on_open is not None:
+            on_open(stream)
         require(stream.status == 200, "upstream_non_200")  # No redirect or retry.
         receipt = Receipt(reservation.protocol)
         for line, event in events(stream, deadline):

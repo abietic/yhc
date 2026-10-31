@@ -283,6 +283,16 @@ class FreshBudget:
             self._state["samples"][sample]["status"] = status
             self._persist()
 
+    def inspect_call(self, call_id):
+        """Redacted diagnostic view, never funding or recovery authority."""
+        with self._mutex:
+            if not self._failed and self._fd is not None:
+                self._available()
+            rows = [r for r in self._state["calls"] if r["id"] == call_id]
+            require(len(rows) == 1, "unknown_call")
+            return dict(call=copy.deepcopy(rows[0]), accounting_error=self._failed,
+                        closed=self._fd is None, plan_sha256=self.plan_sha256, can_resume_agent=False)
+
     def snapshot(self):
         with self._mutex, localcontext() as context:
             context.prec = 90
