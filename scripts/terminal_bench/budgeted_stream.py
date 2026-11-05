@@ -124,9 +124,16 @@ class Receipt:
                 require(self.identity is not None and not self.final_delta and isinstance(event.get("usage"), dict)
                         and isinstance(event.get("delta"), dict), "message_delta_order")
                 usage = event["usage"]
+                input_fields = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+                if any(name in usage for name in input_fields):
+                    require(all(name in usage for name in input_fields), "input_usage_incomplete")
                 for name in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"):
                     if name in usage:
-                        require(counter(usage[name]) >= counter(self.message_usage.get(name, 0)), "usage_counter_regressed")
+                        value = counter(usage[name])
+                        # DeepSeek's final usage can reclassify cached input;
+                        # only generated output is a cumulative stream counter.
+                        if name == "output_tokens":
+                            require(value >= counter(self.message_usage.get(name, 0)), "usage_counter_regressed")
                 self.message_usage.update(usage)
                 reason = event["delta"].get("stop_reason")
                 if reason is not None:

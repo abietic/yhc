@@ -165,6 +165,56 @@ class ForwardingTests(unittest.TestCase):
             self.forward(budget, raw=message_events(stop=False), request=body("messages"))
         self.assertEqual(budget.snapshot()["retained"], "5.242880000000")
 
+    def test_messages_final_usage_can_reclassify_cached_input(self):
+        # DeepSeek reports the authoritative input/cache split in the final
+        # delta. Neither component is a monotone streaming counter.
+        for initial, final, expected_cost in (
+                ((200, 0), (80, 120), "0.000324800000"),
+                ((40, 160), (160, 40), "0.000481600000")):
+            with self.subTest(initial=initial, final=final), tempfile.TemporaryDirectory() as temporary:
+                value = plan(("messages",), cap="6", sample_cap="6")
+                with FreshBudget.create(Path(temporary).resolve() / "budget", value, digest(value)) as budget:
+                    budget.claim_sample("sample-0")
+                    raw = event("message_start", message=dict(id="message-fixture", model="deepseek-flash",
+                        role="assistant", usage=dict(input_tokens=initial[0], cache_read_input_tokens=initial[1],
+                            cache_creation_input_tokens=0, output_tokens=0)))
+                    raw += event("message_delta", delta=dict(stop_reason=None), usage=dict(output_tokens=7))
+                    raw += event("message_delta", delta=dict(stop_reason="end_turn"), usage=dict(
+                        input_tokens=final[0], cache_read_input_tokens=final[1],
+                        cache_creation_input_tokens=0, output_tokens=20))
+                    raw += event("message_stop")
+                    result = self.forward(budget, raw=raw, request=body("messages"))
+                    self.assertEqual(result["usage"], dict(input_tokens=200, cached_input_tokens=final[1],
+                        output_tokens=20, thinking_tokens=None, total_tokens=220))
+                    self.assertEqual(budget.snapshot()["known_cost"], expected_cost)
+                    self.assertEqual(budget.snapshot()["retained"], "0.000000000000")
+                    self.assertFalse(budget.snapshot()["unknown_usage"])
+
+    def test_reclassified_messages_still_require_stop_and_cumulative_output(self):
+        for stopped, output, error in ((False, 20, "terminal_receipt_missing"),
+                                       (True, 6, "usage_counter_regressed")):
+            with self.subTest(stopped=stopped, output=output), tempfile.TemporaryDirectory() as temporary:
+                value = plan(("messages",), cap="6", sample_cap="6")
+                with FreshBudget.create(Path(temporary).resolve() / "budget", value, digest(value)) as budget:
+                    budget.claim_sample("sample-0")
+                    raw = event("message_start", message=dict(id="message-fixture", model="deepseek-flash",
+                        role="assistant", usage=dict(input_tokens=200, cache_read_input_tokens=0,
+                            cache_creation_input_tokens=0, output_tokens=0)))
+                    raw += event("message_delta", delta=dict(stop_reason=None), usage=dict(output_tokens=7))
+                    raw += event("message_delta", delta=dict(stop_reason="end_turn"), usage=dict(
+                        input_tokens=80, cache_read_input_tokens=120,
+                        cache_creation_input_tokens=0, output_tokens=output))
+                    if stopped:
+                        raw += event("message_stop")
+                    connection = self.fixture_connection(raw)
+                    factory = mock.Mock(return_value=connection)
+                    with self.assertRaisesRegex(AttemptFailure, error) as failed:
+                        self.forward(budget, factory=factory, request=body("messages"))
+                    self.assertFalse(failed.exception.usage_known)
+                    factory.assert_called_once_with()
+                    self.assertTrue(budget.snapshot()["unknown_usage"])
+                    self.assertEqual(budget.snapshot()["retained"], "5.242880000000")
+
     def test_incomplete_or_failed_response_with_valid_usage_is_known_spend_not_task_success(self):
         for terminal in ("incomplete", "failed"):
             with self.subTest(terminal=terminal), tempfile.TemporaryDirectory() as temporary:
