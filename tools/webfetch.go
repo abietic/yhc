@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -19,6 +20,7 @@ import (
 
 const (
 	webFetchMaxResponseBytes = 100 * 1024 // 100KB text limit
+	webFetchSummaryBytes     = 50000
 	webFetchTimeout          = 30 * time.Second
 	webFetchUserAgent        = "Mozilla/5.0 (compatible; YHC/1.0)"
 )
@@ -50,19 +52,20 @@ func WebFetchTool() ToolImpl {
 			Desc: "Fetches content from a specified URL with optional AI processing.\n\n" +
 				"This tool has two modes:\n" +
 				"1. AI Processing Mode (default): Fetches URL content and uses an AI model to extract/analyze information based on your prompt\n" +
-				"2. Raw Content Mode: Returns the complete fetched content directly without AI processing (set raw_mode=true)\n\n" +
+				"2. Raw Content Mode: Returns a bounded page of extracted text directly without AI processing (set raw_mode=true)\n\n" +
 				"Usage notes:\n" +
 				"  - The URL must be a fully-formed valid URL\n" +
 				"  - HTTP URLs will be automatically upgraded to HTTPS\n" +
 				"  - In AI processing mode, the prompt describes what information you want to extract from the page\n" +
-				"  - In raw content mode, the prompt parameter is optional and will be ignored if provided\n" +
+				"  - In raw content mode, the required prompt is ignored\n" +
 				"  - This tool is read-only and does not modify any files\n" +
-				"  - Results may be summarized if the content is very large (in AI processing mode)\n" +
+				"  - If the result gives a next offset_bytes, use it to read more of the current page in source order\n" +
 				"  - When a URL redirects to a different host, the tool will inform you and provide the redirect URL",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"url":      {Type: schema.String, Desc: "The URL to fetch content from", Required: true},
-				"prompt":   {Type: schema.String, Desc: "The prompt to run on the fetched content", Required: true},
-				"raw_mode": {Type: schema.Boolean, Desc: "Set to true to return raw content without AI processing. Defaults to false (AI processing mode)"},
+				"url":          {Type: schema.String, Desc: "The URL to fetch content from", Required: true},
+				"prompt":       {Type: schema.String, Desc: "The prompt to run on the fetched content", Required: true},
+				"offset_bytes": {Type: schema.Integer, Desc: "Zero-based byte offset into the extracted page text. Defaults to 0. Continuing refetches the URL; use the offset returned by the previous call."},
+				"raw_mode":     {Type: schema.Boolean, Desc: "Set to true to return raw content without AI processing. Defaults to false (AI processing mode)"},
 			}),
 		},
 		IsConcurrencySafe: func(input map[string]any) bool {
@@ -82,6 +85,7 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 		URI     string `json:"url"`
 		Prompt  string `json:"prompt"`
 		RawMode *bool  `json:"raw_mode"`
+		Offset  int    `json:"offset_bytes"`
 	}
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return "", fmt.Errorf("webfetch: invalid params: %w", err)
@@ -91,6 +95,10 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 	}
 	if params.Prompt == "" {
 		return "", fmt.Errorf("webfetch: prompt is required")
+	}
+
+	if params.Offset < 0 {
+		return "", fmt.Errorf("webfetch: offset_bytes must be non-negative")
 	}
 
 	rawMode := params.RawMode != nil && *params.RawMode
@@ -117,16 +125,17 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 		), nil
 	}
 
-	// Convert HTML to readable text/markdown.
-	text := htmlToText(body)
-
-	// Truncate if too large.
-	if len(text) > webFetchMaxResponseBytes {
-		text = text[:webFetchMaxResponseBytes] + "\n\n[Content truncated at 100KB]"
+	// Offsets address the UTF-8 text of the current fetch, after HTML conversion.
+	text := strings.ToValidUTF8(htmlToText(body), "�")
+	if params.Offset > len(text) || (params.Offset < len(text) && !utf8.RuneStart(text[params.Offset])) {
+		return "", fmt.Errorf("webfetch: offset_bytes is outside the page or splits a UTF-8 character")
 	}
-
+	if params.Offset > 0 && params.Offset == len(text) {
+		return "", fmt.Errorf("webfetch: offset_bytes is at the end of the page")
+	}
+	page, next := webFetchWindow(text, params.Offset, webFetchMaxResponseBytes)
 	if rawMode {
-		return text, nil
+		return next + page, nil
 	}
 
 	sideModel := WebFetchModelFromCtx(ctx)
@@ -140,16 +149,20 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 		result.WriteString(params.Prompt)
 		result.WriteString("\n\n")
 		result.WriteString("--- Page Content ---\n\n")
-		result.WriteString(text)
+		result.WriteString(next + page)
 		return result.String(), nil
 	}
 
-	// Call the side model with the fetched content and user prompt.
+	// Report the boundary of the text that the side model actually receives.
+	summaryPage, summaryNext := webFetchWindow(text, params.Offset, webFetchSummaryBytes)
+	if summaryNext != "" {
+		summaryPage += "\n\n[...content truncated for processing...]"
+	}
 	aiResult, err := webFetchAIProcess(
 		ctx,
 		sideModel,
 		params.Prompt,
-		text,
+		summaryPage,
 		finalURL,
 	)
 	if err != nil {
@@ -163,11 +176,23 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 		result.WriteString("\n\n(AI processing failed: ")
 		result.WriteString(err.Error())
 		result.WriteString(")\n\n--- Page Content ---\n\n")
-		result.WriteString(text)
+		result.WriteString(next + page)
 		return result.String(), nil
 	}
 
-	return aiResult, nil
+	return summaryNext + aiResult, nil
+}
+
+// webFetchWindow uses byte limits but keeps each character on one page.
+func webFetchWindow(text string, offset, limit int) (page, next string) {
+	if len(text)-offset <= limit {
+		return text[offset:], ""
+	}
+	end := offset + limit
+	for !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[offset:end], fmt.Sprintf("[More page text available: offset_bytes=%d]\n\n", end)
 }
 
 // normalizeURL validates and normalizes the URL, upgrading http to https.
@@ -342,17 +367,10 @@ func webFetchAIProcess(
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	// Trim content for the model context window (keep ~50KB for the model).
-	const maxContentForModel = 50000
-	modelContent := content
-	if len(modelContent) > maxContentForModel {
-		modelContent = modelContent[:maxContentForModel] + "\n\n[...content truncated for processing...]"
-	}
-
 	userMsg := &schema.Message{
 		Role: schema.User,
 		Content: fmt.Sprintf("Source URL: %s\n\nUser's prompt: %s\n\n--- Web Page Content ---\n\n%s",
-			sourceURL, prompt, modelContent),
+			sourceURL, prompt, content),
 	}
 
 	providerUsage, required := execution.ProviderUsageScopeFromContext(ctx)
