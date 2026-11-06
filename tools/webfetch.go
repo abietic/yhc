@@ -365,6 +365,14 @@ func webFetchAIProcess(
 	if providerUsage != nil {
 		logicalRoundID = providerUsage.NewLogicalRoundID()
 	}
+	// Obtain the route from the injected model itself. An independently
+	// configured WebFetch model must never be billed to the active conversation.
+	var selector, providerName, effort string
+	if routed, ok := sideModel.(interface {
+		DefaultSideQueryRoute() (selector, providerName, effort string)
+	}); ok {
+		selector, providerName, effort = routed.DefaultSideQueryRoute()
+	}
 	resp, err := execution.SideQueryWithRetry(
 		ctx,
 		sideModel,
@@ -373,6 +381,9 @@ func webFetchAIProcess(
 				"Analyze the content and provide a focused, concise answer to the user's prompt. " +
 				"Only include information that is directly relevant to what was asked.",
 			Messages:            []*schema.Message{userMsg},
+			Model:               selector,
+			Provider:            providerName,
+			EffortValue:         effort,
 			QuerySource:         "webfetch_ai_processing",
 			ProviderUsage:       providerUsage,
 			UsageLogicalRoundID: logicalRoundID,

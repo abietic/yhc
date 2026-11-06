@@ -953,7 +953,7 @@ privacy:
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
     - path: "docs/architecture/platform/model-providers.md"
-      line: 817
+      line: 821
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example
@@ -3878,7 +3878,7 @@ privacy:
       match_sha256: 6e2c8215fd888dc9fcb3631216bacb9c411c21ef648331a6cb9e7dfc23abdc67
       purpose: synthetic-security-fixture
     - path: engine/provider/runtime_test.go
-      line: 76
+      line: 77
       rule_id: credential-assignment
       match_sha256: 97aba22fd3c830fb7840d875a0c7b9ea7889a7fbc00465c769496adfd6659d77
       purpose: synthetic-security-fixture
@@ -5178,12 +5178,7 @@ privacy:
       match_sha256: d189e5f9ce92c0ba72537805f35f3ad0bdf64b16f037613c561a5330ebabdbed
       purpose: synthetic-security-fixture
     - path: tools/webfetch_goal_usage_test.go
-      line: 112
-      rule_id: private-url
-      match_sha256: f1e2c7da767e6e0fc3eac0819fdd3a622967f18748c6f0a875c3a5b0a165031e
-      purpose: synthetic-security-fixture
-    - path: tools/webfetch_goal_usage_test.go
-      line: 152
+      line: 14
       rule_id: private-url
       match_sha256: f1e2c7da767e6e0fc3eac0819fdd3a622967f18748c6f0a875c3a5b0a165031e
       purpose: synthetic-security-fixture
