@@ -25,6 +25,19 @@ def call(identifier, prompt=50, cached=45, thinking=2):
                 elapsed_seconds=1, requested_model="flash", effort="high")
 
 
+def reference_trace():
+    return dict(schema_version="ATIF-v1.7", agent=dict(name="reference-agent", model_name="reference-model"),
+        steps=[dict(step_id=1, source="user", message="PRIVATE_SENTINEL"),
+               dict(step_id=2, source="agent", llm_call_count=1, message="PRIVATE_SENTINEL",
+                    tool_calls=[dict(function_name="Read"), dict(function_name="Read")],
+                    metrics=dict(prompt_tokens=100, cached_tokens=80, completion_tokens=8,
+                                 extra=dict(output_tokens_details=dict(thinking_tokens=4)))),
+               dict(step_id=3, source="agent", llm_call_count=1, message="PRIVATE_SENTINEL",
+                    metrics=dict(prompt_tokens=300, cached_tokens=250, completion_tokens=12,
+                                 extra=dict(output_tokens_details=dict(reasoning_tokens=6))))],
+        final_metrics=dict(total_prompt_tokens=400, total_cached_tokens=330, total_completion_tokens=20))
+
+
 class ComparisonTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -219,3 +232,104 @@ class ComparisonTests(unittest.TestCase):
             self.skipTest("symlink creation is unavailable")
         with self.assertRaises(ValueError):
             load_run(root)
+
+    def reference(self, value=None):
+        path = self.root / "reference.json"
+        path.write_text(json.dumps(reference_trace() if value is None else value))
+        return path
+
+    def test_reference_thinking_aliases_count_metrics_once_per_step_and_stay_separate(self):
+        path = self.reference()
+        report = build_report([self.write()], reference_trajectories=[path])
+        got = report["reference_trajectories"][0]
+        self.assertEqual((got["model_calls"], got["input_tokens"], got["output_tokens"]), (2, 400, 20))
+        self.assertEqual(got["cache_hit_rate_known_including_first"], 0.825)
+        self.assertEqual(got["thinking"], dict(known_tokens=10, reported_steps=2, total_steps=2, complete=True))
+        self.assertEqual(got["source_sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertIsNone(got["reward"])
+        self.assertFalse(report["paired_tasks"])
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+        self.assertIn("reference-model", markdown(report))
+
+    def test_reference_missing_thinking_stays_partial_or_unknown(self):
+        for missing, expected in (([2], 4), ([1, 2], None)):
+            trace = reference_trace()
+            for index in missing:
+                trace["steps"][index]["metrics"]["extra"] = {}
+            got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
+            self.assertEqual(got["thinking"]["known_tokens"], expected)
+            self.assertFalse(got["thinking"]["complete"])
+
+    def test_reference_copied_context_and_deterministic_steps_are_not_new_calls(self):
+        trace = reference_trace()
+        trace["steps"].append(dict(trace["steps"][1], step_id=4, is_copied_context=True))
+        trace["steps"].append(dict(step_id=5, source="agent", llm_call_count=0))
+        got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
+        self.assertEqual((got["model_calls"], got["input_tokens"]), (2, 400))
+        trace["steps"][2].pop("llm_call_count")
+        got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
+        self.assertIsNone(got["model_calls"])
+
+    def test_reference_partial_token_coverage_does_not_infer_zero_or_call_count(self):
+        trace = reference_trace()
+        trace["steps"][1]["llm_call_count"] = 3
+        trace["steps"][2]["metrics"]["cached_tokens"] = None
+        got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
+        self.assertEqual(got["model_calls"], 4)
+        self.assertFalse(got["usage_complete"])
+        self.assertEqual(got["reported_metric_steps"]["cached_input_tokens"], 1)
+        self.assertEqual(got["cache_hit_rate_known_including_first"], 0.8)
+        self.assertEqual(got["thinking"]["known_tokens"], 10)
+        trace["steps"][2]["model_name"] = "other-model"
+        got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
+        self.assertEqual(got["model"], "mixed")
+        self.assertEqual(got["models"], ["other-model", "reference-model"])
+        with self.assertRaises(ValueError):
+            path = self.reference()
+            build_report([], reference_trajectories=[path, path])
+
+    def test_reference_invalid_counters_alias_conflicts_and_totals_fail_closed(self):
+        for change in (dict(thinking_tokens=True), dict(thinking_tokens=-1), dict(thinking_tokens=9),
+                       dict(thinking_tokens=4, reasoning_tokens=5)):
+            trace = reference_trace()
+            trace["steps"][1]["metrics"]["extra"]["output_tokens_details"] = change
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                build_report([], reference_trajectories=[self.reference(trace)])
+        for field, value in (("cached_tokens", 101), ("prompt_tokens", True)):
+            trace = reference_trace()
+            trace["steps"][1]["metrics"][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                build_report([], reference_trajectories=[self.reference(trace)])
+        trace = reference_trace()
+        trace["final_metrics"]["total_prompt_tokens"] = 401
+        with self.assertRaises(ValueError):
+            build_report([], reference_trajectories=[self.reference(trace)])
+
+    def test_fresh_gateway_receipts_preserve_known_cost_and_unknown_liability(self):
+        entry = row()
+        entry.update(normal_completion=False)
+        entry["summary"].update(calls=3, unknown_calls=1, usage_complete=False, thinking_tokens=None)
+        records = [call("1"), call("2")]
+        for record in records:
+            record["known_cost"] = record.pop("known_peak_estimate_cny")
+            record["call"] = dict(id=record["id"], state="known", known_cost=record["known_cost"])
+        records.append(dict(id="3", state="unknown", call=dict(id="3", state="unknown", liability="2.621440")))
+        root = self.write(entry, records)
+        got = build_report([root])["samples"][0]
+        self.assertEqual(got["known_peak_estimate_cny"], "0.0010")
+        self.assertEqual(got["retained_unknown_cny"], "2.621440")
+        self.assertIsNone(got["actual_billed_cny"])
+        records[0]["call"]["known_cost"] = "0.1"
+        ledger = root / "wire/sample-a/ledger.json"
+        ledger.write_text(json.dumps(dict(protocol="responses", sample="sample-a", currency="CNY", records=records)))
+        with self.assertRaises(ValueError):
+            build_report([root])
+
+    def test_cli_includes_reference_metrics_without_replacing_old_reports(self):
+        root = self.write()
+        path = self.reference()
+        target = self.root / "combined.json"
+        p = subprocess.run([sys.executable, "-m", "scripts.terminal_bench.compare_runs", "--run", str(root),
+                            "--reference-trajectory", str(path), "--output", str(target)], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(target.read_text())["reference_trajectories"][0]["thinking"]["known_tokens"], 10)

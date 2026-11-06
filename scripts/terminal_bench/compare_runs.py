@@ -1,7 +1,7 @@
 """Read-only comparison of native harness scoreboards and per-call receipts.
 
 python -m scripts.terminal_bench.compare_runs --run YHC_ROOT --run DSH_ROOT \
-    --output comparison.json
+    --reference-trajectory ATIF_JSON --output comparison.json
 
 This accepts explicit local operator artifacts, never executes/imports them,
 never queries a provider, and never changes financial or recovery authority.
@@ -52,7 +52,7 @@ def seconds(value):
     return value
 
 
-def read_json(path):
+def read_json(path, *, with_sha256=False):
     path = Path(path)
     if path.is_symlink() or not path.is_file():
         raise ValueError("evidence must be a regular non-symlink file")
@@ -65,7 +65,11 @@ def read_json(path):
                 raise ValueError("duplicate JSON key")
             out[key] = value
         return out
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+    raw = path.read_bytes()
+    if len(raw) > 64 * 1024 * 1024:
+        raise ValueError("evidence file too large")
+    value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique)
+    return (value, hashlib.sha256(raw).hexdigest()) if with_sha256 else value
 
 
 def fingerprint(path):
@@ -93,6 +97,18 @@ def call_detail(index, record):
     return dict(call_index=index, state=record["state"], elapsed_seconds=seconds(record.get("elapsed_seconds")),
                 transport_timings=timings, timing_evidence_available=bool(diagnostics),
                 error_category=category, authority="diagnostic_only")
+
+
+def receipt_amount(record, legacy, native):
+    values = [amount(record[key]) for key in (legacy, native) if key in record]
+    if record.get("call") is not None:
+        call = record["call"]
+        if not isinstance(call, dict) or call.get("id") != record["id"] or call.get("state") != record["state"]:
+            raise ValueError("nested call identity or state mismatch")
+        values.append(amount(call.get(native)))
+    if not values or any(value != values[0] for value in values):
+        raise ValueError("missing or conflicting receipt amount")
+    return values[0]
 
 
 def _usage(summary, ledger):
@@ -132,7 +148,7 @@ def _usage(summary, ledger):
                 raise ValueError("cached tokens exceed call input")
             if r.get("thinking_tokens") is not None and count(r["thinking_tokens"]) > r["output_tokens"]:
                 raise ValueError("thinking tokens exceed call output")
-        cost = sum((amount(r["known_peak_estimate_cny"]) for r in known), Decimal(0))
+        cost = sum((receipt_amount(r, "known_peak_estimate_cny", "known_cost") for r in known), Decimal(0))
         if cost != amount(result["known_peak_estimate_cny"]):
             raise ValueError("summary and per-call cost disagree")
         reported = [r["thinking_tokens"] for r in known if r.get("thinking_tokens") is not None]
@@ -141,7 +157,8 @@ def _usage(summary, ledger):
             raise ValueError("summary and per-call thinking disagree")
         timed = [seconds(r.get("elapsed_seconds")) for r in records if r.get("elapsed_seconds") is not None]
         result.update(call_evidence="per_call_checked", protocol=atom(ledger["protocol"]),
-            retained_unknown_cny=str(sum((amount(r["reserved_cny"]) for r in records if r["state"] == "unknown"), Decimal(0))),
+            retained_unknown_cny=str(sum((receipt_amount(r, "reserved_cny", "liability")
+                                         for r in records if r["state"] == "unknown"), Decimal(0))),
             thinking=dict(known_tokens=sum(reported) if reported else None, reported_calls=len(reported),
                           total_calls=total, complete=complete and len(reported) == total),
             known_peak_estimate_cny=str(cost), sum_request_elapsed_seconds=sum(timed) if timed else None,
@@ -231,7 +248,91 @@ def load_run(root):
     return rows
 
 
-def build_report(roots):
+def load_reference_trajectory(path):
+    """ATIF v1.7 counters only; messages, reasoning and tool payloads never leave this reader."""
+    data, source_sha = read_json(path, with_sha256=True)
+    if (not isinstance(data, dict) or data.get("schema_version") != "ATIF-v1.7"
+            or not isinstance(data.get("steps"), list) or not isinstance(data.get("agent"), dict)):
+        raise ValueError("unsupported reference trajectory")
+    steps, identifiers = [], set()
+    for step in data["steps"]:
+        if not isinstance(step, dict):
+            raise ValueError("invalid reference step")
+        identifier = count(step["step_id"])
+        copied = step.get("is_copied_context")
+        calls = step.get("llm_call_count")
+        if (identifier == 0 or identifier in identifiers or step.get("source") not in ("agent", "user", "system")
+                or copied is not None and type(copied) is not bool):
+            raise ValueError("invalid reference step")
+        identifiers.add(identifier)
+        if calls is not None:
+            count(calls)
+        if step["source"] != "agent":
+            if step.get("metrics") is not None:
+                raise ValueError("non-agent reference metrics")
+        elif calls == 0:
+            if step.get("metrics") is not None:
+                raise ValueError("deterministic reference step has usage")
+        elif not copied:
+            steps.append(step)
+    if not steps:
+        raise ValueError("reference contains no model steps")
+    fields = {"input_tokens": "prompt_tokens", "cached_input_tokens": "cached_tokens", "output_tokens": "completion_tokens"}
+    values = {key: [] for key in fields}
+    thinking, cache_rows = [], []
+    for step in steps:
+        metrics = step.get("metrics")
+        if metrics is None:
+            continue
+        if not isinstance(metrics, dict):
+            raise ValueError("invalid reference metrics")
+        for key, field in fields.items():
+            if metrics.get(field) is not None:
+                values[key].append(count(metrics[field]))
+        prompt, cached = metrics.get("prompt_tokens"), metrics.get("cached_tokens")
+        if prompt is not None and cached is not None:
+            if cached > prompt:
+                raise ValueError("reference cached tokens exceed input")
+            cache_rows.append((prompt, cached))
+        extra = metrics.get("extra")
+        if extra is not None and not isinstance(extra, dict):
+            raise ValueError("invalid reference metrics extra")
+        details = (extra or {}).get("output_tokens_details")
+        if details is not None and not isinstance(details, dict):
+            raise ValueError("invalid reference output details")
+        aliases = [count(details[key]) for key in ("thinking_tokens", "reasoning_tokens")
+                   if details is not None and details.get(key) is not None]
+        if aliases:
+            if (len(set(aliases)) != 1
+                    or metrics.get("completion_tokens") is not None and aliases[0] > metrics["completion_tokens"]):
+                raise ValueError("conflicting or excessive reference thinking")
+            thinking.append(aliases[0])
+    final = data.get("final_metrics")
+    if final is not None and not isinstance(final, dict):
+        raise ValueError("invalid reference final metrics")
+    final = final or {}
+    totals = {key: sum(rows) if rows else None for key, rows in values.items()}
+    for key, field in fields.items():
+        aggregate = final.get("total_" + field)
+        if aggregate is not None:
+            count(aggregate)
+            if len(values[key]) == len(steps) and aggregate != totals[key]:
+                raise ValueError("reference step and final metric scopes disagree")
+    reported_calls = [step.get("llm_call_count") for step in steps]
+    models = sorted({atom(step.get("model_name") or data["agent"].get("model_name")) for step in steps})
+    return dict(source_sha256=source_sha, evidence_kind="reference_trajectory", reward=None, actual_billed_cny=None,
+        agent=atom(data["agent"].get("name")), model=models[0] if len(models) == 1 else "mixed", models=models,
+        model_calls=sum(reported_calls) if all(c is not None for c in reported_calls) else None,
+        **totals, reported_metric_steps={key: len(rows) for key, rows in values.items()},
+        usage_complete=all(len(rows) == len(steps) for rows in values.values()),
+        cache_hit_rate_known_including_first=sum(c for _, c in cache_rows) / sum(p for p, _ in cache_rows)
+            if sum(p for p, _ in cache_rows) else None,
+        cache_reported_steps=len(cache_rows),
+        thinking=dict(known_tokens=sum(thinking) if thinking else None, reported_steps=len(thinking),
+                      total_steps=len(steps), complete=len(thinking) == len(steps)))
+
+
+def build_report(roots, reference_trajectories=()):
     rows = [row for root in roots for row in load_run(root)]
     if len({r["sample_id"] for r in rows}) != len(rows):
         raise ValueError("duplicate sample would double count")
@@ -241,13 +342,17 @@ def build_report(roots):
             continue
         key = (row["task_ref"], tuple(tuple(r) for r in row["routes"]))
         pairs.setdefault(key, []).append(row)
-    return dict(schema_version=1, authority="diagnostic_only", samples=rows,
+    references = [load_reference_trajectory(path) for path in reference_trajectories]
+    if len({r["source_sha256"] for r in references}) != len(references):
+        raise ValueError("duplicate reference would double count")
+    return dict(schema_version=1, authority="diagnostic_only", samples=rows, reference_trajectories=references,
                 paired_tasks=[dict(task_ref=k[0], samples=[r["sample_id"] for r in group])
                               for k, group in pairs.items() if {r["agent"] for r in group} >= {"dsh", "yhc"}],
                 stability_established=False,
                 limitations=["known_usage_cache_ratio_is_not_full_coverage_when_unknown_calls_exist",
                              "request_duration_sum_is_not_wall_time_or_tool_time",
                              "thinking_characters_are_not_token_counters",
+                             "reference_trajectories_do_not_establish_reward_billing_or_a_matched_pair",
                              "paired_aliases_do_not_pin_provider_weights_or_isolate_protocol_effects",
                              "operator_artifacts_are_not_provider_bills_or_resume_authority"])
 
@@ -279,6 +384,16 @@ def markdown(report):
                      f"{value(feedback.get('unmatched_emitted_calls'))} | "
                      f"{value(edit.get('completed'))}/{value(edit.get('failed'))}/{value(edit.get('emitted'))} "
                      f"({edit.get('coverage', 'unavailable')}) | {value(r.get('edit_rejections'))} |")
+    if report.get("reference_trajectories"):
+        lines += ["", "Reference counters only; scoring, billing and matched-pair evidence are separate.", "",
+                  "| Reference agent | Model | Reported calls | Cache, reported steps | Known thinking tokens | Thinking steps |",
+                  "|---|---|---:|---:|---:|---:|"]
+        for r in report["reference_trajectories"]:
+            cache, thinking = r["cache_hit_rate_known_including_first"], r["thinking"]
+            lines.append(f"| {r['agent']} | {r['model']} | {r['model_calls'] if r['model_calls'] is not None else 'unavailable'} | "
+                         f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
+                         f"{thinking['known_tokens'] if thinking['known_tokens'] is not None else 'unavailable'} | "
+                         f"{thinking['reported_steps']}/{thinking['total_steps']} |")
     return "\n".join(lines) + "\n"
 
 
@@ -287,8 +402,9 @@ def main():
     parser.add_argument("--run", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--markdown", type=Path)
+    parser.add_argument("--reference-trajectory", type=Path, action="append", default=[], help="Read-only ATIF v1.7 usage")
     args = parser.parse_args()
-    report = build_report(args.run)
+    report = build_report(args.run, args.reference_trajectory)
     # Reject both destination collisions before publishing either report.
     if args.output.exists() or args.markdown is not None and (args.markdown.exists() or args.markdown == args.output):
         raise FileExistsError("report destination already exists")
