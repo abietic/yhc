@@ -32,6 +32,100 @@ class ToolFeedbackTests(unittest.TestCase):
         records = [dict(id="one", state="known")] if records is None else records
         return collect_tool_feedback(self.root, records, protocol, self.native)
 
+    def dsh_stream(self, tool="edit"):
+        self.stream("one", [dict(type="message_start", message={}),
+            dict(type="content_block_start", index=0,
+                 content_block=dict(type="tool_use", id="edit-a", name=tool, input="PRIVATE_SENTINEL")),
+            dict(type="content_block_stop", index=0), dict(type="message_stop")])
+
+    def dsh_events(self, failed=False, session="root-a"):
+        return [dict(method="session.event", payload=dict(sessionId=session, event=dict(type=kind, data=data)))
+                for kind, data in (
+                    ("tool/call", dict(callId="edit-a", name="edit", arguments="PRIVATE_SENTINEL")),
+                    ("tool/result", dict(message=dict(role="tool", toolCallId="edit-a",
+                        source=dict(kind="tool", callId="edit-a"), isError=failed,
+                        content=[dict(type="text", text="PRIVATE_SENTINEL")]))))]
+
+    def collect_dsh(self, events):
+        self.native.write_text("".join(json.dumps(row) + "\n" for row in events))
+        return collect_tool_feedback(self.root, [dict(id="one", state="known")], "messages", self.native,
+                                     native_format="dsh_sdk", native_session_id="root-a")
+
+    def test_dsh_edit_matches_its_native_receipt_without_private_text(self):
+        self.dsh_stream()
+        got = self.collect_dsh(self.dsh_events())
+        self.assertEqual(got["emitted_counts"], {"Edit": 1})
+        self.assertEqual(got["native_start_counts"], {"Edit": 1})
+        self.assertEqual(got["edit"], dict(emitted=1, matched_terminals=1, completed=1, failed=0, coverage="complete"))
+        self.assertEqual(got["edit_rejections"], 0)
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(got))
+
+    def test_dsh_failed_edit_is_not_a_proven_rejection(self):
+        self.dsh_stream()
+        got = self.collect_dsh(self.dsh_events(failed=True))
+        self.assertEqual(got["edit"]["failed"], 1)
+        self.assertIsNone(got["edit_rejections"])
+
+    def test_dsh_child_receipts_require_root_catalog_lineage(self):
+        self.dsh_stream()
+        child = self.dsh_events(session="child-a")
+        got = self.collect_dsh(child)
+        self.assertEqual(got["native_inventory"], "partial")
+        self.assertIsNone(got["edit_rejections"])
+        catalog = dict(method="session.event", payload=dict(sessionId="root-a",
+            event=dict(type="subagent/catalog", data=dict(childId="child-a"))))
+        got = self.collect_dsh(child + [catalog])
+        self.assertEqual(got["native_inventory"], "available")
+        self.assertEqual(got["edit_rejections"], 0)
+
+    def test_dsh_missing_status_mismatched_identity_and_duplicates_do_not_prove_success(self):
+        self.dsh_stream()
+        for change in ("missing_status", "wrong_status_type", "wrong_source", "duplicate_terminal",
+                       "terminal_before_start", "missing_type", "bad_json"):
+            events = self.dsh_events()
+            message = events[-1]["payload"]["event"]["data"]["message"]
+            if change == "missing_status":
+                del message["isError"]
+            elif change == "wrong_status_type":
+                message["isError"] = "false"
+            elif change == "wrong_source":
+                message["source"]["callId"] = "different"
+            elif change == "duplicate_terminal":
+                events.append(events[-1])
+            elif change == "terminal_before_start":
+                events.reverse()
+            elif change == "missing_type":
+                events.append(dict(method="session.event", payload=dict(sessionId="root-a", event=dict(data={}))))
+            else:
+                events.append([])
+            with self.subTest(change=change):
+                self.assertIsNone(self.collect_dsh(events)["edit_rejections"])
+
+    def test_dsh_child_cannot_complete_another_sessions_tool_call(self):
+        self.dsh_stream()
+        events = self.dsh_events()
+        events[-1]["payload"]["sessionId"] = "child-a"
+        catalog = dict(method="session.event", payload=dict(sessionId="root-a",
+            event=dict(type="subagent/catalog", data=dict(childId="child-a"))))
+        got = self.collect_dsh([catalog, *events])
+        self.assertEqual(got["native_inventory"], "partial")
+        self.assertEqual(got["edit"]["matched_terminals"], 0)
+        self.assertIsNone(got["edit_rejections"])
+
+    def test_dsh_file_and_web_aliases_are_public_categories(self):
+        for name, expected in (("read", "Read"), ("write", "Write"), ("glob", "Glob"),
+                               ("grep", "Grep"), ("web_fetch", "WebFetch"), ("web_search", "WebSearch")):
+            with self.subTest(name=name):
+                self.dsh_stream(name)
+                got = self.collect_dsh([])
+                self.assertEqual(got["emitted_counts"], {expected: 1})
+
+    def test_dsh_requires_explicit_session_identity(self):
+        self.dsh_stream()
+        with self.assertRaises(ValueError):
+            collect_tool_feedback(self.root, [dict(id="one", state="known")], "messages", self.native,
+                                  native_format="dsh_sdk")
+
     def test_failed_edit_is_not_an_inferred_rejection_category(self):
         self.response()
         self.native_events(outcome="failed")

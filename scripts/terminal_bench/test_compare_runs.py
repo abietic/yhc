@@ -91,6 +91,33 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["reward"])
         self.assertIsNone(got["calls"])
 
+    def test_dsh_uses_sdk_notifications_instead_of_yhc_receipts(self):
+        entry = row("dsh", "dsh-sample")
+        root = self.write(entry, [call("1"), call("2")])
+        wire = root / "wire/dsh-sample"
+        ledger = json.loads((wire / "ledger.json").read_text())
+        ledger["protocol"] = "messages"
+        (wire / "ledger.json").write_text(json.dumps(ledger))
+        frames = [dict(type="message_start", message={}),
+                  dict(type="content_block_start", index=0,
+                       content_block=dict(type="tool_use", id="edit-a", name="edit", input={})),
+                  dict(type="content_block_stop", index=0), dict(type="message_stop")]
+        (wire / "1.response.sse").write_text("".join("data: " + json.dumps(e) + "\n\n" for e in frames))
+        (wire / "2.response.sse").write_text('data: {"type":"message_start","message":{}}\n\ndata: {"type":"message_stop"}\n\n')
+        native = root / "trials/dsh-sample/agent"
+        native.mkdir(parents=True)
+        events = [dict(type="tool/call", data=dict(callId="edit-a", name="edit")),
+                  dict(type="tool/result", data=dict(message=dict(role="tool", toolCallId="edit-a",
+                       source=dict(kind="tool", callId="edit-a"), isError=False)))]
+        (native / "notifications.jsonl").write_text("".join(json.dumps(dict(method="session.event",
+            payload=dict(sessionId="dsh-sample", event=e))) + "\n" for e in events))
+        # A different harness's receipt cannot supply or contradict the DSH result.
+        (native / "yhc.jsonl").write_text(json.dumps(dict(type="event", schema_version=1,
+            event=dict(kind="tool_terminal", tool=dict(tool_call_id="edit-a", outcome="failed")))) + "\n")
+        got = load_run(root)[0]
+        self.assertEqual(got["tool_feedback"]["edit"]["completed"], 1)
+        self.assertEqual(got["edit_rejections"], 0)
+
     def test_synthetic_does_not_pair_with_real_and_missing_thinking_is_not_zero(self):
         real = self.write(records=[call("1"), call("2")])
         entry = row("dsh", "synthetic")
