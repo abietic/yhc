@@ -544,6 +544,17 @@ type routingChatModel struct {
 	tools  []*schema.ToolInfo
 }
 
+// DefaultSideQueryRoute identifies the model this router owns for helper calls.
+// A named profile is the local dispatch and pricing selector, not its wire model.
+func (r *routingChatModel) DefaultSideQueryRoute() (selector, providerName, effort string) {
+	routes := r.routes
+	if routes.portfolio != nil && !routes.legacyBound() {
+		profile := routes.portfolio.Profiles[routes.portfolio.Default]
+		return string(profile.ID), string(routes.main.Provider), profile.Reasoning.DefaultEffort
+	}
+	return routes.main.Model, string(routes.main.Provider), ""
+}
+
 func (r *routingChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	clone := *r
 	clone.tools = append([]*schema.ToolInfo(nil), tools...)

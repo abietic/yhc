@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	engineconfig "github.com/abietic/yhc/engine/config"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
@@ -164,4 +165,28 @@ func TestRuntimePreflightRunsOncePerRouteAndFailsBeforeFactory(t *testing.T) {
 	if preflightCalls != 1 || factoryCalls != 0 {
 		t.Fatalf("preflight calls = %d, factory calls = %d", preflightCalls, factoryCalls)
 	}
+}
+
+func TestDefaultSideQueryRouteUsesOwnedProfile(t *testing.T) {
+	router := &routingChatModel{routes: &routeRegistry{
+		main: ResolvedConfig{Config: Config{Provider: ProviderAgenticDeepSeek, Model: "deepseek-flash"}},
+	}}
+	assertRoute := func(selector, effort string) {
+		t.Helper()
+		gotModel, gotProvider, gotEffort := router.DefaultSideQueryRoute()
+		if gotModel != selector || gotProvider != string(ProviderAgenticDeepSeek) || gotEffort != effort {
+			t.Fatalf("route = (%q, %q, %q), want (%q, %q, %q)", gotModel, gotProvider, gotEffort, selector, ProviderAgenticDeepSeek, effort)
+		}
+	}
+	assertRoute("deepseek-flash", "")
+	router.routes.portfolio = &engineconfig.PortfolioSnapshot{
+		Default: "analysis",
+		Profiles: map[engineconfig.ProfileID]engineconfig.ResolvedProfile{
+			"analysis":       {ID: "analysis", APIModel: "deepseek-flash", Reasoning: engineconfig.ReasoningDefaults{DefaultEffort: "high"}},
+			"deepseek-flash": {ID: "deepseek-flash", APIModel: "another-model"},
+		},
+	}
+	assertRoute("analysis", "high")
+	router.routes.portfolio.Default = "legacy.main"
+	assertRoute("deepseek-flash", "")
 }

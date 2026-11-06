@@ -12,6 +12,7 @@ import (
 )
 
 type webFetchGoalUsageAdmitter struct {
+	descriptor execution.ProviderUsageDescriptor
 	admissions int
 	call       *webFetchGoalUsageCall
 }
@@ -28,6 +29,7 @@ func (a *webFetchGoalUsageAdmitter) AdmitProviderUsage(
 		descriptor.QuerySource != "webfetch_ai_processing" {
 		return nil, errors.New("invalid WebFetch Goal usage descriptor")
 	}
+	a.descriptor = descriptor
 	a.admissions++
 	a.call = &webFetchGoalUsageCall{id: "webfetch-provider-call"}
 	return a.call, nil
@@ -157,5 +159,45 @@ func TestP242bWebFetchAIProcessingFailsBeforeProviderWithoutCapability(
 			err,
 			chatModel.streamCalls,
 		)
+	}
+}
+
+type webFetchProfileModel struct{ webFetchGoalUsageModel }
+
+func (*webFetchProfileModel) DefaultSideQueryRoute() (string, string, string) {
+	return "research", "agenticdeepseek", "high"
+}
+
+func TestWebFetchAccountsForItsOwnModelRoute(t *testing.T) {
+	admitter := &webFetchGoalUsageAdmitter{}
+	ctx := execution.WithProviderUsageScope(t.Context(), admitter, true)
+	_, err := webFetchAIProcess(ctx, &webFetchProfileModel{}, "summarize", "content", "https://example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := admitter.descriptor
+	if got.Model != "research" || got.Provider != "agenticdeepseek" || got.ReasoningEffort != "high" {
+		t.Fatalf("side request route = (%q, %q, %q)", got.Model, got.Provider, got.ReasoningEffort)
+	}
+}
+
+func TestWebFetchCustomModelKeepsCostProtection(t *testing.T) {
+	chatModel := &webFetchGoalUsageModel{}
+	card := execution.RunPriceCard{
+		Version: 1, Currency: "CNY", Source: "https://example.org/pricing", AsOf: "2026-10-11T00:00:00Z", Window: "upper_bound",
+		Routes: []execution.RunPriceRoute{{Provider: "agenticdeepseek", Model: "research", APIModel: "deepseek-flash", CachedInputPerMillion: "1", UncachedInputPerMillion: "2", OutputPerMillion: "4"}},
+	}
+	usage, err := execution.NewPricedRunUsage(execution.RunUsageLimits{MaxEstimatedCost: "1", ReserveCostBeforeDispatch: true, MaxOutputTokensPerCall: 100}, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := execution.WithProviderUsageScope(t.Context(), usage, true)
+	_, err = webFetchAIProcess(ctx, chatModel, "summarize", "page", "https://example.test")
+	if !errors.Is(err, execution.ErrRunUsageUnknown) || chatModel.streamCalls != 0 {
+		t.Fatalf("unbounded custom model: calls=%d err=%v", chatModel.streamCalls, err)
+	}
+	result, err := webFetchAIProcess(t.Context(), chatModel, "summarize", "page", "https://example.test")
+	if err != nil || result != "accounted WebFetch result" || chatModel.streamCalls != 1 {
+		t.Fatalf("custom model without budget: calls=%d result=%q err=%v", chatModel.streamCalls, result, err)
 	}
 }

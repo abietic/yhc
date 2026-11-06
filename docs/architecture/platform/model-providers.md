@@ -252,7 +252,11 @@ legacy parent inheritance and upgrades only on its next admitted execution.
 Only an enabled root best-effort tool-use summary consumes `summary`. Child
 summaries remain disabled. Auto/manual compaction, long-session memory and
 dream, WebFetch, permission classifiers/explainers, callback progress
-summaries, and the P22 reviewer retain their existing model owners. Role
+summaries, and the P22 reviewer retain their existing model owners. WebFetch
+uses the default route of its own injected provider model for page summaries.
+For a named profile, its selector, provider and configured effort travel with
+the call so the run can reserve its cost before sending it. Raw page fetches
+skip the model call. Role
 routing changes no ProjectGraph, retry, stream/tool commitment, permission,
 worktree, cancellation, transcript, or child lifecycle owner.
 
