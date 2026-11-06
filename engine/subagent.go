@@ -1103,6 +1103,11 @@ func (e *SubAgentExecutor) ExecuteAgent(ctx context.Context, opts tools.AgentExe
 	defer eng.Close()
 	if len(opts.ResumeMessages) > 0 {
 		eng.SetResumedMessages(opts.ResumeMessages)
+	} else if runnerAdmitted {
+		// Admission already persisted the pending task. It is not prior model
+		// history: SubmitMessage below adds it once. A non-nil empty slice clears
+		// that seed without changing the legacy direct-executor load contract.
+		eng.SetResumedMessages([]*schema.Message{})
 	}
 	progress := eng.configureSubagentProgress(
 		opts.ResumeMessages,

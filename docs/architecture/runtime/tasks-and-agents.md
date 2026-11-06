@@ -2,7 +2,7 @@
 
 **Status:** current
 **Compatibility:** includes the legacy `engine/tasks` surface where it still affects behavior
-**Last verified:** 2026-08-09
+**Last verified:** 2026-11-06
 
 > **Ownership:** This file owns the task-record and local Agent runtime truth
 > split. TUI projection and reducer ownership belong in
@@ -221,6 +221,13 @@ execution does not itself prove a PASS verdict or finish the parent's work.
   CWD, message seed, and `session-start` before executor/model entry.
   `AgentRunner` appends lifecycle checkpoints for later snapshots, so
   QueryEngine Session metadata remains authoritative across reconstruction.
+- For runner-admitted foreground and background executions, the transcript seed
+  contains prior `ResumeMessages` plus the pending task. `SubAgentExecutor`
+  initializes active model history from those prior messages, including an
+  explicitly empty history, before submitting the current task once. The seed
+  is not an additional model turn. Identical requests in legitimate prior
+  history remain intact; this is not text deduplication. Legacy direct-executor
+  calls retain their existing transcript-loading behavior.
 - A crash after this admission but before the separate AgentRunner JSON commit
   has no model/tool side effect and cannot recover through another kernel. Resume
   follows exact reachable child lineage in the runner-owned regular-file
