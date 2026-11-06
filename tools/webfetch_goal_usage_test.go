@@ -11,6 +11,8 @@ import (
 	"github.com/abietic/yhc/engine/execution"
 )
 
+const webFetchExampleURL = "https://example.test"
+
 type webFetchGoalUsageAdmitter struct {
 	descriptor execution.ProviderUsageDescriptor
 	admissions int
@@ -111,7 +113,7 @@ func TestP242bWebFetchAIProcessingUsesGoalUsageScope(t *testing.T) {
 		chatModel,
 		"summarize",
 		"bounded content",
-		"https://example.test",
+		webFetchExampleURL,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +153,7 @@ func TestP242bWebFetchAIProcessingFailsBeforeProviderWithoutCapability(
 		chatModel,
 		"summarize",
 		"bounded content",
-		"https://example.test",
+		webFetchExampleURL,
 	)
 	if err == nil || chatModel.streamCalls != 0 {
 		t.Fatalf(
@@ -171,7 +173,7 @@ func (*webFetchProfileModel) DefaultSideQueryRoute() (string, string, string) {
 func TestWebFetchAccountsForItsOwnModelRoute(t *testing.T) {
 	admitter := &webFetchGoalUsageAdmitter{}
 	ctx := execution.WithProviderUsageScope(t.Context(), admitter, true)
-	_, err := webFetchAIProcess(ctx, &webFetchProfileModel{}, "summarize", "content", "https://example.test")
+	_, err := webFetchAIProcess(ctx, &webFetchProfileModel{}, "summarize", "content", webFetchExampleURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +186,7 @@ func TestWebFetchAccountsForItsOwnModelRoute(t *testing.T) {
 func TestWebFetchCustomModelKeepsCostProtection(t *testing.T) {
 	chatModel := &webFetchGoalUsageModel{}
 	card := execution.RunPriceCard{
-		Version: 1, Currency: "CNY", Source: "https://example.org/pricing", AsOf: "2026-10-11T00:00:00Z", Window: "upper_bound",
+		Version: 1, Currency: "CNY", Source: webFetchExampleURL + "/pricing", AsOf: "2026-10-11T00:00:00Z", Window: "upper_bound",
 		Routes: []execution.RunPriceRoute{{Provider: "agenticdeepseek", Model: "research", APIModel: "deepseek-flash", CachedInputPerMillion: "1", UncachedInputPerMillion: "2", OutputPerMillion: "4"}},
 	}
 	usage, err := execution.NewPricedRunUsage(execution.RunUsageLimits{MaxEstimatedCost: "1", ReserveCostBeforeDispatch: true, MaxOutputTokensPerCall: 100}, card)
@@ -192,11 +194,11 @@ func TestWebFetchCustomModelKeepsCostProtection(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := execution.WithProviderUsageScope(t.Context(), usage, true)
-	_, err = webFetchAIProcess(ctx, chatModel, "summarize", "page", "https://example.test")
+	_, err = webFetchAIProcess(ctx, chatModel, "summarize", "page", webFetchExampleURL)
 	if !errors.Is(err, execution.ErrRunUsageUnknown) || chatModel.streamCalls != 0 {
 		t.Fatalf("unbounded custom model: calls=%d err=%v", chatModel.streamCalls, err)
 	}
-	result, err := webFetchAIProcess(t.Context(), chatModel, "summarize", "page", "https://example.test")
+	result, err := webFetchAIProcess(t.Context(), chatModel, "summarize", "page", webFetchExampleURL)
 	if err != nil || result != "accounted WebFetch result" || chatModel.streamCalls != 1 {
 		t.Fatalf("custom model without budget: calls=%d result=%q err=%v", chatModel.streamCalls, result, err)
 	}
