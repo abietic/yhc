@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-10-31
+**Last verified:** 2026-11-06
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -190,6 +190,7 @@ immutable run directories; do not read a run while its writer is still active:
 ```bash
 python3 -m scripts.terminal_bench.compare_runs \
   --run "$YHC_RUN_ROOT" --run "$DSH_RUN_ROOT" \
+  --reference-trajectory "$ATIF_REFERENCE_JSON" \
   --output build/evaluation/harness-comparison.json \
   --markdown build/evaluation/harness-comparison.md
 ```
@@ -202,6 +203,16 @@ stays summary-only, and contradictory counters are rejected. Request-duration
 sums do not imply wall time or tool time: absent tool-time and compaction
 evidence remains unavailable. Neither scoreboards nor generated
 reports are provider bills, recovery proofs, or stability estimates.
+
+The optional `--reference-trajectory` reads local ATIF v1.7 counters separately
+from native runs. Thinking comes from explicit `thinking_tokens` or
+`reasoning_tokens` in each step's `metrics.extra.output_tokens_details`; multiple
+tool calls in one step do not duplicate usage. Copied context and deterministic
+zero-inference steps are excluded. Missing counters retain partial coverage,
+and conflicting aliases or aggregate scopes are rejected. A reference trajectory
+supplies no reward, invoice, or matched-pair evidence. Current FreshGateway
+`known_cost` and nested `call.liability` receipts are also accepted; conflicting
+legacy and current amounts fail closed.
 
 `collect_tool_feedback` in [`tool_feedback.py`](../../scripts/terminal_bench/tool_feedback.py)
 counts tool requests from complete captured Responses or Messages replies,
