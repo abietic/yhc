@@ -234,8 +234,10 @@ def load_run(root):
             raise ValueError("ledger sample mismatch")
         usage = _usage(entry["summary"], ledger)
         if ledger is not None:
+            dsh = sample["agent"] == "dsh"
             feedback = collect_tool_feedback(path.parent, ledger["records"], ledger["protocol"],
-                                             root / "trials" / identifier / "agent/yhc.jsonl")
+                root / "trials" / identifier / "agent" / ("notifications.jsonl" if dsh else "yhc.jsonl"),
+                native_format="dsh_sdk" if dsh else "yhc_events", native_session_id=identifier if dsh else None)
             usage.update(tool_feedback=feedback, edit_rejections=feedback["edit_rejections"])
         deadline = entry.get("deadline") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),

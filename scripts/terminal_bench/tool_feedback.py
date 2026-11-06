@@ -9,6 +9,9 @@ import re
 # Do not publish private MCP/custom names, arguments, output or error prose.
 PUBLIC_KINDS = frozenset(("Agent", "Bash", "BashOutput", "Edit", "Read", "Write", "Glob", "Grep",
                          "Skill", "WebFetch", "WebSearch", "TodoWrite"))
+DSH_KINDS = {"bash": "Bash", "edit": "Edit", "read": "Read", "write": "Write", "glob": "Glob",
+             "grep": "Grep", "skill": "Skill", "web_fetch": "WebFetch", "web_search": "WebSearch",
+             "todo_write": "TodoWrite", "subagent": "Agent", "subagent_fork": "Agent"}
 
 
 def _name(name):
@@ -18,8 +21,8 @@ def _name(name):
 
 
 def _kind(name):
-    if name == "bash":
-        return "Bash"  # Public DSH SDK tool name; retain raw names for receipt matching.
+    if name in DSH_KINDS:
+        return DSH_KINDS[name]  # Retain raw names separately for exact receipt matching.
     return name if name in PUBLIC_KINDS else "other"
 
 
@@ -132,7 +135,70 @@ def _response_tools(lines, protocol):
     return tools
 
 
-def _native(path):
+def _dsh_native(lines, session_id):
+    """Read SDK notifications from one explicitly named session tree, never tool prose."""
+    root = _tool_id(session_id)
+    starts, terminals, children = defaultdict(list), defaultdict(list), defaultdict(set)
+    owners = defaultdict(set)
+    events, valid = [], True
+    for line in lines:
+        try:
+            row = json.loads(line, object_pairs_hook=_unique)
+            if not isinstance(row, dict):
+                raise ValueError("invalid SDK notification")
+            if row.get("method") != "session.event":
+                continue
+            payload = row.get("payload")
+            if not isinstance(payload, dict) or not isinstance(payload.get("event"), dict):
+                raise ValueError("invalid SDK event")
+            session = _tool_id(payload.get("sessionId"))
+            event = payload["event"]
+            if not isinstance(event.get("type"), str) or not event["type"] or not isinstance(event.get("data"), dict):
+                raise ValueError("invalid SDK event data")
+            if event.get("type") == "subagent/catalog":
+                children[session].add(_tool_id(event["data"].get("childId")))
+            events.append((session, event))
+        except (ValueError, TypeError):
+            valid = False
+    allowed, pending = {root}, [root]
+    while pending:
+        for child in children[pending.pop()]:
+            if child not in allowed:
+                allowed.add(child)
+                pending.append(child)
+    seen = False
+    for session, event in events:
+        if session not in allowed:
+            valid = False
+            continue
+        seen = True
+        data = event["data"]
+        try:
+            if event.get("type") == "tool/call":
+                identifier = _tool_id(data.get("callId"))
+                starts[identifier].append(_name(data.get("name")))
+                owners[identifier].add(session)
+            elif event.get("type") == "tool/result":
+                message = data.get("message")
+                if not isinstance(message, dict) or message.get("role") != "tool":
+                    raise ValueError("invalid SDK tool result")
+                identifier = _tool_id(message.get("toolCallId"))
+                source = message.get("source")
+                if (not isinstance(source, dict) or source.get("kind") != "tool"
+                        or source.get("callId") != identifier or type(message.get("isError")) is not bool
+                        or owners.get(identifier) != {session}):
+                    raise ValueError("unbound SDK tool result")
+                terminals[identifier].append("failed" if message["isError"] else "completed")
+        except (ValueError, TypeError):
+            valid = False
+    return "available" if valid and seen else "partial", starts, terminals
+
+
+def _native(path, *, native_format="yhc_events", native_session_id=None):
+    if native_format not in ("yhc_events", "dsh_sdk"):
+        raise ValueError("unsupported native evidence format")
+    if native_format == "dsh_sdk":
+        _tool_id(native_session_id)  # A different session must never supply a success receipt.
     starts, terminals = defaultdict(list), defaultdict(list)
     try:
         lines = _lines(path)
@@ -140,6 +206,8 @@ def _native(path):
         return "partial", starts, terminals
     if lines is None:
         return "unavailable", starts, terminals
+    if native_format == "dsh_sdk":
+        return _dsh_native(lines, native_session_id)
     valid = True
     for line in lines:
         try:
@@ -171,7 +239,7 @@ def _native(path):
     return "available" if valid else "partial", starts, terminals
 
 
-def collect_tool_feedback(wire, records, protocol, native_path):
+def collect_tool_feedback(wire, records, protocol, native_path, *, native_format="yhc_events", native_session_id=None):
     """Count emitted calls separately from native terminal receipts and side effects.
 
     Missing/partial streams are lower bounds. Only a complete emitted Edit
@@ -199,14 +267,14 @@ def collect_tool_feedback(wire, records, protocol, native_path):
         tools.extend(response.items())
     inventory = ("complete" if supported and complete == len(records) else
                  "partial" if complete else "unavailable")
-    native, starts, terminals = _native(native_path)
+    native, starts, terminals = _native(native_path, native_format=native_format, native_session_id=native_session_id)
     ids = Counter(identifier for identifier, _ in tools)
 
     def matched(identifier, kind):
         return (ids[identifier] == 1 and starts.get(identifier) == [kind]
                 and len(terminals.get(identifier, [])) == 1)
 
-    edits = [(identifier, kind) for identifier, kind in tools if kind == "Edit"]
+    edits = [(identifier, kind) for identifier, kind in tools if _kind(kind) == "Edit"]
     matched_edits = [identifier for identifier, kind in edits if matched(identifier, kind)]
     edit_complete = (inventory == "complete" and native == "available" and bool(edits)
                      and len(matched_edits) == len(edits))
