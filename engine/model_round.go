@@ -757,9 +757,13 @@ func runCanonicalModelRound(
 		result.needsFollowUp = streamResult.NeedsFollowUp
 		result.toolCallsCommitted = streamResult.ToolCallsCommitted
 		result.shouldPreventContinuation = result.shouldPreventContinuation || streamResult.PreventContinuation
-		if streamResult.Withheld != nil {
-			result.withheldError = streamResult.Withheld
-			result.withheldReason = streamResult.WithheldReason
+		result.withheldError = streamResult.Withheld
+		result.withheldReason = streamResult.WithheldReason
+		if result.withheldError == nil && result.withheldReason == "max_output_tokens" {
+			result.withheldError = newAPIErrorMessage(
+				"Model response exceeded its output token limit",
+				"max_output_tokens",
+			)
 		}
 		result.attemptedModel = currentModel
 		if activeAttempt != nil {

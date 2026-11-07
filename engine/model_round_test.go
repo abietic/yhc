@@ -239,7 +239,8 @@ func TestP135c1ProjectGraphBranchesOnlyAfterCommittedModelRound(t *testing.T) {
 				},
 				{Role: schema.Assistant, ResponseMeta: &schema.ResponseMeta{FinishReason: "max_tokens"}},
 			},
-			wantKind: projectGraphResultTerminal,
+			wantKind:  projectGraphResultTerminal,
+			wantValue: "max_output_tokens",
 		},
 	}
 

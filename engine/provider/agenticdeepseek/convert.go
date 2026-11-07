@@ -733,6 +733,11 @@ func responseLogProbs(response *responseObject) *schema.LogProbs {
 }
 
 func finishReason(response *responseObject) string {
+	// A complete function item is still only a proposal until the response
+	// commits. Output-limit truncation must not be hidden by a tool item.
+	if response.Status == ResponseStatusIncomplete && incompleteReason(response) == "max_output_tokens" {
+		return "length"
+	}
 	for _, item := range response.Output {
 		if item.Type == "function_call" {
 			return "tool_calls"
@@ -743,8 +748,6 @@ func finishReason(response *responseObject) string {
 		return "stop"
 	case ResponseStatusIncomplete:
 		switch incompleteReason(response) {
-		case "max_output_tokens":
-			return "length"
 		case "content_filter":
 			return "content_filter"
 		default:

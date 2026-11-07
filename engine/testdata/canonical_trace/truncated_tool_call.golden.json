@@ -110,55 +110,20 @@
           {
             "role": "user",
             "content": "write a file"
-          },
-          {
-            "role": "assistant",
-            "content": " ",
-            "tool_calls": [
-              {
-                "id": "<id-1>",
-                "name": "Write",
-                "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
-              }
-            ],
-            "finish_reason": "max_tokens"
-          },
-          {
-            "role": "tool",
-            "content": "Tool call rejected: model response was truncated before the assistant turn committed",
-            "tool_call_id": "<id-1>",
-            "is_error": true
           }
-        ]
+        ],
+        "max_tokens": 64000
       }
     },
     {
       "kind": "state_boundary",
       "state_boundary": {
         "name": "before_model_request",
-        "message_digest": "01127dd84535c8bd",
+        "message_digest": "f28cf58ce2163d71",
         "messages": [
           {
             "role": "user",
             "content": "write a file"
-          },
-          {
-            "role": "assistant",
-            "content": " ",
-            "tool_calls": [
-              {
-                "id": "<id-1>",
-                "name": "Write",
-                "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
-              }
-            ],
-            "finish_reason": "max_tokens"
-          },
-          {
-            "role": "tool",
-            "content": "Tool call rejected: model response was truncated before the assistant turn committed",
-            "tool_call_id": "<id-1>",
-            "is_error": true
           }
         ]
       }
@@ -191,29 +156,11 @@
       "kind": "state_boundary",
       "state_boundary": {
         "name": "query_terminal",
-        "message_digest": "01127dd84535c8bd",
+        "message_digest": "f28cf58ce2163d71",
         "messages": [
           {
             "role": "user",
             "content": "write a file"
-          },
-          {
-            "role": "assistant",
-            "content": " ",
-            "tool_calls": [
-              {
-                "id": "<id-1>",
-                "name": "Write",
-                "arguments": "{\"content\":\"a\",\"file_path\":\"/tmp/a\"}"
-              }
-            ],
-            "finish_reason": "max_tokens"
-          },
-          {
-            "role": "tool",
-            "content": "Tool call rejected: model response was truncated before the assistant turn committed",
-            "tool_call_id": "<id-1>",
-            "is_error": true
           }
         ],
         "transition": "completed"

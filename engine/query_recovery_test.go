@@ -177,7 +177,7 @@ func TestQueryMaxOutputTokensEscalatesThenInjectsRecoveryMessage(t *testing.T) {
 	}
 }
 
-func TestQueryMaxOutputTokensExhaustionSurfacesErrorAndCompletes(t *testing.T) {
+func TestQueryMaxOutputTokensExhaustionSurfacesModelError(t *testing.T) {
 	ctx := context.Background()
 	model := &scriptedRecoveryModel{streams: [][]*schema.Message{
 		{apiErrorMessage("max_output_tokens", "limit 1")},
@@ -205,8 +205,8 @@ func TestQueryMaxOutputTokensExhaustionSurfacesErrorAndCompletes(t *testing.T) {
 		}},
 	})
 
-	if terminal.Reason != TerminalCompleted {
-		t.Fatalf("expected completed terminal after surfaced api error, got %q", terminal.Reason)
+	if terminal.Reason != TerminalModelError || terminal.Err == nil {
+		t.Fatalf("exhausted truncation must fail, got %+v", terminal)
 	}
 	if model.callCount != 5 {
 		t.Fatalf("expected 5 model calls through recovery exhaustion, got %d", model.callCount)

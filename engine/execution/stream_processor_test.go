@@ -118,6 +118,9 @@ func TestProcessStreamRejectsTruncatedToolCallsWithoutExecution(t *testing.T) {
 	if got := executions.Load(); got != 0 {
 		t.Fatalf("executions = %d, want 0", got)
 	}
+	if result.WithheldReason != "max_output_tokens" || result.NeedsFollowUp {
+		t.Fatal("native truncation must enter bounded recovery without following rejected tools")
+	}
 	if len(yielded) != 2 || len(result.ToolResults) != 2 {
 		t.Fatalf("yielded/results = %d/%d, want 2/2", len(yielded), len(result.ToolResults))
 	}
@@ -128,6 +131,29 @@ func TestProcessStreamRejectsTruncatedToolCallsWithoutExecution(t *testing.T) {
 		if yielded[i].Extra == nil || yielded[i].Extra["is_error"] != true || !strings.Contains(yielded[i].Content, "truncated") {
 			t.Fatalf("result[%d] is not a truncation error: %#v", i, yielded[i])
 		}
+	}
+}
+
+func TestProcessStreamNativeTruncationWithoutContentEntersRecovery(t *testing.T) {
+	t.Parallel()
+	for _, reason := range []string{"length", "max_tokens", " MAX_OUTPUT_TOKENS "} {
+		t.Run(reason, func(t *testing.T) {
+			usage := &schema.TokenUsage{PromptTokens: 20, CompletionTokens: 2, TotalTokens: 22}
+			sr := schema.StreamReaderFromArray([]*schema.Message{{
+				Role:         schema.Assistant,
+				ResponseMeta: &schema.ResponseMeta{FinishReason: reason, Usage: usage},
+			}})
+			result, err := ProcessStream(t.Context(), sr, nil, func(QueryEvent) {})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Withheld != nil || result.WithheldReason != "max_output_tokens" || result.NeedsFollowUp || result.ToolCallsCommitted {
+				t.Fatalf("truncation bypassed bounded recovery: %+v", result)
+			}
+			if result.Usage == nil || *result.Usage != *usage || len(result.AssistantMessages) != 0 {
+				t.Fatal("metadata-only truncation lost usage or invented assistant history")
+			}
+		})
 	}
 }
 
