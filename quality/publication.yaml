@@ -968,7 +968,7 @@ privacy:
       match_sha256: 1c4bbc5d685983c9b30bca0939ed3da59e747dfb171ccc79ece13d1a4c394ef3
       purpose: documentation-example
     - path: docs/architecture/runtime/recovery.md
-      line: 270
+      line: 279
       rule_id: high-entropy-token
       match_sha256: b620fa5300bef91c1cf45acff348860a0656f8a503e98746510b673e69e1dfbf
       purpose: documentation-example
@@ -5362,6 +5362,11 @@ privacy:
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/headless_usage_test.go
       line: 350
+      rule_id: private-url
+      match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
+      purpose: synthetic-security-fixture
+    - path: cmd/yhc/cmd/headless_truncation_test.go
+      line: 66
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture

@@ -159,9 +159,18 @@ No startup, timer, offline, or automatic collection path exists.
 
 ### Maximum output tokens
 
+Native `length`, `max_tokens`, and `max_output_tokens` terminal reasons enter
+the same bounded cascade as explicit max-output API errors, including responses
+that contain only reasoning or terminal usage. A truncated response never
+commits its pending tools; complete usage receipts remain accounted for.
+
 1. When enabled, raise the output cap to the bounded override once.
 2. Add the continuation recovery message for a bounded number of retries.
 3. Surface `model_error` after exhaustion.
+
+Every recovery dispatch remains subject to the caller's output, call, cost,
+and deadline limits. Exhaustion is a failed terminal with an error, rather
+than a completed task or permission to continue a stopped benchmark sample.
 
 `DetermineRecovery`, `ApplyRecovery`, and `EmergencyTruncate` provide a generic
 conversation-recovery library. They have focused tests but no current

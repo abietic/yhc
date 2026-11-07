@@ -689,7 +689,10 @@ func runCanonicalAfterModelRound(input canonicalAfterModelInput) canonicalAfterM
 					AssistantMessage: withheldError,
 				})
 				input.hookExecutor.ExecuteStopFailure(withheldError)
-				terminal := Terminal{Reason: TerminalCompleted}
+				terminal := Terminal{
+					Reason: TerminalModelError,
+					Err:    errors.New("model response output token limit exceeded after bounded recovery"),
+				}
 				result.action = canonicalLoopTerminal
 				result.terminal = &terminal
 				return result

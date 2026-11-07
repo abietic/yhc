@@ -21,7 +21,7 @@ type StreamResult struct {
 	ToolCallsCommitted  bool
 	PreventContinuation bool
 	Withheld            *schema.Message
-	WithheldReason      string // "413", "max_output_tokens", "media_size"
+	WithheldReason      string // Also normalizes native output-limit terminals without an API-error message.
 }
 
 // ProcessStream reads the model's streaming output, yielding events and
@@ -115,6 +115,13 @@ func ProcessStream(
 		streamErr,
 		ctx.Err(),
 	)
+	if decision.Disposition == streamTerminalRejectTruncated {
+		// Preserve a native terminal as a recovery reason without inventing
+		// an API error. Side queries still inspect the original finish metadata;
+		// the main query loop owns bounded continuation.
+		result.WithheldReason = "max_output_tokens"
+		result.NeedsFollowUp = false
+	}
 	if executor != nil {
 		switch decision.Disposition {
 		case streamTerminalCommit:
