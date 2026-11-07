@@ -50,7 +50,7 @@ var binaryExtensions = map[string]bool{
 	".m4a": true, ".m4v": true, ".webm": true,
 }
 
-// imageExtensions are allowed despite being binary (handled specially).
+// imageExtensions identify images; SVG remains editable source text.
 var imageExtensions = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
 	".bmp": true, ".svg": true, ".tiff": true, ".tif": true,
@@ -119,6 +119,14 @@ func ReadTool() ToolImpl {
 		}
 		if isPDFExtension(fullPath) {
 			result, err := readPDFForTool(context.Background(), params.FilePath, fullPath, params.Pages, nil)
+			if err != nil {
+				return "", fmt.Errorf("read: %w", err)
+			}
+			recordFileReadUnverified(ctx, fullPath, false)
+			return result, nil
+		}
+		if isImageExtension(fullPath) && strings.ToLower(filepath.Ext(fullPath)) != ".svg" {
+			result, err := readImageForTool(ctx, params.FilePath, fullPath)
 			if err != nil {
 				return "", fmt.Errorf("read: %w", err)
 			}

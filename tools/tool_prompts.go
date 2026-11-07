@@ -31,7 +31,8 @@ func readToolPrompt() string {
 - Successful Write/Edit also establishes complete read state, and a later partial reread preserves it. Bash, cat, and grep do not record a Read. Separate partial reads do not accumulate into a complete read.
 - Results are returned using cat -n format, with line numbers starting at 1.
 - Very long lines may be shortened in the displayed text.
-- This tool can read images (PNG, JPG, etc), PDFs, and Jupyter notebooks (.ipynb).
+- PNG, JPEG and static WebP files are delivered as image attachments when the active model and entrypoint support images. Limits are 5 MiB and 25 million pixels per file; convert other raster formats first. SVG remains source text.
+- This tool also reads PDFs and Jupyter notebooks (.ipynb).
 - For PDFs over 10 pages, provide the pages parameter (for example, "1-5"). PDF pages are 1-indexed and one call is limited to 20 pages.
 - This tool can only read files, not directories. To read a directory, use ls via the Bash tool.
 - A successful Edit confirms the text replacement, not behavioral correctness. Inspect the relevant final changes and run checks when needed to verify the requested behavior.`
