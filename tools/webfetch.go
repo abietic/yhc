@@ -21,6 +21,7 @@ import (
 const (
 	webFetchMaxResponseBytes = 100 * 1024 // 100KB text limit
 	webFetchSummaryBytes     = 50000
+	webFetchMaxDownloadBytes = 5 * 1024 * 1024
 	webFetchTimeout          = 30 * time.Second
 	webFetchUserAgent        = "Mozilla/5.0 (compatible; YHC/1.0)"
 )
@@ -58,6 +59,7 @@ func WebFetchTool() ToolImpl {
 				"  - HTTP URLs will be automatically upgraded to HTTPS\n" +
 				"  - In AI processing mode, the prompt describes what information you want to extract from the page\n" +
 				"  - In raw content mode, the required prompt is ignored\n" +
+				"  - Text PDFs use local Poppler extraction; use pages for a bounded range (at most 20 pages), required for PDFs over 10 pages\n" +
 				"  - This tool is read-only and does not modify any files\n" +
 				"  - If the result gives a next offset_bytes, use it to read more of the current page in source order\n" +
 				"  - When a URL redirects to a different host, the tool will inform you and provide the redirect URL",
@@ -66,13 +68,15 @@ func WebFetchTool() ToolImpl {
 				"prompt":       {Type: schema.String, Desc: "The prompt to run on the fetched content", Required: true},
 				"offset_bytes": {Type: schema.Integer, Desc: "Zero-based byte offset into the extracted page text. Defaults to 0. Continuing refetches the URL; use the offset returned by the previous call."},
 				"raw_mode":     {Type: schema.Boolean, Desc: "Set to true to return raw content without AI processing. Defaults to false (AI processing mode)"},
+				"pages":        {Type: schema.String, Desc: "Inclusive 1-indexed PDF page range such as 1-5 or 3; maximum 20 pages per request"},
 			}),
 		},
 		IsConcurrencySafe: func(input map[string]any) bool {
 			return true
 		},
-		Execute:    executeWebFetch,
-		ExecuteCtx: executeWebFetchCtx,
+		Execute:       executeWebFetch,
+		ExecuteCtx:    executeWebFetchCtx,
+		ValidateInput: validatePDFPagesInput,
 	}
 }
 
@@ -86,6 +90,7 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 		Prompt  string `json:"prompt"`
 		RawMode *bool  `json:"raw_mode"`
 		Offset  int    `json:"offset_bytes"`
+		Pages   string `json:"pages"`
 	}
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return "", fmt.Errorf("webfetch: invalid params: %w", err)
@@ -100,6 +105,11 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 	if params.Offset < 0 {
 		return "", fmt.Errorf("webfetch: offset_bytes must be non-negative")
 	}
+	if params.Pages != "" {
+		if _, err := parseBoundedPDFPageRange(params.Pages); err != nil {
+			return "", fmt.Errorf("webfetch: %w", err)
+		}
+	}
 
 	rawMode := params.RawMode != nil && *params.RawMode
 
@@ -110,10 +120,11 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 	}
 
 	// Fetch the page content.
-	body, finalURL, err := fetchPage(fetchURL)
+	pageResponse, err := fetchPage(ctx, fetchURL)
 	if err != nil {
 		return "", fmt.Errorf("webfetch: failed to fetch %q: %w", fetchURL, err)
 	}
+	finalURL := pageResponse.finalURL
 
 	// Detect cross-host redirect.
 	origHost := mustParseHost(fetchURL)
@@ -125,8 +136,12 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 		), nil
 	}
 
-	// Offsets address the UTF-8 text of the current fetch, after HTML conversion.
-	text := strings.ToValidUTF8(htmlToText(body), "�")
+	text, err := extractWebFetchText(ctx, pageResponse, params.Pages, nil)
+	if err != nil {
+		return "", fmt.Errorf("webfetch: %w", err)
+	}
+	// Offsets address the UTF-8 text after format-aware extraction.
+	text = strings.ToValidUTF8(text, "�")
 	if params.Offset > len(text) || (params.Offset < len(text) && !utf8.RuneStart(text[params.Offset])) {
 		return "", fmt.Errorf("webfetch: offset_bytes is outside the page or splits a UTF-8 character")
 	}
@@ -214,8 +229,14 @@ func normalizeURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
-// fetchPage fetches the URL and returns the response body and final URL after redirects.
-func fetchPage(fetchURL string) (string, string, error) {
+type webFetchResponse struct {
+	body        []byte
+	finalURL    string
+	contentType string
+}
+
+// fetchPage preserves response bytes and media metadata until text extraction.
+func fetchPage(ctx context.Context, fetchURL string) (webFetchResponse, error) {
 	client := &http.Client{
 		Timeout: webFetchTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -226,32 +247,35 @@ func fetchPage(fetchURL string) (string, string, error) {
 		},
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, fetchURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
 	if err != nil {
-		return "", "", err
+		return webFetchResponse{}, err
 	}
 	req.Header.Set("User-Agent", webFetchUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", err
+		return webFetchResponse{}, err
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 400 {
-		return "", "", fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
+		return webFetchResponse{}, fmt.Errorf("HTTP %d %s", resp.StatusCode, resp.Status)
 	}
 
 	// Read body with a size limit to avoid OOM on very large pages.
-	limitedReader := io.LimitReader(resp.Body, 5*1024*1024) // 5MB raw limit
+	limitedReader := io.LimitReader(resp.Body, webFetchMaxDownloadBytes+1)
 	bodyBytes, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return "", "", fmt.Errorf("reading response body: %w", err)
+		return webFetchResponse{}, fmt.Errorf("reading response body: %w", err)
+	}
+	if len(bodyBytes) > webFetchMaxDownloadBytes {
+		return webFetchResponse{}, fmt.Errorf("response exceeds the %d MB download limit", webFetchMaxDownloadBytes/(1024*1024))
 	}
 
 	finalURL := resp.Request.URL.String()
-	return string(bodyBytes), finalURL, nil
+	return webFetchResponse{body: bodyBytes, finalURL: finalURL, contentType: resp.Header.Get("Content-Type")}, nil
 }
 
 // mustParseHost extracts the host from a URL string, returning empty on failure.
