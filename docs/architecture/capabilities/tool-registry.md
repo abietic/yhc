@@ -352,3 +352,12 @@ Records belong to one process-local ShellManager identity, and `KillAll`
 discards that manager's registered records. This does not establish cold recovery
 of background processes. Foreground command exit markers retain their existing
 tool-return semantics; ordinary nonzero exit does not become an engine exception.
+
+`BashOutput` reads immediately by default. With `wait=true` it waits for the
+owned command to complete, for caller cancellation, or for `timeout_ms` (default
+30,000; range 1–120,000). The duration parameter requires `wait=true`. Expiry
+returns a running state and leaves the command running; it does not change
+Bash's execution timeout. Cancelling a wait does not stop the command or consume
+pending output. Concurrent readers still consume the completed preview once.
+Waiting requires the existing process-local completion record and does not add
+a persistence or cold-resume capability.
