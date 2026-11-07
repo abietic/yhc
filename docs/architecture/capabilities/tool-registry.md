@@ -168,6 +168,12 @@ Request units and native-currency reservation semantics are owned by
 [`budgets-and-limits.md`](../runtime/budgets-and-limits.md). WebFetch continues
 to use its existing direct-page implementation; this change integrates Search.
 
+WebFetch page downloads have a 30-second HTTP timeout. Its optional model
+summary uses the caller's cancellation and deadline through `SideQuery`,
+alongside the configured provider's transport limits. Admission waits and
+reasoning share that caller lifetime. Cancellation after dispatch retains the
+normal unknown-usage fence when a final receipt is unavailable.
+
 Foreground `BashTool` formats captured results through
 [`formatShellResult`](../../../tools/bash.go). Command echoes have a separate
 512-byte preview budget; the tool-call input retains the full command, so a
