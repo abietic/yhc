@@ -79,22 +79,23 @@ type RunUsageSnapshot struct {
 // RunUsage is an invocation-local, concurrency-safe provider admission and
 // accounting capability. It is intentionally separate from the durable Goal ledger.
 type RunUsage struct {
-	mu             sync.Mutex
-	limits         RunUsageLimits
-	started        time.Time
-	totals         RunUsageTotals
-	denied         uint64
-	untracked      uint64
-	stopReason     string
-	budgetCause    string
-	sealed         bool
-	routes         map[runUsageRouteKey]*RunUsageRoute
-	segmentID      string
-	records        []RunUsageRecord
-	droppedRecords uint64
-	cost           *runCostState
-	checkpoint     *runUsageCheckpointState
-	checkpointErr  error
+	mu                 sync.Mutex
+	reservationChanged chan struct{}
+	limits             RunUsageLimits
+	started            time.Time
+	totals             RunUsageTotals
+	denied             uint64
+	untracked          uint64
+	stopReason         string
+	budgetCause        string
+	sealed             bool
+	routes             map[runUsageRouteKey]*RunUsageRoute
+	segmentID          string
+	records            []RunUsageRecord
+	droppedRecords     uint64
+	cost               *runCostState
+	checkpoint         *runUsageCheckpointState
+	checkpointErr      error
 }
 
 type runUsageRouteKey struct{ model, source, role, effort string }
@@ -158,58 +159,81 @@ func (r *RunUsage) RequestUsageAvailable(d ProviderUsageDescriptor) bool {
 }
 
 func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescriptor) (ProviderUsageCall, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.checkpointErr != nil {
-		return nil, &ProviderUsageTerminalError{Err: r.checkpointErr}
-	}
-	if r.sealed {
-		return nil, &ProviderUsageTerminalError{Err: context.Canceled}
-	}
-	var cause error
-	var budgetCause string
-	priceIndex := -1
-	if r.cost != nil {
-		priceIndex = r.cost.route(d)
-	}
-	switch {
-	case r.checkpoint != nil && (r.stopReason == "run_usage_unknown" || r.untracked > 0 || len(r.records) >= MaxRunUsageRecords):
-		cause = ErrRunUsageUnknown
-	case r.cost != nil && priceIndex >= 0 && d.Request != (r.cost.card.Routes[priceIndex].PerRequest != nil):
-		cause = ErrRunUsageUnknown
-	case r.cost != nil && r.cost.limit != nil && (r.cost.unpriced > 0 || r.untracked > 0 || priceIndex < 0):
-		cause = ErrRunUsageUnknown
-	case r.cost != nil && r.cost.limit != nil && !r.limits.ReserveCostBeforeDispatch && r.cost.amount.Cmp(r.cost.limit) >= 0:
-		cause = ErrRunBudgetExceeded
-		budgetCause = "estimated_cost_threshold"
-	case r.limits.MaxTotalTokens > 0 && r.totals.UnknownCalls > 0:
-		cause = ErrRunUsageUnknown
-	case r.limits.MaxProviderCalls > 0 && r.totals.ProviderCalls >= uint64(r.limits.MaxProviderCalls):
-		cause = ErrRunBudgetExceeded
-		budgetCause = "provider_calls"
-	case r.limits.MaxTotalTokens > 0 && r.totals.TotalTokens >= uint64(r.limits.MaxTotalTokens):
-		cause = ErrRunBudgetExceeded
-		budgetCause = "total_tokens"
-	}
 	var reservation *RunCallReservation
 	var reserved *big.Int
-	if cause == nil {
-		reservation, reserved, cause = r.reserveCost(d, priceIndex)
-		if errors.Is(cause, ErrRunBudgetExceeded) {
-			budgetCause = "estimated_cost_reservation"
+	priceIndex := -1
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-	}
-	if cause != nil {
-		r.denied++
-		r.stopReason = runUsageErrorCode(cause)
-		r.budgetCause = budgetCause
-		if err := r.persistCheckpointLocked("denied"); err != nil {
-			cause = err
+		if r.checkpointErr != nil {
+			return nil, &ProviderUsageTerminalError{Err: r.checkpointErr}
 		}
-		return nil, &ProviderUsageTerminalError{Err: cause}
+		if r.sealed {
+			return nil, &ProviderUsageTerminalError{Err: context.Canceled}
+		}
+		var cause error
+		var budgetCause string
+		priceIndex = -1
+		if r.cost != nil {
+			priceIndex = r.cost.route(d)
+		}
+		switch {
+		case r.checkpoint != nil && (r.stopReason == "run_usage_unknown" || r.untracked > 0 || len(r.records) >= MaxRunUsageRecords):
+			cause = ErrRunUsageUnknown
+		case r.cost != nil && priceIndex >= 0 && d.Request != (r.cost.card.Routes[priceIndex].PerRequest != nil):
+			cause = ErrRunUsageUnknown
+		case r.cost != nil && r.cost.limit != nil && (r.cost.unpriced > 0 || r.untracked > 0 || priceIndex < 0):
+			cause = ErrRunUsageUnknown
+		case r.cost != nil && r.cost.limit != nil && !r.limits.ReserveCostBeforeDispatch && r.cost.amount.Cmp(r.cost.limit) >= 0:
+			cause = ErrRunBudgetExceeded
+			budgetCause = "estimated_cost_threshold"
+		case r.limits.MaxTotalTokens > 0 && r.totals.UnknownCalls > 0:
+			cause = ErrRunUsageUnknown
+		case r.limits.MaxProviderCalls > 0 && r.totals.ProviderCalls >= uint64(r.limits.MaxProviderCalls):
+			cause = ErrRunBudgetExceeded
+			budgetCause = "provider_calls"
+		case r.limits.MaxTotalTokens > 0 && r.totals.TotalTokens >= uint64(r.limits.MaxTotalTokens):
+			cause = ErrRunBudgetExceeded
+			budgetCause = "total_tokens"
+		}
+		if cause == nil {
+			reservation, reserved, cause = r.reserveCost(d, priceIndex)
+			if errors.Is(cause, ErrRunBudgetExceeded) {
+				budgetCause = "estimated_cost_reservation"
+			}
+		}
+		if budgetCause == "estimated_cost_reservation" && reserved != nil && r.cost.outstanding.Sign() > 0 {
+			// Only active reservations can free headroom. Known and retained
+			// costs must already leave room for this entire request bound.
+			exposure := new(big.Int).Add(&r.cost.amount, &r.cost.retained)
+			exposure.Add(exposure, reserved)
+			if exposure.Cmp(r.cost.limit) <= 0 {
+				if r.reservationChanged == nil {
+					r.reservationChanged = make(chan struct{})
+				}
+				changed := r.reservationChanged
+				r.mu.Unlock()
+				select {
+				case <-changed:
+				case <-ctx.Done():
+				}
+				r.mu.Lock()
+				continue
+			}
+		}
+		if cause != nil {
+			r.denied++
+			r.stopReason = runUsageErrorCode(cause)
+			r.budgetCause = budgetCause
+			if err := r.persistCheckpointLocked("denied"); err != nil {
+				cause = err
+			}
+			return nil, &ProviderUsageTerminalError{Err: cause}
+		}
+		break
 	}
 	key := runUsageRouteKey{d.Model, d.QuerySource, d.ModelRole, d.ReasoningEffort}
 	// Keep diagnostics bounded even for embedded callers using dynamic labels.
@@ -382,6 +406,7 @@ func (c *runUsageCall) settleRequestLocked(u *schema.TokenUsage, release bool, b
 		return c.settlementErr
 	}
 	c.settled = true
+	defer r.notifyReservationWaitersLocked()
 	var record *RunUsageRecord
 	if c.recordIndex >= 0 {
 		record = &r.records[c.recordIndex]
@@ -500,6 +525,7 @@ func (r *RunUsage) RecordUntrackedCall() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.untracked++
+	r.notifyReservationWaitersLocked()
 	_ = r.persistCheckpointLocked("untracked")
 }
 
@@ -510,6 +536,7 @@ func (r *RunUsage) Seal() {
 	defer r.mu.Unlock()
 	if !r.sealed {
 		r.sealed = true
+		r.notifyReservationWaitersLocked()
 		_ = r.persistCheckpointLocked("sealed")
 	}
 }
@@ -527,4 +554,12 @@ func (r *RunUsage) Close() error {
 		}
 	}
 	return r.checkpointErr
+}
+
+// notifyReservationWaitersLocked broadcasts without retaining cancelled waiters.
+func (r *RunUsage) notifyReservationWaitersLocked() {
+	if r.reservationChanged != nil {
+		close(r.reservationChanged)
+		r.reservationChanged = nil
+	}
 }

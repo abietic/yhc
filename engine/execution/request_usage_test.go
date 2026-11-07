@@ -28,6 +28,9 @@ func TestRequestUsageConcurrentAdmissionSharesFeeCap(t *testing.T) {
 		wg.Go(func() {
 			call, err := r.AdmitProviderUsage(t.Context(), d)
 			if err == nil {
+				if err := CompleteRequestUsage(call, true); err != nil {
+					t.Error(err)
+				}
 				admitted <- call
 			} else if !errors.Is(err, ErrRunBudgetExceeded) {
 				t.Errorf("unexpected denial: %v", err)
@@ -38,11 +41,6 @@ func TestRequestUsageConcurrentAdmissionSharesFeeCap(t *testing.T) {
 	close(admitted)
 	if len(admitted) != 1 {
 		t.Fatalf("fee reservation admitted %d requests", len(admitted))
-	}
-	for call := range admitted {
-		if err := CompleteRequestUsage(call, true); err != nil {
-			t.Fatal(err)
-		}
 	}
 	if s := r.Snapshot(); s.Cost.KnownEstimatedAmount != "0.005000000000" || s.DeniedCalls != 19 {
 		t.Fatal("concurrent fee cap not conserved")
@@ -56,11 +54,11 @@ func TestRequestUsageReservesAndSettlesNativeFee(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.AdmitProviderUsage(t.Context(), d); !errors.Is(err, ErrRunBudgetExceeded) {
-		t.Fatalf("second dispatch must be denied: %v", err)
-	}
 	if err := CompleteRequestUsage(c, true); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := r.AdmitProviderUsage(t.Context(), d); !errors.Is(err, ErrRunBudgetExceeded) {
+		t.Fatalf("second dispatch must be denied: %v", err)
 	}
 	s := r.Snapshot()
 	if s.Cost.KnownEstimatedAmount != "0.005000000000" || s.TotalTokens != 0 || !s.Complete || !s.Cost.Complete || s.Cost.Reservation.OutstandingAmount != "0.000000000000" {

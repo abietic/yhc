@@ -273,7 +273,12 @@ Prices and model capacity remain declared API assumptions; this is not an
 invoice guarantee. Use a card that covers the entire possible pricing window.
 
 Under the root usage mutex, known cost plus outstanding and retained
-reservations plus the new bound must fit the limit. Known final usage settles
+reservations plus the new bound must fit the limit. If only active reservations
+prevent admission, the caller waits for settlement with its cancellation and
+deadline still active. It then rechecks every limit and persists admission
+before dispatch. Waiting consumes no call count or reservation. A bound that
+cannot fit alongside known and retained cost is rejected immediately. Closing
+the collector or an unknown receipt also stops waiting admissions. Known final usage settles
 at the card rates and refunds the difference; a proven undispatched release
 refunds the whole reservation. Unknown usage or a violated token/cost bound
 retains the whole bound and terminates with `run_usage_unknown`. No retry or
