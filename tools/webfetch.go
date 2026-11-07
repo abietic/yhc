@@ -364,9 +364,8 @@ func webFetchAIProcess(
 	content string,
 	sourceURL string,
 ) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
+	// Keep model execution and admission waits within the caller's lifetime.
+	// A tool-local cutoff can discard the final billable usage receipt.
 	userMsg := &schema.Message{
 		Role: schema.User,
 		Content: fmt.Sprintf("Source URL: %s\n\nUser's prompt: %s\n\n--- Web Page Content ---\n\n%s",
