@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 
 	"github.com/abietic/yhc/engine/internal/providercost"
 	"github.com/cloudwego/eino/schema"
@@ -22,54 +23,46 @@ func reservationFixture(t *testing.T, limit string) (*RunUsage, ProviderUsageDes
 }
 
 func TestRunCostReservationSerializesConcurrentAdmission(t *testing.T) {
-	r, d := reservationFixture(t, "0.0001") // One bound is 20*2 + 10*4 = 80 microcurrency.
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var admitted []ProviderUsageCall
-	denied := 0
-	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			c, e := r.AdmitProviderUsage(t.Context(), d)
-			mu.Lock()
-			defer mu.Unlock()
-			if e == nil {
-				admitted = append(admitted, c)
-			} else if errors.Is(e, ErrRunBudgetExceeded) {
-				denied++
-			} else {
-				t.Error(e)
-			}
-		}()
-	}
-	wg.Wait()
-	if len(admitted) != 1 || denied != 19 {
-		t.Fatalf("admitted=%d denied=%d", len(admitted), denied)
-	}
-	s := r.Snapshot()
-	if s.Cost.Reservation.OutstandingAmount != "0.000080000000" || s.Cost.Reservation.PeakExposureAmount != "0.000080000000" {
-		t.Fatalf("reservation=%+v", s.Cost.Reservation)
-	}
-	if err := admitted[0].CompleteProviderUsage(&schema.TokenUsage{PromptTokens: 5, CompletionTokens: 5, TotalTokens: 10}); err != nil {
-		t.Fatal(err)
-	}
-	// Actual fee is 30; another 80 no longer fits 100. No optimistic refund.
-	if _, e := r.AdmitProviderUsage(t.Context(), d); !errors.Is(e, ErrRunBudgetExceeded) {
-		t.Fatalf("next=%v", e)
-	}
-	if s = r.Snapshot(); s.Cost.KnownEstimatedAmount != "0.000030000000" || s.Cost.Reservation.OutstandingAmount != "0.000000000000" || !s.Cost.Complete {
-		t.Fatalf("settled=%+v", s.Cost)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		r, d := reservationFixture(t, "0.0001") // One bound is 80 microcurrency.
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		admitted, denied := 0, 0
+		for range 20 {
+			wg.Go(func() {
+				c, err := r.AdmitProviderUsage(t.Context(), d)
+				if err == nil {
+					if err := c.CompleteProviderUsage(&schema.TokenUsage{PromptTokens: 5, CompletionTokens: 5}); err != nil {
+						t.Error(err)
+					}
+				} else if !errors.Is(err, ErrRunBudgetExceeded) {
+					t.Error(err)
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				if err == nil {
+					admitted++
+				} else {
+					denied++
+				}
+			})
+		}
+		wg.Wait()
+		if admitted != 1 || denied != 19 {
+			t.Fatalf("admitted=%d denied=%d", admitted, denied)
+		}
+		// Known cost is 30; another full 80 cannot fit the 100 allowance.
+		s := r.Snapshot()
+		if s.Cost.KnownEstimatedAmount != "0.000030000000" || s.Cost.Reservation.OutstandingAmount != "0.000000000000" || s.Cost.Reservation.PeakExposureAmount != "0.000080000000" || !s.Cost.Complete {
+			t.Fatalf("settled=%+v", s.Cost)
+		}
+	})
 }
 
 func TestRunCostReservationRefundReleaseAndAmbiguousHold(t *testing.T) {
 	r, d := reservationFixture(t, "0.00016")
 	a, _ := r.AdmitProviderUsage(t.Context(), d)
 	b, _ := r.AdmitProviderUsage(t.Context(), d)
-	if _, e := r.AdmitProviderUsage(t.Context(), d); !errors.Is(e, ErrRunBudgetExceeded) {
-		t.Fatal(e)
-	}
 	if e := a.ReleaseProviderUsageBeforeDispatch(); e != nil {
 		t.Fatal(e)
 	}

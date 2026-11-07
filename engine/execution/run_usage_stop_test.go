@@ -91,7 +91,11 @@ func TestRunUsageClearsBudgetCauseWhenUnknownUsageTakesPrecedence(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := r.AdmitProviderUsage(t.Context(), d); !errors.Is(err, ErrRunBudgetExceeded) {
+			tooLarge := d
+			bound := *d.CostBound
+			bound.InputTokens = 100 // Cannot fit even after the active call settles.
+			tooLarge.CostBound = &bound
+			if _, err := r.AdmitProviderUsage(t.Context(), tooLarge); !errors.Is(err, ErrRunBudgetExceeded) {
 				t.Fatal(err)
 			}
 			assertBudgetStopCause(t, r.Snapshot(), "estimated_cost_reservation")

@@ -233,7 +233,7 @@ func (r *RunUsage) reserveCost(d ProviderUsageDescriptor, index int) (*RunCallRe
 		}
 		amount := new(big.Int).Set(r.cost.requestPrices[index])
 		if err := r.reserveAmount(amount); err != nil {
-			return nil, nil, err
+			return nil, amount, err
 		}
 		return &RunCallReservation{Provider: d.Provider, Model: r.cost.card.Routes[index].APIModel, Requests: 1, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
 	}
@@ -249,7 +249,7 @@ func (r *RunUsage) reserveCost(d ProviderUsageDescriptor, index int) (*RunCallRe
 	amount := new(big.Int).Mul(new(big.Int).SetUint64(b.InputTokens), inputPrice)
 	amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(b.OutputTokens), prices[2]))
 	if err := r.reserveAmount(amount); err != nil {
-		return nil, nil, err
+		return nil, amount, err
 	}
 	return &RunCallReservation{Provider: b.Provider, Model: b.Model, InputTokens: b.InputTokens, OutputTokens: b.OutputTokens, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
 }
