@@ -84,10 +84,13 @@ func TestReadImageDetectsEncodingAndUsesExecutionCWD(t *testing.T) {
 }
 
 func TestReadImageDeliversStaticWebP(t *testing.T) {
-	const encoded = "UklGRrIBAABXRUJQVlA4TKUBAAAvSsAYAA8w//M///MfeJAkbXvaSG7m8Q3GfYSBJekwQztm/IcZlgwnmWImn2BK7aFmBtnVir6q//8VOkFE/xm4baTIu8c48ArEo6+B3zFKYln3pqClSCKX0begFTAXFOLXHSyF8cCNcZEG4OywuA4KVVfJCiArU7GAgJI8+lJP/OKMT/fBAjevg1cYB7YVkFuWga2lyPi5I0HFy5YTpWIHg0RZpkniRVW9odHAKOwosWuOGdxIyn2OvaCDvhg/we6TwadPBPbqBV58MsLmMJ8yZnOWk8SRz4N+QoyPL+MnamzMvcE1rHNEr91F9GKZPVUcS9w7PhhH36suB9qPeYb/oLk6cuTiJ0wOK3m5h1cKjW6EVZCYMK7dxcKCBdgP9HkKr9gkAO2P8GKZGWVdIAatQa+1IDpt6qyorVwdy01xdW8Jkfk6xjEXmVQQ+HQdFr6OKhIN34dXWq0+0qr6EJSCeeVLH9+gvGTLyqM65PQ44ihzlTXxQKjKbAvshXgir7Lil9w4L2bvMycmjQcqXaMCO6BlY28i+FOLzbfI1vEqxAhotocAAA=="
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		t.Fatal(err)
+	// A complete 1x1 VP8 frame in a RIFF/WebP container.
+	data := []byte{
+		0x52, 0x49, 0x46, 0x46, 0x22, 0x00, 0x00, 0x00,
+		0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20,
+		0x16, 0x00, 0x00, 0x00, 0x30, 0x01, 0x00, 0x9d,
+		0x01, 0x2a, 0x01, 0x00, 0x01, 0x00, 0x0e, 0xc0,
+		0xfe, 0x25, 0xa4, 0x00, 0x03, 0x70, 0x00, 0x00, 0x00, 0x00,
 	}
 	path := filepath.Join(t.TempDir(), "drawing.webp")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -95,11 +98,12 @@ func TestReadImageDeliversStaticWebP(t *testing.T) {
 	}
 	var attachment *schema.Message
 	ctx := WithAttachmentFn(WithMediaSupport(t.Context(), true), func(m *schema.Message) { attachment = m })
-	if _, err := ReadTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"file_path": path})); err != nil {
+	result, err := ReadTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"file_path": path}))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if attachment == nil || attachment.UserInputMultiContent[1].Image.MIMEType != "image/webp" || *attachment.UserInputMultiContent[1].Image.Base64Data != encoded {
-		t.Fatal("static WebP encoding was not preserved")
+	if attachment == nil || attachment.UserInputMultiContent[1].Image.MIMEType != "image/webp" || *attachment.UserInputMultiContent[1].Image.Base64Data != base64.StdEncoding.EncodeToString(data) || !strings.Contains(result, "1x1") {
+		t.Fatal("static WebP encoding or dimensions were not preserved")
 	}
 }
 

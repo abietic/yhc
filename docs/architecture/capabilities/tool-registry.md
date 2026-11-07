@@ -81,17 +81,6 @@ the earlier complete observation; changed bytes cannot become freshly verified
 full credit. Unknown observations, including PDF and raster-image reads, are not
 certified. Bounds are 1024 entries, 4 MiB per file and 64 MiB total.
 
-Read sends PNG, JPEG and static WebP files through the existing supplemental
-attachment collector instead of formatting binary bytes as text. The active
-model must accept images and the entrypoint must provide a collector. The tool
-checks decoded dimensions before decoding pixels, limits each file to 5 MiB and
-25 million pixels, and takes MIME type from the bytes. Original encoded bytes
-remain in the canonical attachment; provider transport may derive its usual
-automatic delivery copy. Unsupported encodings, invalid content, cancellation
-or absent media delivery return a tool error without establishing read credit.
-SVG continues through the ordinary text-window and Edit path. A successful
-visual read records only unverified observation for cold guard capture.
-
 Restore validates the whole snapshot before creating a fresh owner. It rejects
 changed bytes, noncanonical/outside paths, links, mixed file owners and special
 mode bits. Partial-only entries remain unable to edit. Restored owners recheck
@@ -220,6 +209,17 @@ an exact `Edit.old_string`. Read does not expand tabs for terminal layout;
 terminal consumers own that rendering. This notice describes the current view, not edit
 admission: a prior complete read or successful Write/Edit remains sufficient
 after a narrower reread.
+
+Read sends PNG, JPEG and static WebP files through the existing supplemental
+attachment collector instead of formatting binary bytes as text. The active
+model must accept images and the entrypoint must provide a collector. The tool
+checks decoded dimensions before decoding pixels, limits each file to 5 MiB and
+25 million pixels, and takes MIME type from the bytes. Original encoded bytes
+remain in the canonical attachment; provider transport may derive its usual
+automatic delivery copy. Unsupported encodings, invalid content, cancellation
+or absent media delivery return a tool error without establishing read credit.
+SVG continues through the ordinary text-window and Edit path. A successful
+visual read records only unverified observation for cold guard capture.
 
 Edit and overwriting Write still require complete read/write state. Partial
 windows alone, even several separate windows, and shell reads do not establish
