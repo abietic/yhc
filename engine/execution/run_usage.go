@@ -163,7 +163,7 @@ func (r *RunUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescri
 	defer r.mu.Unlock()
 	var reservation *RunCallReservation
 	var reserved *big.Int
-	priceIndex := -1
+	var priceIndex int
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
