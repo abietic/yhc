@@ -335,13 +335,9 @@ func estimateGroupTokens(messages []*schema.Message) int {
 
 // --- Commit logic ---
 
-// getCollapseThreshold returns the token count above which staged collapses
-// should be committed. Uses 80% of the auto-compact threshold to give
+// getCollapseThresholdForContextWindow returns the token count above which
+// staged collapses should be committed. It uses 80% of the auto threshold to give
 // collapse a chance to reduce pressure before full compaction kicks in.
-func getCollapseThreshold(modelName string) int {
-	return getCollapseThresholdForContextWindow(modelName, nil)
-}
-
 func getCollapseThresholdForContextWindow(modelName string, contextWindow *int) int {
 	autoThreshold := GetAutoCompactThresholdForContextWindow(modelName, contextWindow)
 	// Collapse commits at 80% of the auto-compact threshold
