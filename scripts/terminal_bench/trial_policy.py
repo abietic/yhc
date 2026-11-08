@@ -97,16 +97,10 @@ def verify_proof_directory(directory, config):
           "verifier_proof_exposed_to_container")
 
 
-def _mounts(mounts, *, log_dir, compose):
-    # Separate verifiers upload copies of artifacts. Only their own log bind is
-    # admitted; sockets, workspace mounts, volumes_from and sidecars are not.
-    _need(isinstance(mounts, list) and len(mounts) == 1, "verifier_mounts_unverified")
-    row = mounts[0]
-    source_key, target_key, type_key = (("source", "target", "type") if compose
-                                      else ("Source", "Destination", "Type"))
-    _need(isinstance(row, dict) and row.get(type_key) == "bind"
-          and row.get(source_key) == str(Path(log_dir).resolve())
-          and row.get(target_key) == "/logs/verifier", "verifier_mounts_unverified")
+def _mounts(mounts):
+    # Artifacts are copied in; logs are copied out after grading. Even a log bind
+    # can defeat the grader's uid-based permissions on a host-sharing backend.
+    _need(isinstance(mounts, list) and not mounts, "verifier_mounts_unverified")
 
 
 def verify_compose(config, *, image, log_dir):
@@ -122,7 +116,7 @@ def verify_compose(config, *, image, log_dir):
                 "uts", "use_api_socket", "provider", "post_start", "pre_stop",
                 "develop", "external_links", "ports"):
         _need(not row.get(key), "verifier_privilege_unverified")
-    _mounts(row.get("volumes"), log_dir=log_dir, compose=True)
+    _mounts(row.get("volumes", []))
 
 
 def verify_container(row, *, image, log_dir):
@@ -137,4 +131,4 @@ def verify_container(row, *, image, log_dir):
           and not host.get("VolumesFrom") and not host.get("PidMode")
           and host.get("IpcMode", "private") in ("", "private")
           and not host.get("UTSMode"), "verifier_privilege_unverified")
-    _mounts(row.get("Mounts"), log_dir=log_dir, compose=False)
+    _mounts(row.get("Mounts"))

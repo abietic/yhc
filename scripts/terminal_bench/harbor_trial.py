@@ -100,7 +100,12 @@ class IsolatedDockerEnvironment(DockerEnvironment):
         capabilities = super().capabilities
         if (self.network_policy.network_mode == NetworkMode.NO_NETWORK
                 and all(p.network_mode == NetworkMode.NO_NETWORK for p in self._phase_network_policies)):
-            return capabilities.model_copy(update={"disable_internet": True, "dynamic_network_policy": False})
+            overrides = {"disable_internet": True, "dynamic_network_policy": False}
+            if getattr(self, "_isolated", False):
+                # Harbor must download completed logs instead of assuming that
+                # the grader writes directly into a host bind.
+                overrides["mounted"] = False
+            return capabilities.model_copy(update=overrides)
         return capabilities
 
     def __init__(self, *args, verifier_proof_dir=None, **kwargs):
@@ -131,6 +136,14 @@ class IsolatedDockerEnvironment(DockerEnvironment):
         self._log_dir = str(self.trial_paths.verifier_dir.resolve())
         if directory == Path(self._log_dir) or Path(self._log_dir) in directory.parents:
             raise PolicyError("verifier_proof_exposed_to_container")
+        # Docker Desktop can report a shared file's owner as its caller, making
+        # chmod(0700) ineffective against an unprivileged artifact subprocess.
+        # Keep grading output on the container's Linux filesystem. Remove only
+        # Harbor's exact log mount; never silently discard an arbitrary mount.
+        expected_log_mount = {"type": "bind", "source": self._log_dir, "target": "/logs/verifier"}
+        if self._mounts not in ([], [expected_log_mount]):
+            raise PolicyError("verifier_mount_request_unqualified")
+        self._mounts = []
         name = hashlib.sha256(self.session_id.encode()).hexdigest() + ".json"
         self.verifier_proof_path = directory / name
         if self.verifier_proof_path.exists() or self.verifier_proof_path.is_symlink():
@@ -188,9 +201,9 @@ class IsolatedDockerEnvironment(DockerEnvironment):
             raise PolicyError("verifier_container_unverified")
         row = await self._inspect("container", ids[0])
         verify_container(row, image=content_id, log_dir=self._log_dir)
-        proof = dict(version=1, session_id=self.session_id, container_id=row["Id"],
+        proof = dict(version=2, session_id=self.session_id, container_id=row["Id"],
                      image_id=row["Image"], image_reference=image, network_mode="none", compose_verified=True,
-                     stage="before_artifact_upload", can_resume_agent=False)
+                     stage="before_artifact_upload", log_storage="container_private", can_resume_agent=False)
         with self.verifier_proof_path.open("x") as out:
             json.dump(proof, out, sort_keys=True)
             out.write("\n")
@@ -241,7 +254,8 @@ def collect_verifier_proofs(trial):
             return []
         if not isinstance(row, dict):
             return []
-        if (row.get("session_id") != session or row.get("network_mode") != "none"
+        if (row.get("version") != 2 or row.get("log_storage") != "container_private"
+                or row.get("session_id") != session or row.get("network_mode") != "none"
                 or row.get("compose_verified") is not True or row.get("stage") != "before_artifact_upload"):
             return []
         proofs.append(row)
