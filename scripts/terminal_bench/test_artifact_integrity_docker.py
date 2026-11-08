@@ -84,6 +84,13 @@ class ArtifactIntegrityDockerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ArtifactIntegrityError, "archive_unqualified"):
             await attest_docker_artifact(self.source, self.target, self.cid)
 
+    async def test_directory_declaration_with_trailing_separator(self):
+        result = await attest_docker_artifact(self.source, self.target + "/", self.cid)
+        self.assertEqual((result["file_count"], result["directory_count"]), (1, 2))
+        with self.assertRaisesRegex(ArtifactIntegrityError, "target_unqualified"):
+            await attest_docker_artifact(self.source / "quote';space\n雪",
+                                        self.target + "/quote';space\n雪/", self.cid)
+
 
 if __name__ == "__main__":
     unittest.main()

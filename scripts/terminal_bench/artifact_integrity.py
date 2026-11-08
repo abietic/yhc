@@ -62,9 +62,12 @@ def source_manifest(source):
     return entries
 
 
-def _target_path(target):
+def _target_path(target, *, directory=False):
     if not isinstance(target, str) or "\0" in target:
         raise ArtifactIntegrityError("artifact_target_unqualified")
+    # A directory declaration may end in '/', but not '/.' or repeated '/'.
+    if directory and target.endswith("/"):
+        target = target[:-1]
     path = PurePosixPath(target)
     if not path.is_absolute() or path == PurePosixPath("/") or ".." in path.parts or str(path) != target:
         raise ArtifactIntegrityError("artifact_target_unqualified")
@@ -73,7 +76,7 @@ def _target_path(target):
 
 def verify_archive(expected, target, stream):
     """Compare a Docker archive to the uploaded projection without extracting it."""
-    root = _target_path(target).name
+    root = _target_path(target, directory=expected.get("", {}).get("type") == "directory").name
     seen, matched = set(), set()
     additional = 0
     try:
@@ -119,12 +122,13 @@ def verify_archive(expected, target, stream):
 
 async def attest_docker_artifact(source, target, container_id, *, timeout=60):
     """Read a bounded raw Docker archive; never execute artifact or guest code."""
-    _target_path(target)
+    _target_path(target, directory=True)
     if not isinstance(container_id, str) or re.fullmatch(r"[0-9a-f]{64}", container_id) is None:
         raise ArtifactIntegrityError("artifact_container_unqualified")
     if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
         raise ArtifactIntegrityError("artifact_timeout_unqualified")
     expected = await asyncio.to_thread(source_manifest, source)
+    target = str(_target_path(target, directory=expected[""]["type"] == "directory"))
     size = sum(entry.get("bytes", 0) for entry in expected.values())
     # Bound extra image contents and archive metadata as well as expected bytes.
     limit = max(64 << 20, size * 2 + len(expected) * 65536 + (1 << 20))

@@ -73,6 +73,19 @@ class ArtifactIntegrityTests(unittest.TestCase):
         self.assertEqual(report["additional_target_entries_unverified"], 1)
         self.assertEqual(report["bytes"], 3)
 
+    def test_directory_target_may_have_a_trailing_separator(self):
+        source = self.root / "source"
+        source.mkdir()
+        (source / "leaf").write_bytes(b"payload")
+        report = verify_archive(source_manifest(source), "/app/renamed/", archive([
+            ("renamed", None), ("renamed/leaf", b"payload")]))
+        self.assertEqual((report["file_count"], report["bytes"]), (1, 7))
+
+    def test_trailing_separator_requires_a_directory_source(self):
+        with self.assertRaisesRegex(ArtifactIntegrityError, "target_unqualified"):
+            verify_archive(source_manifest(self.file), "/app/file/", archive([
+                ("file", self.file.read_bytes())]))
+
     def test_mismatch_missing_type_and_duplicate_fail_closed(self):
         expected = source_manifest(self.file)
         cases = [
@@ -142,6 +155,16 @@ class ArtifactTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.commands, [("docker", "cp", "a" * 64 + ":/app/file", "-")])
         self.assertEqual(self.children[0].returncode, 0)
 
+    async def test_directory_target_separator_is_normalized_before_docker(self):
+        source = self.root / "directory"
+        source.mkdir()
+        (source / "leaf").write_bytes(b"payload")
+        self.tar.write_bytes(archive([("renamed", None), ("renamed/leaf", b"payload")]).getvalue())
+        result = await attest_docker_artifact(source, "/app/renamed/", "a" * 64)
+        self.assertEqual(result["bytes"], 7)
+        self.assertEqual(self.commands, [("docker", "cp", "a" * 64 + ":/app/renamed", "-")])
+        self.assertEqual(self.children[0].returncode, 0)
+
     async def test_transport_failure_is_not_a_byte_mismatch(self):
         self.body = "raise SystemExit(13)"
         with self.assertRaisesRegex(ArtifactIntegrityError, "transport_failed"):
@@ -171,7 +194,9 @@ class ArtifactTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unqualified_target_or_identity_never_starts_docker(self):
         for target, identity in [("/", "a" * 64), ("relative", "a" * 64),
-                                 ("/app/../file", "a" * 64), ("/app/file", "short-id")]:
+                                 ("/app/../file", "a" * 64), ("/app/file", "short-id"),
+                                 ("/app/file/", "a" * 64), ("/app/file//", "a" * 64),
+                                 ("/app/./file/", "a" * 64), ("/app//file/", "a" * 64)]:
             with self.subTest(target=target, identity=identity), self.assertRaises(ArtifactIntegrityError):
                 await attest_docker_artifact(self.file, target, identity)
         self.assertEqual(self.commands, [])
