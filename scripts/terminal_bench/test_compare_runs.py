@@ -91,6 +91,53 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["reward"])
         self.assertIsNone(got["calls"])
 
+    def test_unstarted_plan_rejects_execution_evidence_without_scoreboard(self):
+        for index, marker in enumerate(("dispatch-claim.json", "dispatch-progress.json", "cohort/ledger.json",
+                                        "wire/sample/ledger.json", "trials/sample/agent/native-result.json")):
+            root = self.root / str(index)
+            root.mkdir()
+            (root / "plan.json").write_text(json.dumps(dict(target_task="generic-task", task_ref="sha256:abc",
+                arms=[dict(agent="dsh", new_sample_id="next")], model="flash", effort="high")))
+            evidence = root / marker
+            evidence.parent.mkdir(parents=True, exist_ok=True)
+            evidence.write_text('{"private_payload":"PRIVATE_SENTINEL"}')
+            with self.subTest(marker=marker):
+                with self.assertRaises(ValueError) as error:
+                    build_report([root])
+                self.assertNotIn("PRIVATE_SENTINEL", str(error.exception))
+                self.assertEqual(evidence.read_text(), '{"private_payload":"PRIVATE_SENTINEL"}')
+
+    def test_unstarted_plan_rejects_dangling_execution_marker(self):
+        (self.root / "plan.json").write_text(json.dumps(dict(target_task="generic-task", task_ref="sha256:abc",
+            arms=[dict(agent="dsh", new_sample_id="next")], model="flash", effort="high")))
+        try:
+            (self.root / "dispatch-claim.json").symlink_to(self.root / "missing-claim")
+        except OSError:
+            self.skipTest("symlink creation is unavailable")
+        with self.assertRaises(ValueError):
+            load_run(self.root)
+
+    def test_nested_zero_call_evidence_does_not_start_the_paid_plan(self):
+        (self.root / "plan.json").write_text(json.dumps(dict(target_task="generic-task", task_ref="sha256:abc",
+            arms=[dict(agent="dsh", new_sample_id="next")], model="flash", effort="high")))
+        zero = self.root / "matching-zero"
+        (zero / "cohort").mkdir(parents=True)
+        (zero / "wire").mkdir()
+        (zero / "trials").mkdir()
+        (zero / "dispatch-claim.json").write_text("{}")
+        self.assertEqual(load_run(self.root)[0]["status"], "not_started")
+
+    def test_cli_does_not_publish_unstarted_report_after_dispatch_claim(self):
+        (self.root / "plan.json").write_text(json.dumps(dict(target_task="generic-task", task_ref="sha256:abc",
+            arms=[dict(agent="dsh", new_sample_id="next")], model="flash", effort="high")))
+        (self.root / "dispatch-claim.json").write_text("{}")
+        output, human = self.root / "comparison.json", self.root / "comparison.md"
+        result = subprocess.run([sys.executable, "-m", "scripts.terminal_bench.compare_runs", "--run", str(self.root),
+            "--output", str(output), "--markdown", str(human)], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(output.exists())
+        self.assertFalse(human.exists())
+
     def test_dsh_uses_sdk_notifications_instead_of_yhc_receipts(self):
         entry = row("dsh", "dsh-sample")
         root = self.write(entry, [call("1"), call("2")])
