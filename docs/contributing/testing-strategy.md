@@ -253,6 +253,9 @@ is an explicit post-upload operator check for regular files and directories.
 It compares host snapshot hashes with a bounded Docker archive without
 extracting the archive or requiring a guest interpreter. Source links,
 unqualified archive entries, missing files and changed bytes fail closed.
+Directory declarations may have one trailing `/`; the archive client uses the
+canonical directory path. A trailing `/` on a regular-file target, traversal
+and other non-canonical paths remain rejected.
 Timeout or cancellation terminates and reaps the started archive client.
 The caller must bind the container identity and isolation before and after the
 check, and must prevent grading after a failed check. This helper does not
