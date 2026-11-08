@@ -216,6 +216,11 @@ def load_run(root):
                         normal_completion=data.get("native", {}).get("finish_reason") == "completed")]
         kind = "synthetic_preflight"
     else:
+        # Missing scores do not prove dispatch never started. A partially
+        # written run must not be reported as an unstarted plan.
+        markers = ("dispatch-claim.json", "dispatch-progress.json", "cohort", "wire", "trials")
+        if any((root / name).exists() or (root / name).is_symlink() for name in markers):
+            raise ValueError("execution evidence exists without a scoreboard")
         plan = read_json(root / "plan.json")
         return [dict(agent=atom(a["agent"]), sample_id=atom(a["new_sample_id"]), task=atom(plan["target_task"]),
                      task_ref=atom(plan["task_ref"]), status="not_started", reward=None, calls=None,
