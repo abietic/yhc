@@ -353,7 +353,13 @@ wire bytes and full context/output cost bound.
 Only files acknowledged from this sample's uploads can appear in model media
 blocks, metadata retrieval, scoped local listing or deletion. Listing never
 queries the provider's account-wide inventory. File operations are serialized
-against model handlers to prevent deletion during an admitted request. Their
+against model handlers to prevent deletion during an admitted request. Upstream
+cleanup and durable operation settlement finish before a Files response exposes
+success or a definite rejection. The logical Files slot is released at that
+point; subsequent native requests need not wait for the previous HTTP handler's
+final drain. Model handlers remain counted separately, so this does not permit
+deletion while a model request is using a file. All HTTP handlers still count
+toward gateway shutdown and evidence-directory lifetime. Their
 auxiliary records do not create model attempts or financial usage receipts.
 Definite upload rejection permits the native SDK's inline fallback; redirects,
 ambiguous failures, malformed metadata or evidence faults block further

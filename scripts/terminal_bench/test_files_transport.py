@@ -92,10 +92,139 @@ class FilesTests(unittest.TestCase):
         raw, content_type = multipart()
         return self.request('POST', '/v1/files', raw, {'Content-Type': content_type})
 
-    def model(self, file_id='file-api-owned'):
+    def model(self, file_id='file-api-owned', wait=True):
         value = body('messages')
         value['messages'] = [{'role':'user', 'content':[{'type':'image', 'source':{'type':'file', 'file_id':file_id}}]}]
-        return self.request('POST', '/v1/messages', json.dumps(value), {'Content-Type':'application/json'})
+        return self.request('POST', '/v1/messages', json.dumps(value), {'Content-Type':'application/json'}, wait=wait)
+
+    def after_ack(self, method, path, first, second, first_status=200):
+        """The client has all response bytes while the first handler still exists."""
+        from scripts.terminal_bench.files_transport import FilesTransport
+        acknowledged, release = threading.Event(), threading.Event()
+        original = FilesTransport.reply
+        def paused(handler, status, value):
+            original(handler, status, value)
+            if handler.command == method and handler.path == path and not acknowledged.is_set():
+                acknowledged.set()
+                release.wait(5)
+        with mock.patch.object(FilesTransport, 'reply', new=staticmethod(paused)):
+            try:
+                first_result = first()
+                self.assertTrue(acknowledged.wait(2))
+                self.assertEqual(first_result[0], first_status)
+                result = second()
+            finally:
+                release.set()
+                self.assertTrue(self.gateway.wait_idle(3))
+        return result
+
+    def test_upload_ack_allows_immediate_model_before_handler_cleanup(self):
+        self.create();raw, content_type = multipart()
+        result = self.after_ack('POST', '/v1/files',
+            lambda: self.request('POST', '/v1/files', raw, {'Content-Type':content_type}, wait=False),
+            lambda: self.model(wait=False))
+        self.assertEqual(result[0], 200)
+        self.assertEqual(len(self.gateway.records), 1)
+        self.assertEqual(self.gateway.active_model_handlers, 0)
+        self.assertFalse(self.gateway.closing)
+
+    def test_list_ack_allows_immediate_retrieve_before_handler_cleanup(self):
+        self.create();self.assertEqual(self.upload()[0], 200)
+        result = self.after_ack('GET', '/v1/files',
+            lambda: self.request('GET', '/v1/files', wait=False),
+            lambda: self.request('GET', '/v1/files/file-api-owned', wait=False))
+        self.assertEqual(result[0], 200)
+        self.assert_no_model_attempt();self.assertFalse(self.gateway.closing)
+
+    def test_retrieve_ack_allows_immediate_delete_before_handler_cleanup(self):
+        self.create();self.assertEqual(self.upload()[0], 200)
+        result = self.after_ack('GET', '/v1/files/file-api-owned',
+            lambda: self.request('GET', '/v1/files/file-api-owned', wait=False),
+            lambda: self.request('DELETE', '/v1/files/file-api-owned', wait=False))
+        self.assertEqual(result[0], 200)
+        self.assertEqual(self.gateway.files_transport.owned['file-api-owned']['state'], 'deleted')
+        self.assert_no_model_attempt();self.assertFalse(self.gateway.closing)
+
+    def test_rejected_upload_ack_allows_immediate_inline_fallback(self):
+        self.create();self.reply_status = 413;raw, content_type = multipart()
+        result = self.after_ack('POST', '/v1/files',
+            lambda: self.request('POST', '/v1/files', raw, {'Content-Type':content_type}, wait=False),
+            lambda: self.request('POST', '/v1/messages', json.dumps(body('messages')), wait=False),
+            first_status=413)
+        self.assertEqual(result[0], 200);self.assertFalse(self.gateway.closing)
+        self.assertEqual(self.gateway.files_transport.operations[0]['state'], 'rejected')
+        self.assertEqual(len(self.gateway.records), 1)
+
+    def test_delete_ack_allows_immediate_replacement_upload(self):
+        self.create();self.assertEqual(self.upload()[0], 200)
+        raw, content_type = multipart()
+        def replace():
+            self.metadata['id'] = 'file-api-replacement'
+            return self.request('POST', '/v1/files', raw, {'Content-Type':content_type}, wait=False)
+        result = self.after_ack('DELETE', '/v1/files/file-api-owned',
+            lambda: self.request('DELETE', '/v1/files/file-api-owned', wait=False), replace)
+        self.assertEqual(result[0], 200)
+        self.assertEqual(self.gateway.files_transport.owned['file-api-owned']['state'], 'deleted')
+        self.assertEqual(self.gateway.files_transport.owned['file-api-replacement']['state'], 'available')
+        self.assert_no_model_attempt()
+
+    def test_upstream_close_failure_cannot_follow_a_success_ack(self):
+        from scripts.terminal_bench import files_transport
+        self.create();original = files_transport.open_http_stream
+        def opened(*args, **kwargs):
+            stream = original(*args, **kwargs);close = stream.close
+            def failed_close(*a, **kw):
+                close(*a, **kw)
+                raise OSError('private close detail')
+            stream.close = failed_close
+            return stream
+        with mock.patch.object(files_transport, 'open_http_stream', side_effect=opened):
+            self.assertEqual(self.upload()[0], 400)
+        self.assertTrue(self.gateway.closing);self.assertTrue(self.gateway.files_transport.unverified)
+        self.assertNotIn('private close detail', (self.gateway.root/'ledger.json').read_text())
+        self.assert_no_model_attempt()
+
+    def test_acknowledged_files_handler_still_counts_toward_shutdown(self):
+        self.create();raw, content_type = multipart()
+        def check_drain():
+            self.assertEqual(self.gateway.active_handlers, 1)
+            self.assertEqual(self.gateway.active_model_handlers, 0)
+            self.assertFalse(self.gateway.files_transport.busy)
+            self.assertFalse(self.gateway.wait_idle(.01))
+            self.assertIsNotNone(self.gateway._root_fd)
+            return True
+        self.assertTrue(self.after_ack('POST', '/v1/files',
+            lambda: self.request('POST', '/v1/files', raw, {'Content-Type':content_type}, wait=False), check_drain))
+
+    def test_previous_ack_handler_cannot_release_the_next_files_operation(self):
+        from scripts.terminal_bench.files_transport import FilesTransport
+        self.create();raw, content_type = multipart()
+        first_ack, release_first = threading.Event(), threading.Event()
+        original = FilesTransport.reply;results = []
+        def paused(handler, status, value):
+            original(handler, status, value)
+            if value.get('id') == 'file-api-owned' and status == 200:
+                first_ack.set();release_first.wait(5)
+        with mock.patch.object(FilesTransport, 'reply', new=staticmethod(paused)):
+            thread = None
+            try:
+                self.assertEqual(self.request('POST', '/v1/files', raw, {'Content-Type':content_type}, wait=False)[0], 200)
+                self.assertTrue(first_ack.wait(2))
+                self.metadata['id'] = 'file-api-second';self.stall = True;self.peer_started.clear()
+                thread = threading.Thread(target=lambda: results.append(self.request('POST', '/v1/files',
+                    raw, {'Content-Type':content_type}, wait=False)))
+                thread.start();self.assertTrue(self.peer_started.wait(2))
+                release_first.set()
+                with self.gateway.condition:
+                    self.assertTrue(self.gateway.condition.wait_for(lambda: self.gateway.active_handlers == 1, timeout=2))
+                    self.assertTrue(self.gateway.files_transport.busy)
+            finally:
+                release_first.set();self.peer_release.set()
+                if thread is not None: thread.join(3)
+        self.assertTrue(self.gateway.wait_idle(3))
+        self.assertEqual(results[0][0], 200)
+        self.assertEqual(len(self.gateway.files_transport.owned), 2)
+        self.assert_no_model_attempt()
 
     def test_upload_once_and_three_round_reuse_preserves_model_body_and_budget(self):
         self.create()
