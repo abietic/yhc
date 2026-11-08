@@ -236,7 +236,7 @@ class HTTPStream:
                     with self.lock: self._data["closed_seconds"] = self.elapsed()
 
 
-def open_http_stream(connection, path, data, headers, deadline):
+def open_http_stream(connection, path, data, headers, deadline, *, method='POST', on_connected=None):
     """Also used by local fixtures; no redirect or automatic retry mechanism."""
     valid_deadline(deadline)
     started = start_time()
@@ -244,10 +244,11 @@ def open_http_stream(connection, path, data, headers, deadline):
     try:
         connection.connect()
         stream = HTTPStream(connection, deadline, started=started)
+        if on_connected is not None: on_connected(stream)
         if time.monotonic() >= deadline:
             raise TimeoutError('stream_deadline')
         with stream.lock: stream._data["request_attempt_seconds"] = stream.elapsed()
-        connection.request('POST', path, data, headers)
+        connection.request(method, path, data, headers)
         with stream.lock: stream._data["request_sent_seconds"] = stream.elapsed()
         stream.response = connection.getresponse()
         with stream.lock:
