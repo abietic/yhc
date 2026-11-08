@@ -133,8 +133,8 @@ class ActualTrialCreateTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(session), len(config.trial_name))
         directory = Path(config.environment.kwargs["verifier_proof_dir"])
         directory.mkdir()
-        proof = dict(session_id=session, network_mode="none", compose_verified=True,
-                     stage="before_artifact_upload")
+        proof = dict(version=2, session_id=session, network_mode="none", compose_verified=True,
+                     stage="before_artifact_upload", log_storage='container_private')
         path = directory / (hashlib.sha256(session.encode()).hexdigest() + ".json")
         path.write_text(json.dumps(proof))
         self.assertEqual(collect_verifier_proofs(trial), [proof])
@@ -148,6 +148,51 @@ class ActualTrialCreateTests(unittest.IsolatedAsyncioTestCase):
             session_id='digest-fixture__verifier', trial_paths=paths, task_env_config=TaskEnvironment(docker_image=reference),
             network_policy=NetworkPolicy(network_mode=NetworkMode.NO_NETWORK), verifier_proof_dir=str(self.root / 'proofs'))
 
+    async def test_private_logs_do_not_mount_the_framework_host_directory(self):
+        paths = TrialPaths(self.root / 'trials' / 'private-logs')
+        env = IsolatedDockerEnvironment(environment_dir=self.task / 'environment', environment_name='fixture',
+            session_id='private-logs__verifier', trial_paths=paths, task_env_config=TaskEnvironment(docker_image=IMAGE),
+            mounts=Trial._verifier_env_mounts(SimpleNamespace(paths=paths), TaskEnvironment(docker_image=IMAGE)),
+            network_policy=NetworkPolicy(network_mode=NetworkMode.NO_NETWORK), verifier_proof_dir=str(self.root / 'proofs'))
+        try:
+            self.assertFalse(env.capabilities.mounted)
+            self.assertEqual(env._mounts, [])
+        finally:
+            env._isolation_overlay_dir.cleanup()
+
+    async def test_host_bound_legacy_proof_does_not_qualify_private_logs(self):
+        import json
+        config = self.config()
+        trial = SimpleNamespace(config=config, task=Task(task_dir=self.task))
+        trial._separate_verifier_session_id = lambda key: Trial._separate_verifier_session_id(trial, key)
+        session = trial._separate_verifier_session_id('trial')
+        directory = Path(config.environment.kwargs['verifier_proof_dir'])
+        directory.mkdir()
+        proof = dict(version=1, session_id=session, network_mode='none', compose_verified=True,
+                     stage='before_artifact_upload')
+        (directory / (hashlib.sha256(session.encode()).hexdigest() + '.json')).write_text(json.dumps(proof))
+        self.assertEqual(collect_verifier_proofs(trial), [])
+
+    async def test_unexpected_mounts_are_rejected_instead_of_silently_removed(self):
+        paths = TrialPaths(self.root / 'trials' / 'foreign-mount')
+        for mount in ({'type': 'bind', 'source': '/foreign', 'target': '/logs/verifier'},
+                      {'type': 'bind', 'source': str(paths.verifier_dir.resolve()), 'target': '/foreign'},
+                      {'type': 'volume', 'source': 'foreign', 'target': '/logs/verifier'}):
+            with self.subTest(mount=mount), self.assertRaisesRegex(PolicyError, 'verifier_mount_request_unqualified'):
+                IsolatedDockerEnvironment(environment_dir=self.task / 'environment', environment_name='fixture',
+                    session_id='foreign-mount__verifier', trial_paths=paths, task_env_config=TaskEnvironment(docker_image=IMAGE),
+                    mounts=[mount], network_policy=NetworkPolicy(network_mode=NetworkMode.NO_NETWORK),
+                    verifier_proof_dir=str(self.root / 'proofs'))
+
+    async def test_public_agent_mounts_keep_their_original_contract(self):
+        paths = TrialPaths(self.root / 'trials' / 'public-agent')
+        mounts = [{'type': 'bind', 'source': str(paths.agent_dir.resolve()), 'target': '/logs/agent'}]
+        env = IsolatedDockerEnvironment(environment_dir=self.task / 'environment', environment_name='fixture',
+            session_id='public-agent', trial_paths=paths, task_env_config=TaskEnvironment(docker_image=IMAGE),
+            mounts=mounts, network_policy=NetworkPolicy(), verifier_proof_dir=str(self.root / 'proofs'))
+        self.assertTrue(env.capabilities.mounted)
+        self.assertEqual(env._mounts, mounts)
+
     async def test_named_digest_is_resolved_to_cached_content_id_before_attestation(self):
         from harbor.environments.docker.docker import DockerEnvironment
         reference = 'registry.example/grader@' + IMAGE
@@ -156,7 +201,7 @@ class ActualTrialCreateTests(unittest.IsolatedAsyncioTestCase):
         env._compose_verified = True
         row = dict(Id='container', Image=content_id, State={'Running': True},
                    HostConfig={'NetworkMode': 'none'}, NetworkSettings={'Networks': {'none': {}}},
-                   Mounts=[dict(Type='bind', Source=env._log_dir, Destination='/logs/verifier', RW=True)])
+                   Mounts=[])
         try:
             with patch.object(env, '_inspect', AsyncMock(side_effect=[{'Id': content_id, 'Os': 'linux'}, row])) as inspect, \
                  patch.object(DockerEnvironment, 'start', AsyncMock()), \

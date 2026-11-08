@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -101,6 +102,48 @@ if test "$value" = zero; then printf '0\\n'; else printf '1\\n'; fi > /logs/veri
             self.assertEqual(proof['image_id'], expected)
             self.assertEqual(proof['image_reference'], reference)
             self.assertEqual(proof['network_mode'], 'none')
+        finally:
+            await environment.stop(delete=True)
+
+    @unittest.skipUnless(os.environ.get('YHC_BENCH_DOCKER_UID_TEST') == '1',
+                         'explicit cached Python/nobody image opt-in required')
+    async def test_unprivileged_child_cannot_access_private_verifier_logs(self):
+        root = self.root / 'private-log-permissions'
+        directory = root / 'environment'
+        directory.mkdir(parents=True)
+        paths = TrialPaths(root / 'trial')
+        config = TaskEnvironment(docker_image=self.base)
+        environment = IsolatedDockerEnvironment(environment_dir=directory, environment_name='generic-private-logs',
+            session_id='tb4-verifier-private-' + uuid4().hex[:12], trial_paths=paths,
+            task_env_config=config, mounts=Trial._verifier_env_mounts(SimpleNamespace(paths=paths), config),
+            network_policy=NetworkPolicy(network_mode=NetworkMode.NO_NETWORK), verifier_proof_dir=str(root / 'proofs'))
+        child = """import os,pathlib,json
+p=pathlib.Path('/logs/verifier');row=dict(uid=os.getuid())
+try:(p/'owned-probe').read_text();row['read']=True
+except PermissionError:row['read']=False
+try:(p/'untrusted-probe').write_text('x');row['write']=True
+except PermissionError:row['write']=False
+print(json.dumps(row))
+"""
+        parent = ("import os,pathlib,pwd,subprocess,sys; p=pathlib.Path('/logs/verifier');"
+                  "p.mkdir(parents=True,exist_ok=True);p.chmod(0o700);(p/'owned-probe').write_text('owned');"
+                  "n=pwd.getpwnam('nobody')\n"
+                  "def drop():\n os.setgroups([])\n os.setgid(n.pw_gid)\n os.setuid(n.pw_uid)\n"
+                  "r=subprocess.run([sys.executable,'-c'," + repr(child) + "],preexec_fn=drop,"
+                  "capture_output=True,text=True,check=True);print(r.stdout,end='')")
+        try:
+            await environment.start(False)
+            result = await environment.exec('python3 -c ' + shlex.quote(parent), user='root')
+            self.assertEqual(result.return_code, 0, result.stderr)
+            observed = json.loads(result.stdout)
+            self.assertNotEqual(observed['uid'], 0)
+            self.assertFalse(observed['read'], observed)
+            self.assertFalse(observed['write'], observed)
+            self.assertFalse((paths.verifier_dir / 'owned-probe').exists())
+            paths.verifier_dir.mkdir(parents=True, exist_ok=True)
+            await environment.download_dir('/logs/verifier', paths.verifier_dir)
+            self.assertEqual((paths.verifier_dir / 'owned-probe').read_text(), 'owned')
+            self.assertFalse((paths.verifier_dir / 'untrusted-probe').exists())
         finally:
             await environment.stop(delete=True)
 

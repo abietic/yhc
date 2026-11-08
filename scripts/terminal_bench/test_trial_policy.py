@@ -76,17 +76,35 @@ class IsolationTests(unittest.TestCase):
     def setUp(self):
         self.compose = {"services": {"main": {
             "image": "sha256:fixture", "network_mode": "none", "pull_policy": "never",
-            "volumes": [{"type": "bind", "source": "/owned/logs", "target": "/logs/verifier"}],
+            "volumes": [],
         }}}
         self.container = {"Id": "fixture-container", "Image": "sha256:fixture",
                           "State": {"Running": True},
                           "HostConfig": {"NetworkMode": "none", "Privileged": False},
                           "NetworkSettings": {"Networks": {"none": {}}},
-                          "Mounts": [{"Type": "bind", "Source": "/owned/logs", "Destination": "/logs/verifier"}]}
+                          "Mounts": []}
 
-    def test_actual_network_none_and_only_host_owned_logs(self):
+    def test_actual_network_none_with_container_private_logs(self):
         verify_compose(self.compose, image="sha256:fixture", log_dir="/owned/logs")
         verify_container(self.container, image="sha256:fixture", log_dir="/owned/logs")
+
+    def test_container_private_logs_need_no_host_mount(self):
+        compose = copy.deepcopy(self.compose)
+        compose['services']['main']['volumes'] = []
+        container = copy.deepcopy(self.container)
+        container['Mounts'] = []
+        verify_compose(compose, image='sha256:fixture', log_dir='/owned/logs')
+        verify_container(container, image='sha256:fixture', log_dir='/owned/logs')
+
+    def test_host_log_bind_is_not_a_private_permission_boundary(self):
+        compose = copy.deepcopy(self.compose)
+        compose['services']['main']['volumes'] = [{'type': 'bind', 'source': '/owned/logs', 'target': '/logs/verifier'}]
+        container = copy.deepcopy(self.container)
+        container['Mounts'] = [{'Type': 'bind', 'Source': '/owned/logs', 'Destination': '/logs/verifier'}]
+        with self.assertRaises(PolicyError):
+            verify_compose(compose, image='sha256:fixture', log_dir='/owned/logs')
+        with self.assertRaises(PolicyError):
+            verify_container(container, image='sha256:fixture', log_dir='/owned/logs')
 
     def test_proof_is_outside_all_agent_and_sidecar_host_binds(self):
         for source in ("/owned", "/owned/agent"):

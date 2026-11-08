@@ -1,7 +1,7 @@
 # Isolated Benchmark Verification
 
 **Status:** current
-**Last verified:** 2026-10-30
+**Last verified:** 2026-11-08
 
 > **Ownership:** operator admission, network isolation and terminal classification for the opt-in Harbor evaluator
 
@@ -38,18 +38,31 @@ then performs these checks in order:
 
 1. Inspect the exact cached reference and resolve its Linux content ID; do not
    pull or build a grading image at dispatch.
-2. Append a native Docker `network_mode: none` override and render the complete
-   Compose configuration. Admit only the standalone grader and its own log bind.
+2. Remove only Harbor's exact verifier-log bind request, append a native Docker
+   `network_mode: none` override and render the complete Compose configuration.
+   Admit only the standalone grader with no mounts; task-authored mounts are
+   rejected rather than silently removed.
 3. Start the container and compare its actual image with the resolved content
    ID, independently checking networking, privileges and mounts. A repository
    manifest digest can differ from that content ID; record both reference and ID.
-4. Write an exclusive host-owned proof before `start()` returns. Harbor can
-   upload model-produced artifacts only after this point.
+4. Write an exclusive version-2 host-owned proof, including
+   `log_storage=container_private`, before `start()` returns. Harbor can upload
+   model-produced artifacts only after this point.
 
-Network changes from this static environment are rejected. The container can
-write its logs, but cannot access the host proof directory. A missing, stale or
-conflicting proof blocks evaluation acceptance; keeping a container or archive
-does not authorize resuming the agent.
+The grader writes `/logs/verifier` on its private Linux filesystem. Reporting
+`capabilities.mounted=false` makes the pinned Harbor verifier download completed
+logs before it parses reward, including its existing filtered-download path.
+This preserves a grader's own UID-based permissions: a host-shared directory
+may report ownership as the accessing user on Docker Desktop, defeating a
+root-only directory's intended protection from an unprivileged artifact child.
+The adapter does not modify the official grader or add container privileges.
+
+Network changes from this static environment are rejected. The container cannot
+access the host proof directory or the host's result directory. Version-1 proofs
+attest the previous log-bind topology and do not qualify the private-log
+contract. Keep historical records unchanged and requalify a new entrypoint;
+missing, stale or conflicting proof blocks evaluation acceptance. Keeping a
+container or archive does not authorize resuming the agent.
 
 ## Classify closure independently of reward
 
@@ -104,3 +117,10 @@ host proof already exists, Docker reports `none`, and the artifact is absent
 until that upload. It cleans only its own UUID-labelled resources. These are
 offline execution proofs, not provider-quality, account-coverage, spending
 authorization or cold-recovery evidence.
+
+For the additional permission regression, opt in with
+`YHC_BENCH_DOCKER_UID_TEST=1` and choose a cached image that also has `python3`
+and a `nobody` account. The check makes a root-only log directory, proves that
+a dropped-UID child can neither read nor write it, then downloads the trusted
+marker. This tests the effective filesystem boundary and log retrieval, not
+just the intended Compose settings.
