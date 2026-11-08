@@ -1,7 +1,7 @@
 # Compaction
 
 **Status:** current
-**Last verified:** 2026-10-18
+**Last verified:** 2026-11-09
 
 > **Ownership:** canonical ProjectGraph preparation/reconciliation ordering;
 > `engine/compact` transformations
@@ -82,9 +82,21 @@ model call because it is stateful and records newly persisted replacements.
   separate per-result budget, idle-time clearing, and overflow recovery still
   apply; preserving a prefix does not disable those bounds.
 - Preparation resolves the runtime model, including existing Plan selection,
-  before measuring pressure. Dispatch still re-evaluates that existing policy
-  after context transformations; the pressure gate does not pin a route or
-  change Plan's context-dependent model selection.
+  before measuring pressure. A matching committed binding supplies its context
+  capacity; another selected profile uses the side-effect-free inventory.
+  Profile names are not treated as API model names. Snip, microcompaction,
+  collapse, auto-compaction, and blocking checks share that detached capacity,
+  with existing user overrides allowed to narrow it. Without authoritative
+  metadata, known routes use their actual API model's capability lookup and
+  unknown routes retain the conservative fallback. A profile's display name
+  cannot supply API capabilities. Dispatch and compaction guards retain the original
+  selector and re-evaluate the existing routing policy after transformations;
+  pressure calculation does not create a client or pin a route.
+- An API-name compatibility alias can reuse a valid committed binding only
+  after selected inventory profiles take precedence. If strict lookup fails,
+  a changed or unavailable namespace cannot establish that the alias has no
+  same-name profile. Resume admission and clearing a context-only block also
+  apply the user's narrowing override to authoritative route limits.
 - Snip's message-count minimum alone cannot trigger history rewriting. Snip,
   microcompaction, and collapse all receive the preparation-time model and
   honor the existing context-window and threshold overrides. Unknown models
@@ -110,10 +122,11 @@ physical prompt records or repeat the boundary.
 - [Manual-compaction command commit](../../../engine/command_executor.go)
 - [`GetMessagesAfterCompactBoundary`](../../../engine/compact/boundary.go)
 - [`ApplyToolResultBudget`](../../../engine/compact/budget.go)
-- [`SnipCompactIfNeeded`](../../../engine/compact/snip.go)
-- [`Microcompact`](../../../engine/compact/micro.go)
-- [`ApplyCollapsesWithState`](../../../engine/compact/collapse.go) owns the
-  model-aware production collapse projection.
+- [`SnipCompactIfNeededForContextWindow`](../../../engine/compact/snip.go)
+- [`MicrocompactForContextWindow`](../../../engine/compact/micro.go)
+- [`ApplyCollapsesForContextWindow`](../../../engine/compact/collapse.go) owns
+  the capacity-aware production collapse projection. The model-name helper
+  entrypoints retain their existing fallback behavior.
 - [`SanitizeMediaForCompaction`](../../../engine/compact/strip.go)
 - [`AutoCompact`](../../../engine/compact/auto.go)
 - [`splitDeterministicContext`](../../../engine/compact/requirements.go) owns

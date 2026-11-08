@@ -64,6 +64,12 @@ type AutoCompactResult struct {
 // map if the model is not found in the centralized table, and ultimately to
 // the default 200k if the model is unknown.
 func GetEffectiveContextWindowSize(model string) int {
+	return GetEffectiveContextWindowSizeForContextWindow(model, nil)
+}
+
+// GetEffectiveContextWindowSizeForContextWindow uses an authoritative route
+// limit when available. The existing environment override can only narrow it.
+func GetEffectiveContextWindowSizeForContextWindow(model string, contextWindow *int) int {
 	window := defaultEffectiveContextWindow
 	if model != "" {
 		// Prefer centralized model capability table
@@ -76,6 +82,9 @@ func GetEffectiveContextWindowSize(model string) int {
 		}
 	}
 
+	if contextWindow != nil && *contextWindow > 0 {
+		window = *contextWindow
+	}
 	if override := strings.TrimSpace(os.Getenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW")); override != "" {
 		if parsed, err := strconv.Atoi(override); err == nil && parsed > 0 && parsed < window {
 			window = parsed
@@ -117,7 +126,13 @@ var modelContextWindows = map[string]int{
 
 // GetAutoCompactThreshold returns the proactive compaction threshold.
 func GetAutoCompactThreshold(model string) int {
-	effectiveWindow := GetEffectiveContextWindowSize(model)
+	return GetAutoCompactThresholdForContextWindow(model, nil)
+}
+
+// GetAutoCompactThresholdForContextWindow applies the normal buffers and
+// percentage override to the selected route's context limit.
+func GetAutoCompactThresholdForContextWindow(model string, contextWindow *int) int {
+	effectiveWindow := GetEffectiveContextWindowSizeForContextWindow(model, contextWindow)
 	return autoCompactThresholdForWindow(effectiveWindow)
 }
 
@@ -156,11 +171,8 @@ func CalculateTokenWarningStateForContextWindow(
 	model string,
 	contextWindow *int,
 ) TokenWarningState {
-	effectiveWindow := GetEffectiveContextWindowSize(model)
-	if contextWindow != nil && *contextWindow > 0 {
-		effectiveWindow = *contextWindow
-	}
-	return calculateTokenWarningState(tokenUsage, effectiveWindow)
+	return calculateTokenWarningState(tokenUsage,
+		GetEffectiveContextWindowSizeForContextWindow(model, contextWindow))
 }
 
 func calculateTokenWarningState(
@@ -285,6 +297,9 @@ func roughTextTokens(text string) int {
 // AutoCompactParams holds optional parameters for AutoCompact that enable
 // LLM-driven summarization when a ChatModel is available.
 type AutoCompactParams struct {
+	// ContextWindow is the selected route's positive, authoritative input limit.
+	// Nil keeps the model-name capability fallback.
+	ContextWindow *int
 	// Ctx is the context for LLM calls. Required for LLM compaction.
 	Ctx context.Context
 	// ChatModel enables LLM-driven summarization when non-nil.
@@ -329,7 +344,12 @@ func AutoCompact(
 	}
 
 	tokenCount := EstimateTokenCount(messages)
-	warningState := CalculateTokenWarningState(tokenCount, modelName)
+	var contextWindow *int
+	if params != nil {
+		contextWindow = params.ContextWindow
+	}
+	warningState := calculateTokenWarningState(tokenCount,
+		GetEffectiveContextWindowSizeForContextWindow(modelName, contextWindow))
 	if warningState.IsAtBlockingLimit {
 		tracking.Compacted = false
 		return nil, tracking.ConsecutiveFailures, tracking

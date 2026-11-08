@@ -23,6 +23,17 @@ func Microcompact(
 	querySource string,
 	modelName string,
 ) *MicrocompactResult {
+	return MicrocompactForContextWindow(messages, querySource, modelName, nil)
+}
+
+// MicrocompactForContextWindow applies the normal history-pressure policy to
+// the selected route limit; idle-time clearing remains independently bounded.
+func MicrocompactForContextWindow(
+	messages []*schema.Message,
+	querySource string,
+	modelName string,
+	contextWindow *int,
+) *MicrocompactResult {
 	// Skip for compact queries to avoid double-compacting.
 	if querySource == "compact" {
 		return &MicrocompactResult{
@@ -44,7 +55,7 @@ func Microcompact(
 	// Rewriting an already-sent tool result or reasoning block invalidates its
 	// cached prefix and removes useful history. Do so only to relieve pressure,
 	// using the same model capacity and user overrides as auto-compaction.
-	targetTokensToFree := EstimateTokenCount(messages) - GetAutoCompactThreshold(modelName) + 1
+	targetTokensToFree := EstimateTokenCount(messages) - GetAutoCompactThresholdForContextWindow(modelName, contextWindow) + 1
 	if targetTokensToFree <= 0 {
 		return &MicrocompactResult{Messages: messages}
 	}
