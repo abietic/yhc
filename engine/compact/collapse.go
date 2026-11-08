@@ -95,6 +95,18 @@ func ApplyCollapsesWithState(
 	modelName string,
 	state *CollapseState,
 ) *CollapseResult {
+	return ApplyCollapsesForContextWindow(messages, querySource, modelName, state, nil)
+}
+
+// ApplyCollapsesForContextWindow commits staged groups only at the selected
+// route's pressure threshold. A nil limit retains the model-name fallback.
+func ApplyCollapsesForContextWindow(
+	messages []*schema.Message,
+	querySource string,
+	modelName string,
+	state *CollapseState,
+	contextWindow *int,
+) *CollapseResult {
 	// Skip collapse during compaction queries
 	if querySource == "compact" {
 		return &CollapseResult{Messages: messages, State: state}
@@ -119,7 +131,7 @@ func ApplyCollapsesWithState(
 
 	// Check if we're above the collapse commit threshold
 	tokenCount := EstimateTokenCount(messages)
-	threshold := getCollapseThreshold(modelName)
+	threshold := getCollapseThresholdForContextWindow(modelName, contextWindow)
 
 	if tokenCount >= threshold && len(state.Staged) > 0 {
 		// Commit oldest staged entries to reduce context pressure
@@ -323,11 +335,11 @@ func estimateGroupTokens(messages []*schema.Message) int {
 
 // --- Commit logic ---
 
-// getCollapseThreshold returns the token count above which staged collapses
-// should be committed. Uses 80% of the auto-compact threshold to give
+// getCollapseThresholdForContextWindow returns the token count above which
+// staged collapses should be committed. It uses 80% of the auto threshold to give
 // collapse a chance to reduce pressure before full compaction kicks in.
-func getCollapseThreshold(modelName string) int {
-	autoThreshold := GetAutoCompactThreshold(modelName)
+func getCollapseThresholdForContextWindow(modelName string, contextWindow *int) int {
+	autoThreshold := GetAutoCompactThresholdForContextWindow(modelName, contextWindow)
 	// Collapse commits at 80% of the auto-compact threshold
 	return int(float64(autoThreshold) * 0.80)
 }

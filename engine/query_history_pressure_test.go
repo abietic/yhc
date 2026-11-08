@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/abietic/yhc/engine/permission"
+	"github.com/abietic/yhc/engine/session"
 )
 
 func TestQuerySnipPreservesHealthyLongHistory(t *testing.T) {
@@ -109,6 +110,196 @@ func TestQueryCollapseUsesPreparationModel(t *testing.T) {
 				t.Fatal("collapse mutated caller history")
 			}
 		})
+	}
+}
+
+func TestQueryCollapseUsesBoundProfileCapacity(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
+	for _, tc := range []struct {
+		name        string
+		window      int
+		planWindow  int
+		bytes       int
+		longHistory bool
+		apiSelector bool
+		collapsed   bool
+	}{
+		{name: "large-profile-preserves-prefix", window: 1048576, bytes: 640000},
+		{name: "bound-api-alias-preserves-prefix", window: 1048576, bytes: 640000, apiSelector: true},
+		{name: "large-profile-above-unknown-blocking-limit", window: 1048576, bytes: 1200000, longHistory: true},
+		{name: "small-profile-preserves-pressure-guard", window: 128000, bytes: 400000, collapsed: true},
+		{name: "selected-plan-profile-large", window: 128000, planWindow: 1048576, bytes: 640000},
+		{name: "selected-plan-profile-small", window: 1048576, planWindow: 128000, bytes: 400000, collapsed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := newP292InventoryResolver(tc.window)
+			resolver.snapshot.Entries[0].APIModel = "deepseek-flash"
+			if tc.apiSelector {
+				resolver.snapshot.Entries[0].APIModel = "fixture-api-model"
+			}
+			engine := newP292BindingEngine(t, resolver)
+			options := &ToolUseOptions{MainLoopModel: "primary"}
+			if tc.apiSelector {
+				options.MainLoopModel = resolver.snapshot.Entries[0].APIModel
+			}
+			if tc.planWindow > 0 {
+				resolver.snapshot.Entries[1].Metadata.ContextWindowTokens = p292MetadataField(tc.planWindow)
+				t.Setenv("ANTHROPIC_DEFAULT_OPUS_MODEL", "secondary")
+				options.ModelSetting = "opusplan"
+				options.PermissionMode = permission.ModePlan
+			}
+			history := []*schema.Message{
+				{Role: schema.User, Content: "Inspect the fixture."},
+				{Role: schema.Assistant, Content: strings.Repeat("x", tc.bytes)},
+				{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "profile-read", Type: "function", Function: schema.FunctionCall{Name: "Read", Arguments: `{}`}}}},
+				{Role: schema.Tool, ToolCallID: "profile-read", Content: "fixture result"},
+				{Role: schema.Assistant, Content: "Result consumed."},
+				{Role: schema.User, Content: "Continue."},
+			}
+			if tc.longHistory {
+				for len(history) < 40 {
+					history = append(history, &schema.Message{Role: schema.User, Content: "Keep the fixture contract."})
+				}
+			}
+			model := &captureInputModel{}
+			terminal := Query(context.Background(), QueryParams{
+				Messages: history, QuerySource: QuerySourceSDK, ChatModel: model,
+				modelCall: engine.modelCallIdentitySnapshot(), modelResolver: resolver,
+				ToolUseContext: &ToolUseContext{Options: options},
+			}, func(QueryEvent) {})
+			if terminal.Reason != TerminalCompleted || len(model.inputs) != 1 {
+				t.Fatalf("terminal=%s calls=%d", terminal.Reason, len(model.inputs))
+			}
+			toolPresent := false
+			for _, message := range model.inputs[0] {
+				if message.Role == schema.Tool && message.ToolCallID == "profile-read" {
+					toolPresent = message.Content == "fixture result"
+				}
+			}
+			if toolPresent == tc.collapsed {
+				t.Errorf("tool_present=%t want_collapsed=%t for authoritative profile window %d", toolPresent, tc.collapsed, tc.window)
+			}
+			if hasMessageSubtype(model.inputs[0], "collapse_committed") != tc.collapsed {
+				t.Error("collapse projection does not follow the bound profile capacity")
+			}
+			if len(history[2].ToolCalls) != 1 || history[3].Content != "fixture result" {
+				t.Fatal("caller history mutated")
+			}
+		})
+	}
+}
+
+func TestQueryProfileCapacityKeepsHardBlockingLimit(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
+	resolver := newP292InventoryResolver(1048576)
+	engine := newP292BindingEngine(t, resolver)
+	model := &captureInputModel{}
+	terminal := Query(context.Background(), QueryParams{
+		Messages:    []*schema.Message{{Role: schema.User, Content: strings.Repeat("x", 4400000)}},
+		QuerySource: QuerySourceSDK, ChatModel: model,
+		modelCall: engine.modelCallIdentitySnapshot(), modelResolver: resolver,
+		ToolUseContext: &ToolUseContext{Options: &ToolUseOptions{MainLoopModel: "primary"}},
+	}, func(QueryEvent) {})
+	if terminal.Reason != TerminalBlockingLimit || len(model.inputs) != 0 {
+		t.Fatalf("terminal=%s calls=%d; oversized user requirements must not dispatch", terminal.Reason, len(model.inputs))
+	}
+}
+
+func TestQueryEngineSubmitUsesBoundProfileCapacity(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
+	model := &captureInputModel{}
+	engine := newP292BindingEngine(t, newP292InventoryResolver(1048576), model)
+	engine.messages = []*schema.Message{
+		{Role: schema.User, Content: "Inspect the fixture."},
+		{Role: schema.Assistant, Content: strings.Repeat("x", 640000)},
+		{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "engine-profile-read", Type: "function", Function: schema.FunctionCall{Name: "Read", Arguments: `{}`}}}},
+		{Role: schema.Tool, ToolCallID: "engine-profile-read", Content: "fixture result"},
+		{Role: schema.Assistant, Content: "Result consumed."},
+	}
+	events, admission := engine.SubmitMessage(context.Background(), "Continue.")
+	if admission.Err != nil {
+		t.Fatal(admission.Err)
+	}
+	var terminal *Terminal
+	for event := range events {
+		if event.TerminalInfo != nil {
+			terminal = event.TerminalInfo
+		}
+	}
+	if terminal == nil || terminal.Reason != TerminalCompleted || len(model.inputs) != 1 {
+		t.Fatalf("terminal=%+v model calls=%d", terminal, len(model.inputs))
+	}
+	for _, message := range model.inputs[0] {
+		if message.Role == schema.Tool && message.ToolCallID == "engine-profile-read" && message.Content == "fixture result" {
+			return
+		}
+	}
+	t.Fatal("public SubmitMessage collapsed a healthy profile history")
+}
+
+func TestPreparationContextWindowAuthority(t *testing.T) {
+	resolver := newP292InventoryResolver(1048576)
+	engine := newP292BindingEngine(t, resolver)
+	identity := engine.modelCallIdentitySnapshot()
+	resolver.snapshot.Entries[0].Metadata.ContextWindowTokens = p292MetadataField(128000)
+	resolver.snapshot.Entries[1].Metadata.ContextWindowTokens = p292MetadataField(128000)
+	params := QueryParams{modelCall: identity, modelResolver: resolver}
+	if got := preparationContextWindow(params, identity.APIModel); got != 1048576 {
+		t.Fatalf("unambiguous bound API capacity = %v", got)
+	}
+	resolver.snapshot.Entries[1].Selector = identity.APIModel // Exact profile IDs precede API-name aliases.
+	resolver.snapshot.Entries[1].ProfileID = identity.APIModel
+	if got := preparationContextWindow(params, "primary"); got != 1048576 {
+		t.Fatalf("committed profile capacity = %v", got)
+	}
+	if got := preparationContextWindow(params, identity.APIModel); got != 128000 {
+		t.Fatalf("selected colliding profile capacity = %v", got)
+	}
+	if *identity.binding.ContextWindowTokens != 1048576 {
+		t.Fatal("capacity resolution mutated the binding")
+	}
+	resolver.snapshot.Entries[1].Selector = "secondary"
+	resolver.snapshot.Entries[1].ProfileID = "secondary"
+	resolver.snapshot.Revision = strings.Repeat("b", 64)
+	if got := preparationContextWindow(params, identity.APIModel); got != 200000 {
+		t.Fatalf("changed namespace capacity=%d want conservative fallback", got)
+	}
+	identity.binding.Version = 0
+	if got := preparationContextWindow(params, "primary"); got != 200000 {
+		t.Fatalf("invalid binding capacity=%d want conservative fallback", got)
+	}
+	resolver.snapshot.Entries[0].APIModel = "fixture-unknown-api"
+	resolver.snapshot.Entries[0].Metadata.ContextWindowTokens.Source = "unknown"
+	if got := preparationContextWindow(QueryParams{modelResolver: resolver}, "primary"); got != 200000 {
+		t.Fatalf("unknown API capacity=%d want conservative fallback", got)
+	}
+	if got := preparationContextWindow(QueryParams{}, "unregistered-profile"); got != 200000 {
+		t.Fatalf("unresolved selector capacity=%d want conservative fallback", got)
+	}
+	legacy := engine.modelCallIdentitySnapshot().binding.Clone()
+	legacy.Kind = session.ModelBindingKindLegacy
+	legacy.Value = legacy.APIModel
+	legacy.Version = session.PersistedModelBindingVersion
+	legacyCall := modelCallIdentityFromBinding("main", legacy)
+	if got := preparationContextWindow(QueryParams{modelCall: legacyCall}, legacy.APIModel); got != 1048576 {
+		t.Fatalf("bound legacy capacity = %v", got)
+	}
+}
+
+func TestUnknownProfileCapacityDoesNotUseProfileNameAsAPIModel(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
+	resolver := newP292InventoryResolver(1048576)
+	entry := &resolver.snapshot.Entries[0]
+	entry.Selector, entry.ProfileID, entry.APIModel = "deepseek-flash", "deepseek-flash", "fixture-unknown-api"
+	entry.Metadata.ContextWindowTokens.Source = "unknown"
+	if got := preparationContextWindow(QueryParams{modelResolver: resolver}, entry.Selector); got != 200000 {
+		t.Fatalf("unknown API inherited profile-name capacity %d, want conservative 200000", got)
 	}
 }
 

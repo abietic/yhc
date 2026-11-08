@@ -17,7 +17,13 @@ const snipThreshold = 40
 // preparation-time model's auto-compact threshold. Empty models use the
 // same conservative capacity fallback as auto-compaction.
 func SnipCompactIfNeeded(messages []*schema.Message, modelName string) *SnipResult {
-	if len(messages) < snipThreshold || EstimateTokenCount(messages) < GetAutoCompactThreshold(modelName) {
+	return SnipCompactIfNeededForContextWindow(messages, modelName, nil)
+}
+
+// SnipCompactIfNeededForContextWindow uses the selected route's capacity while
+// retaining the existing message-count and context-pressure requirements.
+func SnipCompactIfNeededForContextWindow(messages []*schema.Message, modelName string, contextWindow *int) *SnipResult {
+	if len(messages) < snipThreshold || EstimateTokenCount(messages) < GetAutoCompactThresholdForContextWindow(modelName, contextWindow) {
 		return &SnipResult{
 			Messages:    messages,
 			TokensFreed: 0,

@@ -836,6 +836,26 @@ func TestP292FailedCompactionKeepsContextOnlyDispatchBlock(t *testing.T) {
 	}
 }
 
+func TestBoundContextChecksHonorUserNarrowing(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "64000")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	engine := newP292BindingEngine(t, newP292InventoryResolver(1048576))
+	current := engine.modelBinding.Clone()
+	admission := engine.admitResumedModelBinding(context.Background(), current, current.APIModel, 100000)
+	if admission.block == nil || admission.block.Code != ModelDispatchBlockCompactRequired || !admission.block.ContextOnly {
+		t.Errorf("resume admitted history above user-narrowed context: %#v", admission.block)
+	}
+	engine.modelDispatchBlock = newModelDispatchBlock(ModelDispatchBlockCompactRequired, "primary", "compact the Session", true)
+	engine.clearContextModelDispatchBlock([]*schema.Message{{Role: schema.User, Content: strings.Repeat("x", 400000)}})
+	if engine.ModelDispatchBlockSnapshot() == nil {
+		t.Error("cleared context block while history exceeds the user-narrowed limit")
+	}
+	engine.clearContextModelDispatchBlock([]*schema.Message{{Role: schema.User, Content: "Small retained requirement."}})
+	if engine.ModelDispatchBlockSnapshot() != nil {
+		t.Error("kept context-only block after history fits the user-narrowed limit")
+	}
+}
+
 func TestP292DurableFittingCompactionClearsOnlyContextBlock(t *testing.T) {
 	model := &p172NoDispatchModel{}
 	engine := newP292BindingEngine(

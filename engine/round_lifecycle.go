@@ -53,6 +53,56 @@ type canonicalRoundPreparationResult struct {
 	skillPrefetch     *prefetch.SkillPrefetch
 }
 
+// preparationContextWindow uses matching committed route metadata. Plan
+// selection may choose another inventory entry; that lookup creates no client
+// and does not pin the later dispatch route.
+func preparationContextWindow(params QueryParams, modelName string) int {
+	selected := strings.TrimSpace(modelName)
+	if identity := params.modelCall; identity != nil &&
+		(strings.EqualFold(identity.Selector, selected) ||
+			identity.Profile != "" && strings.EqualFold(identity.Profile, selected)) {
+		if identity.binding == nil || identity.binding.ValidateV1() != nil {
+			return compact.GetEffectiveContextWindowSize("")
+		}
+		return compact.GetEffectiveContextWindowSizeForContextWindow(
+			identity.binding.APIModel, identity.binding.ContextWindowTokens,
+		)
+	}
+	if inventory, ok := params.modelResolver.(runtimeModelInventory); ok {
+		if entry, err := inventory.ResolveInventorySelector(selected); err == nil {
+			return compact.GetEffectiveContextWindowSizeForContextWindow(
+				entry.APIModel, knownPositiveMetadataInt(entry.Metadata.ContextWindowTokens),
+			)
+		}
+		// A failed strict selector lookup is not proof that an API-name alias
+		// has no colliding profile. Check the admitted namespace snapshot before
+		// using the dispatch identity's API-name compatibility path.
+		identity := params.modelCall
+		if identity == nil || identity.binding == nil {
+			return compact.GetEffectiveContextWindowSize("")
+		}
+		snapshot := inventory.InventorySnapshot()
+		if snapshot.Revision == "" || snapshot.Revision != identity.binding.PortfolioRevision {
+			return compact.GetEffectiveContextWindowSize("")
+		}
+		for _, entry := range snapshot.Entries {
+			if entry.ProfileID != "" && strings.EqualFold(entry.ProfileID, selected) {
+				return compact.GetEffectiveContextWindowSize("")
+			}
+		}
+		if !modelCallIdentityMatches(identity, selected) || identity.binding.ValidateV1() != nil {
+			return compact.GetEffectiveContextWindowSize("")
+		}
+	}
+	if identity := params.modelCall; modelCallIdentityMatches(identity, selected) &&
+		identity.binding != nil && identity.binding.ValidateV1() == nil {
+		return compact.GetEffectiveContextWindowSizeForContextWindow(
+			identity.binding.APIModel, identity.binding.ContextWindowTokens,
+		)
+	}
+	return compact.GetEffectiveContextWindowSize(selected)
+}
+
 // runCanonicalRoundPreparation owns the safe pre-model boundary: asynchronous
 // attachments, child pause, tracking, compact/recovery preparation, transcript
 // snapshot, post-compact context reinjection, and blocking-limit classification.
@@ -180,7 +230,8 @@ func runCanonicalRoundPreparation(
 	if toolUseContext != nil && toolUseContext.Options != nil {
 		modelName = getRuntimeMainLoopModel(toolUseContext.Options, messagesForQuery)
 	}
-	snipResult := compact.SnipCompactIfNeeded(messagesForQuery, modelName)
+	contextWindow := preparationContextWindow(input.params, modelName)
+	snipResult := compact.SnipCompactIfNeededForContextWindow(messagesForQuery, modelName, &contextWindow)
 	messagesForQuery = snipResult.Messages
 	snipTokensFreed := snipResult.TokensFreed
 	if snipResult.BoundaryMessage != nil {
@@ -189,17 +240,19 @@ func runCanonicalRoundPreparation(
 			CompactBoundaryMessage: snipResult.BoundaryMessage,
 		})
 	}
-	microResult := compact.Microcompact(
+	microResult := compact.MicrocompactForContextWindow(
 		messagesForQuery,
 		string(input.params.QuerySource),
 		modelName,
+		&contextWindow,
 	)
 	messagesForQuery = microResult.Messages
-	collapseResult := compact.ApplyCollapsesWithState(
+	collapseResult := compact.ApplyCollapsesForContextWindow(
 		messagesForQuery,
 		string(input.params.QuerySource),
 		modelName,
 		nil,
+		&contextWindow,
 	)
 	messagesForQuery = collapseResult.Messages
 	fullSystemPrompt := promptctx.AppendSystemContext(
@@ -241,6 +294,7 @@ func runCanonicalRoundPreparation(
 			snipTokensFreed,
 			modelName,
 			&compact.AutoCompactParams{
+				ContextWindow: &contextWindow,
 				Ctx:           ctx,
 				ChatModel:     summaryModel,
 				ProviderUsage: input.deps.ProviderUsage,
@@ -322,9 +376,10 @@ func runCanonicalRoundPreparation(
 
 	if compactResult == nil &&
 		input.params.QuerySource != QuerySourceCompact {
-		warningState := compact.CalculateTokenWarningState(
+		warningState := compact.CalculateTokenWarningStateForContextWindow(
 			compact.EstimateTokenCount(messagesForQuery),
 			modelName,
+			&contextWindow,
 		)
 		if warningState.IsAtBlockingLimit {
 			if !state.HasAttemptedReactiveCompact {
