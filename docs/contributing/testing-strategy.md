@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-11-08
+**Last verified:** 2026-11-09
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -246,6 +246,38 @@ change caused a cache miss. Reports export identifiers, counters, structural
 positions and digests, without request text, tool arguments, or thinking text.
 Keep raw input artifacts private. Both commands refuse to replace existing
 reports and make no network, model, funding, or agent-dispatch calls.
+
+`attest_docker_artifact` in
+[`artifact_integrity.py`](../../scripts/terminal_bench/artifact_integrity.py)
+is an explicit post-upload operator check for regular files and directories.
+It compares host snapshot hashes with a bounded Docker archive without
+extracting the archive or requiring a guest interpreter. Source links,
+unqualified archive entries, missing files and changed bytes fail closed.
+Timeout or cancellation terminates and reaps the started archive client.
+The caller must bind the container identity and isolation before and after the
+check, and must prevent grading after a failed check. This helper does not
+replace existing sealed launchers or automatically intercept Harbor uploads.
+
+The proof covers the uploaded source projection. Additional regular target
+entries remain unverified, preserving Harbor's merge/exclude behavior. It is
+not proof of ownership, permissions, a full workspace, or agent recovery.
+The helper and its standard-library tests require Python 3.9 or later; this
+does not change the separately pinned Harbor runtime. The tests include
+malformed archives and transport cleanup:
+
+```bash
+python3 -m unittest scripts.terminal_bench.test_artifact_integrity
+```
+
+The separate Docker regression requires an explicitly selected, cached,
+digest-pinned Linux image without Python. It never pulls an image or calls a
+model:
+
+```bash
+YHC_ARTIFACT_INTEGRITY_DOCKER_TEST=1 \
+YHC_ARTIFACT_INTEGRITY_TEST_IMAGE="$CACHED_PYTHON_FREE_IMAGE" \
+python3 -m unittest scripts.terminal_bench.test_artifact_integrity_docker
+```
 
 Before a new cohort, [`fresh_budget.py`](../../scripts/terminal_bench/fresh_budget.py)
 assesses explicit per-sample caps whose sum must fit the shared cap. Every cap
