@@ -172,7 +172,7 @@ class FilesTransport:
             if collection and handler.command == 'DELETE': raise FilesStop('files_method')
             with gateway.lock:
                 if (gateway.closing or gateway.accounting_error or self.unverified or self.busy
-                        or time.monotonic() >= gateway.deadline or gateway.active_handlers != 1
+                        or time.monotonic() >= gateway.deadline or gateway.active_model_handlers
                         or gateway.require_agent_start and not gateway.agent_active):
                     raise FilesStop('files_admission')
                 gateway._check_root()
@@ -281,8 +281,13 @@ class FilesTransport:
                                 operation['file_id'] = result['id']
                             elif result != self.owned[file_id]['metadata']:
                                 raise FilesStop('files_retrieve_unverified')
+            # A successful reply must not precede upstream cleanup or leave an
+            # admission slot held until the HTTP handler's final drain.
+            if stream is not None: stream.close()
             with gateway.lock:
+                if gateway.closing or gateway.accounting_error: raise FilesStop('files_admission')
                 if operation['state'] != 'rejected': operation['state'] = 'verified'
+                self.busy = started = False
                 gateway.persist()  # Only release validated metadata after its ownership is durable.
             self.reply(handler, status, result)
         except BaseException as exc:

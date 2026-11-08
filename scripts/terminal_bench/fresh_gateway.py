@@ -75,7 +75,7 @@ class FreshGateway:
         self.lock = threading.RLock();self.condition = threading.Condition(self.lock)
         self.records, self.denials, self.streams = [], [], set()
         self.denials_dropped = 0
-        self.active_handlers = 0;self.closing = self.closed = self.accounting_error = False
+        self.active_handlers = self.active_model_handlers = 0;self.closing = self.closed = self.accounting_error = False
         self.require_agent_start, self.agent_active, self.native_end = False, False, None
         gateway = self
 
@@ -99,6 +99,7 @@ class FreshGateway:
                         self.close_connection = True
                         return
                     gateway.active_handlers += 1
+                    gateway.active_model_handlers += 1
                 try:
                     self.connection.settimeout(5)
                     route = '/responses' if gateway.protocol == 'responses' else '/v1/messages'
@@ -265,6 +266,7 @@ class FreshGateway:
                         try: gateway.persist()
                         except (OSError, ValueError, TypeError): gateway.accounting_error = True
                         finally:
+                            gateway.active_model_handlers -= 1
                             gateway.active_handlers -= 1;gateway.condition.notify_all()
                             if gateway.closed and not gateway.active_handlers: gateway._close_root()
 
