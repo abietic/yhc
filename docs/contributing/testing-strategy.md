@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-11-06
+**Last verified:** 2026-11-08
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -203,6 +203,12 @@ stays summary-only, and contradictory counters are rejected. Request-duration
 sums do not imply wall time or tool time: absent tool-time and compaction
 evidence remains unavailable. Neither scoreboards nor generated
 reports are provider bills, recovery proofs, or stability estimates.
+
+A plan is reported as unstarted only when its run directory has no dispatch
+claim, dispatch progress, cohort, wire capture, or trial artifacts. If any of
+that execution evidence exists without a scoreboard, analysis fails and the CLI
+publishes no report. Evidence inside a separate `matching-zero/` directory does
+not establish that the paid plan started.
 
 The optional `--reference-trajectory` reads local ATIF v1.7 counters separately
 from native runs. Thinking comes from explicit `thinking_tokens` or
