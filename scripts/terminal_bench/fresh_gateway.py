@@ -20,6 +20,7 @@ from scripts.terminal_bench.budgeted_stream import AttemptFailure, forward_attem
 from scripts.terminal_bench.fresh_budget import BudgetStop
 from scripts.terminal_bench.reservation_bound import MAX_BODY_BYTES, request_bytes
 from scripts.terminal_bench.no_dispatch import NONCE_HEADER, REASONS, ReceiptError, issue_receipt, request_binding
+from scripts.terminal_bench.files_transport import FilesStop, FilesTransport, beta_headers, file_references
 
 
 class GatewayStop(ValueError):
@@ -41,13 +42,18 @@ def save(path, value):
 
 class FreshGateway:
     def __init__(self, root, budget, sample, protocol, *, connection_factory, headers, before_admit,
-                 bind_host='127.0.0.1', deadline, stream_timeout=900, drain_timeout=30, receipt_key=None):
+                 bind_host='127.0.0.1', deadline, stream_timeout=900, drain_timeout=30, receipt_key=None,
+                 files_transport=None):
         if (os.name != 'posix' or protocol not in ('responses', 'messages') or bind_host not in ('127.0.0.1', '0.0.0.0')
                 or not callable(connection_factory) or not callable(before_admit)
                 or not isinstance(headers, dict) or not 0 < drain_timeout <= 30
                 or not drain_timeout <= stream_timeout <= 900 or time.monotonic() >= deadline
                 or (receipt_key is not None and (not isinstance(receipt_key,bytes) or len(receipt_key) != 32))):
             raise GatewayStop('gateway_configuration_invalid')
+        if files_transport is not None:
+            if not isinstance(files_transport, FilesTransport): raise GatewayStop('files_configuration_invalid')
+            files_transport.bind(protocol)
+        self.files_transport = files_transport
         self.root = Path(root).absolute()
         if self.root.parent.resolve() != self.root.parent:
             raise GatewayStop('gateway_parent_symlink')
@@ -81,6 +87,8 @@ class FreshGateway:
                 self.connection.settimeout(5)
 
             def do_POST(self):
+                if gateway.files_transport is not None and self.path.startswith('/v1/files'):
+                    return gateway.files_transport.serve(self, gateway)
                 record, upstream, capture = None, None, None
                 receipt_binding = None
                 authenticated = False
@@ -120,6 +128,11 @@ class FreshGateway:
                             raise GatewayStop('agent_not_running')
                         gateway._check_root()
                         frozen = request_bytes(body)
+                        references = file_references(body, gateway.protocol)
+                        try:
+                            if gateway.files_transport is not None: gateway.files_transport.validate_model(references)
+                            elif references: raise FilesStop('files_transport_disabled')
+                        except FilesStop as exc: raise GatewayStop(str(exc)) from None
                         try: gateway.before_admit(body)
                         except BaseException: raise GatewayStop('admission_guard_failed') from None
                         if request_bytes(body) != frozen: raise GatewayStop('request_guard_mutated_body')
@@ -179,8 +192,10 @@ class FreshGateway:
                             gateway.persist()
                         return gateway.connection_factory()
 
+                    upstream_headers = dict(gateway.headers)
+                    if references: upstream_headers = beta_headers(upstream_headers)
                     result = forward_attempt(gateway.budget, gateway.sample, body,
-                        connection_factory=connection, headers=gateway.headers,
+                        connection_factory=connection, headers=upstream_headers,
                         deadline=absolute, write_line=sink, on_reserved=reserved, on_open=opened)
                     record.update(result=result, usage_known=True)
                 except BaseException as exc:
@@ -253,6 +268,12 @@ class FreshGateway:
                             gateway.active_handlers -= 1;gateway.condition.notify_all()
                             if gateway.closed and not gateway.active_handlers: gateway._close_root()
 
+            def do_GET(self):
+                if gateway.files_transport is not None: return gateway.files_transport.serve(self, gateway)
+                self.send_error(404);self.close_connection = True
+
+            do_DELETE = do_GET
+
         try:
             self.server = http.server.ThreadingHTTPServer((bind_host, 0), Handler)
             self.server.daemon_threads = True;self.server.block_on_close = False
@@ -305,6 +326,7 @@ class FreshGateway:
                 self._write_ledger(dict(version=1, sample=self.sample, protocol=self.protocol,
                     currency=self.budget.snapshot()['currency'],
                     records=self.records, denials=self.denials, cohort=self.budget.snapshot(),
+                    files=self.files_transport.snapshot() if self.files_transport is not None else None,
                     denials_dropped=self.denials_dropped,
                     accounting_error=self.accounting_error, can_resume_agent=False, automatic_paid_resume=False))
             except BaseException:

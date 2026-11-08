@@ -338,6 +338,32 @@ and cumulative accounting through `make test-provider-costs` using local peers.
 Complete benchmark launchers still need matched adapter/checkpoint evidence and
 all funding, authorization and live guards before paid use.
 
+For native Anthropic Files clients, an operator may explicitly pass
+[`FilesTransport`](../../scripts/terminal_bench/files_transport.py) with a
+separate `before_request(method)` live guard. It is disabled by default and
+binds once to a fresh Messages gateway. The gateway keeps the caller's fixed
+origin/authentication, routes only the supported `/anthropic/v1/files`
+operations, and supplies the required version and beta headers. Multipart
+uploads are bounded to the official 64 MiB image limit; local body reception
+must finish within the gateway drain interval (at most 30 seconds). Uploaded
+bytes are forwarded unchanged, and validated ownership is durably recorded
+before a returned ID becomes usable. Model requests retain their reserved
+wire bytes and full context/output cost bound.
+
+Only files acknowledged from this sample's uploads can appear in model media
+blocks, metadata retrieval, scoped local listing or deletion. Listing never
+queries the provider's account-wide inventory. File operations are serialized
+against model handlers to prevent deletion during an admitted request. Their
+auxiliary records do not create model attempts or financial usage receipts.
+Definite upload rejection permits the native SDK's inline fallback; redirects,
+ambiguous failures, malformed metadata or evidence faults block further
+dispatch without inventing model usage or releasing reservations. The same
+bounded stream shutdown applies while waiting for file response headers.
+`test_files_transport` covers these boundaries using loopback peers; full SDK
+Docker qualification and refreshed official API/price, funding, account and
+time checks remain separate prerequisites for a live entrypoint. This transport
+does not establish native-session or cross-service recovery.
+
 An operator can opt into host-only authenticated denial receipts with
 `FreshGateway(receipt_key=...)`. The independent 32-byte HMAC key stays in the
 host verifier; it is never the opaque task token or a provider credential and
