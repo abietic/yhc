@@ -267,6 +267,81 @@ class ArtifactCloseoutTests(unittest.TestCase):
                 with self.assertRaises(CloseoutError): self.verify()
                 self.sources.pop()
 
+    def declare_directory_with_trailing_separator(self):
+        self.sources[1] = '/app/src/'
+        self.rows[1]['source'] = '/app/src/'
+        self.proofs[1]['target'] = '/app/src/'
+
+    def test_directory_trailing_separator_keeps_original_evidence_identity(self):
+        self.declare_directory_with_trailing_separator()
+        result = self.verify()
+        self.assertEqual(result['present_artifacts']['/app/src/']['file_count'], 1)
+        self.assertEqual(result['present_artifacts']['/app/src/']['directory_count'], 2)
+        self.assertNotIn('/app/src', result['present_artifacts'])
+        self.assertFalse(result['can_resume_agent'])
+        (self.tree / 'new.txt').write_bytes(b'changed')
+        with self.assertRaises(CloseoutError): self.verify()
+
+    def test_missing_directory_trailing_separator_still_requires_archive_absence(self):
+        self.sources.append('/app/absent/')
+        self.rows.append(dict(source='/app/absent/', type='directory', status='missing'))
+        self.assertEqual(self.verify()['missing_artifacts'], ['/app/absent/'])
+        self.entries.append(('app/absent/child', b'present'))
+        self.write_archive()
+        with self.assertRaises(CloseoutError): self.verify()
+
+    def test_empty_directory_trailing_separator_is_present_not_missing(self):
+        self.declare_directory_with_trailing_separator()
+        (self.tree / 'new.txt').unlink()
+        (self.tree / 'empty').rmdir()
+        self.entries = [e for e in self.entries if not e[0].startswith('app/src/')]
+        self.rows[1]['status'] = 'empty'
+        self.proofs[1]['projection'].update(file_count=0, directory_count=1, bytes=0,
+            manifest_sha256=hashlib.sha256(json.dumps({'': {'type': 'directory'}},
+                sort_keys=True, separators=(',', ':')).encode()).hexdigest())
+        self.write_archive()
+        result = self.verify()
+        self.assertEqual(result['missing_artifacts'], [])
+        self.assertEqual(result['present_artifacts']['/app/src/']['directory_count'], 1)
+
+    def test_directory_aliases_and_overlaps_are_rejected_before_collection(self):
+        self.declare_directory_with_trailing_separator()
+        for target in ('/app/src', '/app/src/new.txt'):
+            with self.subTest(target=target):
+                self.sources.append(target)
+                with self.assertRaisesRegex(CloseoutError, '^artifact_declarations_overlap$'):
+                    self.verify()
+                self.sources.pop()
+
+    def test_only_a_single_directory_separator_is_allowed(self):
+        for target in ('/app/src//', '/app//src/', '/app/src/./', '/app/src/../src/', '/', 'app/src/'):
+            with self.subTest(target=target):
+                self.sources[1] = target
+                self.rows[1]['source'] = target
+                self.proofs[1]['target'] = target
+                with self.assertRaises(CloseoutError): self.verify()
+        self.sources[1] = self.rows[1]['source'] = self.proofs[1]['target'] = '/app/src'
+        self.sources[0] = self.rows[0]['source'] = self.proofs[0]['target'] = '/app/config/'
+        with self.assertRaises(CloseoutError): self.verify()
+
+    def test_directory_separator_does_not_normalize_checkpoint_or_receipt_identity(self):
+        self.declare_directory_with_trailing_separator()
+        self.checkpoint['declared_artifacts'] = ['/app/config', '/app/src']
+        with self.assertRaises(CloseoutError): self.verify()
+        self.checkpoint['declared_artifacts'] = self.sources
+        for row, key in ((self.rows[1], 'source'), (self.proofs[1], 'target')):
+            row[key] = '/app/src'
+            with self.assertRaises(CloseoutError): self.verify()
+            row[key] = '/app/src/'
+        self.checkpoint['cwd'] = '/app/'
+        with self.assertRaises(CloseoutError): self.verify()
+
+    def test_directory_separator_does_not_allow_source_links(self):
+        self.declare_directory_with_trailing_separator()
+        (self.tree / 'new.txt').unlink()
+        (self.tree / 'new.txt').symlink_to(self.collected / 'app/config')
+        with self.assertRaises(CloseoutError): self.verify()
+
 
 if __name__ == '__main__':
     unittest.main()
