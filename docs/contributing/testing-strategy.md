@@ -341,6 +341,28 @@ Its standard-library regressions run in `make test-provider-costs`:
 python3 -m unittest scripts.terminal_bench.test_artifact_closeout
 ```
 
+The pinned Harbor adapter in
+[`harbor_trial.py`](../../scripts/terminal_bench/harbor_trial.py) reaps its managed
+local buffered-output client before propagating collection failure or external
+cancellation. Repeated cancellation cannot skip that cleanup. Termination keeps
+Harbor's five-second grace and bounds the remaining join; unverified cleanup
+raises `managed_client_cleanup_unverified`. This does not attest or terminate a
+remote command, its descendants, or the container; their owners still control
+teardown and recovery admission. A verifier timeout remains a grading failure,
+even if its script had already written reward zero.
+
+Use a Python environment with the pinned
+[`requirements.txt`](../../scripts/terminal_bench/requirements.txt) for the
+adapter tests. The process regressions use trusted POSIX fixtures and readiness
+barriers, without Docker or model calls. The separate opt-in Docker suite also
+checks a real timed-out verifier and the managed client's terminal status:
+
+```bash
+"$HARBOR_PYTHON" -m unittest scripts.terminal_bench.test_harbor_trial scripts.terminal_bench.test_harbor_clients
+YHC_BENCH_DOCKER_TEST=1 YHC_BENCH_CACHED_IMAGE="$CACHED_LINUX_IMAGE_ID" \
+  "$HARBOR_PYTHON" -m unittest scripts.terminal_bench.test_harbor_trial_docker
+```
+
 Before a new cohort, [`fresh_budget.py`](../../scripts/terminal_bench/fresh_budget.py)
 assesses explicit per-sample caps whose sum must fit the shared cap. Every cap
 must cover a complete request reservation before any sample starts. An early

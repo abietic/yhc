@@ -59,6 +59,10 @@ test ! -e /sys/class/net/eth0
 value=$(cat /workspace/proof)
 if test "$value" = grader-failure; then exit 7; fi
 mkdir -p /logs/verifier
+if test "$value" = grader-timeout; then
+    printf '0\\n' > /logs/verifier/reward.txt
+    exec sleep infinity
+fi
 if test "$value" = zero; then printf '0\\n'; else printf '1\\n'; fi > /logs/verifier/reward.txt
 """)
         # Create from the local image ID and copy the trusted fixture into a
@@ -150,7 +154,7 @@ print(json.dumps(row))
     async def test_actual_upload_grading_and_failure_are_isolated(self):
         from harbor.trial.artifact_handler import ArtifactHandler
         upload = ArtifactHandler.upload_artifacts
-        for mode in ("ok", "zero", "grader-failure"):
+        for mode in ("ok", "zero", "grader-failure", "grader-timeout"):
             with self.subTest(mode=mode):
                 root = self.root / mode
                 task = root / "task"
@@ -170,7 +174,8 @@ print(json.dumps(row))
                     'schema_version="2.0"\nartifacts=["/workspace"]\n'
                     '[task]\nname="local/verifier-contract"\n'
                     '[environment]\ndocker_image="' + self.base + '"\ncpus=1\nmemory_mb=512\n'
-                    '[verifier]\nenvironment_mode="separate"\ntimeout_sec=30\n'
+                    '[verifier]\nenvironment_mode="separate"\ntimeout_sec='
+                    + ('5' if mode == 'grader-timeout' else '30') + '\n'
                     '[verifier.environment]\ndocker_image="' + self.image + '"\ncpus=1\nmemory_mb=512\n')
                 sample = "tb4-verifier-pf-" + uuid4().hex[:12]
                 if mode == "zero":
@@ -181,6 +186,15 @@ print(json.dumps(row))
                         import_path="scripts.terminal_bench.harbor_trial:IsolatedDockerEnvironment",
                         kwargs={"verifier_proof_dir": str(root / "proofs")}))
                 seen = []
+                cancelled_clients = []
+                collect = IsolatedDockerEnvironment._collect_buffered_output
+
+                async def observed_collection(process, **kwargs):
+                    try:
+                        return await collect(process, **kwargs)
+                    except asyncio.CancelledError:
+                        cancelled_clients.append(process.returncode)
+                        raise
 
                 async def checked_upload(handler, target_env, **kwargs):
                     proof = json.loads(target_env.verifier_proof_path.read_text())
@@ -193,13 +207,19 @@ print(json.dumps(row))
 
                 trial = await IsolatedVerifierTrial.create(cfg)
                 try:
-                    with patch.object(ArtifactHandler, "upload_artifacts", checked_upload):
+                    with patch.object(ArtifactHandler, "upload_artifacts", checked_upload), \
+                         patch.object(IsolatedDockerEnvironment, '_collect_buffered_output',
+                                      staticmethod(observed_collection)):
                         result = await asyncio.wait_for(trial.run(), timeout=180)
                     self.assertEqual(len(seen), 1, str(result.exception_info))
                     self.assertEqual(collect_verifier_proofs(trial), seen)
-                    if mode == "grader-failure":
+                    if mode in ("grader-failure", "grader-timeout"):
                         self.assertIsNotNone(result.exception_info)
                         self.assertIsNone(result.verifier_result)
+                        if mode == 'grader-timeout':
+                            self.assertEqual(result.exception_info.exception_type, 'VerifierTimeoutError')
+                            self.assertTrue(cancelled_clients)
+                            self.assertTrue(all(code is not None for code in cancelled_clients))
                     else:
                         self.assertIsNone(result.exception_info)
                         self.assertEqual(result.verifier_result.rewards["reward"], float(mode != "zero"))
