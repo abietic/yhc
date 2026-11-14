@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-11-09
+**Last verified:** 2026-11-14
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -203,6 +203,20 @@ stays summary-only, and contradictory counters are rejected. Request-duration
 sums do not imply wall time or tool time: absent tool-time and compaction
 evidence remains unavailable. Neither scoreboards nor generated
 reports are provider bills, recovery proofs, or stability estimates.
+
+Idle estimates keep a separate `known_idle_estimate_evidence` marker. A supplied
+summary estimate remains `summary_only` when individual receipts lack that
+field; complete receipts can promote it to `per_call_checked`. Conflicting or
+invalid supplied receipts are rejected, including partial sums exceeding the
+summary. Missing idle pricing is never derived by halving a peak estimate.
+
+Optional `usage_breakdown` attributes a closed native call ledger by source,
+role, model and effort only after reconciling its aggregate counters with
+complete wire usage. Native and gateway call IDs are independent; this is not
+a one-to-one correlation. Missing wire thinking stays unavailable, and missing
+or incomplete native evidence produces no breakdown. The operator outcome
+status/reason is displayed separately from reward and the native terminal
+reason, so a scored artifact cannot imply normal completion after a budget stop.
 
 A plan is reported as unstarted only when its run directory has no dispatch
 claim, dispatch progress, cohort, wire capture, or trial artifacts. If any of

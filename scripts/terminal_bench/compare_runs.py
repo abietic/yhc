@@ -130,6 +130,7 @@ def _usage(summary, ledger):
         known_peak_estimate_cny=str(amount(summary["known_peak_estimate_cny"])),
         known_idle_estimate_cny=(str(amount(summary["known_idle_estimate_cny"]))
                                  if summary.get("known_idle_estimate_cny") is not None else None),
+        known_idle_estimate_evidence=("summary_only" if summary.get("known_idle_estimate_cny") is not None else "unavailable"),
         actual_billed_cny=None, sum_request_elapsed_seconds=None, timed_calls=0, tool_seconds=None,
         edit_rejections=None, compaction_events=None, call_details=None)
     if ledger is not None:
@@ -165,16 +166,75 @@ def _usage(summary, ledger):
             call_details=[call_detail(i, r) for i, r in enumerate(records)],
             timed_calls=len(timed), routes=(sorted({(atom(r["requested_model"]), atom(r["effort"])) for r in records})
                                            if all(r.get("requested_model") and r.get("effort") for r in records) else []))
-        if all(r.get("known_idle_estimate_cny") is not None for r in known):
-            idle = sum((amount(r["known_idle_estimate_cny"]) for r in known), Decimal(0))
+        idle_receipts = [amount(r["known_idle_estimate_cny"]) for r in known
+                         if r.get("known_idle_estimate_cny") is not None]
+        idle = sum(idle_receipts, Decimal(0))
+        if len(idle_receipts) == len(known):
             if result["known_idle_estimate_cny"] is not None and idle != amount(result["known_idle_estimate_cny"]):
                 raise ValueError("summary and per-call idle estimate disagree")
             result["known_idle_estimate_cny"] = str(idle)
-        else:
-            result["known_idle_estimate_cny"] = None
+            result["known_idle_estimate_evidence"] = "per_call_checked"
+        elif result["known_idle_estimate_cny"] is not None and idle > amount(result["known_idle_estimate_cny"]):
+            raise ValueError("partial idle receipts exceed summary estimate")
     result["cache_hit_rate_known_including_first"] = (tokens["cached_input_tokens"] / tokens["input_tokens"]
                                                       if tokens["input_tokens"] else None)
     return result
+
+
+def native_usage_breakdown(native, usage):
+    """Attribute closed native counters after checking their aggregate against wire usage.
+
+    Native and gateway call IDs are independent. This checks aggregate counters,
+    not a one-to-one match, and never supplies missing wire thinking counters.
+    """
+    unavailable = dict(evidence="unavailable", routes=[])
+    if (not isinstance(native, dict) or native.get("complete") is not True
+            or native.get("call_ledger_complete") is not True
+            or usage["call_evidence"] != "per_call_checked" or not usage["usage_complete"]):
+        return unavailable
+    ledger = native.get("call_ledger")
+    if not isinstance(ledger, dict) or not isinstance(ledger.get("records"), list):
+        return unavailable
+    records = ledger["records"]
+    total = usage["calls"]
+    if (count(ledger.get("dropped_records")) != 0 or len(records) != total
+            or count(native.get("provider_calls")) != total or count(native.get("known_calls")) != total
+            or any(count(native.get(key)) != 0 for key in ("unknown_calls", "in_flight", "untracked_calls"))
+            or len({atom(r["call_id"]) for r in records}) != total
+            or any(r.get("state") != "known" for r in records)):
+        raise ValueError("closed native call inventory disagrees with wire usage")
+    fields = {"prompt_tokens": "input_tokens", "cached_prompt_tokens": "cached_input_tokens",
+              "completion_tokens": "output_tokens"}
+    groups = {}
+    for record in records:
+        tokens = record["tokens"]
+        values = {key: count(tokens[key]) for key in fields}
+        thinking = tokens.get("reasoning_tokens")
+        if (values["cached_prompt_tokens"] > values["prompt_tokens"]
+                or thinking is not None and count(thinking) > values["completion_tokens"]):
+            raise ValueError("invalid native token counters")
+        key = tuple(atom(record.get(k) or "unspecified") for k in ("source", "role", "resolved_model", "effort"))
+        group = groups.setdefault(key, dict(calls=0, **{k: 0 for k in fields}, thinking=[]))
+        group["calls"] += 1
+        for field, value in values.items():
+            group[field] += value
+        group["thinking"].append(thinking)
+    for field, wire_field in fields.items():
+        if count(native.get(field)) != usage[wire_field] or sum(g[field] for g in groups.values()) != usage[wire_field]:
+            raise ValueError("native and wire token counters disagree")
+    thinking_complete = total > 0 and usage["thinking"]["complete"] and all(
+        value is not None for group in groups.values() for value in group["thinking"])
+    if thinking_complete:
+        thinking = sum(sum(group["thinking"]) for group in groups.values())
+        if count(native.get("reasoning_tokens")) != thinking or thinking != usage["thinking"]["known_tokens"]:
+            raise ValueError("native and wire thinking counters disagree")
+    routes = []
+    for (source, role, model, effort), group in sorted(groups.items()):
+        routes.append(dict(source=source, role=role, model=model, effort=effort, calls=group["calls"],
+            **{wire: group[field] for field, wire in fields.items()},
+            cache_hit_rate=group["cached_prompt_tokens"] / group["prompt_tokens"] if group["prompt_tokens"] else None,
+            thinking_tokens=sum(group["thinking"]) if thinking_complete else None))
+    return dict(evidence="native_aggregate_checked", routes=routes)
 
 
 def load_run(root):
@@ -238,6 +298,7 @@ def load_run(root):
         if ledger is not None and ledger["sample"] != identifier:
             raise ValueError("ledger sample mismatch")
         usage = _usage(entry["summary"], ledger)
+        usage["usage_breakdown"] = native_usage_breakdown((entry.get("native") or {}).get("native_usage"), usage)
         if ledger is not None:
             dsh = sample["agent"] == "dsh"
             feedback = collect_tool_feedback(path.parent, ledger["records"], ledger["protocol"],
@@ -245,12 +306,15 @@ def load_run(root):
                 native_format="dsh_sdk" if dsh else "yhc_events", native_session_id=identifier if dsh else None)
             usage.update(tool_feedback=feedback, edit_rejections=feedback["edit_rejections"])
         deadline = entry.get("deadline") or {}
+        outcome = entry.get("outcome") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),
             task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=fingerprint(board),
             classification_source_sha256=fingerprint(report_path) if synthetic else None,
             ledger_sha256=fingerprint(path) if ledger is not None else None,
             status="completed" if entry.get("normal_completion") is True else "interrupted_or_unverified",
             reward=reward(entry.get("official_reward")), agent_seconds=seconds(deadline.get("agent_elapsed_seconds")),
+            operator_status=atom(outcome["ledger_status"]) if outcome.get("ledger_status") else None,
+            outcome_reason=atom(outcome["reason"]) if outcome.get("reason") else None,
             terminal_reason=atom(deadline["reason"]) if deadline.get("reason") else None, **usage))
     return rows
 
@@ -377,6 +441,26 @@ def markdown(report):
                      f"{value('retained_unknown_cny')} | "
                      f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
                      f"{thinking if thinking is not None else 'unavailable'} |")
+    lines += ["", "Idle estimates retain their own evidence coverage; they are not provider bills.", "",
+              "| Agent | Sample | Completion | Operator status / reason | Idle estimate evidence |",
+              "|---|---|---|---|---|"]
+    for r in report["samples"]:
+        lines.append(f"| {r['agent']} | {r['sample_id']} | {r['status']} | "
+                     f"{r.get('operator_status') or 'unavailable'} / {r.get('outcome_reason') or r.get('terminal_reason') or 'unavailable'} | "
+                     f"{r.get('known_idle_estimate_evidence', 'unavailable')} |")
+    routes = [(r, route) for r in report["samples"] for route in (r.get("usage_breakdown") or {}).get("routes", [])]
+    if routes:
+        lines += ["", "Closed native route counters match aggregate wire usage; individual call IDs are not correlated.", "",
+                  "| Agent / sample | Source / role | Model / effort | Calls | Input / cached / output | Cache | Thinking |",
+                  "|---|---|---|---:|---:|---:|---:|"]
+        for r, route in routes:
+            cache = route["cache_hit_rate"]
+            thinking = route["thinking_tokens"]
+            lines.append(f"| {r['agent']} / {r['sample_id']} | {route['source']} / {route['role']} | "
+                         f"{route['model']} / {route['effort']} | {route['calls']} | "
+                         f"{route['input_tokens']} / {route['cached_input_tokens']} / {route['output_tokens']} | "
+                         f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
+                         f"{thinking if thinking is not None else 'unavailable'} |")
     lines += ["", "Emitted tool requests and native terminal receipts have separate coverage; neither proves side effects.", "",
               "| Agent | Wire inventory | Emitted tool requests | Unmatched emitted calls | Edit completed/failed/emitted | Edit rejections |",
               "|---|---|---|---:|---:|---:|"]
