@@ -24,8 +24,11 @@ def _need(condition, reason):
         raise CloseoutError(reason)
 
 
-def _path(value):
+def _path(value, *, directory=False):
     _need(isinstance(value, str) and '\0' not in value, 'artifact_path_unqualified')
+    # Match the transport contract; cwd and archive identities stay canonical.
+    if directory and value.endswith('/'):
+        value = value[:-1]
     path = PurePosixPath(value)
     _need(path.is_absolute() and str(path) == value and path != PurePosixPath('/')
           and '..' not in path.parts, 'artifact_path_unqualified')
@@ -48,7 +51,7 @@ def _projection(entries):
 def _collected(folder, target):
     path = folder
     _need(path.is_dir() and not path.is_symlink(), 'artifact_source_unqualified')
-    for part in _path(target).parts[1:]:
+    for part in _path(target, directory=True).parts[1:]:
         path = path / part
         _need(not path.is_symlink(), 'artifact_source_unqualified')
     return path
@@ -61,6 +64,8 @@ def _signature(info):
 
 def _archive_trees(path, digest, sources, cwd):
     trees = {p: {} for p in sources}
+    # Use canonical filesystem roots without rewriting the evidence's raw keys.
+    paths = {p: str(_path(p, directory=True)) for p in sources}
     seen, total, workspace = set(), 0, False
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     with os.fdopen(os.open(path, flags), 'rb') as raw:
@@ -87,9 +92,9 @@ def _archive_trees(path, digest, sources, cwd):
                     _need(member.isdir(), 'checkpoint_workspace_unqualified')
                     workspace = True
                 # Ancestor links cannot attest a declared file or its absence.
-                if any(_below(p, name) for p in sources) and name not in sources:
+                if any(_below(p, name) for p in paths.values()) and name not in paths.values():
                     _need(member.isdir(), 'checkpoint_ancestor_unqualified')
-                targets = [p for p in sources if _below(name, p)]
+                targets = [p for p in sources if _below(name, paths[p])]
                 if not targets:
                     continue
                 _need(member.isfile() or member.isdir(), 'checkpoint_artifact_unqualified')
@@ -102,7 +107,7 @@ def _archive_trees(path, digest, sources, cwd):
                             hashed.update(chunk)
                     entry = dict(type='file', bytes=member.size, sha256=hashed.hexdigest())
                 for target in targets:
-                    trees[target][name[len(target):].lstrip('/')] = entry
+                    trees[target][name[len(paths[target]):].lstrip('/')] = entry
         _need(_signature(before) == _signature(os.fstat(raw.fileno()))
               == _signature(Path(path).lstat()), 'checkpoint_archive_changed')
     _need(workspace, 'checkpoint_workspace_unverified')
@@ -123,9 +128,10 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
               and all(isinstance(p, str) for p in declared)
               and len(set(declared)) == len(declared), 'artifact_declarations_unverified')
         sources = set(declared)
+        paths = {p: str(_path(p, directory=True)) for p in sources}
+        _need(len(set(paths.values())) == len(sources), 'artifact_declarations_overlap')
         for target in sources:
-            _path(target)
-            _need(not any(_below(target, other) for other in sources if other != target),
+            _need(not any(_below(paths[target], paths[other]) for other in sources if other != target),
                   'artifact_declarations_overlap')
         _need(isinstance(checkpoint, dict) and checkpoint.get('capture') == 'complete'
               and checkpoint.get('captured_before_grading') is True
@@ -149,6 +155,7 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
             target = row['source']
             _need(row.get('service') is None and row.get('type') in ('file', 'directory'),
                   'artifact_collection_unqualified')
+            _path(target, directory=row['type'] == 'directory')
             path = _collected(folder, target)
             if row.get('status') in ('ok', 'empty'):
                 entries = source_manifest(path)
@@ -158,7 +165,7 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
                 expected[target] = entries
             else:
                 _need(row.get('status') in ('missing', 'failed') and not path.exists()
-                      and _below(target, cwd), 'artifact_absence_unverified')
+                      and _below(paths[target], cwd), 'artifact_absence_unverified')
                 missing.append(target)
                 expected[target] = {}
         trees = _archive_trees(archive, digest, sources, cwd)
