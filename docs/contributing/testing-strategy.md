@@ -261,6 +261,30 @@ positions and digests, without request text, tool arguments, or thinking text.
 Keep raw input artifacts private. Both commands refuse to replace existing
 reports and make no network, model, funding, or agent-dispatch calls.
 
+For a closed independent grader result, `verify_score` in
+[`score_receipt.py`](../../scripts/terminal_bench/score_receipt.py) checks the
+explicit original score format against the reported rewards mapping
+(`{"reward": 0}` or `{"reward": 1}`):
+
+```bash
+python3 -m scripts.terminal_bench.score_receipt \
+  --score-dir "$VERIFIER_DIRECTORY" \
+  --reported-rewards "$REPORTED_REWARDS_JSON" --contract "$SCORE_CONTRACT_JSON"
+```
+
+The operator contract selects `ctrf_and_reward_txt` with `ctrf_expected=true`
+and the original `expected_test_names`, or `reward_txt_and_logs` with
+`ctrf_expected=false`. The latter requires `test-stdout.txt` by default;
+`expected_log_names` can bind other simple file names. Missing CTRF in a CTRF
+contract remains an error. Reward-only results keep test counts and failed-check
+names unknown, including when reward is zero. The reader resolves directory
+aliases and rechecks their target, while rejecting linked score files,
+non-regular or changing evidence, and files larger than 4 MiB. It emits hashes
+and parsed results as JSON, without executing artifacts or making provider calls.
+The caller still owns grader identity, artifact transport, isolation and usage
+closure; this utility grants no funding or resume authority and does not replace
+existing sealed launchers. Its regression tests run in `make test-provider-costs`.
+
 `attest_docker_artifact` in
 [`artifact_integrity.py`](../../scripts/terminal_bench/artifact_integrity.py)
 is an explicit post-upload operator check for regular files and directories.
