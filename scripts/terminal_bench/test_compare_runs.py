@@ -38,6 +38,19 @@ def reference_trace():
         final_metrics=dict(total_prompt_tokens=400, total_cached_tokens=330, total_completion_tokens=20))
 
 
+def closed_native_usage():
+    return dict(complete=True, call_ledger_complete=True, provider_calls=2, known_calls=2,
+        unknown_calls=0, in_flight=0, untracked_calls=0, prompt_tokens=100,
+        cached_prompt_tokens=9, completion_tokens=8, reasoning_tokens=4,
+        call_ledger=dict(dropped_records=0, records=[
+            dict(call_id="native-1", state="known", source="sdk", role="main",
+                 resolved_model="flash", effort="high", private_payload="PRIVATE_SENTINEL",
+                 tokens=dict(prompt_tokens=10, cached_prompt_tokens=9, completion_tokens=4, reasoning_tokens=2)),
+            dict(call_id="native-2", state="known", source="webfetch_ai_processing", role="other",
+                 resolved_model="flash", effort="high",
+                 tokens=dict(prompt_tokens=90, cached_prompt_tokens=0, completion_tokens=4, reasoning_tokens=2))]))
+
+
 class ComparisonTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -82,6 +95,108 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["tool_seconds"])
         self.assertEqual(got["call_details"][2]["error_category"], "timeout")
         self.assertIsNone(got["call_details"][2]["transport_timings"]["request_sent_seconds"])
+
+    def test_idle_summary_is_preserved_with_explicit_evidence_coverage(self):
+        for name, values, coverage in (("summary", [None, None], "summary_only"),
+                                       ("partial", ["0.0002", None], "summary_only"),
+                                       ("receipts", ["0.0002", "0.0002"], "per_call_checked")):
+            entry = row()
+            entry["summary"]["known_idle_estimate_cny"] = "0.0004"
+            records = [call("1"), call("2")]
+            for record, value in zip(records, values):
+                if value is not None:
+                    record["known_idle_estimate_cny"] = value
+            with self.subTest(name=name):
+                report = build_report([self.write(entry, records, name=name)])
+                got = report["samples"][0]
+                self.assertEqual(got["known_idle_estimate_cny"], "0.0004")
+                self.assertEqual(got["known_idle_estimate_evidence"], coverage)
+                self.assertIn("0.0004 /", markdown(report))
+                self.assertIn(coverage, markdown(report))
+                self.assertIsNone(got["actual_billed_cny"])
+
+    def test_idle_receipt_conflicts_are_not_hidden_by_partial_coverage(self):
+        for index, values in enumerate((["0.0005", None], ["0.0002", "0.0003"], ["NaN", None])):
+            entry = row()
+            entry["summary"]["known_idle_estimate_cny"] = "0.0004"
+            records = [call("1"), call("2")]
+            for record, value in zip(records, values):
+                if value is not None:
+                    record["known_idle_estimate_cny"] = value
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                load_run(self.write(entry, records, name=str(index)))
+
+    def test_closed_native_main_and_auxiliary_usage_is_reconciled(self):
+        entry = row()
+        entry["summary"]["cached_input_tokens"] = 9
+        entry["native"] = dict(native_usage=closed_native_usage())
+        report = build_report([self.write(entry, [call("1", prompt=10, cached=9), call("2", prompt=90, cached=0)])])
+        got = report["samples"][0]
+        breakdown = got["usage_breakdown"]
+        self.assertEqual(breakdown["evidence"], "native_aggregate_checked")
+        routes = {r["source"]: r for r in breakdown["routes"]}
+        self.assertEqual((routes["sdk"]["calls"], routes["sdk"]["cache_hit_rate"], routes["sdk"]["thinking_tokens"]), (1, 0.9, 2))
+        self.assertEqual((routes["webfetch_ai_processing"]["calls"], routes["webfetch_ai_processing"]["cache_hit_rate"]), (1, 0))
+        self.assertEqual(got["cache_hit_rate_known_including_first"], 0.09)
+        self.assertIn("webfetch_ai_processing", markdown(report))
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+
+    def test_native_breakdown_rejects_conflicting_closed_inventory(self):
+        for index, mutation in enumerate(("tokens", "thinking", "duplicate", "dropped")):
+            native = closed_native_usage()
+            if mutation == "tokens":
+                native["call_ledger"]["records"][0]["tokens"]["prompt_tokens"] += 1
+            elif mutation == "thinking":
+                native["call_ledger"]["records"][0]["tokens"]["reasoning_tokens"] = 1
+            elif mutation == "duplicate":
+                native["call_ledger"]["records"][1]["call_id"] = "native-1"
+            else:
+                native["call_ledger"]["dropped_records"] = 1
+            entry = row()
+            entry["summary"]["cached_input_tokens"] = 9
+            entry["native"] = dict(native_usage=native)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                load_run(self.write(entry, [call("1", prompt=10, cached=9), call("2", prompt=90, cached=0)], name=str(index)))
+
+    def test_unavailable_native_or_wire_thinking_is_not_fabricated(self):
+        for index, complete in enumerate((True, False)):
+            entry = row()
+            entry["summary"].update(cached_input_tokens=9, thinking_tokens=None)
+            native = closed_native_usage()
+            native["complete"] = complete
+            entry["native"] = dict(native_usage=native)
+            got = load_run(self.write(entry, [call("1", prompt=10, cached=9, thinking=None),
+                                              call("2", prompt=90, cached=0, thinking=None)], name=str(index)))[0]
+            self.assertIsNone(got["thinking"]["known_tokens"])
+            if complete:
+                self.assertTrue(got["usage_breakdown"]["routes"])
+                self.assertTrue(all(r["thinking_tokens"] is None for r in got["usage_breakdown"]["routes"]))
+            else:
+                self.assertEqual(got["usage_breakdown"], dict(evidence="unavailable", routes=[]))
+
+    def test_budget_interruption_reason_is_separate_from_reward(self):
+        entry = row()
+        entry.update(normal_completion=False, outcome=dict(ledger_status="budget_paused", reason="budget_admission_denied"))
+        entry["deadline"]["reason"] = "native_error"
+        report = build_report([self.write(entry, [call("1"), call("2")])])
+        got = report["samples"][0]
+        self.assertEqual((got["reward"], got["operator_status"], got["outcome_reason"]), (1, "budget_paused", "budget_admission_denied"))
+        self.assertEqual(got["terminal_reason"], "native_error")
+        self.assertIn("budget_admission_denied", markdown(report))
+
+    def test_zero_call_native_inventory_does_not_invent_thinking(self):
+        entry = row()
+        entry["summary"].update(calls=0, input_tokens=0, cached_input_tokens=0, output_tokens=0,
+                                thinking_tokens=None, known_peak_estimate_cny="0")
+        native = closed_native_usage()
+        for key in ("provider_calls", "known_calls", "prompt_tokens", "cached_prompt_tokens",
+                    "completion_tokens", "reasoning_tokens"):
+            native[key] = 0
+        native["call_ledger"]["records"] = []
+        entry["native"] = dict(native_usage=native)
+        got = load_run(self.write(entry, []))[0]
+        self.assertIsNone(got["thinking"]["known_tokens"])
+        self.assertEqual(got["usage_breakdown"], dict(evidence="native_aggregate_checked", routes=[]))
 
     def test_unstarted_is_not_a_zero_reward_or_known_zero_usage(self):
         (self.root / "plan.json").write_text(json.dumps(dict(target_task="generic-task", task_ref="sha256:abc",
