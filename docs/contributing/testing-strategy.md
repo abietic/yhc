@@ -358,7 +358,7 @@ barriers, without Docker or model calls. The separate opt-in Docker suite also
 checks a real timed-out verifier and the managed client's terminal status:
 
 ```bash
-"$HARBOR_PYTHON" -m unittest scripts.terminal_bench.test_harbor_trial
+"$HARBOR_PYTHON" -m unittest scripts.terminal_bench.test_harbor_trial scripts.terminal_bench.test_harbor_clients
 YHC_BENCH_DOCKER_TEST=1 YHC_BENCH_CACHED_IMAGE="$CACHED_LINUX_IMAGE_ID" \
   "$HARBOR_PYTHON" -m unittest scripts.terminal_bench.test_harbor_trial_docker
 ```
