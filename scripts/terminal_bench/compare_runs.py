@@ -242,6 +242,7 @@ def load_run(root):
     report_path = root / "report.json"
     control = read_json(report_path) if report_path.is_file() else None
     synthetic = False
+    zero_mode = False
     if control is not None:
         if not isinstance(control, dict):
             raise ValueError("invalid report adapter")
@@ -255,7 +256,14 @@ def load_run(root):
     if scoreboard_layout:
         data = read_json(board)
         entries = data["samples"]
+        zero_mode = data.get("zero_mode", False)
+        if type(zero_mode) is not bool:
+            raise ValueError("invalid zero-mode evidence marker")
         kind = "synthetic_preflight" if synthetic else "recorded_run"
+        if zero_mode:
+            if count(data.get("real_provider_calls")) != 0:
+                raise ValueError("zero-mode evidence contains real provider calls")
+            kind = "zero_mode_preflight"
         if synthetic:
             # Actual-entry controls publish the same scoreboard and nested wire
             # layout as paid runs. Storage layout cannot establish provenance.
@@ -285,6 +293,7 @@ def load_run(root):
         return [dict(agent=atom(a["agent"]), sample_id=atom(a["new_sample_id"]), task=atom(plan["target_task"]),
                      task_ref=atom(plan["task_ref"]), status="not_started", reward=None, calls=None,
                      evidence_kind="unstarted", source_sha256=fingerprint(root / "plan.json")) for a in plan["arms"]]
+    classification_source = board if zero_mode else report_path
     rows = []
     for entry in entries:
         sample = entry["sample"]
@@ -309,7 +318,7 @@ def load_run(root):
         outcome = entry.get("outcome") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),
             task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=fingerprint(board),
-            classification_source_sha256=fingerprint(report_path) if synthetic else None,
+            classification_source_sha256=fingerprint(classification_source) if zero_mode or synthetic else None,
             ledger_sha256=fingerprint(path) if ledger is not None else None,
             status="completed" if entry.get("normal_completion") is True else "interrupted_or_unverified",
             reward=reward(entry.get("official_reward")), agent_seconds=seconds(deadline.get("agent_elapsed_seconds")),
