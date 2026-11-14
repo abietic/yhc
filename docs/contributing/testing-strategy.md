@@ -320,6 +320,27 @@ YHC_ARTIFACT_INTEGRITY_TEST_IMAGE="$CACHED_PYTHON_FREE_IMAGE" \
 python3 -m unittest scripts.terminal_bench.test_artifact_integrity_docker
 ```
 
+For closed main-service captures, `verify_artifacts` in
+[`artifact_closeout.py`](../../scripts/terminal_bench/artifact_closeout.py)
+compares declared file and directory trees with the native archive and the
+exact verifier session's upload projections. It checks directory structure as
+well as file sizes and hashes, including empty directories. Missing outputs
+require independent archive absence inside the captured workspace; a failed
+collection alone is insufficient. Present declared outputs outside that workspace
+still require the full archive/collection/upload byte chain. Duplicate or non-canonical archive paths,
+links in declared trees, mismatched projections and extra target entries are
+rejected. A caller accepting reward one must separately reject missing outputs.
+
+The caller owns capture provenance, immutable evidence, isolation observations,
+grader identity and closed usage. This check neither executes artifact contents
+nor proves services, native session semantics or agent recovery. Existing sealed
+launchers are unchanged; new operator adapters must explicitly call the helper.
+Its standard-library regressions run in `make test-provider-costs`:
+
+```bash
+python3 -m unittest scripts.terminal_bench.test_artifact_closeout
+```
+
 Before a new cohort, [`fresh_budget.py`](../../scripts/terminal_bench/fresh_budget.py)
 assesses explicit per-sample caps whose sum must fit the shared cap. Every cap
 must cover a complete request reservation before any sample starts. An early
