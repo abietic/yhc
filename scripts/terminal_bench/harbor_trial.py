@@ -86,6 +86,41 @@ class IsolatedDockerEnvironment(DockerEnvironment):
     """
 
     @staticmethod
+    async def _collect_buffered_output(process, *, timeout_sec, stdin_data=None):
+        # Harbor 0.22 cleans its streamed client on cancellation, but its buffered
+        # path only handles an inner timeout. Trial's outer verifier timeout
+        # cancels that path. Reap the managed local client before propagating;
+        # this does not stop or attest the remote command/container.
+        try:
+            return await DockerEnvironment._collect_buffered_output(
+                process, timeout_sec=timeout_sec, stdin_data=stdin_data)
+        except BaseException:
+            if process.returncode is None:
+                async def stop():
+                    try:
+                        # Keep Harbor's five-second TERM grace, with a bounded
+                        # extra second for KILL/join. Failed teardown is not a
+                        # successfully propagated cancellation.
+                        try:
+                            await asyncio.wait_for(DockerEnvironment._terminate_process(process), timeout=6)
+                        except ProcessLookupError:
+                            await asyncio.wait_for(process.wait(), timeout=1)
+                    except asyncio.TimeoutError as error:
+                        raise PolicyError('managed_client_cleanup_unverified') from error
+
+                cleanup = asyncio.create_task(stop())
+                while not cleanup.done():
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError:
+                        # An outer deadline may cancel again during termination.
+                        continue
+                cleanup.result()
+                if process.returncode is None:
+                    raise PolicyError('managed_client_cleanup_unverified')
+            raise
+
+    @staticmethod
     def _requires_egress_control(*, startup_network_policy, phase_network_policies):
         policies = [startup_network_policy, *phase_network_policies]
         if all(policy.network_mode == NetworkMode.NO_NETWORK for policy in policies):
