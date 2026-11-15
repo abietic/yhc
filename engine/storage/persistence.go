@@ -5,12 +5,15 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -23,6 +26,10 @@ const (
 	// DefaultMaxPreviewSize is the maximum number of characters included
 	// in a preview of a persisted result.
 	DefaultMaxPreviewSize = 2000
+
+	// MaxCompleteOutputBytes bounds each pre-preview execution output. Existing
+	// session ownership and Cleanup govern retention; this is not a disk quota.
+	MaxCompleteOutputBytes = 64 << 20
 
 	// toolResultsSubdir is the subdirectory name within the session dir.
 	toolResultsSubdir = "tool_results"
@@ -52,6 +59,9 @@ type ResultStorage struct {
 	maxPreviewSize int
 	results        map[string]*StoredResult
 	mu             sync.RWMutex
+	// Deterministic namespace-replacement fault points; production leaves nil.
+	beforeCompleteRootOpenForTest func()
+	beforeCompletePublishForTest  func()
 }
 
 // NewResultStorage creates a ResultStorage that writes to
@@ -107,6 +117,105 @@ func (s *ResultStorage) Store(toolName, result string) (*StoredResult, error) {
 	s.results[id] = stored
 	s.mu.Unlock()
 
+	return stored, nil
+}
+
+// StoreComplete retains output that a tool is about to truncate, including
+// outputs below the generic inline threshold. Chunks are bounded before being
+// joined. Only a complete private, no-replace file yields a readable receipt.
+func (s *ResultStorage) StoreComplete(toolName string, parts ...string) (*StoredResult, error) {
+	size := 0
+	for _, part := range parts {
+		if len(part) > MaxCompleteOutputBytes-size {
+			return nil, fmt.Errorf("storage: complete output exceeds retention limit")
+		}
+		size += len(part)
+	}
+	baseDir, err := filepath.Abs(s.baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("storage: resolve session directory: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(baseDir), 0o700); err != nil {
+		return nil, fmt.Errorf("storage: create session directory: %w", err)
+	}
+	parent, err := os.OpenRoot(filepath.Dir(baseDir))
+	if err != nil {
+		return nil, fmt.Errorf("storage: open session directory: %w", err)
+	}
+	defer parent.Close()
+	if err := parent.Mkdir(toolResultsSubdir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return nil, fmt.Errorf("storage: create output directory: %w", err)
+	}
+	info, err := parent.Lstat(toolResultsSubdir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o022 != 0 {
+		return nil, fmt.Errorf("storage: output directory is not private")
+	}
+	if before := s.beforeCompleteRootOpenForTest; before != nil {
+		before()
+	}
+	directory, err := parent.OpenRoot(toolResultsSubdir)
+	if err != nil {
+		return nil, fmt.Errorf("storage: open output directory: %w", err)
+	}
+	defer directory.Close()
+	opened, err := directory.Stat(".")
+	if err != nil || !os.SameFile(info, opened) {
+		return nil, fmt.Errorf("storage: output directory changed")
+	}
+	id := uuid.New().String()
+	name := id + ".txt"
+	file, err := directory.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("storage: create complete output: %w", err)
+	}
+	created, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("storage: identify complete output: %w", err)
+	}
+	published := false
+	defer func() {
+		_ = file.Close()
+		if !published {
+			current, err := directory.Lstat(name)
+			if err == nil && os.SameFile(created, current) {
+				_ = directory.Remove(name)
+			}
+		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		return nil, fmt.Errorf("storage: protect complete output: %w", err)
+	}
+	for _, part := range parts {
+		if _, err := io.WriteString(file, part); err != nil {
+			return nil, fmt.Errorf("storage: write complete output: %w", err)
+		}
+	}
+	if err := file.Sync(); err != nil {
+		return nil, fmt.Errorf("storage: sync complete output: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("storage: close complete output: %w", err)
+	}
+	if before := s.beforeCompletePublishForTest; before != nil {
+		before()
+	}
+	current, err := parent.Lstat(toolResultsSubdir)
+	if err != nil || !current.IsDir() || current.Mode().Perm()&0o022 != 0 || !os.SameFile(opened, current) {
+		return nil, fmt.Errorf("storage: output directory changed before publication")
+	}
+	currentFile, err := directory.Lstat(name)
+	if err != nil || !currentFile.Mode().IsRegular() || !os.SameFile(created, currentFile) || currentFile.Size() != int64(size) {
+		return nil, fmt.Errorf("storage: complete output changed before publication")
+	}
+	stored := &StoredResult{
+		ID: id, ToolName: toolName, FilePath: filepath.Join(baseDir, name),
+		Preview: GeneratePreview(strings.Join(parts, ""), s.maxPreviewSize), FullSize: size, CreatedAt: time.Now(),
+	}
+	s.mu.Lock()
+	s.results[id] = stored
+	s.mu.Unlock()
+	published = true
 	return stored, nil
 }
 
@@ -191,12 +300,16 @@ func GeneratePreview(content string, maxLen int) string {
 		return content
 	}
 
-	truncated := content[:maxLen]
+	end := maxLen
+	for end > 0 && !utf8.RuneStart(content[end]) {
+		end--
+	}
+	truncated := content[:end]
 
 	// Try to find a newline in the latter half to avoid cutting mid-line
-	halfPoint := maxLen / 2
+	halfPoint := end / 2
 	lastNewline := strings.LastIndex(truncated[halfPoint:], "\n")
-	cutPoint := maxLen
+	cutPoint := end
 	if lastNewline >= 0 {
 		cutPoint = halfPoint + lastNewline + 1
 	}
