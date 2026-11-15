@@ -188,7 +188,9 @@ class FreshGateway:
 
                     def connection():
                         with gateway.lock:
-                            if gateway.closing: raise GatewayStop('sample_closed_or_unverified')
+                            # Preserve this local cause through forward_attempt;
+                            # its conservative unknown reservation still remains.
+                            if gateway.closing: raise AttemptFailure('gateway_closed_before_provider_factory')
                             record['upstream_attempted'] = True
                             gateway.persist()
                         return gateway.connection_factory()

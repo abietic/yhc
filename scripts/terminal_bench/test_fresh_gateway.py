@@ -14,6 +14,7 @@ from unittest import mock
 
 from scripts.terminal_bench.fresh_budget import FreshBudget, digest
 from scripts.terminal_bench.fresh_gateway import FreshGateway, GatewayStop
+from scripts.terminal_bench import fresh_gateway as gateway_module
 from scripts.terminal_bench import test_budgeted_stream as stream_fixture
 from scripts.terminal_bench.test_fresh_budget import body, plan
 
@@ -114,6 +115,66 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(budget.snapshot()['retained'],'2.621440000000')
         self.assertEqual(self.post(gateway)[0],402)
         self.assertEqual(len(self.connections),1)
+
+    def test_parallel_budget_denial_keeps_preopen_close_diagnostic_and_liability(self):
+        budget, gateway = self.create('messages')
+        reserved, release = threading.Event(), threading.Event()
+        forward = gateway_module.forward_attempt
+        results, errors = [], []
+
+        def wait_after_reservation(*args, **kwargs):
+            callback = kwargs['on_reserved']
+            def held(reservation):
+                callback(reservation)
+                reserved.set()
+                if not release.wait(5):
+                    raise RuntimeError('reservation_barrier_not_released')
+            kwargs['on_reserved'] = held
+            return forward(*args, **kwargs)
+
+        def post():
+            connection = http.client.HTTPConnection('127.0.0.1', gateway.server.server_port, timeout=5)
+            try:
+                connection.request('POST', '/v1/messages', json.dumps(body('messages')).encode(),
+                                   {'x-api-key': gateway.token, 'Content-Type': 'application/json'})
+                response = connection.getresponse()
+                return response.status, json.loads(response.read())
+            finally:
+                connection.close()
+
+        def first_client():
+            try: results.append(post())
+            except Exception as exc: errors.append(type(exc).__name__)
+
+        with mock.patch.object(gateway_module, 'forward_attempt', side_effect=wait_after_reservation):
+            thread = threading.Thread(target=first_client)
+            thread.start()
+            try:
+                self.assertTrue(reserved.wait(5))
+                # One full Messages reservation fits; the parallel one does not.
+                self.assertEqual(post()[0], 402)
+                self.assertEqual(gateway.denials[-1]['error'], 'sample_budget_exhausted')
+                self.assertTrue(gateway.closing)
+            finally:
+                release.set()
+                thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(errors)
+        self.assertEqual(results[0][0], 402)
+        self.assertTrue(gateway.wait_idle(3))
+        self.assertFalse(self.connections)
+        self.assertEqual(len(gateway.records), 1)
+        row = json.loads((gateway.root / 'ledger.json').read_bytes())['records'][0]
+        self.assertFalse(row['upstream_attempted'])
+        self.assertFalse(row['response_headers_received'])
+        self.assertEqual(row['response_bytes'], 0)
+        self.assertEqual(row['state'], 'unknown')
+        self.assertNotIn('no_dispatch_receipt', results[0][1])
+        self.assertTrue(budget.snapshot()['unknown_usage'])
+        self.assertEqual(budget.snapshot()['known_cost'], '0.000000000000')
+        self.assertEqual(budget.snapshot()['retained'], '5.242880000000')
+        self.assertEqual(budget.snapshot()['outstanding'], '0.000000000000')
+        self.assertEqual(row['error'], 'gateway_closed_before_provider_factory')
 
     def test_request_capture_failure_prevents_upstream_and_stops_accounting(self):
         budget, gateway = self.create()
