@@ -444,12 +444,13 @@ func messagesToAgenticWithAllowed(
 			out = append(out, schema.SystemAgenticMessage(m.Content))
 		case schema.Assistant:
 			// Skip empty assistant messages (no text, no tool calls, no structured output).
-			if m.Content == "" && m.ReasoningContent == "" && len(m.AssistantGenMultiContent) == 0 && len(m.ToolCalls) == 0 {
+			if m.Content == "" && m.ReasoningContent == "" && len(m.AssistantGenMultiContent) == 0 && len(m.ToolCalls) == 0 && len(agenticdeepseek.ReplayExtra(m.Extra)) == 0 {
 				continue
 			}
 
 			msg := &schema.AgenticMessage{
-				Role: schema.AgenticRoleTypeAssistant,
+				Role:  schema.AgenticRoleTypeAssistant,
+				Extra: agenticdeepseek.ReplayExtra(m.Extra),
 			}
 			// Message-level Extra belongs to the response adapter that produced
 			// the canonical message. Restored or caller-supplied metadata must
@@ -465,7 +466,7 @@ func messagesToAgenticWithAllowed(
 				msg.ResponseMeta.OpenAIExtension = &openaischema.ResponseMetaExtension{}
 			}
 
-			outputParts := m.AssistantGenMultiContent
+			outputParts := agenticdeepseek.RestoreOutputParts(m.AssistantGenMultiContent)
 			if merged, err := enginemessages.ConcatAssistantOutputParts(outputParts); err == nil {
 				outputParts = merged
 			}

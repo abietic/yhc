@@ -43,6 +43,7 @@ type Model struct {
 	userID                 string
 	maxSSEEventBytes       int
 	optimizeImageTransport bool
+	application            *ApplicationConfig
 }
 
 // New creates a dedicated DeepSeek Responses AgenticModel. It performs only
@@ -126,6 +127,7 @@ func New(_ context.Context, config *Config) (*Model, error) {
 		userID:                 config.UserID,
 		maxSSEEventBytes:       maxEventBytes,
 		optimizeImageTransport: config.OptimizeImageTransport,
+		application:            cloneApplication(config.Application),
 	}, nil
 }
 
@@ -261,7 +263,10 @@ func (m *Model) streamRequest(ctx context.Context, input []*schema.AgenticMessag
 				callbackWriter.Send(nil, err)
 			}
 		}()
-		parseErr := parseResponseStreamObserved(response.Body, m.maxSSEEventBytes, providerdiag.FromContext(ctx), func(message *schema.AgenticMessage) bool {
+		parse := func(reader io.Reader, limit int, send func(*schema.AgenticMessage) bool) error {
+			return parseResponseStreamObserved(reader, limit, providerdiag.FromContext(ctx), send)
+		}
+		parseErr := parseReviewedStream(response.Body, m.maxSSEEventBytes, req.SafetyCheck != nil && req.SafetyCheck.Level == SafetyLevelHigh, parse, func(message *schema.AgenticMessage) bool {
 			return callbackWriter.Send(&model.AgenticCallbackOutput{
 				Message:    message,
 				Config:     config,
@@ -384,6 +389,7 @@ func (m *Model) options(opts ...model.Option) (*model.Options, *callOptions) {
 		textFormat:      cloneTextFormat(m.textFormat),
 		userID:          stringPointer(m.userID),
 		topLogProbs:     cloneInt(m.topLogProbs),
+		application:     cloneApplication(m.application),
 	}, opts...)
 	return common, specific
 }
