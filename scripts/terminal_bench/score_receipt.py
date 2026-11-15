@@ -1,6 +1,7 @@
 """Read closed, explicitly bound binary scoring receipts on a POSIX host.
 
-The original grader may supply CTRF plus reward.txt, or reward.txt and logs.
+The original grader may supply CTRF plus reward.txt, or reward.txt/reward.json
+and logs. Reward-only formats do not infer success from scaffold tests.
 This reader verifies their bytes and agreement, not the grader's identity,
 artifact transfer, execution isolation, funding, or resumability.
 """
@@ -76,11 +77,11 @@ def _read_files(folder, names):
     return blobs
 
 
-def _log_names(contract, required):
+def _log_names(contract, required, reward_file):
     names = contract.get('expected_log_names', ['test-stdout.txt'] if required else [])
     if (not isinstance(names, list) or (required and not names)
             or any(not isinstance(n, str) or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', n) is None
-                   or n in ('reward.txt', 'ctrf.json') for n in names)
+                   or n in ('reward.txt', 'ctrf.json', reward_file) for n in names)
             or len(set(names)) != len(names)):
         raise ScoreError('score_log_contract_unverified')
     return names
@@ -119,7 +120,8 @@ def verify_score(folder, rewards, contract):
     """Verify only the explicitly selected original score format.
 
     Reward-only contracts require test-stdout.txt unless expected_log_names
-    explicitly names other logs. Counts and failed checks remain unknown.
+    explicitly names other logs. Counts and failed checks remain unknown,
+    including for reward.json; incidental scaffold CTRF is not interpreted.
     Missing or invalid CTRF never falls back to reward-only interpretation.
     Directory aliases are resolved and rechecked; linked score files are not
     followed. Each file is bounded to 4 MiB; changing evidence is rejected.
@@ -128,7 +130,8 @@ def verify_score(folder, rewards, contract):
         raise ScoreError('unsupported_score_contract')
     kind = contract.get('format')
     ctrf = kind == 'ctrf_and_reward_txt' and contract.get('ctrf_expected') is True
-    reward_only = kind == 'reward_txt_and_logs' and contract.get('ctrf_expected') is False
+    json_reward = kind == 'reward_json_and_logs' and contract.get('ctrf_expected') is False
+    reward_only = (kind == 'reward_txt_and_logs' and contract.get('ctrf_expected') is False) or json_reward
     if not (ctrf or reward_only):
         raise ScoreError('unsupported_score_contract')
     if not isinstance(rewards, dict) or set(rewards) != {'reward'}:
@@ -136,14 +139,27 @@ def verify_score(folder, rewards, contract):
     expected = rewards['reward']
     if type(expected) not in (int, float) or expected not in (0, 1):
         raise ScoreError('invalid_reward')
-    logs = _log_names(contract, required=reward_only)
-    blobs = _read_files(folder, ['reward.txt'] + (['ctrf.json'] if ctrf else []) + logs)
-    try:
-        text = blobs['reward.txt'].decode('utf-8').strip()
-    except UnicodeError as error:
-        raise ScoreError('reward_text_mismatch') from error
-    if text not in ('0', '1', '0.0', '1.0') or float(text) != expected:
-        raise ScoreError('reward_text_mismatch')
+    reward_file = 'reward.json' if json_reward else 'reward.txt'
+    logs = _log_names(contract, required=reward_only, reward_file=reward_file)
+    blobs = _read_files(folder, [reward_file] + (['ctrf.json'] if ctrf else []) + logs)
+    if json_reward:
+        try:
+            stored = json.loads(blobs[reward_file], object_pairs_hook=unique, parse_constant=reject_constant)
+        except ScoreError:
+            raise
+        except (ValueError, UnicodeError, RecursionError) as error:
+            raise ScoreError('reward_json_invalid') from error
+        if (not isinstance(stored, dict) or set(stored) != {'reward'}
+                or type(stored['reward']) not in (int, float)
+                or stored['reward'] not in (0, 1) or stored['reward'] != expected):
+            raise ScoreError('reward_json_mismatch')
+    else:
+        try:
+            text = blobs[reward_file].decode('utf-8').strip()
+        except UnicodeError as error:
+            raise ScoreError('reward_text_mismatch') from error
+        if text not in ('0', '1', '0.0', '1.0') or float(text) != expected:
+            raise ScoreError('reward_text_mismatch')
     counts, failed = _ctrf_counts(blobs['ctrf.json'], contract, expected) if ctrf else (None, None)
     return dict(format=kind, reward=expected, test_counts=counts, failed_checks=failed,
                 file_sha256={n: hashlib.sha256(raw).hexdigest() for n, raw in blobs.items()},
