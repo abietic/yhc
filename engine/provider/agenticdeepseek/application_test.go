@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abietic/yhc/engine/internal/providercost"
 	"github.com/cloudwego/eino/components/model"
@@ -155,6 +157,41 @@ func TestApplicationStreamMetadataAndSafetyReview(t *testing.T) {
 				t.Fatalf("text=%q final=%#v", text, final)
 			}
 		})
+	}
+}
+
+func TestApplicationHighReviewCancellationReleasesRequest(t *testing.T) {
+	requestEnded := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"sequence_number\":0,\"delta\":\"unreviewed\"}\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		close(requestEnded)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m, err := New(ctx, &Config{APIKey: "fixture", BaseURL: server.URL, Model: FlashModel, Application: &ApplicationConfig{SafetyCheck: SafetyLevelHigh}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sr, err := m.Stream(ctx, []*schema.AgenticMessage{schema.UserAgenticMessage("q")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sr.Close()
+	// No terminal verdict will arrive. Cancellation must interrupt the HTTP
+	// read and discard the buffered content without waiting for that verdict.
+	cancel()
+	chunk, err := sr.Recv()
+	if !errors.Is(err, context.Canceled) || chunk != nil {
+		t.Fatalf("chunk=%#v error=%v", chunk, err)
+	}
+	select {
+	case <-requestEnded:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancel did not release the provider request")
 	}
 }
 

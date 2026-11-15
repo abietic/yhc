@@ -426,6 +426,8 @@ forced function choices, and reserved web-tool function names before dispatch.
 With high safety review, Stream buffers at most 32 MiB of serialized chunks
 until the terminal verdict, suppresses refused content, and releases no partial
 content on failure or truncation. Other streams retain incremental delivery.
+Callers abandoning a review must cancel the request context; Eino reader Close
+alone is not an HTTP cancellation hook.
 Server-tool counts are separate from model tokens and are not a monetary
 receipt. `PrepareBudgetStream` rejects enabled server tools because token-only
 admission cannot bound their extra charges or multi-step inference; explicit
