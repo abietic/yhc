@@ -19,6 +19,7 @@ class ScoreReceiptTests(unittest.TestCase):
         self.folder = self.base / 'verifier'
         self.folder.mkdir()
         self.reward_contract = {'format': 'reward_txt_and_logs', 'ctrf_expected': False}
+        self.json_contract = {'format': 'reward_json_and_logs', 'ctrf_expected': False}
         self.ctrf_contract = {'format': 'ctrf_and_reward_txt', 'ctrf_expected': True,
                               'expected_test_names': ['alpha', 'beta']}
 
@@ -54,10 +55,136 @@ class ScoreReceiptTests(unittest.TestCase):
         self.reward(' 1.0\n', log=b'\xff\x00')
         self.assertEqual(verify_score(self.folder, {'reward': 1.0}, self.reward_contract)['reward'], 1)
 
+    def test_json_reward_does_not_infer_success_from_scaffold_tests(self):
+        self.ctrf(passed=True)
+        (self.folder / 'reward.json').write_text('{"reward": 0.0}')
+        receipt = verify_score(self.folder, {'reward': 0}, self.json_contract)
+        self.assertEqual(receipt['reward'], 0)
+        self.assertIsNone(receipt['test_counts'])
+        self.assertIsNone(receipt['failed_checks'])
+        self.assertEqual(receipt['file_sha256'], {
+            name: hashlib.sha256((self.folder / name).read_bytes()).hexdigest()
+            for name in ('reward.json', 'test-stdout.txt')})
+        self.assertFalse(receipt['grader_identity_verified_by_this_reader'])
+        self.assertFalse(receipt['can_resume_agent'])
+
+    def test_json_reward_accepts_only_exact_matching_binary_mapping(self):
+        (self.folder / 'test-stdout.txt').write_bytes(b'\xff\x00')
+        for value in (0, 1, 0.0, 1.0):
+            with self.subTest(value=value):
+                (self.folder / 'reward.json').write_text(json.dumps({'reward': value}))
+                result = verify_score(self.folder, {'reward': value}, self.json_contract)
+                self.assertEqual(result['reward'], value)
+                self.assertIsNone(result['test_counts'])
+        for raw in ('{"reward":1}', '{"reward":false}', '{"reward":"0"}',
+                    '{"reward":0.5}', '{"reward":1e999}', '{"reward":NaN}',
+                    '{"reward":Infinity}', '{"reward":0,"reward":0}',
+                    '{"reward":0,"extra":1}', '{}', '[]', '0', '{',
+                    '{"reward":0} trailing'):
+            with self.subTest(raw=raw):
+                (self.folder / 'reward.json').write_text(raw)
+                with self.assertRaises(ScoreError):
+                    verify_score(self.folder, {'reward': 0}, self.json_contract)
+        (self.folder / 'reward.json').write_bytes(b'\xff')
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+
+    def test_json_contract_requires_logs_and_never_falls_back_to_text_reward(self):
+        self.reward()
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        (self.folder / 'reward.json').write_text('{"reward":1}')
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        (self.folder / 'reward.json').write_text('{"reward":0}')
+        for names in ([], ['reward.json'], ['../grader.log'], ['grader.log', 'grader.log']):
+            with self.subTest(names=names), self.assertRaises(ScoreError):
+                verify_score(self.folder, {'reward': 0},
+                             dict(self.json_contract, expected_log_names=names))
+        (self.folder / 'test-stdout.txt').unlink()
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        (self.folder / 'trace_summary.json').write_text('{"passed":0,"total":7}')
+        result = verify_score(self.folder, {'reward': 0},
+                              dict(self.json_contract, expected_log_names=['trace_summary.json']))
+        self.assertEqual(set(result['file_sha256']), {'reward.json', 'trace_summary.json'})
+        self.assertIsNone(result['test_counts'])
+
+    def test_explicit_json_and_text_contracts_cannot_substitute_each_other(self):
+        self.reward('0\n')
+        (self.folder / 'reward.json').write_text('{"reward":1}')
+        self.assertEqual(verify_score(self.folder, {'reward': 0}, self.reward_contract)['reward'], 0)
+        self.assertEqual(verify_score(self.folder, {'reward': 1}, self.json_contract)['reward'], 1)
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 1}, self.reward_contract)
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        (self.folder / 'reward.txt').unlink()
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 1}, self.reward_contract)
+
+    def test_json_reward_file_preserves_closed_file_guards(self):
+        self.reward()
+        path = self.folder / 'reward.json'
+        outside = self.base / 'outside-json'
+        outside.write_text('{"reward":0}')
+        path.symlink_to(outside)
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        path.unlink()
+        os.link(outside, path)
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        path.unlink()
+        os.mkfifo(path)
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+        path.unlink()
+        with path.open('wb') as out:
+            out.truncate((4 << 20) + 1)
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, self.json_contract)
+
+    def test_json_reward_mutation_while_reading_logs_is_rejected(self):
+        self.reward()
+        path = self.folder / 'reward.json'
+        path.write_text('{"reward":0}')
+        original_open = os.open
+        def mutate(name, flags, *args, **kwargs):
+            if name == 'test-stdout.txt':
+                path.write_text('{"reward":1}')
+            return original_open(name, flags, *args, **kwargs)
+        with mock.patch('scripts.terminal_bench.score_receipt.os.open', side_effect=mutate):
+            with self.assertRaises(ScoreError):
+                verify_score(self.folder, {'reward': 0}, self.json_contract)
+
+    def test_json_cli_does_not_promote_scaffold_success_or_accept_conflicting_report(self):
+        self.ctrf(passed=True)
+        (self.folder / 'reward.json').write_text('{"reward":0.0}')
+        report, contract = self.base / 'reported.json', self.base / 'contract.json'
+        report.write_text('{"reward":0}')
+        contract.write_text(json.dumps(self.json_contract))
+        command = [sys.executable, '-m', 'scripts.terminal_bench.score_receipt',
+                   '--score-dir', str(self.folder), '--reported-rewards', str(report),
+                   '--contract', str(contract)]
+        result = subprocess.run(command, cwd=Path(__file__).resolve().parents[2],
+                                text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual(receipt['reward'], 0)
+        self.assertIsNone(receipt['test_counts'])
+        report.write_text('{"reward":1}')
+        invalid = subprocess.run(command, cwd=Path(__file__).resolve().parents[2],
+                                 text=True, capture_output=True, timeout=15)
+        self.assertEqual(invalid.returncode, 2)
+        self.assertEqual(invalid.stdout, '')
+
     def test_explicit_original_format_required(self):
         self.reward()
         for contract in ({}, {'format': 'unknown'},
                          {'format': 'reward_txt_and_logs', 'ctrf_expected': True},
+                         {'format': 'reward_json_and_logs', 'ctrf_expected': True},
+                         {'format': 'reward_json_and_logs'},
                          {'format': 'ctrf_and_reward_txt', 'ctrf_expected': False}):
             with self.subTest(contract=contract), self.assertRaises(ScoreError):
                 verify_score(self.folder, {'reward': 0}, contract)
