@@ -1,7 +1,7 @@
 # Testing Strategy
 
 **Status:** current
-**Last verified:** 2026-11-14
+**Last verified:** 2026-11-15
 
 > **Ownership:** test purposes, evidence boundaries, risk-pack selection, and
 > rules for promoting a defect reproduction into durable regression coverage
@@ -331,6 +331,19 @@ still require the full archive/collection/upload byte chain. Duplicate or non-ca
 links in declared trees, mismatched projections and extra target entries are
 rejected. A caller accepting reward one must separately reject missing outputs.
 
+Declarations may also be JSON objects with `source` and `exclude`. Call
+`artifact_sources` before dispatch to validate supported declarations and obtain
+capture paths; retain the original declarations in the checkpoint. The closeout
+binds their digest and projects the full immutable archive through the exclusion
+rules before comparing collected and uploaded bytes. Directory exclusions use
+the case-sensitive, unanchored, recursive GNU tar `*`/`?` glob subset; excludes on
+file artifacts are ignored, matching Harbor's collector. Bracket expressions,
+backslash escapes, trailing-slash patterns, sidecars and destination remapping
+remain blocked. Locale-dependent Unicode `?` matching may disagree with the
+collector and therefore stays unverified rather than bypassing tree equality.
+Excluded archive entries are never extracted or executed; path traversal and
+duplicate paths are still rejected even when excluded.
+
 The caller owns capture provenance, immutable evidence, isolation observations,
 grader identity and closed usage. This check neither executes artifact contents
 nor proves services, native session semantics or agent recovery. Existing sealed
@@ -339,6 +352,16 @@ Its standard-library regressions run in `make test-provider-costs`:
 
 ```bash
 python3 -m unittest scripts.terminal_bench.test_artifact_closeout
+```
+
+The opt-in Docker calibration uses the installed Harbor collector and a cached
+Linux GNU tar image, uploads to a separate `network=none` container, and checks
+the complete byte chain. It does not prove native agent sessions or task reward:
+
+```bash
+YHC_ARTIFACT_EXCLUSIONS_DOCKER_TEST=1 \
+YHC_ARTIFACT_EXCLUSIONS_TEST_IMAGE="$CACHED_GNU_TAR_IMAGE_ID" \
+python3 -m unittest scripts.terminal_bench.test_artifact_exclusions_docker
 ```
 
 The pinned Harbor adapter in
