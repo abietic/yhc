@@ -4,7 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -21,7 +21,7 @@ func TestFormattingEntrypointsPreserveBuildArtifacts(t *testing.T) {
 	for _, name := range artifacts {
 		writeFormattingFixture(t, root, name, unformatted)
 	}
-	gofmt := filepath.Join(runtime.GOROOT(), "bin", "gofmt")
+	gofmt := formattingGoTool(t, "gofmt")
 	// The standard formatter has the same traversal flags and ships with Go;
 	// this exercises the real Make targets without installing another tool.
 	if err := runFormattingMake(t, root, gofmt, "fmt-check"); err == nil {
@@ -46,9 +46,25 @@ func TestFormattingCheckPropagatesFormatterFailure(t *testing.T) {
 	root := formattingFixture(t)
 	// go rejects gofumpt's flags with stderr only. fmt-check must propagate
 	// that failure instead of treating empty stdout as a clean source tree.
-	if err := runFormattingMake(t, root, filepath.Join(runtime.GOROOT(), "bin", "go"), "fmt-check"); err == nil {
+	if err := runFormattingMake(t, root, formattingGoTool(t, "go"), "fmt-check"); err == nil {
 		t.Fatal("fmt-check hid a formatter failure")
 	}
+}
+
+func formattingGoTool(t *testing.T, name string) string {
+	t.Helper()
+	goTool, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name == "go" {
+		return goTool
+	}
+	goRoot, err := exec.Command(goTool, "env", "GOROOT").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(strings.TrimSpace(string(goRoot)), "bin", name)
 }
 
 func formattingFixture(t *testing.T) string {
