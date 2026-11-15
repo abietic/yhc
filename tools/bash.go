@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -33,22 +34,29 @@ func getDefaultShellManager() *ShellManager {
 var backgroundShells sync.Map // shellID -> *backgroundShellEntry
 
 type backgroundShellEntry struct {
-	ShellID   string
-	Command   string
-	StartedAt time.Time
-	owner     string
-	mu        sync.Mutex
-	status    string
-	outcome   string
-	output    string
-	done      chan struct{}
+	ShellID      string
+	Command      string
+	StartedAt    time.Time
+	owner        string
+	mu           sync.Mutex
+	status       string
+	outcome      string
+	output       string
+	outputNotice string
+	done         chan struct{}
 }
 
 func (entry *backgroundShellEntry) finish(command string, result *ShellResult, err error) {
+	entry.finishWithContext(context.Background(), command, result, err)
+}
+
+func (entry *backgroundShellEntry) finishWithContext(ctx context.Context, command string, result *ShellResult, err error) {
 	status, outcome, output := "failed", "[execution failed]\n", ""
+	notice := ""
 	if result != nil {
 		status, outcome = shellResultOutcome(result)
 		output = formatShellResult(command, result)
+		notice = persistTruncatedShellOutput(ctx, result)
 	}
 	if err != nil {
 		status = "failed"
@@ -60,6 +68,7 @@ func (entry *backgroundShellEntry) finish(command string, result *ShellResult, e
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	entry.status, entry.outcome, entry.output = status, outcome, output
+	entry.outputNotice = notice
 	if entry.done != nil {
 		close(entry.done)
 	}
@@ -105,6 +114,7 @@ func BashTool() ToolImpl {
 			if !scopedManager {
 				mgr = getDefaultShellManager()
 			}
+			ctx = WithShellManager(ctx, mgr)
 			cwd := ""
 			if ExecutionCWDFromCtx(ctx) != "" {
 				var err error
@@ -149,7 +159,7 @@ func BashTool() ToolImpl {
 				trackGitOperation(params.Command, result.Stdout, DefaultGitTracker)
 			}
 
-			return formatShellResult(params.Command, result), nil
+			return formatShellResult(params.Command, result) + persistTruncatedShellOutput(ctx, result), nil
 		},
 	}
 }
@@ -315,7 +325,7 @@ func executeBashOutputCtx(ctx context.Context, manager *ShellManager, input stri
 		entry.mu.Unlock()
 		return "", fmt.Errorf("bash_output: %w", err)
 	}
-	status, outcome, output := entry.status, entry.outcome, entry.output
+	status, outcome, output, outputNotice := entry.status, entry.outcome, entry.output, entry.outputNotice
 	entry.output = ""
 	entry.mu.Unlock()
 	if filter != nil && output != "" {
@@ -343,6 +353,7 @@ func executeBashOutputCtx(ctx context.Context, manager *ShellManager, input stri
 	} else {
 		sb.WriteString("(no new output captured)\n")
 	}
+	sb.WriteString(outputNotice)
 	return sb.String(), nil
 }
 
@@ -419,7 +430,7 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 	go func() {
 		backgroundCtx := context.WithoutCancel(ctx)
 		result, err := mgr.ExecuteAt(backgroundCtx, shellID, cwd, command, 10*time.Minute)
-		entry.finish(command, result, err)
+		entry.finishWithContext(backgroundCtx, command, result, err)
 	}()
 
 	var sb strings.Builder
@@ -475,6 +486,47 @@ func formatShellResult(command string, result *ShellResult) string {
 
 	// Keep terminal markers even if a future section reaches the safety limit.
 	return truncateShellText(sb.String(), bashMaxOutputDefault, "output")
+}
+
+// The shell deliberately merges command stderr into stdout. Retain that exact
+// stream before previewing: head/tail alone can omit an assertion in the middle.
+func persistTruncatedShellOutput(ctx context.Context, result *ShellResult) string {
+	if result == nil || (!result.Truncated && len(result.Stdout) <= bashMaxOutputPerStream && len(result.Stderr) <= bashMaxOutputPerStream) {
+		return ""
+	}
+	if result.Truncated || result.TimedOut || result.Canceled {
+		return "\n[Full output unavailable: shell capture was incomplete.]\n"
+	}
+	if policy, ok := containment.FromContext(ctx); ok && containment.IsContainedAdapter(policy.Spec().Adapter) {
+		return "\n[Full output unavailable within this execution boundary.]\n"
+	}
+	if manager := ShellManagerFromCtx(ctx); manager != nil {
+		manager.mu.RLock()
+		contained := manager.policy != nil && containment.IsContainedAdapter(manager.policy.Spec().Adapter)
+		manager.mu.RUnlock()
+		if contained {
+			return "\n[Full output unavailable within this execution boundary.]\n"
+		}
+	}
+	persist := toolOutputPersisterFromContext(ctx)
+	if persist == nil {
+		return "\n[Full output unavailable: no session output storage.]\n"
+	}
+	_, outcome := shellResultOutcome(result)
+	parts := []string{result.Stdout}
+	if result.Stdout != "" && !strings.HasSuffix(result.Stdout, "\n") {
+		parts = append(parts, "\n")
+	}
+	parts = append(parts, result.Stderr)
+	if result.Stderr != "" && !strings.HasSuffix(result.Stderr, "\n") {
+		parts = append(parts, "\n")
+	}
+	parts = append(parts, outcome)
+	path, err := persist(ctx, "Bash", parts...)
+	if err != nil || !filepath.IsAbs(path) || len(path) > 4096 || strings.ContainsAny(path, "\r\n\x00") {
+		return "\n[Full output unavailable: session output could not be retained.]\n"
+	}
+	return "\nFull output saved to: " + path + "\n"
 }
 
 func shellResultOutcome(result *ShellResult) (status, marker string) {

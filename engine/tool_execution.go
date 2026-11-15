@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/execution"
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/engine/permission"
@@ -391,6 +392,23 @@ func executeToolCall(
 		)
 	}
 	ctx = tools.WithToolUseID(ctx, toolUseID)
+	// Clear inherited storage first: a child or contained tool must not retain
+	// a parent host's output authority. The actual execution context is checked
+	// again because the executor may install its policy after this boundary.
+	ctx = tools.WithToolOutputPersister(ctx, nil)
+	if params.ResultStorage != nil {
+		resultStorage := params.ResultStorage
+		ctx = tools.WithToolOutputPersister(ctx, func(outputCtx context.Context, name string, parts ...string) (string, error) {
+			if policy, ok := containment.FromContext(outputCtx); ok && containment.IsContainedAdapter(policy.Spec().Adapter) {
+				return "", fmt.Errorf("tool output storage is unavailable within this execution boundary")
+			}
+			stored, err := resultStorage.StoreComplete(name, parts...)
+			if err != nil {
+				return "", err
+			}
+			return stored.FilePath, nil
+		})
+	}
 	var attachmentMu sync.Mutex
 	toolAttachments := make([]*schema.Message, 0)
 	attachmentOpen := true
