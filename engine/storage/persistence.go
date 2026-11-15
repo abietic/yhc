@@ -7,7 +7,6 @@ package storage
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,7 +186,7 @@ func (s *ResultStorage) StoreComplete(toolName string, parts ...string) (*Stored
 		return nil, fmt.Errorf("storage: protect complete output: %w", err)
 	}
 	for _, part := range parts {
-		if _, err := io.WriteString(file, part); err != nil {
+		if _, err := file.WriteString(part); err != nil {
 			return nil, fmt.Errorf("storage: write complete output: %w", err)
 		}
 	}
