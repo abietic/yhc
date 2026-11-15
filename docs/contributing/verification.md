@@ -1,7 +1,7 @@
 # Verification Guide
 
 **Status:** current
-**Last verified:** 2026-10-05
+**Last verified:** 2026-11-15
 
 > **Ownership:** required validation surfaces for documentation and code changes
 
@@ -42,6 +42,13 @@ make docs-check
 git diff --check
 git status --short
 ```
+
+`make fmt` and `make fmt-check` share the source-directory boundary
+`GO_FORMAT_DIRS` in the [Makefile](../../Makefile). Historical artifacts under
+`build/` and local reference repositories are outside that boundary. Keep new
+source roots in that list rather than replacing it with the repository root.
+`fmt-check` fails if the formatter itself fails, as well as when source files
+need formatting.
 
 Add risk-proportional checks when the boundary requires them:
 

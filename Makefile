@@ -7,6 +7,9 @@ BUILD_DIR := build
 GO ?= go
 NODE ?= node
 GOFM := $(shell $(GO) env GOPATH)/bin/gofumpt
+# Formatting owns source directories, not ignored historical build evidence.
+# Keep both formatting targets on this boundary; never pass the repository root.
+GO_FORMAT_DIRS := cmd engine internal scripts server tools third_party
 GOLINT := $(shell $(GO) env GOPATH)/bin/golangci-lint
 GOTEST := $(shell $(GO) env GOPATH)/bin/gotestsum
 DLV := $(shell $(GO) env GOPATH)/bin/dlv
@@ -371,10 +374,10 @@ $(EVAL_BINARY): $(SOURCES) go.mod go.sum
 
 # ── Fmt ────────────────────────────────────────────────
 fmt: prepare-gofumpt
-	$(GOFM) -l -w .
+	$(GOFM) -l -w $(GO_FORMAT_DIRS)
 
 fmt-check: prepare-gofumpt
-	@files="$$($(GOFM) -l .)"; \
+	@files="$$($(GOFM) -l $(GO_FORMAT_DIRS))" || exit $$?; \
 	if [[ -n "$$files" ]]; then \
 		echo "The following files need gofumpt:" >&2; \
 		echo "$$files" >&2; \
