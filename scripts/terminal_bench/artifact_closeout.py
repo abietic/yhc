@@ -4,6 +4,7 @@ The caller owns capture provenance, immutable evidence, and verifier isolation
 observations. This verifies regular file/directory bytes across that evidence,
 not the grader, services, native session semantics, usage, or resumability.
 """
+import fnmatch
 import hashlib
 import json
 import os
@@ -39,6 +40,57 @@ def _below(path, parent):
     return path == parent or path.startswith(parent + '/')
 
 
+def _declarations(declared):
+    _need(isinstance(declared, list) and declared and len(declared) <= 1024,
+          'artifact_declarations_unverified')
+    rules = {}
+    for entry in declared:
+        if isinstance(entry, str):
+            source, exclude = entry, []
+        else:
+            _need(isinstance(entry, dict) and set(entry) <= {'source', 'exclude', 'service', 'destination'}
+                  and entry.get('service') in (None, 'main')
+                  and entry.get('destination') in (None, ''), 'artifact_declarations_unverified')
+            source, exclude = entry.get('source'), entry.get('exclude', [])
+        _path(source, directory=True)
+        _need(source not in rules, 'artifact_declarations_overlap')
+        # Harbor's Linux collector uses GNU tar's default unanchored, recursive,
+        # case-sensitive excludes. Only this calibrated glob subset is admitted;
+        # locale-dependent character classes and escaping remain unverified.
+        _need(isinstance(exclude, list) and len(exclude) <= 128
+              and all(isinstance(p, str) and 0 < len(p) <= 1024
+                      and not any(c in p for c in '\0\r\n[]\\')
+                      and not p.endswith('/') for p in exclude),
+              'artifact_exclusions_unqualified')
+        rules[source] = tuple(re.compile(r'(?:^|/)' + fnmatch.translate(p)[:-2] + r'(?=/|$)')
+                              for p in exclude)
+    paths = [str(_path(p, directory=True)) for p in rules]
+    _need(len(set(paths)) == len(paths) and not any(
+        _below(a, b) or _below(b, a) for i, a in enumerate(paths) for b in paths[i+1:]),
+        'artifact_declarations_overlap')
+    pin = hashlib.sha256(json.dumps(sorted(declared,
+        key=lambda e: e if isinstance(e, str) else e['source']),
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return rules, pin
+
+
+def artifact_sources(declared):
+    """Validate supported declarations before dispatch; preserve raw checkpoint declarations.
+
+    These paths are for capture, not permission to omit the original structured
+    declarations from the checkpoint. Sidecars, destination remaps, and advanced
+    tar patterns are deliberately rejected before native or provider execution.
+    """
+    return list(_declarations(declared)[0])
+
+
+def _excluded(relative, patterns):
+    # tar is invoked with '-C source .'. Match a name or any ancestor from
+    # any component boundary; '*' can span '/'. The artifact root itself stays
+    # present because Harbor creates the collection directory even for empty tar.
+    return any(pattern.search('./' + relative) for pattern in patterns)
+
+
 def _projection(entries):
     files = [e for e in entries.values() if e['type'] == 'file']
     return dict(scope='uploaded_projection', file_count=len(files),
@@ -62,7 +114,7 @@ def _signature(info):
             info.st_mtime_ns, info.st_ctime_ns)
 
 
-def _archive_trees(path, digest, sources, cwd):
+def _archive_trees(path, digest, sources, cwd, rules):
     trees = {p: {} for p in sources}
     # Use canonical filesystem roots without rewriting the evidence's raw keys.
     paths = {p: str(_path(p, directory=True)) for p in sources}
@@ -97,17 +149,20 @@ def _archive_trees(path, digest, sources, cwd):
                 targets = [p for p in sources if _below(name, paths[p])]
                 if not targets:
                     continue
-                _need(member.isfile() or member.isdir(), 'checkpoint_artifact_unqualified')
-                if member.isdir():
-                    entry = dict(type='directory')
-                else:
-                    hashed = hashlib.sha256()
-                    with archive.extractfile(member) as stream:
-                        while chunk := stream.read(65536):
-                            hashed.update(chunk)
-                    entry = dict(type='file', bytes=member.size, sha256=hashed.hexdigest())
                 for target in targets:
-                    trees[target][name[len(paths[target]):].lstrip('/')] = entry
+                    relative_name = name[len(paths[target]):].lstrip('/')
+                    if relative_name and rules[target] and _excluded(relative_name, rules[target]):
+                        continue
+                    _need(member.isfile() or member.isdir(), 'checkpoint_artifact_unqualified')
+                    if member.isdir():
+                        entry = dict(type='directory')
+                    else:
+                        hashed = hashlib.sha256()
+                        with archive.extractfile(member) as stream:
+                            while chunk := stream.read(65536):
+                                hashed.update(chunk)
+                        entry = dict(type='file', bytes=member.size, sha256=hashed.hexdigest())
+                    trees[target][relative_name] = entry
         _need(_signature(before) == _signature(os.fstat(raw.fileno()))
               == _signature(Path(path).lstat()), 'checkpoint_archive_changed')
     _need(workspace, 'checkpoint_workspace_unverified')
@@ -119,26 +174,21 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
 
     Inputs are closed operator evidence, not solver claims. Missing outputs
     require absence inside a captured workspace. Empty directories are present.
-    Only main-service artifacts and exact isolated-verifier session IDs are
-    supported. Additional verifier entries remain blocked here even though the
-    lower-level transport can report a partial uploaded projection.
+    Main-service paths may be strings or JSON declarations with supported GNU
+    tar excludes. Original declarations must also be bound in the checkpoint.
+    Additional verifier entries remain blocked even though the lower-level
+    transport can report a partial uploaded projection.
     """
     try:
-        _need(isinstance(declared, list) and declared and len(declared) <= 1024
-              and all(isinstance(p, str) for p in declared)
-              and len(set(declared)) == len(declared), 'artifact_declarations_unverified')
-        sources = set(declared)
+        rules, declaration_pin = _declarations(declared)
+        sources = set(rules)
         paths = {p: str(_path(p, directory=True)) for p in sources}
-        _need(len(set(paths.values())) == len(sources), 'artifact_declarations_overlap')
-        for target in sources:
-            _need(not any(_below(paths[target], paths[other]) for other in sources if other != target),
-                  'artifact_declarations_overlap')
         _need(isinstance(checkpoint, dict) and checkpoint.get('capture') == 'complete'
               and checkpoint.get('captured_before_grading') is True
               and checkpoint.get('workspace_in_archive') is True
               and checkpoint.get('native_session_files'), 'checkpoint_chain_unverified')
         _need(isinstance(checkpoint.get('declared_artifacts'), list)
-              and sorted(checkpoint['declared_artifacts']) == sorted(declared),
+              and _declarations(checkpoint['declared_artifacts'])[1] == declaration_pin,
               'checkpoint_declarations_changed')
         cwd = str(_path(checkpoint.get('cwd')))
         digest = checkpoint.get('checkpoint_sha256')
@@ -153,7 +203,7 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
         folder = Path(folder)
         for row in rows:
             target = row['source']
-            _need(row.get('service') is None and row.get('type') in ('file', 'directory'),
+            _need(row.get('service') in (None, 'main') and row.get('type') in ('file', 'directory'),
                   'artifact_collection_unqualified')
             _path(target, directory=row['type'] == 'directory')
             path = _collected(folder, target)
@@ -168,7 +218,7 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
                       and _below(paths[target], cwd), 'artifact_absence_unverified')
                 missing.append(target)
                 expected[target] = {}
-        trees = _archive_trees(archive, digest, sources, cwd)
+        trees = _archive_trees(archive, digest, sources, cwd, rules)
         _need(trees == expected, 'checkpoint_and_collected_artifacts_differ')
         _need(isinstance(session_id, str) and session_id and isinstance(isolation, list)
               and isolation and all(isinstance(p, dict) and p.get('network_mode') == 'none'
@@ -196,10 +246,14 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
             path = _collected(folder, target)
             _need((source_manifest(path) == entries) if entries else not path.exists(),
                   'artifact_source_changed')
-        return dict(artifact_chain_verified=True,
-                    present_artifacts={p: _projection(expected[p]) for p in sorted(present)},
-                    missing_artifacts=sorted(missing), host_executes_model_code=False,
-                    can_resume_agent=False)
+        result = dict(artifact_chain_verified=True,
+                      present_artifacts={p: _projection(expected[p]) for p in sorted(present)},
+                      missing_artifacts=sorted(missing), host_executes_model_code=False,
+                      can_resume_agent=False)
+        if any(isinstance(e, dict) for e in declared):
+            result['artifact_selection'] = dict(declarations_sha256=declaration_pin,
+                                                exclude_profile='gnu-tar-simple-glob-v1')
+        return result
     except CloseoutError:
         raise
     except (OSError, ValueError, TypeError, KeyError, tarfile.TarError, EOFError,

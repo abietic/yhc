@@ -343,5 +343,133 @@ class ArtifactCloseoutTests(unittest.TestCase):
         with self.assertRaises(CloseoutError): self.verify()
 
 
+class ArtifactExclusionTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ArtifactCloseoutTests('test_directory_addition_deletion_and_empty_directory_closeout')
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.declared = ['/app/config', {'source': '/app/src', 'exclude': ['node_modules', '*.pyc']}]
+        self.fixture.checkpoint['declared_artifacts'] = copy.deepcopy(self.declared)
+
+    def verify(self):
+        f = self.fixture
+        return verify_artifacts(f.collected, f.archive, self.declared, f.rows,
+                                f.checkpoint, f.proofs, f.isolation,
+                                session_id='sample__verifier__trial')
+
+    def test_filtered_collection_is_bound_to_full_capture_and_original_rules(self):
+        f = self.fixture
+        f.entries += [('app/src/node_modules', None),
+                      ('app/src/node_modules/pkg.js', b'excluded cache'),
+                      ('app/src/new.pyc', b'excluded bytecode')]
+        f.write_archive()
+        result = self.verify()
+        self.assertEqual(result['present_artifacts']['/app/src']['file_count'], 1)
+        self.assertFalse(result['can_resume_agent'])
+        pin = hashlib.sha256(json.dumps(self.declared, sort_keys=True,
+                            separators=(',', ':')).encode()).hexdigest()
+        self.assertEqual(result['artifact_selection']['declarations_sha256'], pin)
+        self.assertEqual(result['artifact_selection']['exclude_profile'], 'gnu-tar-simple-glob-v1')
+        f.checkpoint['declared_artifacts'] = f.sources
+        with self.assertRaises(CloseoutError): self.verify()
+        f.checkpoint['declared_artifacts'] = copy.deepcopy(self.declared)
+        f.checkpoint['declared_artifacts'][1]['exclude'].append('new.txt')
+        with self.assertRaises(CloseoutError): self.verify()
+
+    def test_rules_cannot_hide_changed_included_or_unexpected_collected_bytes(self):
+        f = self.fixture
+        self.verify()
+        (f.tree / 'new.txt').write_bytes(b'wrong included bytes')
+        with self.assertRaises(CloseoutError): self.verify()
+        (f.tree / 'new.txt').write_bytes(b'new\0content\n')
+        (f.tree / 'unexpected.pyc').write_bytes(b'should not have been collected')
+        with self.assertRaises(CloseoutError): self.verify()
+
+    def test_excluded_links_are_inert_but_duplicate_and_traversing_paths_remain_blocked(self):
+        f = self.fixture
+        link = tarfile.TarInfo('app/src/node_modules')
+        link.type, link.linkname = tarfile.SYMTYPE, '/outside'
+        f.entries.append((link.name, link))
+        f.write_archive()
+        self.assertTrue(self.verify()['artifact_chain_verified'])
+        for entry in [('app/src/node_modules', link), ('app/src/node_modules/../hidden', b'x')]:
+            with self.subTest(path=entry[0]):
+                f.entries.append(entry)
+                f.write_archive()
+                with self.assertRaises(CloseoutError): self.verify()
+                f.entries.pop()
+
+    def test_empty_filtered_directory_stays_present_and_file_excludes_are_ignored(self):
+        f = self.fixture
+        (f.tree / 'new.txt').unlink()
+        (f.tree / 'empty').rmdir()
+        entries = {'': {'type': 'directory'}}
+        f.rows[1]['status'] = 'empty'
+        f.proofs[1]['projection'].update(file_count=0, directory_count=1, bytes=0,
+            manifest_sha256=hashlib.sha256(json.dumps(entries, sort_keys=True,
+                separators=(',', ':')).encode()).hexdigest())
+        self.declared = [{'source': '/app/config', 'exclude': ['*']},
+                         {'source': '/app/src', 'exclude': ['*']}]
+        f.checkpoint['declared_artifacts'] = copy.deepcopy(self.declared)
+        result = self.verify()
+        self.assertEqual(result['missing_artifacts'], [])
+        self.assertEqual(result['present_artifacts']['/app/config']['bytes'], 6)
+        self.assertEqual(result['present_artifacts']['/app/src']['directory_count'], 1)
+
+    def test_unanchored_recursive_globs_and_component_boundaries(self):
+        f = self.fixture
+        self.declared[1]['exclude'].append('backend/cache?.tmp')
+        f.checkpoint['declared_artifacts'] = copy.deepcopy(self.declared)
+        f.entries += [('app/src/frontend', None), ('app/src/frontend/node_modules', None),
+                      ('app/src/frontend/node_modules/pkg', b'excluded'),
+                      ('app/src/backend', None), ('app/src/backend/cache1.tmp', b'excluded'),
+                      ('app/src/node_modules-extra', None),
+                      ('app/src/node_modules-extra/app.js', b'keep'),
+                      ('app/src/module.pyc', b'excluded')]
+        for name in ('frontend', 'backend', 'node_modules-extra'):
+            (f.tree / name).mkdir()
+        (f.tree / 'node_modules-extra/app.js').write_bytes(b'keep')
+        expected = {'': {'type': 'directory'}, 'empty': {'type': 'directory'},
+            'frontend': {'type': 'directory'}, 'backend': {'type': 'directory'},
+            'node_modules-extra': {'type': 'directory'},
+            'new.txt': {'type': 'file', 'bytes': 12,
+                        'sha256': hashlib.sha256(b'new\0content\n').hexdigest()},
+            'node_modules-extra/app.js': {'type': 'file', 'bytes': 4,
+                                         'sha256': hashlib.sha256(b'keep').hexdigest()}}
+        f.proofs[1]['projection'].update(file_count=2, directory_count=5, bytes=16,
+            manifest_sha256=hashlib.sha256(json.dumps(expected, sort_keys=True,
+                separators=(',', ':')).encode()).hexdigest())
+        f.write_archive()
+        self.assertEqual(self.verify()['present_artifacts']['/app/src']['file_count'], 2)
+
+    def test_pre_dispatch_source_validation_rejects_unproven_syntax_and_mappings(self):
+        from scripts.terminal_bench.artifact_closeout import artifact_sources
+        before = copy.deepcopy(self.declared)
+        self.assertEqual(artifact_sources(self.declared), ['/app/config', '/app/src'])
+        self.assertEqual(self.declared, before)
+        for bad in ({'source': '/app/src', 'exclude': '*.pyc'},
+                    {'source': '/app/src', 'exclude': ['']},
+                    {'source': '/app/src', 'exclude': ['file[0-9]']},
+                    {'source': '/app/src', 'exclude': [r'escaped\*']},
+                    {'source': '/app/src', 'exclude': [None]},
+                    {'source': '/app/src', 'exclude': None},
+                    {'source': '/app/src', 'destination': 'other'},
+                    {'source': '/app/src', 'service': 'db'},
+                    {'source': '/app/src', 'unknown': True},
+                    {'source': '/app/src', 'exclude': ['x'*1025]}):
+            with self.subTest(declaration=bad), self.assertRaises(CloseoutError):
+                artifact_sources([bad])
+
+    def test_missing_output_cannot_be_inferred_from_excluding_present_bytes(self):
+        f = self.fixture
+        self.declared.append({'source': '/app/missing', 'exclude': ['*']})
+        f.checkpoint['declared_artifacts'] = copy.deepcopy(self.declared)
+        f.rows.append(dict(source='/app/missing', type='directory', status='failed', service=None))
+        self.assertEqual(self.verify()['missing_artifacts'], ['/app/missing'])
+        f.entries.append(('app/missing', None))
+        f.write_archive()
+        with self.assertRaises(CloseoutError): self.verify()
+
+
 if __name__ == '__main__':
     unittest.main()
