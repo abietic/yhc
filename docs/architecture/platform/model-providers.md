@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-11-15
+**Last verified:** 2026-11-16
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -418,7 +418,8 @@ become locally dispatched function calls. The classic message bridge preserves
 only the DeepSeek public application metadata for JSON persistence and replay;
 `kind`, `page`, `signature`, error, and unknown server fields survive. Canonical
 text and function arguments remain authoritative. Output indexes retained on
-content blocks keep raw server items interleaved with the admitted reply;
+content blocks keep raw server items interleaved with text and local function
+calls after JSON persistence, without reordering caller-owned content;
 they cannot inject a client `function_call` or grant private continuation reuse.
 
 The application route rejects incompatible structured output, top logprobs,

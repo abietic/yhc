@@ -404,6 +404,10 @@ func convertAssistantMessage(messageIndex int, message *schema.AgenticMessage) (
 	if err != nil {
 		return nil, err
 	}
+	blocks := message.ContentBlocks
+	if len(serverItems) > 0 {
+		blocks = restoreReplayBlockOrder(blocks)
+	}
 	items := make([]inputItem, 0, len(message.ContentBlocks)+len(serverItems))
 	nextServer := 0
 	previousOutputIndex := -1
@@ -415,7 +419,7 @@ func convertAssistantMessage(messageIndex int, message *schema.AgenticMessage) (
 		items = append(items, inputItem{Type: "message", Role: "assistant", Content: text})
 		text = nil
 	}
-	for blockIndex, block := range message.ContentBlocks {
+	for blockIndex, block := range blocks {
 		if block == nil {
 			return nil, conversionError(messageIndex, blockIndex, "block_nil")
 		}

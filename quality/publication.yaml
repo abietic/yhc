@@ -49,6 +49,38 @@ privacy:
   test_sentinels:
     - sentinel-provider-credential
   reviewed_findings:
+    # Synthetic citation/replay URLs and rejected file inputs; upload requests
+    # use an explicit mock transport. These exact fixtures contain no private URL.
+    - path: engine/provider/agenticdeepseek/application_test.go
+      line: 20
+      rule_id: private-url
+      match_sha256: 100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/application_test.go
+      line: 280
+      rule_id: private-url
+      match_sha256: 100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/documents_test.go
+      line: 19
+      rule_id: private-url
+      match_sha256: a99fab296645ebe837a402941d7e9d9a35065584c61042dbe51156584d6ce910
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/documents_test.go
+      line: 96
+      rule_id: private-url
+      match_sha256: 8a23469f0cd4285b89f5ed119543b4b64c7cd2ea73e0b0b6c0aa6c65e12c966f
+      purpose: synthetic-security-fixture
+    - path: engine/provider/agenticdeepseek/documents_test.go
+      line: 99
+      rule_id: private-url
+      match_sha256: 8a23469f0cd4285b89f5ed119543b4b64c7cd2ea73e0b0b6c0aa6c65e12c966f
+      purpose: synthetic-security-fixture
+    - path: engine/provider/deepseek_application_test.go
+      line: 127
+      rule_id: private-url
+      match_sha256: 100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9
+      purpose: synthetic-security-fixture
     # Generates a fresh opaque capability; this is code, not a provider key.
     - path: scripts/terminal_bench/fresh_gateway.py
       line: 73
@@ -953,7 +985,7 @@ privacy:
       match_sha256: 38a5be91af79d7e5ba9809bf383c699b6864ee50446239fe56a45e32b84638fe
       purpose: documentation-example
     - path: "docs/architecture/platform/model-providers.md"
-      line: 821
+      line: 877
       rule_id: high-entropy-token
       match_sha256: 423c1685313b1d7821954c75bbe609ef396b50b5a70aceeb916108f48d12bec8
       purpose: documentation-example

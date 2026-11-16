@@ -3,6 +3,7 @@ package agenticdeepseek
 import (
 	"encoding/json"
 	"io"
+	"sort"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -153,6 +154,33 @@ func RestoreOutputParts(parts []schema.MessageOutputPart) []schema.MessageOutput
 		}
 	}
 	return restored
+}
+
+// Classic messages keep local function calls separate from text. Restore the
+// provider item order on a detached slice when every block retains its index.
+// Legacy blocks with incomplete indexes retain the caller's order.
+func restoreReplayBlockOrder(blocks []*schema.ContentBlock) []*schema.ContentBlock {
+	type indexedBlock struct {
+		block *schema.ContentBlock
+		index int
+	}
+	indexed := make([]indexedBlock, len(blocks))
+	for i, block := range blocks {
+		if block == nil {
+			return blocks
+		}
+		index, ok := originalOutputIndex(block)
+		if !ok || index < 0 {
+			return blocks
+		}
+		indexed[i] = indexedBlock{block: block, index: index}
+	}
+	sort.SliceStable(indexed, func(i, j int) bool { return indexed[i].index < indexed[j].index })
+	ordered := make([]*schema.ContentBlock, len(indexed))
+	for i, part := range indexed {
+		ordered[i] = part.block
+	}
+	return ordered
 }
 
 // ReplayExtra copies only DeepSeek's public application metadata through the

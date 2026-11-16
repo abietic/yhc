@@ -221,6 +221,53 @@ func TestReviewedStreamDiscardsContentOnTruncationAndFailure(t *testing.T) {
 	}
 }
 
+func TestApplicationReplayPreservesCallerOwnedBlocks(t *testing.T) {
+	const raw = `{"id":"r","object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"before"}]},{"type":"function_call","id":"f","call_id":"c","name":"lookup","arguments":"{}"},{"type":"web_search_call","id":"w","signature":"keep"},{"type":"message","content":[{"type":"output_text","text":"after"}]}]}`
+	var response responseObject
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
+		t.Fatal(err)
+	}
+	message, err := responseToAgentic(&response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce the classic schema's separation of text and local functions.
+	blocks := message.ContentBlocks
+	message.ContentBlocks = []*schema.ContentBlock{blocks[0], blocks[2], blocks[1]}
+	before, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := convertAssistantMessage(0, message); err != nil {
+		t.Fatal(err)
+	}
+	after, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("replay reordered caller-owned content blocks")
+	}
+}
+
+func TestApplicationReplayOrderingRequiresCompleteIndexes(t *testing.T) {
+	for _, invalid := range []*schema.StreamingMeta{nil, {Index: -1}} {
+		first := &schema.ContentBlock{StreamingMeta: &schema.StreamingMeta{Index: 3}}
+		second := &schema.ContentBlock{StreamingMeta: invalid}
+		blocks := []*schema.ContentBlock{first, second}
+		ordered := restoreReplayBlockOrder(blocks)
+		if ordered[0] != first || ordered[1] != second {
+			t.Fatalf("partial/invalid metadata reordered canonical blocks: %#v", invalid)
+		}
+	}
+	first := &schema.ContentBlock{StreamingMeta: &schema.StreamingMeta{Index: 1}}
+	second := &schema.ContentBlock{StreamingMeta: &schema.StreamingMeta{Index: 1}}
+	ordered := restoreReplayBlockOrder([]*schema.ContentBlock{first, second})
+	if ordered[0] != first || ordered[1] != second {
+		t.Fatal("same-item content order changed")
+	}
+}
+
 func TestApplicationReplayRejectsClientToolInjection(t *testing.T) {
 	_, err := replayWebToolCalls(map[string]any{applicationExtraKey: map[string]any{"web_tool_calls": []any{map[string]any{"type": "function_call", "id": "bad", "name": "Bash"}}, "web_tool_call_indexes": []int{0}}})
 	if err == nil {
