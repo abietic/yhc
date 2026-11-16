@@ -410,6 +410,8 @@ Flash. An empty per-call config disables inherited application settings. These
 options also pass through `provider.NewChatModel`'s classic Eino bridge. They
 are SDK opt-ins; CLI, TUI, ACP, and Desktop settings do not automatically enable
 them, upload documents, or replace YHC's local WebSearch/WebFetch tools.
+Web search and URL reading may be enabled together alongside local Eino
+functions; only local function calls enter YHC's tool dispatcher.
 
 Generate and terminal SSE metadata retain the title, URL citations with Unicode
 code-point offsets and output/content indexes, billed search/fetch/image-search
