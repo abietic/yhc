@@ -41,6 +41,7 @@ type streamState struct {
 	sequence      int64
 	terminalSeen  bool
 	functionCalls map[string]*streamedFunctionCall
+	markedOutput  map[int]bool
 }
 
 func parseResponseStream(
@@ -57,7 +58,7 @@ func parseResponseStreamObserved(
 	observer *providerdiag.Observer,
 	send func(*schema.AgenticMessage) bool,
 ) error {
-	state := &streamState{functionCalls: make(map[string]*streamedFunctionCall)}
+	state := &streamState{functionCalls: make(map[string]*streamedFunctionCall), markedOutput: make(map[int]bool)}
 	err := readSSE(reader, maxEventBytes, func(record sseRecord) error {
 		if record.data == "" {
 			return nil
@@ -101,6 +102,15 @@ func parseResponseStreamObserved(
 					observer.Terminate("incomplete")
 				} else {
 					observer.Terminate("completed")
+				}
+			}
+		}
+		if message != nil {
+			for _, block := range message.ContentBlocks {
+				if block.StreamingMeta != nil && !state.markedOutput[block.StreamingMeta.Index] {
+					index := block.StreamingMeta.Index
+					block.Extra = map[string]any{outputIndexExtraKey: index}
+					state.markedOutput[index] = true
 				}
 			}
 		}
@@ -224,6 +234,7 @@ func terminalStreamMessage(response *responseObject) (*schema.AgenticMessage, er
 	return &schema.AgenticMessage{
 		Role:         schema.AgenticRoleTypeAssistant,
 		ResponseMeta: responseMeta(response),
+		Extra:        applicationExtra(response),
 	}, nil
 }
 

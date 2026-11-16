@@ -33,6 +33,8 @@ type responseRequest struct {
 	Tools           []functionTool   `json:"tools,omitempty"`
 	ToolChoice      any              `json:"tool_choice,omitempty"`
 	User            string           `json:"user,omitempty"`
+	SafetyCheck     *safetyConfig    `json:"safety_check,omitempty"`
+	Title           *titleConfig     `json:"title,omitempty"`
 }
 
 type reasoningConfig struct {
@@ -50,13 +52,23 @@ type textFormat struct {
 }
 
 type inputItem struct {
-	Type      string        `json:"type,omitempty"`
-	Role      string        `json:"role,omitempty"`
-	Content   []contentPart `json:"content,omitempty"`
-	CallID    string        `json:"call_id,omitempty"`
-	Name      string        `json:"name,omitempty"`
-	Arguments string        `json:"arguments,omitempty"`
-	Output    []contentPart `json:"output,omitempty"`
+	raw         json.RawMessage
+	replayIndex int
+	Type        string        `json:"type,omitempty"`
+	Role        string        `json:"role,omitempty"`
+	Content     []contentPart `json:"content,omitempty"`
+	CallID      string        `json:"call_id,omitempty"`
+	Name        string        `json:"name,omitempty"`
+	Arguments   string        `json:"arguments,omitempty"`
+	Output      []contentPart `json:"output,omitempty"`
+}
+
+func (i inputItem) MarshalJSON() ([]byte, error) {
+	if i.raw != nil {
+		return i.raw, nil
+	}
+	type wireItem inputItem
+	return json.Marshal(wireItem(i))
 }
 
 type contentPart struct {
@@ -69,7 +81,7 @@ type contentPart struct {
 
 type functionTool struct {
 	Type        string          `json:"type"`
-	Name        string          `json:"name"`
+	Name        string          `json:"name,omitempty"`
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters,omitempty"`
 }
@@ -84,6 +96,7 @@ type responseObject struct {
 	Model             string             `json:"model"`
 	Output            []outputItem       `json:"output"`
 	Usage             *responseUsage     `json:"usage"`
+	Title             string             `json:"title"`
 }
 
 type responseError struct {
@@ -96,6 +109,7 @@ type incompleteDetails struct {
 }
 
 type outputItem struct {
+	raw       json.RawMessage
 	Type      string          `json:"type"`
 	ID        string          `json:"id"`
 	Status    string          `json:"status"`
@@ -107,10 +121,24 @@ type outputItem struct {
 	Action    json.RawMessage `json:"action"`
 }
 
+func (i *outputItem) UnmarshalJSON(data []byte) error {
+	type wireItem outputItem
+	var wire wireItem
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*i = outputItem(wire)
+	if i.Type == "web_search_call" {
+		i.raw = append(json.RawMessage(nil), data...)
+	}
+	return nil
+}
+
 type outputContent struct {
-	Type     string            `json:"type"`
-	Text     string            `json:"text"`
-	LogProbs []responseLogProb `json:"logprobs"`
+	Type        string            `json:"type"`
+	Text        string            `json:"text"`
+	LogProbs    []responseLogProb `json:"logprobs"`
+	Annotations []URLCitation     `json:"annotations"`
 }
 
 type responseLogProb struct {
@@ -135,7 +163,8 @@ type responseUsage struct {
 	OutputTokensDetails struct {
 		ReasoningTokens int `json:"reasoning_tokens"`
 	} `json:"output_tokens_details"`
-	TotalTokens int `json:"total_tokens"`
+	TotalTokens   int              `json:"total_tokens"`
+	ServerToolUse *ServerToolUsage `json:"server_tool_use"`
 
 	finalReceiptValid bool
 }
@@ -249,6 +278,22 @@ func buildResponseRequest(
 	if req.TopP != nil && (*req.TopP < 0 || *req.TopP > 1) {
 		return nil, conversionError(-1, -1, "top_p_out_of_range")
 	}
+	if specific != nil {
+		if err := applyApplication(req, specific.application); err != nil {
+			return nil, err
+		}
+	}
+	documentCount := 0
+	for _, item := range req.Input {
+		for _, part := range item.Content {
+			if part.Type == "input_file" {
+				documentCount++
+			}
+		}
+	}
+	if documentCount > 20 {
+		return nil, conversionError(-1, -1, "document_count_exceeded")
+	}
 	return req, nil
 }
 
@@ -324,6 +369,18 @@ func convertSystemOrUserMessage(
 				return nil, conversionError(messageIndex, blockIndex, err.Error())
 			}
 			content = append(content, part)
+		case schema.ContentBlockTypeUserInputFile:
+			if role != "user" {
+				return nil, conversionError(messageIndex, blockIndex, "file_role_unsupported")
+			}
+			if !supportsImageInput(modelID) {
+				return nil, conversionError(messageIndex, blockIndex, "file_model_unsupported")
+			}
+			fileID, _ := block.Extra[documentFileIDExtraKey].(string)
+			if block.UserInputFile == nil || block.UserInputFile.URL != "" || block.UserInputFile.Base64Data != "" || !validFileID(fileID) {
+				return nil, conversionError(messageIndex, blockIndex, "document_file_id_required")
+			}
+			content = append(content, contentPart{Type: "input_file", FileID: fileID})
 		case schema.ContentBlockTypeFunctionToolResult:
 			if role != "user" {
 				return nil, conversionError(messageIndex, blockIndex, "tool_result_role_unsupported")
@@ -343,7 +400,17 @@ func convertSystemOrUserMessage(
 }
 
 func convertAssistantMessage(messageIndex int, message *schema.AgenticMessage) ([]inputItem, error) {
-	items := make([]inputItem, 0, len(message.ContentBlocks))
+	serverItems, err := replayWebToolCalls(message.Extra)
+	if err != nil {
+		return nil, err
+	}
+	blocks := message.ContentBlocks
+	if len(serverItems) > 0 {
+		blocks = restoreReplayBlockOrder(blocks)
+	}
+	items := make([]inputItem, 0, len(message.ContentBlocks)+len(serverItems))
+	nextServer := 0
+	previousOutputIndex := -1
 	text := make([]contentPart, 0, 1)
 	flushText := func() {
 		if len(text) == 0 {
@@ -352,9 +419,21 @@ func convertAssistantMessage(messageIndex int, message *schema.AgenticMessage) (
 		items = append(items, inputItem{Type: "message", Role: "assistant", Content: text})
 		text = nil
 	}
-	for blockIndex, block := range message.ContentBlocks {
+	for blockIndex, block := range blocks {
 		if block == nil {
 			return nil, conversionError(messageIndex, blockIndex, "block_nil")
+		}
+		if len(serverItems) > 0 {
+			index, known := originalOutputIndex(block)
+			if known && index != previousOutputIndex {
+				flushText()
+				previousOutputIndex = index
+			}
+			for nextServer < len(serverItems) && (!known || serverItems[nextServer].replayIndex <= index) {
+				flushText()
+				items = append(items, serverItems[nextServer])
+				nextServer++
+			}
 		}
 		switch block.Type {
 		case schema.ContentBlockTypeAssistantGenText:
@@ -387,6 +466,7 @@ func convertAssistantMessage(messageIndex int, message *schema.AgenticMessage) (
 		}
 	}
 	flushText()
+	items = append(items, serverItems[nextServer:]...)
 	return items, nil
 }
 
@@ -622,7 +702,15 @@ func responseToAgentic(response *responseObject) (*schema.AgenticMessage, error)
 		return nil, &ProtocolError{ReasonCode: "response_status_not_terminal"}
 	}
 	message := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	hasServerItems := false
 	for _, item := range response.Output {
+		if item.Type == "web_search_call" {
+			hasServerItems = true
+			break
+		}
+	}
+	for outputIndex, item := range response.Output {
+		firstBlock := len(message.ContentBlocks)
 		switch item.Type {
 		case "reasoning":
 			for _, content := range item.Content {
@@ -662,23 +750,30 @@ func responseToAgentic(response *responseObject) (*schema.AgenticMessage, error)
 		default:
 			continue
 		}
+		if hasServerItems {
+			for _, block := range message.ContentBlocks[firstBlock:] {
+				block.Extra = map[string]any{outputIndexExtraKey: outputIndex}
+				block.StreamingMeta = &schema.StreamingMeta{Index: outputIndex}
+			}
+		}
 	}
 	message.ResponseMeta = responseMeta(response)
+	message.Extra = applicationExtra(response)
 	return message, nil
 }
 
 func responseMeta(response *responseObject) *schema.AgenticResponseMeta {
 	logProbs := responseLogProbs(response)
+	ext := applicationMetadata(response)
+	ext.ResponseID = response.ID
+	ext.Status = response.Status
+	ext.FinishReason = finishReason(response)
+	ext.IncompleteReason = incompleteReason(response)
+	ext.ErrorCode = responseErrorCode(response)
+	ext.Model = response.Model
+	ext.LogProbs = logProbs
 	meta := &schema.AgenticResponseMeta{
-		Extension: &ResponseMetaExtension{
-			ResponseID:       response.ID,
-			Status:           response.Status,
-			FinishReason:     finishReason(response),
-			IncompleteReason: incompleteReason(response),
-			ErrorCode:        responseErrorCode(response),
-			Model:            response.Model,
-			LogProbs:         logProbs,
-		},
+		Extension: ext,
 	}
 	// A successful terminal status does not turn omitted/null counters into
 	// known zero usage. Preserve its content and status, but publish a receipt

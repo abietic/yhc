@@ -39,6 +39,13 @@ func (m *Model) PrepareBudgetStream(ctx context.Context, input []*schema.Agentic
 	if err != nil {
 		return nil, err
 	}
+	if req.ToolChoice != "none" {
+		for _, tool := range req.Tools {
+			if tool.Type != "function" {
+				return nil, providercost.ErrUnsupported
+			}
+		}
+	}
 	switch req.Model {
 	case "deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro":
 	default:

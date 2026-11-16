@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-10-25
+**Last verified:** 2026-11-16
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -376,14 +376,72 @@ history snipping, route resolution, max effort, and the actual Responses wire
 while preserving the current image bytes and text/image order.
 
 The same package exposes a separate project-owned DeepSeek
-[`FilesClient`](../../../engine/provider/agenticdeepseek/files.go) for image
-resource lifecycle. It appends `/files` to the validated API root and supports
-bounded `user_data` upload, cursor listing, metadata retrieval, and deletion.
-Uploads require the exact reader size, reject files above 64 MiB before
-dispatch, and optionally set a creation-anchored lifetime from one hour to 30
-days. This resource client shares typed, bounded, redacted API and transport
+[`FilesClient`](../../../engine/provider/agenticdeepseek/files.go) for image and
+document resource lifecycle. It appends `/files` to the validated API root and
+supports bounded upload, cursor listing, metadata retrieval, and deletion.
+`UploadFileParams.Purpose` defaults to `user_data`; the explicit
+`text_recognition` and `rich_layout_recognition` purposes enable the
+[document parsing API](https://api-docs.deepseek.com/guides/document_parsing/).
+The form sends `purpose` before the file. Uploads require the exact reader size:
+images allow 64 MiB, other `user_data` files 32 MiB, and parsed documents
+100 MiB. Large `user_data` payloads must have a supported image signature to
+use the image limit. Optional creation-anchored lifetime remains one hour to
+30 days. Direct Eino callers use `NewFileIDDocumentBlock` to send ordered
+`input_file` references; URL/base64 documents, system-role documents, non-Flash
+models, and more than 20 document references fail locally. The service validates
+actual formats, page count, parsed-text size, and account concurrency. Parsing
+can finish and be billed after a disconnect; the client never retries uploads
+automatically. This resource client shares typed, bounded, redacted API and transport
 failures with the Responses adapter but does not become conversation or Session
 state; callers remain responsible for deleting files they no longer need.
+
+The [November 13 application APIs](https://api-docs.deepseek.com/updates/)
+are adapted through the project-owned Eino boundary. On November 15, the latest
+released Eino `agenticdeepseek` was still `v0.1.1`; the inspected main snapshot
+`fa3cb9b7ad6a` also used the OpenAI Chat Completions ACL, without the new typed
+application extensions. The adoption decision is `adapt`: retain the native
+Responses adapter and existing Eino version rather than replace them with that
+less capable transport.
+
+[`ApplicationConfig`](../../../engine/provider/agenticdeepseek/application.go)
+and `WithApplicationConfig` explicitly enable `deepseek_web_search`,
+`deepseek_read_url`, `safety_check` (`low`/`high`), and conversation titles on
+Flash. An empty per-call config disables inherited application settings. These
+options also pass through `provider.NewChatModel`'s classic Eino bridge. They
+are SDK opt-ins; CLI, TUI, ACP, and Desktop settings do not automatically enable
+them, upload documents, or replace YHC's local WebSearch/WebFetch tools.
+Web search and URL reading may be enabled together alongside local Eino
+functions; only local function calls enter YHC's tool dispatcher.
+
+Generate and terminal SSE metadata retain the title, URL citations with Unicode
+code-point offsets and output/content indexes, billed search/fetch/image-search
+counts, and opaque server-tool items. These items remain metadata and never
+become locally dispatched function calls. The classic message bridge preserves
+only the DeepSeek public application metadata for JSON persistence and replay;
+`kind`, `page`, `signature`, error, and unknown server fields survive. Canonical
+text and function arguments remain authoritative. Output indexes retained on
+content blocks keep raw server items interleaved with text and local function
+calls after JSON persistence, without reordering caller-owned content;
+they cannot inject a client `function_call` or grant private continuation reuse.
+
+The application route rejects incompatible structured output, top logprobs,
+forced function choices, and reserved web-tool function names before dispatch.
+With high safety review, Stream buffers at most 32 MiB of serialized chunks
+until the terminal verdict, suppresses refused content, and releases no partial
+content on failure or truncation. Other streams retain incremental delivery.
+Callers abandoning a review must cancel the request context; Eino reader Close
+alone is not an HTTP cancellation hook.
+Server-tool counts are separate from model tokens and are not a monetary
+receipt. `PrepareBudgetStream` rejects enabled server tools because token-only
+admission cannot bound their extra charges or multi-step inference; explicit
+`tool_choice: "none"` disables these tools and remains admissible. Parsed-file
+fees likewise remain the explicit resource caller's responsibility.
+
+`latest_reminder` is excluded because the official protocol does not accept it
+in Responses. Standalone OCR output, ASR, and TTS are separate service APIs with
+no current coding-agent consumer and are outside this model-adapter delivery.
+Verification uses local HTTP/SSE fixtures, including classic bridge replay and
+refusal handling; it does not establish live-provider or UI acceptance.
 
 GLM uses the project-owned
 [`agenticglm`](../../../engine/provider/agenticglm/model.go) Eino adapter. The

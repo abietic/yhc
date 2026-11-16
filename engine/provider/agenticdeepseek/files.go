@@ -17,20 +17,23 @@ import (
 )
 
 const (
-	maxFileUploadBytes   int64 = 64 << 20
-	maxFileNameRunes           = 512
-	minFileExpirySeconds       = 3600
-	maxFileExpirySeconds       = 2592000
-	maxFilesListLimit          = 1000
-	maxFileIDBytes             = 512
+	maxFileUploadBytes     int64 = 64 << 20
+	maxDocumentUploadBytes int64 = 100 << 20
+	maxFileNameRunes             = 512
+	minFileExpirySeconds         = 3600
+	maxFileExpirySeconds         = 2592000
+	maxFilesListLimit            = 1000
+	maxFileIDBytes               = 512
 )
 
 // FilePurpose is the provider-owned purpose assigned to an uploaded file.
 type FilePurpose string
 
 const (
-	// FilePurposeUserData is the only purpose accepted by DeepSeek Files API.
-	FilePurposeUserData FilePurpose = "user_data"
+	// FilePurposeUserData stores images, text, spreadsheets and ebooks.
+	FilePurposeUserData              FilePurpose = "user_data"
+	FilePurposeTextRecognition       FilePurpose = "text_recognition"
+	FilePurposeRichLayoutRecognition FilePurpose = "rich_layout_recognition"
 )
 
 // FileOrder controls Files API creation-time ordering.
@@ -53,10 +56,12 @@ type FilesConfig struct {
 	Timeout    time.Duration
 }
 
-// UploadFileParams describes one bounded image upload. Size must be the exact
-// number of bytes exposed by Content so the provider's 64 MiB limit can be
-// enforced before network dispatch.
+// UploadFileParams describes one bounded upload. Size must be exact. Parsing
+// documents allows 100 MiB; user_data allows 64 MiB images or 32 MiB other files.
 type UploadFileParams struct {
+	// Purpose defaults to user_data for compatibility. Document parsing must
+	// be explicit because successful parsing is billed per page.
+	Purpose  FilePurpose
 	Filename string
 	Content  io.Reader
 	Size     int64
@@ -74,7 +79,7 @@ type ListFilesOptions struct {
 	Purpose FilePurpose
 }
 
-// FileObject is a DeepSeek Files API image resource.
+// FileObject is a DeepSeek Files API resource.
 type FileObject struct {
 	ID        string      `json:"id"`
 	Object    string      `json:"object"`
@@ -142,7 +147,8 @@ func NewFilesClient(config *FilesConfig) (*FilesClient, error) {
 	return &FilesClient{httpClient: httpClient, endpoint: endpoint, apiKey: apiKey}, nil
 }
 
-// Upload creates one Files API image resource using multipart/form-data.
+// Upload creates one Files API resource using multipart/form-data. Parsed
+// documents return only after parsing completes; a timeout is not a safe retry.
 func (c *FilesClient) Upload(ctx context.Context, params UploadFileParams) (*FileObject, error) {
 	if err := validateUploadFileParams(params); err != nil {
 		return nil, err
@@ -150,7 +156,11 @@ func (c *FilesClient) Upload(ctx context.Context, params UploadFileParams) (*Fil
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("purpose", string(FilePurposeUserData)); err != nil {
+	purpose := params.Purpose
+	if purpose == "" {
+		purpose = FilePurposeUserData
+	}
+	if err := writer.WriteField("purpose", string(purpose)); err != nil {
 		return nil, &ProtocolError{ReasonCode: "files_multipart_build_failed"}
 	}
 	if params.ExpiresAfterSeconds != 0 {
@@ -168,6 +178,14 @@ func (c *FilesClient) Upload(ctx context.Context, params UploadFileParams) (*Fil
 	written, err := io.CopyN(part, params.Content, params.Size)
 	if err != nil || written != params.Size {
 		return nil, filesValidationError("file_content_short")
+	}
+	if purpose == FilePurposeUserData && params.Size > 32<<20 {
+		// The service detects actual content, so filenames cannot grant the
+		// larger image limit. Inspect the written payload rather than its name.
+		payload := body.Bytes()[body.Len()-int(params.Size):]
+		if !supportedImageMIME(http.DetectContentType(payload)) {
+			return nil, filesValidationError("file_size_exceeded")
+		}
 	}
 	extra, extraErr := io.CopyN(io.Discard, params.Content, 1)
 	if extra > 0 {
@@ -369,7 +387,15 @@ func validateUploadFileParams(params UploadFileParams) error {
 	if params.Size <= 0 {
 		return filesValidationError("file_size_invalid")
 	}
-	if params.Size > maxFileUploadBytes {
+	limit := maxFileUploadBytes
+	switch params.Purpose {
+	case "", FilePurposeUserData:
+	case FilePurposeTextRecognition, FilePurposeRichLayoutRecognition:
+		limit = maxDocumentUploadBytes
+	default:
+		return filesValidationError("file_purpose_invalid")
+	}
+	if params.Size > limit {
 		return filesValidationError("file_size_exceeded")
 	}
 	if params.ExpiresAfterSeconds != 0 &&
@@ -405,7 +431,7 @@ func listFilesQuery(options *ListFilesOptions) (url.Values, error) {
 	}
 	switch options.Purpose {
 	case "":
-	case FilePurposeUserData:
+	case FilePurposeUserData, FilePurposeTextRecognition, FilePurposeRichLayoutRecognition:
 		query.Set("purpose", string(options.Purpose))
 	default:
 		return nil, filesValidationError("file_purpose_invalid")
@@ -415,10 +441,14 @@ func listFilesQuery(options *ListFilesOptions) (url.Values, error) {
 
 func validateFileObject(object FileObject) error {
 	if !validFileID(object.ID) || object.Object != "file" || object.Bytes < 0 ||
-		object.CreatedAt <= 0 || strings.TrimSpace(object.Filename) == "" || object.Purpose != FilePurposeUserData {
+		object.CreatedAt <= 0 || strings.TrimSpace(object.Filename) == "" || !validFilePurpose(object.Purpose) {
 		return &ProtocolError{ReasonCode: "files_object_invalid"}
 	}
 	return nil
+}
+
+func validFilePurpose(purpose FilePurpose) bool {
+	return purpose == FilePurposeUserData || purpose == FilePurposeTextRecognition || purpose == FilePurposeRichLayoutRecognition
 }
 
 func validFileID(fileID string) bool {
