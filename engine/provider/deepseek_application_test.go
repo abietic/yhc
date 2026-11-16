@@ -43,9 +43,9 @@ func TestDeepSeekApplicationClassicBridgePreservesFunctionOrder(t *testing.T) {
 			opts := []model.Option{agenticdeepseek.WithApplicationConfig(agenticdeepseek.ApplicationConfig{ReadURL: true}), model.WithTools([]*schema.ToolInfo{{Name: "lookup"}})}
 			var out *schema.Message
 			if stream {
-				sr, err := m.Stream(t.Context(), input, opts...)
-				if err != nil {
-					t.Fatal(err)
+				sr, streamErr := m.Stream(t.Context(), input, opts...)
+				if streamErr != nil {
+					t.Fatal(streamErr)
 				}
 				defer sr.Close()
 				var chunks []*schema.Message
