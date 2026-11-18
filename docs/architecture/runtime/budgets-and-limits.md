@@ -1,7 +1,7 @@
 # Budgets and Limits
 
 **Status:** current
-**Last verified:** 2026-10-26
+**Last verified:** 2026-11-18
 
 > **Ownership:** current enforcement and wiring state of turn, invocation usage, token, task, USD, context, and model-output limits
 
@@ -188,8 +188,30 @@ resume receipts apply. Budgeted WebSearch without a request-price route falls
 back to DuckDuckGo without consuming a denied model admission. No price card or
 limit is installed automatically in the TUI or standalone MCP process.
 
+Standalone services with variable usage can use a `metered` price route.
+The route sets the billing `unit`, decimal `amount`, and integer `per`
+denominator. Supported units are `audio_second`, `billing_character`, and
+`page`. Set all three token rates to zero for these routes and configure a
+positive cost limit and an `upper_bound` price card. A card containing only
+standalone routes can omit the model output cap.
+
+A Go caller supplies a proved maximum quantity in
+[`ProviderUsageDescriptor.MeteredBound`](../../../engine/execution/provider_usage.go)
+before dispatch. The collector reserves that amount against the same monetary
+limit as token and per-request calls. The caller settles the known quantity
+with `CompleteMeteredUsage`. The provider adapter owns rounding audio to
+billable seconds, counting billable characters, and establishing page counts.
+The collector applies the configured rate and rounds up to its 12-decimal
+precision. It records the quantity and reservation alongside the call and in
+optional checkpoints. Unknown usage or a receipt outside the admitted unit or
+quantity retains the reservation and stops budgeted dispatch.
+
+This is an accounting API for Go callers. Standalone speech and OCR transport
+and Desktop controls require their own integration. Model-internal web tools
+still require a provider-enforced bound before strict reservation is possible.
+
 The [Harbor validator](../../../scripts/terminal_bench/native_cost.py)
-reconciles request units, fixed fees, and request reservations separately from
+reconciles standalone quantities, fees, and reservations separately from
 tokens, including continuation segments. A malformed supplied ledger cannot be
 downgraded into a trusted legacy aggregate to claim complete cost evidence.
 

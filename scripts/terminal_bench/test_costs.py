@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 import json
 import tempfile
 import subprocess
@@ -7,7 +8,7 @@ from uuid import uuid4
 from pathlib import Path
 
 from scripts.terminal_bench.report_costs import build_report, hydrate_continuation
-from scripts.terminal_bench.usage import sum_usage
+from scripts.terminal_bench.usage import sum_usage, validated_usage
 
 
 class CostTests(unittest.TestCase):
@@ -116,6 +117,47 @@ class CostTests(unittest.TestCase):
             "metadata": {"yhc": {"continuation": {"segments": segments,
                 "history": [{"usage": usage} for usage in usages]}}}}}))
         return {**self.row, "trial_path": directory, "usage": usages[-1] if usages else None}
+
+    def test_metered_cost_reconciles_and_requires_matching_units_and_bounds(self):
+        usage = self.native_usage()
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens", "cached_prompt_tokens", "reasoning_tokens"):
+            usage[key] = 0
+        cost = usage["cost"]
+        cost["known_estimated_amount"] = "0.000216666667"
+        cost["limit_mode"] = "pre_dispatch_reservation"
+        cost["price_card"]["window"] = "upper_bound"
+        cost["price_card"]["routes"][0].update(
+            model="asr", api_model="asr", cached_input_per_million="0",
+            uncached_input_per_million="0", output_per_million="0",
+            metered=dict(unit="audio_second", amount="0.78", per=3600),
+        )
+        cost["reservation"] = dict(outstanding_amount="0.000000000000",
+                                   retained_amount="0.000000000000",
+                                   peak_exposure_amount="0.000433333334", bound_violations=0)
+        reservation = dict(provider="agenticdeepseek", model="asr", input_tokens=0,
+                           output_tokens=0, reserved_amount="0.000433333334",
+                           retained_amount="0.000000000000",
+                           metered_bound=dict(unit="audio_second", quantity=2))
+        tokens = {key: 0 for key in ("prompt_tokens", "completion_tokens", "total_tokens",
+                                     "cached_prompt_tokens", "uncached_prompt_tokens", "reasoning_tokens")}
+        record = dict(ordinal=1, call_id=str(uuid4()), logical_round_id="unknown",
+                      logical_request_id="unknown", model_attempt_id="unknown", attempt_index=0,
+                      retry_index=0, provider="agenticdeepseek", requested_model="asr",
+                      resolved_model="unknown", source="other", role="other", effort="unknown",
+                      state="known", started_offset_ms=0, provider_duration_ms=1, tokens=tokens,
+                      metered=dict(unit="audio_second", quantity=1),
+                      cost=dict(state="priced", price_index=0, estimated_amount=cost["known_estimated_amount"],
+                                reservation=reservation))
+        usage["call_ledger"] = dict(version=1, segment_id=cost["segment_id"], dropped_records=0, records=[record])
+        valid = validated_usage(usage)
+        self.assertTrue(valid["cost_complete"])
+        self.assertEqual(valid["call_ledger"]["records"][0]["metered"], record["metered"])
+        for field, value in (("unit", "page"), ("quantity", 3)):
+            changed = deepcopy(usage)
+            changed["call_ledger"]["records"][0]["metered"][field] = value
+            self.assertFalse(validated_usage(changed)["cost_complete"])
+        no_ledger = {key: value for key, value in usage.items() if key != "call_ledger"}
+        self.assertFalse(validated_usage(no_ledger)["cost_complete"])
 
     def test_incomplete_continuation_retains_native_cost_as_lower_bound(self):
         usage = self.native_usage()

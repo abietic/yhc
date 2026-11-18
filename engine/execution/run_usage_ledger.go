@@ -49,6 +49,7 @@ type RunUsageRecord struct {
 	Tokens                 *RunUsageCallTokens    `json:"tokens"`
 	Cost                   *RunCallCost           `json:"cost,omitempty"`
 	Requests               *uint64                `json:"requests,omitempty"`
+	Metered                *MeteredUsage          `json:"metered,omitempty"`
 	CacheTTL               string                 `json:"cache_ttl,omitempty"`
 	Diagnostics            *providerdiag.Snapshot `json:"diagnostics,omitempty"`
 }
@@ -206,7 +207,7 @@ func (c *runUsageCall) ObserveProviderCacheWrite(tokens int, ttl string) {
 	r := c.owner
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if c.settled || c.request {
+	if c.settled || c.request || c.meteredBound != (MeteredUsage{}) {
 		return
 	}
 	if tokens < 0 || c.cacheWriteSeen && c.cacheWriteTokens != tokens {
