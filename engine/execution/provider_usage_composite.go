@@ -46,6 +46,9 @@ func (c *combinedProviderUsage) ProviderCostReservationPolicy() (bool, int) {
 
 func (c *combinedProviderUsage) NewLogicalRoundID() string { return c.second.NewLogicalRoundID() }
 func (c *combinedProviderUsage) AdmitProviderUsage(ctx context.Context, d ProviderUsageDescriptor) (ProviderUsageCall, error) {
+	if d.MeteredBound != (MeteredUsage{}) && !c.RequestUsageAvailable(d) {
+		return nil, &ProviderUsageTerminalError{Err: ErrRunUsageUnknown}
+	}
 	a, err := c.first.AdmitProviderUsage(ctx, d)
 	if err != nil {
 		return nil, err
@@ -68,6 +71,10 @@ type combinedProviderUsageCall struct{ first, second ProviderUsageCall }
 
 func (c *combinedProviderUsageCall) CompleteRequestUsage(billable bool) error {
 	return errors.Join(CompleteRequestUsage(c.first, billable), CompleteRequestUsage(c.second, billable))
+}
+
+func (c *combinedProviderUsageCall) CompleteMeteredUsage(usage MeteredUsage) error {
+	return errors.Join(CompleteMeteredUsage(c.first, usage), CompleteMeteredUsage(c.second, usage))
 }
 
 func (c *combinedProviderUsageCall) ProviderCallID() string { return c.second.ProviderCallID() }

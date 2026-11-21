@@ -32,6 +32,15 @@ type RunPriceRoute struct {
 	// PerRequest switches this route to standalone request billing. All token
 	// rates must be zero; nil retains the existing token-only schema.
 	PerRequest *string `json:"per_request,omitempty"`
+	// Metered prices one standalone billing unit family with a fixed denominator.
+	Metered *RunUnitPrice `json:"metered,omitempty"`
+}
+
+// RunUnitPrice charges Amount in the price card currency per Per billing units.
+type RunUnitPrice struct {
+	Unit   BillingUnit `json:"unit"`
+	Amount string      `json:"amount"`
+	Per    uint64      `json:"per"`
 }
 
 type RunCallCost struct {
@@ -42,13 +51,14 @@ type RunCallCost struct {
 }
 
 type RunCallReservation struct {
-	Provider       string `json:"provider"`
-	Model          string `json:"model"`
-	InputTokens    uint64 `json:"input_tokens"`
-	OutputTokens   uint64 `json:"output_tokens"`
-	ReservedAmount string `json:"reserved_amount"`
-	RetainedAmount string `json:"retained_amount"`
-	Requests       uint64 `json:"requests,omitempty"`
+	Provider       string        `json:"provider"`
+	Model          string        `json:"model"`
+	InputTokens    uint64        `json:"input_tokens"`
+	OutputTokens   uint64        `json:"output_tokens"`
+	ReservedAmount string        `json:"reserved_amount"`
+	RetainedAmount string        `json:"retained_amount"`
+	Requests       uint64        `json:"requests,omitempty"`
+	MeteredBound   *MeteredUsage `json:"metered_bound,omitempty"`
 }
 
 type RunCostReservationSnapshot struct {
@@ -75,6 +85,7 @@ type runCostState struct {
 	card                        RunPriceCard
 	prices                      [][3]*big.Int
 	requestPrices               []*big.Int
+	unitPrices                  []*big.Int
 	amount                      big.Int // 10^-12 currency units, exact for rates with six decimals.
 	limit                       *big.Int
 	priced, unpriced            uint64
@@ -126,7 +137,7 @@ func compileRunPriceCard(card RunPriceCard) (*runCostState, error) {
 		return nil, fmt.Errorf("invalid price card window")
 	}
 	c := &runCostState{card: card}
-	c.card.Routes = append([]RunPriceRoute(nil), card.Routes...)
+	c.card.Routes = cloneRunPriceRoutes(card.Routes)
 	seen := make(map[[2]string]bool)
 	for _, route := range card.Routes {
 		key := [2]string{route.Provider, route.Model}
@@ -149,10 +160,17 @@ func compileRunPriceCard(card RunPriceCard) (*runCostState, error) {
 			if err != nil || prices[0].Sign() != 0 || prices[1].Sign() != 0 || prices[2].Sign() != 0 {
 				return nil, fmt.Errorf("request routes require an explicit nonnegative fee and zero token rates")
 			}
-			fee := *route.PerRequest
-			c.card.Routes[len(c.prices)-1].PerRequest = &fee
 		}
 		c.requestPrices = append(c.requestPrices, requestPrice)
+		var unitPrice *big.Int
+		if meter := route.Metered; meter != nil {
+			unitPrice, err = costDecimal(meter.Amount, 12)
+			if err != nil || !meter.Unit.valid() || meter.Per == 0 || route.PerRequest != nil ||
+				prices[0].Sign() != 0 || prices[1].Sign() != 0 || prices[2].Sign() != 0 {
+				return nil, fmt.Errorf("metered routes require a supported unit, positive denominator, nonnegative fee and zero token rates")
+			}
+		}
+		c.unitPrices = append(c.unitPrices, unitPrice)
 	}
 	return c, nil
 }
@@ -205,6 +223,22 @@ func (c *runCostState) route(d ProviderUsageDescriptor) int {
 	return -1
 }
 
+func (c *runCostState) matchesUsage(index int, d ProviderUsageDescriptor) bool {
+	route := c.card.Routes[index]
+	if d.MeteredBound != (MeteredUsage{}) {
+		return route.Metered != nil && route.Metered.Unit == d.MeteredBound.Unit
+	}
+	return route.Metered == nil && d.Request == (route.PerRequest != nil)
+}
+
+func (c *runCostState) meteredAmount(index int, quantity uint64) *big.Int {
+	product := new(big.Int).Mul(c.unitPrices[index], new(big.Int).SetUint64(quantity))
+	denominator := new(big.Int).SetUint64(c.card.Routes[index].Metered.Per)
+	// Round fractional accounting units up for both admission and settlement.
+	product.Add(product, new(big.Int).Sub(denominator, big.NewInt(1)))
+	return product.Quo(product, denominator)
+}
+
 func (r *RunUsage) costSnapshot() *RunCostSnapshot {
 	if r.cost == nil {
 		return nil
@@ -226,6 +260,14 @@ func (r *RunUsage) costSnapshot() *RunCostSnapshot {
 func (r *RunUsage) reserveCost(d ProviderUsageDescriptor, index int) (*RunCallReservation, *big.Int, error) {
 	if !r.limits.ReserveCostBeforeDispatch {
 		return nil, nil, nil
+	}
+	if d.MeteredBound != (MeteredUsage{}) {
+		amount := r.cost.meteredAmount(index, d.MeteredBound.Quantity)
+		if err := r.reserveAmount(amount); err != nil {
+			return nil, amount, err
+		}
+		bound := d.MeteredBound
+		return &RunCallReservation{Provider: d.Provider, Model: r.cost.card.Routes[index].APIModel, MeteredBound: &bound, ReservedAmount: costAmount(amount), RetainedAmount: costAmount(new(big.Int))}, amount, nil
 	}
 	if d.Request {
 		if index < 0 || r.cost.requestPrices[index] == nil || d.CostBound != nil {
@@ -268,7 +310,7 @@ func (r *RunUsage) reserveAmount(amount *big.Int) error {
 	return nil
 }
 
-func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool, requests uint64) error {
+func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool, requests uint64, meter *MeteredUsage) error {
 	r := c.owner
 	if r.cost == nil {
 		return nil
@@ -279,7 +321,8 @@ func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool, re
 		reservation = &copied
 		r.cost.outstanding.Sub(&r.cost.outstanding, c.reserved)
 	}
-	violation := known && reservation != nil && (values.PromptTokens > reservation.InputTokens || values.CompletionTokens > reservation.OutputTokens)
+	violation := known && reservation != nil && (values.PromptTokens > reservation.InputTokens || values.CompletionTokens > reservation.OutputTokens ||
+		meter != nil && meter.Quantity > reservation.MeteredBound.Quantity)
 	if violation {
 		known = false
 		r.cost.boundViolations++
@@ -296,6 +339,9 @@ func (c *runUsageCall) settleCost(values RunUsageTotals, known, release bool, re
 		}
 		if fee := r.cost.requestPrices[c.priceIndex]; fee != nil {
 			amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(requests), fee))
+		}
+		if meter != nil {
+			amount.Add(amount, r.cost.meteredAmount(c.priceIndex, meter.Quantity))
 		}
 		r.cost.amount.Add(&r.cost.amount, amount)
 		r.cost.priced++
@@ -324,6 +370,10 @@ func cloneRunPriceRoutes(routes []RunPriceRoute) []RunPriceRoute {
 		if result[i].PerRequest != nil {
 			fee := *result[i].PerRequest
 			result[i].PerRequest = &fee
+		}
+		if result[i].Metered != nil {
+			price := *result[i].Metered
+			result[i].Metered = &price
 		}
 	}
 	return result

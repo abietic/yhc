@@ -5913,7 +5913,7 @@ privacy:
       match_sha256: 93883450e504b26a6f1f77ed4d957ba588646096e67f7267357a1f056b30d029
       purpose: synthetic-security-fixture
     - path: scripts/terminal_bench/test_costs.py
-      line: 360
+      line: 402
       rule_id: private-url
       match_sha256: 72d2944571b59634ff4ae25dd13efdb204a2dc9abd981df1fee50e213cd787bf
       purpose: synthetic-security-fixture

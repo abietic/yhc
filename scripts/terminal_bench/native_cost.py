@@ -10,6 +10,21 @@ from uuid import UUID
 
 PROVIDERS = {"agenticdeepseek", "agenticglm", "agentickimi", "agenticclaude", "agenticgemini",
              "agenticopenai", "agenticark", "agenticqwen"}
+BILLING_UNITS = ("audio_second", "billing_character", "page")
+
+
+def validated_meter(value: object, minimum: int = 0) -> bool:
+    return (isinstance(value, dict) and set(value) == {"unit", "quantity"}
+            and value["unit"] in BILLING_UNITS and type(value["quantity"]) is int
+            and minimum <= value["quantity"] <= 2**64 - 1)
+
+
+def _metered_amount(price: dict, meter: object) -> Decimal:
+    if not validated_meter(meter) or meter["unit"] != price["unit"]:
+        raise ValueError("Metered usage unit does not match the price card")
+    # Match the Go ledger's ceiling in integer units of 10^-12 currency.
+    numerator = int(Decimal(price["amount"]).scaleb(12)) * meter["quantity"]
+    return Decimal((numerator + price["per"] - 1) // price["per"]).scaleb(-12)
 
 
 def decimal_amount(value: object, places: int = 12) -> str:
@@ -30,7 +45,7 @@ def _model_label(value: object) -> bool:
 
 def _reservation(value: object) -> dict | None:
     keys = {"provider", "model", "input_tokens", "output_tokens", "reserved_amount", "retained_amount"}
-    if not isinstance(value, dict) or set(value) not in (keys, keys | {"requests"}):
+    if not isinstance(value, dict) or set(value) not in (keys, keys | {"requests"}, keys | {"metered_bound"}):
         return None
     if (not isinstance(value["provider"], str) or value["provider"] not in PROVIDERS
             or not _model_label(value["model"]) or value["model"] == "unknown"
@@ -42,6 +57,9 @@ def _reservation(value: object) -> dict | None:
         return None
     if "requests" in value:
         if type(value["requests"]) is not int or value["requests"] != 1 or value["input_tokens"] or value["output_tokens"]:
+            return None
+    elif "metered_bound" in value:
+        if not validated_meter(value["metered_bound"], 1) or value["input_tokens"] or value["output_tokens"]:
             return None
     elif not value["input_tokens"] or not value["output_tokens"]:
         return None
@@ -81,7 +99,7 @@ def validate_price_card(card: object) -> dict:
     seen = set()
     route_keys = {"provider", "model", "cached_input_per_million", "uncached_input_per_million", "output_per_million"}
     for route in routes:
-        if not isinstance(route, dict) or not route_keys <= set(route) or set(route) - route_keys - {"api_model", "per_request"}:
+        if not isinstance(route, dict) or not route_keys <= set(route) or set(route) - route_keys - {"api_model", "per_request", "metered"}:
             raise ValueError("Invalid public price route")
         model = route["model"]
         if (not isinstance(route["provider"], str) or route["provider"] not in PROVIDERS or not isinstance(model, str) or model == "unknown"
@@ -99,7 +117,17 @@ def validate_price_card(card: object) -> dict:
             decimal_amount(route["per_request"])
             if any(Decimal(route[rate]) for rate in route_keys - {"provider", "model"}):
                 raise ValueError("Request routes require zero token rates")
-    return {**card, "routes": [dict(route) for route in routes]}
+        if "metered" in route:
+            meter = route["metered"]
+            if (not isinstance(meter, dict) or set(meter) != {"unit", "amount", "per"}
+                    or meter["unit"] not in BILLING_UNITS or type(meter["per"]) is not int
+                    or not 1 <= meter["per"] <= 2**64 - 1 or "per_request" in route
+                    or any(Decimal(route[rate]) for rate in route_keys - {"provider", "model"})):
+                raise ValueError("Invalid metered price route")
+            decimal_amount(meter["amount"])
+    return {**card, "routes": [
+        {**route, "metered": dict(route["metered"])} if "metered" in route else dict(route)
+        for route in routes]}
 
 
 def validated_cost(value: object, usage: dict) -> dict | None:
@@ -162,6 +190,7 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
             if value is None:
                 return False
             index = value["price_index"]
+            route = None
             strict = cost["limit_mode"] == "pre_dispatch_reservation"
             if (index >= len(cost["price_card"]["routes"])
                     or (strict or "reservation" in cost) and index < 0):
@@ -170,6 +199,15 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
                 route = cost["price_card"]["routes"][index]
                 if route["provider"] != record["provider"] or route["model"] != record["requested_model"]:
                     return False
+            meter_price = route.get("metered") if route is not None else None
+            meter = record.get("metered")
+            if meter_price is not None:
+                if not strict or ("metered" in record) != (record["state"] == "known"):
+                    return False
+                if meter is not None and (not validated_meter(meter) or meter["unit"] != meter_price["unit"]):
+                    return False
+            elif "metered" in record:
+                return False
             if value["state"] == "priced":
                 tokens = record["tokens"]
                 expected = sum(Decimal(tokens[token]) * Decimal(route[rate]) for token, rate in (
@@ -182,6 +220,10 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
                     expected += Decimal(record["requests"]) * Decimal(route["per_request"])
                 elif "requests" in record:
                     return False
+                if meter_price is not None:
+                    if any(tokens.values()):
+                        return False
+                    expected += _metered_amount(meter_price, meter)
                 if expected != Decimal(value["estimated_amount"]):
                     return False
                 if "reservation" in cost:
@@ -209,6 +251,15 @@ def reconcile_call_costs(cost: dict, ledger: dict) -> bool:
                         return False
                     bound += Decimal(route["per_request"])
                 elif "requests" in reservation:
+                    return False
+                meter_bound = reservation.get("metered_bound")
+                if meter_price is not None:
+                    if not validated_meter(meter_bound, 1) or meter_bound["unit"] != meter_price["unit"]:
+                        return False
+                    if meter is not None and (meter["quantity"] > meter_bound["quantity"]) != (value["state"] == "unpriced"):
+                        return False
+                    bound += _metered_amount(meter_price, meter_bound)
+                elif meter_bound is not None:
                     return False
                 if Decimal(reservation["reserved_amount"]) != bound:
                     return False
@@ -268,6 +319,9 @@ def cost_projection(value: dict, result: dict) -> None:
         return
     if "cost" in value:
         cost = validated_cost(value["cost"], result)
+        if (cost is not None and cost["priced_calls"] and "call_ledger" not in result
+                and any("metered" in route for route in cost["price_card"]["routes"])):
+            cost = None
         if cost is not None:
             result["cost"] = cost
         result["cost_complete"] = cost is not None and cost["complete"]
@@ -292,8 +346,11 @@ def cost_projection(value: dict, result: dict) -> None:
                 if "call_ledger" in result:
                     ledgers = [result["call_ledger"]]
                 matching = [ledger for ledger in ledgers if ledger["segment_id"] == segment_id]
+                if (not matching and cost["priced_calls"]
+                        and any("metered" in route for route in cost["price_card"]["routes"])):
+                    break
                 if (ledgers and not matching
-                        and any("per_request" in route for route in cost["price_card"]["routes"])):
+                        and any("per_request" in route or "metered" in route for route in cost["price_card"]["routes"])):
                     break
                 if matching:
                     # Restored aggregates must reconcile the same per-call

@@ -29,6 +29,45 @@ type ProviderUsageDescriptor struct {
 	// Request identifies a standalone, token-free API request. It must settle
 	// through CompleteRequestUsage rather than inferred token usage.
 	Request bool
+	// MeteredBound is the maximum billable quantity for a standalone call.
+	// It is mutually exclusive with Request and with the model token bound.
+	MeteredBound MeteredUsage
+}
+
+// BillingUnit identifies the quantity a standalone service charges for.
+type BillingUnit string
+
+const (
+	BillingAudioSecond BillingUnit = "audio_second"
+	BillingCharacter   BillingUnit = "billing_character"
+	BillingPage        BillingUnit = "page"
+)
+
+func (u BillingUnit) valid() bool {
+	return u == BillingAudioSecond || u == BillingCharacter || u == BillingPage
+}
+
+// MeteredUsage is a quantity in provider billing units, after applying the
+// provider's rules (for example, rounding audio up to whole seconds).
+type MeteredUsage struct {
+	Unit     BillingUnit `json:"unit"`
+	Quantity uint64      `json:"quantity"`
+}
+
+// CompleteMeteredUsage settles the authoritative quantity for an admitted call.
+// A zero quantity is valid when the provider contract establishes no charge.
+func CompleteMeteredUsage(call ProviderUsageCall, usage MeteredUsage) error {
+	if call == nil {
+		return nil
+	}
+	owner, ok := call.(interface{ CompleteMeteredUsage(MeteredUsage) error })
+	if !ok {
+		return MarkProviderUsageAmbiguous(call, ErrRunUsageUnknown)
+	}
+	if err := owner.CompleteMeteredUsage(usage); err != nil {
+		return &ProviderUsageTerminalError{Err: err}
+	}
+	return nil
 }
 
 // RequestUsageAvailable checks whether a paid request can be accounted for.
@@ -40,7 +79,7 @@ func RequestUsageAvailable(owner ProviderUsageAdmitter, d ProviderUsageDescripto
 	}); ok {
 		return policy.RequestUsageAvailable(d)
 	}
-	return true
+	return d.MeteredBound == (MeteredUsage{})
 }
 
 // CompleteRequestUsage records one known request, with either one billable unit

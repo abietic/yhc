@@ -89,12 +89,16 @@ func validateCheckpointSnapshot(p runUsageCheckpointPayload) error {
 		default:
 			return ErrRunUsageCheckpoint
 		}
-		if record.State != "known" && (record.Tokens != nil || record.Requests != nil) ||
+		if record.State != "known" && (record.Tokens != nil || record.Requests != nil || record.Metered != nil) ||
 			(record.State == "in_flight" || record.State == "released") && record.ProviderDurationMillis != 0 ||
 			record.CacheTTL != "" && record.CacheTTL != "5m" && record.CacheTTL != "1h" {
 			return ErrRunUsageCheckpoint
 		}
 		if record.Requests != nil && (*record.Requests > 1 || row.PromptTokens != 0 || row.CompletionTokens != 0 || row.TotalTokens != 0) {
+			return ErrRunUsageCheckpoint
+		}
+		if record.Metered != nil && (!record.Metered.Unit.valid() || record.Requests != nil ||
+			*record.Tokens != (RunUsageCallTokens{})) {
 			return ErrRunUsageCheckpoint
 		}
 		if !addCheckpointTotals(&totals, row) || !costs.observe(record, collector) {
@@ -153,7 +157,7 @@ type checkpointCostTotals struct {
 
 func (c *checkpointCostTotals) observe(record RunUsageRecord, collector *RunUsage) bool {
 	if collector.cost == nil {
-		return record.Cost == nil
+		return record.Cost == nil && record.Metered == nil
 	}
 	value := record.Cost
 	if value == nil {
@@ -170,13 +174,23 @@ func (c *checkpointCostTotals) observe(record RunUsageRecord, collector *RunUsag
 			reservation.Model != collector.cost.card.Routes[index].APIModel {
 			return false
 		}
-		if fee := collector.cost.requestPrices[index]; fee != nil {
-			if reservation.Requests != 1 || reservation.InputTokens != 0 || reservation.OutputTokens != 0 {
+		route := collector.cost.card.Routes[index]
+		switch {
+		case route.Metered != nil:
+			bound := reservation.MeteredBound
+			if bound == nil || bound.Unit != route.Metered.Unit || bound.Quantity == 0 ||
+				reservation.Requests != 0 || reservation.InputTokens != 0 || reservation.OutputTokens != 0 ||
+				record.Requests != nil || record.State == "known" && (record.Metered == nil || record.Metered.Unit != bound.Unit) {
 				return false
 			}
-			reserved.Set(fee)
-		} else {
-			if reservation.Provider != "agenticdeepseek" || reservation.Requests != 0 || reservation.InputTokens == 0 ||
+			reserved.Set(collector.cost.meteredAmount(index, bound.Quantity))
+		case route.PerRequest != nil:
+			if reservation.MeteredBound != nil || reservation.Requests != 1 || reservation.InputTokens != 0 || reservation.OutputTokens != 0 {
+				return false
+			}
+			reserved.Set(collector.cost.requestPrices[index])
+		default:
+			if reservation.MeteredBound != nil || reservation.Provider != "agenticdeepseek" || reservation.Requests != 0 || reservation.InputTokens == 0 ||
 				reservation.OutputTokens == 0 || reservation.OutputTokens > uint64(collector.limits.MaxOutputTokensPerCall) {
 				return false
 			}
@@ -194,6 +208,9 @@ func (c *checkpointCostTotals) observe(record RunUsageRecord, collector *RunUsag
 	} else if reservation != nil {
 		return false
 	}
+	if record.Metered != nil && (reservation == nil || reservation.MeteredBound == nil) {
+		return false
+	}
 	retained := false
 	switch record.State {
 	case "in_flight":
@@ -207,7 +224,8 @@ func (c *checkpointCostTotals) observe(record RunUsageRecord, collector *RunUsag
 		}
 	default:
 		known := record.State == "known"
-		violation := known && reservation != nil && (record.Tokens.PromptTokens > reservation.InputTokens || record.Tokens.CompletionTokens > reservation.OutputTokens)
+		violation := known && reservation != nil && (record.Tokens.PromptTokens > reservation.InputTokens || record.Tokens.CompletionTokens > reservation.OutputTokens ||
+			record.Metered != nil && record.Metered.Quantity > reservation.MeteredBound.Quantity)
 		if violation {
 			c.violations++
 		}
@@ -234,6 +252,9 @@ func (c *checkpointCostTotals) observe(record RunUsageRecord, collector *RunUsag
 				amount.Add(amount, new(big.Int).Mul(new(big.Int).SetUint64(*record.Requests), fee))
 			} else if record.Requests != nil {
 				return false
+			}
+			if record.Metered != nil {
+				amount.Add(amount, collector.cost.meteredAmount(index, record.Metered.Quantity))
 			}
 			if *value.EstimatedAmount != costAmount(amount) {
 				return false

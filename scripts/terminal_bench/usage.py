@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from scripts.terminal_bench.native_cost import cost_projection, sum_costs, validated_call_cost
+from scripts.terminal_bench.native_cost import cost_projection, sum_costs, validated_call_cost, validated_meter
 
 USAGE_FIELDS = ("provider_calls", "known_calls", "unknown_calls", "in_flight",
                 "untracked_calls", "prompt_tokens", "completion_tokens", "total_tokens",
@@ -237,6 +237,11 @@ def validated_ledger(value: object) -> dict | None:
             if record["state"] != "known" or type(record["requests"]) is not int or record["requests"] not in (0, 1) or any(tokens.values()):
                 return None
             records[-1]["requests"] = record["requests"]
+        if "metered" in record:
+            if (record["state"] != "known" or "requests" in record
+                    or any(tokens.values()) or not validated_meter(record["metered"])):
+                return None
+            records[-1]["metered"] = dict(record["metered"])
         if "cost" in record:
             cost = validated_call_cost(record["cost"], record["state"])
             if cost is not None:
