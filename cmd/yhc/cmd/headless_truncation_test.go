@@ -27,6 +27,7 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 		{"exhausted", "model_error", "failed", "0.000220000000", 8, 5, false},
 		{"call_limit", "run_budget_exceeded", "failed", "0.000044000000", 1, 1, false},
 		{"unknown_usage", "run_usage_unknown", "failed", "0.000000000000", 8, 1, true},
+		{"contradictory_terminal", "run_usage_unknown", "failed", "0.000000000000", 8, 1, true},
 	} {
 		for _, format := range []string{"json", "jsonl"} {
 			t.Run(tc.name+"/"+format, func(t *testing.T) {
@@ -43,7 +44,7 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 						t.Errorf("recovery exceeded the per-call output cap: %+v, %v", body, err)
 					}
 					usage := `{"input_tokens":20,"output_tokens":2,"total_tokens":22,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":1}}`
-					if tc.unknown {
+					if tc.name == "unknown_usage" {
 						usage = `null`
 					}
 					status, details := "incomplete", `,"incomplete_details":{"reason":"max_output_tokens"}`
@@ -54,12 +55,16 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 					w.Header().Set("Content-Type", "text/event-stream")
 					_, _ = fmt.Fprintf(w, "event: response.%s.delta\ndata: {\"type\":\"response.%s.delta\",\"sequence_number\":0,\"output_index\":0,\"delta\":%q}\n\n", deltaType, deltaType, delta)
 					seq, output := 1, "[]"
-					if tc.name == "truncated_tool" && n == 1 {
+					if (tc.name == "truncated_tool" || tc.name == "contradictory_terminal") && n == 1 {
 						item := p430Function("truncated-write", artifact, "must not execute")
 						_, _ = fmt.Fprintf(w, "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"sequence_number\":1,\"output_index\":1,\"item\":%s}\n\n", item)
 						seq, output = 2, "["+item+"]"
 					}
-					_, _ = fmt.Fprintf(w, "event: response.%s\ndata: {\"type\":\"response.%s\",\"sequence_number\":%d,\"response\":{\"id\":\"truncated-%d\",\"object\":\"response\",\"status\":%q,\"model\":\"deepseek-flash\",\"output\":%s%s,\"usage\":%s}}\n\n", status, status, seq, n, status, output, details, usage)
+					event := status
+					if tc.name == "contradictory_terminal" {
+						status, details = "completed", ""
+					}
+					_, _ = fmt.Fprintf(w, "event: response.%s\ndata: {\"type\":\"response.%s\",\"sequence_number\":%d,\"response\":{\"id\":\"truncated-%d\",\"object\":\"response\",\"status\":%q,\"model\":\"deepseek-flash\",\"output\":%s%s,\"usage\":%s}}\n\n", event, event, seq, n, status, output, details, usage)
 				}))
 				defer server.Close()
 				card := filepath.Join(repo, "public-price-card.json")
@@ -92,6 +97,9 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 				if decodeErr := json.Unmarshal(data, &result); decodeErr != nil {
 					t.Fatal(decodeErr)
 				}
+				if _, statErr := os.Stat(artifact); !errors.Is(statErr, os.ErrNotExist) {
+					t.Fatal("unverified response committed a pending write")
+				}
 				if (err == nil) != (tc.status == "completed") || result.Status != tc.status || result.TerminalReason != tc.terminal || calls.Load() != int32(tc.calls) {
 					t.Fatalf("wrong truncation outcome: calls=%d result=%+v err=%v", calls.Load(), result, err)
 				}
@@ -100,9 +108,6 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 				}
 				if tc.name == "recovered" && result.Output != "finished" {
 					t.Fatalf("recovery did not deliver the completed answer: %q", result.Output)
-				}
-				if _, statErr := os.Stat(artifact); !errors.Is(statErr, os.ErrNotExist) {
-					t.Fatal("truncated response committed a pending write")
 				}
 				usage := result.Usage
 				if usage == nil || usage.ProviderCalls != uint64(tc.calls) || usage.Cost.KnownEstimatedAmount != tc.cost || usage.Cost.Reservation.OutstandingAmount != "0.000000000000" {
