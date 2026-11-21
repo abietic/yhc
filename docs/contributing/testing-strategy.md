@@ -226,13 +226,16 @@ not establish that the paid plan started.
 
 The optional `--reference-trajectory` reads local ATIF v1.7 counters separately
 from native runs. Thinking comes from explicit `thinking_tokens` or
-`reasoning_tokens` in each step's `metrics.extra.output_tokens_details`; multiple
-tool calls in one step do not duplicate usage. Copied context and deterministic
-zero-inference steps are excluded. Missing counters retain partial coverage,
-and conflicting aliases or aggregate scopes are rejected. A reference trajectory
-supplies no reward, invoice, or matched-pair evidence. Current FreshGateway
-`known_cost` and nested `call.liability` receipts are also accepted; conflicting
-legacy and current amounts fail closed.
+`reasoning_tokens` in each step's `metrics.extra.output_tokens_details`. A step
+counts once regardless of its tool calls. Copied context and deterministic
+zero-inference steps are excluded. Missing counters retain partial coverage.
+If a step's thinking exceeds its completion tokens, the report counts the step
+in `thinking.out_of_range_steps` and excludes its thinking from the subtotal.
+The report retains independently validated usage and cache counters. Conflicting
+aliases and aggregate scopes still cause the reader to reject the reference.
+A reference trajectory supplies no reward, invoice, or matched-pair evidence.
+Current FreshGateway `known_cost` and nested `call.liability` receipts are also
+accepted. Conflicting legacy and current amounts fail closed.
 
 `collect_tool_feedback` in [`tool_feedback.py`](../../scripts/terminal_bench/tool_feedback.py)
 counts tool requests from complete captured Responses or Messages replies,
