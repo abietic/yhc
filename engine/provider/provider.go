@@ -601,7 +601,11 @@ func userInputPartToAgentic(messageIndex, partIndex int, role schema.RoleType, p
 		} else {
 			b.Base64Data = *part.Image.Base64Data
 		}
-		return &schema.ContentBlock{Type: schema.ContentBlockTypeUserInputImage, UserInputImage: b}, nil
+		block := &schema.ContentBlock{Type: schema.ContentBlockTypeUserInputImage, UserInputImage: b}
+		if preserve, _ := part.Extra[enginemessages.PreserveImageEncodingKey].(bool); preserve {
+			block.Extra = map[string]any{enginemessages.PreserveImageEncodingKey: true}
+		}
+		return block, nil
 	case schema.ChatMessagePartTypeAudioURL:
 		if part.Audio == nil {
 			return errFor("nil_part_payload")

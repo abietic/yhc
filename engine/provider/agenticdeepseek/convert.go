@@ -13,6 +13,8 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/abietic/yhc/engine/messages"
 )
 
 var (
@@ -77,6 +79,8 @@ type contentPart struct {
 	ImageURL string `json:"image_url,omitempty"`
 	FileID   string `json:"file_id,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+
+	preserveEncoding bool
 }
 
 type functionTool struct {
@@ -545,7 +549,8 @@ func convertImage(image *schema.UserInputImage, extra map[string]any) (contentPa
 	if !validImageDetail(detail) {
 		return contentPart{}, fmt.Errorf("image_detail_invalid")
 	}
-	part := contentPart{Type: "input_image", Detail: detail}
+	preserveEncoding, _ := extra[messages.PreserveImageEncodingKey].(bool)
+	part := contentPart{Type: "input_image", Detail: detail, preserveEncoding: preserveEncoding}
 	if hasFileID {
 		if !validFileID(fileID) {
 			return contentPart{}, fmt.Errorf("image_file_id_invalid")

@@ -14,6 +14,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"golang.org/x/image/webp"
+
+	"github.com/abietic/yhc/engine/messages"
 )
 
 // Match the canonical user-image bounds without importing an engine owner.
@@ -22,7 +24,7 @@ const (
 	readImageMaxPixels = 25_000_000
 )
 
-func readImageForTool(ctx context.Context, displayPath, path string) (string, error) {
+func readImageForTool(ctx context.Context, displayPath, path string, preserveEncoding bool) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -81,15 +83,22 @@ func readImageForTool(ctx context.Context, displayPath, path string) (string, er
 	}
 	summary := fmt.Sprintf("Image %s (%s, %dx%d) delivered as an attachment", displayPath, mime, config.Width, config.Height)
 	encoded := base64.StdEncoding.EncodeToString(data)
+	imagePart := schema.MessageInputPart{
+		Type: schema.ChatMessagePartTypeImageURL,
+		Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{
+			Base64Data: &encoded,
+			MIMEType:   mime,
+		}},
+	}
+	if preserveEncoding {
+		imagePart.Extra = map[string]any{messages.PreserveImageEncodingKey: true}
+	}
 	attachment := &schema.Message{
 		Role:    schema.User,
 		Content: summary,
 		UserInputMultiContent: []schema.MessageInputPart{
 			{Type: schema.ChatMessagePartTypeText, Text: summary},
-			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{
-				Base64Data: &encoded,
-				MIMEType:   mime,
-			}}},
+			imagePart,
 		},
 		Extra: map[string]any{"is_meta": true, "attachment_kind": "image", "file_path": displayPath},
 	}
