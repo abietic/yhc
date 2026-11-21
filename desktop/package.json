@@ -28,6 +28,7 @@
       "lifecycle.cjs",
       "provider_setup.cjs",
       "request.cjs",
+      "speech.cjs",
       "preload.cjs",
       "package.json"
     ],
@@ -72,6 +73,9 @@
     ],
     "mac": {
       "minimumSystemVersion": "13.0.0",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Record a draft for speech transcription when you select Record draft."
+      },
       "extraResources": [
         {
           "from": "resources/bin/yhc",

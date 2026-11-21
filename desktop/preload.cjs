@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('yhcDesktop', Object.freeze({
   getProviderStatus: () => ipcRenderer.invoke('app:provider-status'),
   configureProvider: (input) => ipcRenderer.invoke('app:configure-provider', input),
   selectWorkspace: () => ipcRenderer.invoke('app:select-workspace'),
+  speech: (action, input, requestID) => ipcRenderer.invoke('app:speech', action, input, requestID),
+  cancelSpeech: (action, requestID) => ipcRenderer.invoke('app:speech-cancel', action, requestID),
   api: (operation, payload = {}) => ipcRenderer.invoke('app:api', operation, payload),
   apiResult: (operation, payload = {}) => ipcRenderer.invoke('app:api-result', operation, payload),
   startEvents: (sessionID, after) => (

@@ -2,6 +2,8 @@ const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require('ele
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { createSpeechRequests } = require('./speech.cjs');
 const {
   parseBackendBootstrap,
   rejectBackendBootstrap,
@@ -42,6 +44,7 @@ let windowRestoreCoordinator = null;
 let quitAllowed = false;
 let quitDecision = null;
 const eventStreams = new Map();
+const speechRequests = createSpeechRequests();
 const observedSenders = new Set();
 const stoppingBackends = new WeakSet();
 const settingsTimeoutErrors = new WeakSet();
@@ -299,25 +302,43 @@ function createWindow() {
     },
   });
   mainWindow = targetWindow;
+  const contents = targetWindow.webContents;
+  const trustedMicrophoneFrame = (sender, details) =>
+    process.env.YHC_DESKTOP_RECORD_DRAFT === '1' &&
+    sender === contents && mainWindow === targetWindow &&
+    details.isMainFrame && contents.getURL() === pathToFileURL(rendererPath()).href;
+  contents.session.setPermissionCheckHandler((sender, permission, _origin, details) =>
+    permission === 'media' && details.mediaType === 'audio' &&
+    trustedMicrophoneFrame(sender, details));
+  contents.session.setPermissionRequestHandler((sender, permission, callback, details) => {
+    callback(permission === 'media' && details.mediaTypes?.length === 1 &&
+      details.mediaTypes[0] === 'audio' && trustedMicrophoneFrame(sender, details));
+  });
   targetWindow.once('closed', () => {
-    if (mainWindow === targetWindow) mainWindow = null;
+    if (mainWindow === targetWindow) {
+      speechRequests.cancelAll();
+      mainWindow = null;
+    }
   });
   targetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   targetWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   return targetWindow;
 }
 
+function rendererPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'webui', 'index.html')
+    : path.join(__dirname, '..', 'internal', 'webui', 'assets', 'index.html');
+}
+
 function loadRenderer(targetWindow) {
   if (!targetWindow || mainWindow !== targetWindow || targetWindow.isDestroyed()) {
     throw new Error('Desktop window is unavailable');
   }
-  const renderer = app.isPackaged
-    ? path.join(process.resourcesPath, 'webui', 'index.html')
-    : path.join(__dirname, '..', 'internal', 'webui', 'assets', 'index.html');
   targetWindow.once('ready-to-show', () => {
     if (mainWindow === targetWindow && !targetWindow.isDestroyed()) targetWindow.show();
   });
-  return targetWindow.loadFile(renderer);
+  return targetWindow.loadFile(rendererPath());
 }
 
 function getWindowRestoreCoordinator() {
@@ -579,6 +600,23 @@ ipcMain.handle('app:select-workspace', async (event) => {
     workspace_label: workspace.workspace_label,
   });
 });
+function assertTrustedSpeechSender(event) {
+  assertTrustedSender(event);
+  if (event.senderFrame !== event.sender.mainFrame ||
+      event.senderFrame.url !== pathToFileURL(rendererPath()).href) {
+    throw new Error('Untrusted Desktop speech sender.');
+  }
+}
+
+ipcMain.handle('app:speech', (event, action, input, requestID) => {
+  assertTrustedSpeechSender(event);
+  return speechRequests.request(bootstrap, action, input, requestID);
+});
+ipcMain.handle('app:speech-cancel', (event, action, requestID) => {
+  assertTrustedSpeechSender(event);
+  speechRequests.cancel(action, requestID);
+});
+
 ipcMain.handle('app:api', (event, operation, payload) => {
   assertTrustedSender(event);
   return backendRequest(...rendererOperation(operation, payload));

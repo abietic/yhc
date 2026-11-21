@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -90,7 +91,13 @@ func runServeApp(cmd *cobra.Command, options serveAppOptions) error {
 		}
 		return queryEngine, nil
 	}
+	speech, err := desktopSpeechConfig(os.Getenv)
+	if err != nil {
+		speech.Diagnostic = err.Error()
+		fmt.Fprintf(cmd.ErrOrStderr(), "Desktop speech unavailable: %s\n", err)
+	}
 	server, err := appserver.New(appserver.Config{
+		Speech:             speech,
 		Factory:            factory,
 		EventBuffer:        options.eventBuffer,
 		MaxSessions:        options.maxSessions,

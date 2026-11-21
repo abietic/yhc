@@ -76,6 +76,8 @@ const turnDraftAttempts = new Map();
 let state = initialState();
 let transport;
 let surface = '';
+let nativeSpeech;
+let nativeSpeechCapabilities;
 let persistenceEnabled = false;
 let confirmationResolve = null;
 let inspectorView = 'activity';
@@ -396,6 +398,13 @@ function render() {
   const current = activeSession(state);
   $('workbench-home').setAttribute('aria-current', current ? 'false' : 'page');
   const backendReady = backendAvailable(state);
+  const speechReady = backendReady && !agentConversationView.isOpen();
+  const speechCanRead = speechReady && nativeSpeechCapabilities?.read_aloud === true;
+  nativeSpeech?.sync({
+    id: current?.id,
+    record: speechReady && nativeSpeechCapabilities?.record_draft === true && canEditDraft(current),
+    read: speechCanRead,
+  });
   settingsView.updateContext();
   $('open-web').disabled = !backendReady;
   renderSheets();
@@ -481,7 +490,8 @@ function render() {
         : 'Read your saved history, then send a message to continue.',
     ));
   } else {
-    timelineRenderer.render(current.id, current.messages);
+    const messages = nativeSpeech?.project(current.messages, current.activity, speechCanRead) || current.messages;
+    timelineRenderer.render(current.id, messages);
   }
 }
 
@@ -855,7 +865,16 @@ function renderMessage(message) {
   }
   const body = message.content ||
     (message.toolCalls.length > 0 ? 'Tool call requested.' : '');
-  card.append(renderMessageContent(document, message.role, body));
+  const content = renderMessageContent(document, message.role, body);
+  card.append(content);
+  if (message.readAloud) {
+    const id = state.activeID;
+    const button = element('button', 'quiet', 'Read aloud');
+    button.type = 'button';
+    button.title = 'Send this answer to DeepSeek for speech synthesis';
+    button.onclick = () => nativeSpeech?.readAloud(id, content.innerText.trim());
+    card.append(button);
+  }
   return card;
 }
 
@@ -1925,6 +1944,7 @@ async function send(event) {
   const prompt = $('prompt').value.trim();
   if (!current || !prompt ||
     !(canSubmitTurn(current) || canQueuePrompt(current))) return;
+  nativeSpeech?.cancelRecording();
   if (current.live) {
     if (canQueuePrompt(current)) {
       let attempt = queueAttempts.get(current.id);
@@ -2603,9 +2623,53 @@ function sessionScopedError(error, sessionID) {
 }
 
 function handleBackendExit() {
+  nativeSpeech?.stop();
   for (const id of [...streams.keys()]) stopStream(id);
   completeConfirmation(false);
   dispatch({ type: 'BACKEND_UNAVAILABLE' });
+}
+
+async function mountNativeSpeech() {
+  const bridge = window.yhcDesktop;
+  try {
+    const capabilities = await bridge.speech('capabilities');
+    if (typeof capabilities?.diagnostic === 'string' && capabilities.diagnostic) {
+      const status = $('native-speech-config-status');
+      status.textContent = 'Desktop speech unavailable. ' + capabilities.diagnostic + '.';
+      status.hidden = false;
+    }
+    if (!capabilities?.record_draft && !capabilities?.read_aloud) return;
+    const { createNativeSpeech } = await import('./native_speech.mjs');
+    nativeSpeechCapabilities = capabilities;
+    nativeSpeech = createNativeSpeech({
+      bridge,
+      controls: {
+        recordGroup: $('record-draft-controls'),
+        record: $('record-draft'),
+        cancelRecord: $('cancel-record-draft'),
+        recordStatus: $('record-draft-status'),
+        playbackGroup: $('read-aloud-controls'),
+        stop: $('stop-read-aloud'),
+        playbackStatus: $('read-aloud-status'),
+      },
+      appendDraft(id, text) {
+        const current = activeSession(state);
+        if (current?.id !== id || !canEditDraft(current)) return;
+        const existing = current.draft || '';
+        const separator = existing && !existing.endsWith('\n') ? '\n' : '';
+        updateDraft(existing + separator + text);
+        render();
+        $('prompt').focus();
+      },
+    });
+    window.addEventListener('pagehide', nativeSpeech.stop);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) nativeSpeech.cancelRecording();
+    });
+    render();
+  } catch {
+    // Speech is optional. Failure to initialize never blocks the workbench.
+  }
 }
 
 async function bootstrapApp() {
@@ -2616,6 +2680,9 @@ async function bootstrapApp() {
     throw new Error('Backend protocol mismatch');
   }
   surface = info.surface;
+  if (surface === 'desktop' && typeof window.yhcDesktop?.speech === 'function') {
+    void mountNativeSpeech();
+  }
   $('settings-shortcut').textContent = primaryModifier + ',';
   $('send').querySelector('kbd').textContent = primaryModifier + '⏎';
   try {
