@@ -206,6 +206,43 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["reward"])
         self.assertIsNone(got["calls"])
 
+    def test_canonical_closeout_wins_over_a_running_scoreboard(self):
+        root = self.write()
+        provisional = row()
+        provisional["normal_completion"] = False
+        provisional["official_reward"] = {"rewards": {"reward": 0}}
+        (root / "scoreboard.json").write_text(json.dumps(dict(status="running", samples=[provisional])))
+        closeout = root / "dispatch-closeout.json"
+        closeout.write_text(json.dumps(dict(status="completed", samples=[row()])))
+
+        got, = build_report([root])["samples"]
+        self.assertEqual(got["status"], "completed")
+        self.assertEqual(got["reward"], 1)
+        self.assertEqual(got["source_sha256"], hashlib.sha256(closeout.read_bytes()).hexdigest())
+
+    def test_canonical_closeout_with_nested_wire_needs_no_scoreboard(self):
+        root = self.write(records=[call("1"), call("2")])
+        (root / "scoreboard.json").rename(root / "dispatch-closeout.json")
+
+        got, = load_run(root)
+        self.assertEqual(got["reward"], 1)
+        self.assertEqual(got["known_calls"], 2)
+        self.assertIsNotNone(got["ledger_sha256"])
+
+    def test_nonterminal_run_cannot_supply_comparison_rows(self):
+        for name in ("scoreboard.json", "dispatch-closeout.json"):
+            with self.subTest(name=name):
+                root = self.write(name=name)
+                (root / name).write_text(json.dumps(dict(status="running", samples=[row()])))
+                with self.assertRaisesRegex(ValueError, "execution record is not terminal"):
+                    build_report([root])
+
+    def test_invalid_canonical_closeout_cannot_fall_back_to_scoreboard(self):
+        root = self.write()
+        (root / "dispatch-closeout.json").write_text("{")
+        with self.assertRaises(ValueError):
+            load_run(root)
+
     def test_unstarted_plan_rejects_execution_evidence_without_scoreboard(self):
         for index, marker in enumerate(("dispatch-claim.json", "dispatch-progress.json", "cohort/ledger.json",
                                         "wire/sample/ledger.json", "trials/sample/agent/native-result.json")):

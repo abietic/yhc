@@ -240,7 +240,7 @@ def native_usage_breakdown(native, usage):
 def load_run(root):
     root = Path(root).resolve()
     report_path = root / "report.json"
-    control = read_json(report_path) if report_path.is_file() else None
+    control, control_sha = read_json(report_path, with_sha256=True) if report_path.is_file() else (None, None)
     synthetic = False
     zero_mode = False
     if control is not None:
@@ -251,10 +251,17 @@ def load_run(root):
         synthetic = control.get("all_usage_synthetic") is True
         if synthetic and "real_provider_calls" in control and count(control["real_provider_calls"]) != 0:
             raise ValueError("synthetic evidence contains real provider calls")
-    board = root / "scoreboard.json"
-    scoreboard_layout = board.is_file()
-    if scoreboard_layout:
-        data = read_json(board)
+    closeout = root / "dispatch-closeout.json"
+    has_closeout = closeout.exists() or closeout.is_symlink()
+    # Older launchers can leave the progress scoreboard behind the closeout.
+    receipt = closeout if has_closeout else root / "scoreboard.json"
+    nested_ledger_layout = receipt.exists() or receipt.is_symlink()
+    if nested_ledger_layout:
+        data, source_sha = read_json(receipt, with_sha256=True)
+        status = data.get("status")
+        if (status in ("not_started", "running")
+                or (has_closeout and (not isinstance(status, str) or not status.strip()))):
+            raise ValueError("execution record is not terminal")
         entries = data["samples"]
         zero_mode = data.get("zero_mode", False)
         if type(zero_mode) is not bool:
@@ -273,7 +280,7 @@ def load_run(root):
                     != json.dumps(entries[0]["summary"], sort_keys=True, allow_nan=False)):
                 raise ValueError("synthetic marker and scoreboard disagree")
     elif control is not None:
-        board, data = report_path, control
+        data, source_sha = control, control_sha
         if not synthetic:
             raise ValueError("unsupported report adapter")
         ledger = read_json(root / "wire/ledger.json")
@@ -293,14 +300,14 @@ def load_run(root):
         return [dict(agent=atom(a["agent"]), sample_id=atom(a["new_sample_id"]), task=atom(plan["target_task"]),
                      task_ref=atom(plan["task_ref"]), status="not_started", reward=None, calls=None,
                      evidence_kind="unstarted", source_sha256=fingerprint(root / "plan.json")) for a in plan["arms"]]
-    classification_source = board if zero_mode else report_path
+    classification_sha = source_sha if zero_mode else control_sha
     rows = []
     for entry in entries:
         sample = entry["sample"]
         identifier = atom(sample["sample_id"])
         if "/" in identifier or identifier in (".", ".."):
             raise ValueError("unsafe sample identifier")
-        path = root / "wire" / identifier / "ledger.json" if scoreboard_layout else root / "wire/ledger.json"
+        path = root / "wire" / identifier / "ledger.json" if nested_ledger_layout else root / "wire/ledger.json"
         if path.is_file() and (not path.resolve().is_relative_to(root) or path.resolve() != path):
             raise ValueError("ledger must not use symbolic links")
         ledger = read_json(path) if path.is_file() else None
@@ -317,8 +324,8 @@ def load_run(root):
         deadline = entry.get("deadline") or {}
         outcome = entry.get("outcome") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),
-            task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=fingerprint(board),
-            classification_source_sha256=fingerprint(classification_source) if zero_mode or synthetic else None,
+            task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=source_sha,
+            classification_source_sha256=classification_sha if zero_mode or synthetic else None,
             ledger_sha256=fingerprint(path) if ledger is not None else None,
             status="completed" if entry.get("normal_completion") is True else "interrupted_or_unverified",
             reward=reward(entry.get("official_reward")), agent_seconds=seconds(deadline.get("agent_elapsed_seconds")),
