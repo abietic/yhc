@@ -13,7 +13,9 @@ import re
 import stat
 import tarfile
 
-from scripts.terminal_bench.artifact_integrity import ArtifactIntegrityError, source_manifest
+from scripts.terminal_bench.artifact_integrity import (
+    ArtifactIntegrityError, attest_docker_artifact, source_manifest,
+)
 
 
 class CloseoutError(ValueError):
@@ -40,18 +42,28 @@ def _below(path, parent):
     return path == parent or path.startswith(parent + '/')
 
 
-def _declarations(declared):
+def _sidecar_name(value):
+    return (isinstance(value, str) and value != 'main'
+            and re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,62}', value) is not None)
+
+
+def _declarations(declared, sidecar_services):
     _need(isinstance(declared, list) and declared and len(declared) <= 1024,
           'artifact_declarations_unverified')
-    rules = {}
+    rules, sidecars = {}, {}
     for entry in declared:
         if isinstance(entry, str):
             source, exclude = entry, []
         else:
             _need(isinstance(entry, dict) and set(entry) <= {'source', 'exclude', 'service', 'destination'}
-                  and entry.get('service') in (None, 'main')
                   and entry.get('destination') in (None, ''), 'artifact_declarations_unverified')
             source, exclude = entry.get('source'), entry.get('exclude', [])
+            service = entry.get('service')
+            if service not in (None, 'main'):
+                _need(_sidecar_name(service) and service in sidecar_services
+                      and exclude == [], 'artifact_declarations_unverified')
+                _path(source)
+                sidecars[source] = service
         _path(source, directory=True)
         _need(source not in rules, 'artifact_declarations_overlap')
         # Harbor's Linux collector uses GNU tar's default unanchored, recursive,
@@ -71,17 +83,20 @@ def _declarations(declared):
     pin = hashlib.sha256(json.dumps(sorted(declared,
         key=lambda e: e if isinstance(e, str) else e['source']),
         sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    return rules, pin
+    return rules, sidecars, pin
 
 
-def artifact_sources(declared):
-    """Validate supported declarations before dispatch; preserve raw checkpoint declarations.
+def artifact_sources(declared, *, sidecar_services=()):
+    """Validate declarations and return the paths for the main workspace capture.
 
-    These paths are for capture, not permission to omit the original structured
-    declarations from the checkpoint. Sidecars, destination remaps, and advanced
-    tar patterns are deliberately rejected before native or provider execution.
+    A caller with a separate sidecar byte proof may opt in named services.
+    Original declarations, including those services, still belong in the
+    checkpoint. Sidecar directories and destination remaps remain unsupported.
     """
-    return list(_declarations(declared)[0])
+    _need(isinstance(sidecar_services, (list, tuple, set, frozenset)),
+          'sidecar_container_unqualified')
+    rules, sidecars, _ = _declarations(declared, sidecar_services)
+    return [source for source in rules if source not in sidecars]
 
 
 def _excluded(relative, patterns):
@@ -100,6 +115,31 @@ def _projection(entries):
                 additional_target_entries_unverified=0)
 
 
+def _matches_projection(projection, entries):
+    return isinstance(projection, dict) and all(
+        type(projection.get(key)) is type(value) and projection[key] == value
+        for key, value in _projection(entries).items())
+
+
+def _verify_sidecars(sidecars, containers, proofs, verifier_ids, session_id, expected):
+    _need(set(containers) == set(sidecars.values())
+          and all(isinstance(cid, str) and re.fullmatch('[0-9a-f]{64}', cid)
+                  and cid not in verifier_ids for cid in containers.values())
+          and len(set(containers.values())) == len(containers), 'sidecar_container_unqualified')
+    _need(isinstance(proofs, (list, tuple)) and len(proofs) == len(sidecars)
+          and all(isinstance(p, dict) and isinstance(p.get('source'), str) for p in proofs)
+          and {p['source'] for p in proofs} == set(sidecars), 'sidecar_artifact_proof_coverage')
+    for proof in proofs:
+        source = proof['source']
+        service = sidecars[source]
+        _need(proof.get('service') == service and proof.get('container_id') == containers[service]
+              and proof.get('session_id') == session_id
+              and proof.get('stage') == 'after_collection_before_upload'
+              and proof.get('source_and_collected_bytes_match') is True
+              and _matches_projection(proof.get('projection'), expected[source]),
+              'sidecar_artifact_proof_mismatch')
+
+
 def _collected(folder, target):
     path = folder
     _need(path.is_dir() and not path.is_symlink(), 'artifact_source_unqualified')
@@ -107,6 +147,25 @@ def _collected(folder, target):
         path = path / part
         _need(not path.is_symlink(), 'artifact_source_unqualified')
     return path
+
+
+async def attest_sidecar_artifact(folder, source, service, container_id, *, session_id):
+    """Attest a regular file after collection and before upload.
+
+    The operator supplies the independently observed source container and
+    owns the collection hook and the timing of this check.
+    """
+    _need(_sidecar_name(service) and isinstance(session_id, str) and session_id,
+          'sidecar_container_unqualified')
+    _path(source)
+    collected = _collected(Path(folder), source)
+    _need(collected.is_file(), 'sidecar_artifact_absence_unverified')
+    projection = await attest_docker_artifact(collected, source, container_id)
+    _need(projection['file_count'] == 1 and projection['directory_count'] == 0
+          and projection['additional_target_entries_unverified'] == 0, 'sidecar_artifact_proof_mismatch')
+    return dict(source=source, service=service, container_id=container_id, session_id=session_id,
+                stage='after_collection_before_upload', projection=projection,
+                source_and_collected_bytes_match=True)
 
 
 def _signature(info):
@@ -169,18 +228,23 @@ def _archive_trees(path, digest, sources, cwd, rules):
     return trees
 
 
-def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers, isolation, *, session_id):
+def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers, isolation, *, session_id,
+                     sidecar_containers=None, sidecar_proofs=()):
     """Bind an immutable capture, collected trees, and exact upload projections.
 
     Inputs are closed operator evidence, not solver claims. Missing outputs
     require absence inside a captured workspace. Empty directories are present.
     Main-service paths may be strings or JSON declarations with supported GNU
     tar excludes. Original declarations must also be bound in the checkpoint.
-    Additional verifier entries remain blocked even though the lower-level
-    transport can report a partial uploaded projection.
+    For sidecar files, the caller supplies container IDs from the source
+    environment and separate operator byte proofs obtained before upload.
+    Main archive absence cannot prove the absence of any sidecar output.
     """
     try:
-        rules, declaration_pin = _declarations(declared)
+        if sidecar_containers is None:
+            sidecar_containers = {}
+        _need(isinstance(sidecar_containers, dict), 'sidecar_container_unqualified')
+        rules, sidecars, declaration_pin = _declarations(declared, sidecar_containers)
         sources = set(rules)
         paths = {p: str(_path(p, directory=True)) for p in sources}
         _need(isinstance(checkpoint, dict) and checkpoint.get('capture') == 'complete'
@@ -188,7 +252,7 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
               and checkpoint.get('workspace_in_archive') is True
               and checkpoint.get('native_session_files'), 'checkpoint_chain_unverified')
         _need(isinstance(checkpoint.get('declared_artifacts'), list)
-              and _declarations(checkpoint['declared_artifacts'])[1] == declaration_pin,
+              and _declarations(checkpoint['declared_artifacts'], sidecar_containers)[2] == declaration_pin,
               'checkpoint_declarations_changed')
         cwd = str(_path(checkpoint.get('cwd')))
         digest = checkpoint.get('checkpoint_sha256')
@@ -203,7 +267,10 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
         folder = Path(folder)
         for row in rows:
             target = row['source']
-            _need(row.get('service') in (None, 'main') and row.get('type') in ('file', 'directory'),
+            service = sidecars.get(target)
+            valid_services = (service,) if service else (None, 'main')
+            valid_types = ('file',) if service else ('file', 'directory')
+            _need(row.get('service') in valid_services and row.get('type') in valid_types,
                   'artifact_collection_unqualified')
             _path(target, directory=row['type'] == 'directory')
             path = _collected(folder, target)
@@ -214,18 +281,21 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
                       'artifact_empty_mismatch')
                 expected[target] = entries
             else:
+                _need(service is None, 'sidecar_artifact_absence_unverified')
                 _need(row.get('status') in ('missing', 'failed') and not path.exists()
                       and _below(paths[target], cwd), 'artifact_absence_unverified')
                 missing.append(target)
                 expected[target] = {}
-        trees = _archive_trees(archive, digest, sources, cwd, rules)
-        _need(trees == expected, 'checkpoint_and_collected_artifacts_differ')
+        main_expected = {p: entries for p, entries in expected.items() if p not in sidecars}
+        trees = _archive_trees(archive, digest, main_expected, cwd, rules)
+        _need(trees == main_expected, 'checkpoint_and_collected_artifacts_differ')
         _need(isinstance(session_id, str) and session_id and isinstance(isolation, list)
               and isolation and all(isinstance(p, dict) and p.get('network_mode') == 'none'
                   and p.get('session_id') == session_id and isinstance(p.get('container_id'), str)
                   and re.fullmatch('[0-9a-f]{64}', p['container_id']) for p in isolation),
               'artifact_isolation_unverified')
         ids = {p['container_id'] for p in isolation}
+        _verify_sidecars(sidecars, sidecar_containers, sidecar_proofs, ids, session_id, expected)
         _need(isinstance(transfers, list) and all(isinstance(p, dict) for p in transfers),
               'artifact_transfer_unverified')
         proofs = [p for p in transfers if p.get('session_id') == session_id]
@@ -234,14 +304,10 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
               'artifact_transfer_coverage')
         for proof in proofs:
             target = proof['target']
-            projection = proof.get('projection')
-            wanted = _projection(expected[target])
             _need(proof.get('container_id') in ids and proof.get('network_mode') == 'none'
                   and proof.get('stage') == 'after_upload_before_official_grading'
                   and proof.get('source_and_verifier_bytes_match') is True
-                  and isinstance(projection, dict)
-                  and all(type(projection.get(k)) is type(v) and projection[k] == v
-                          for k, v in wanted.items()), 'artifact_transfer_mismatch')
+                  and _matches_projection(proof.get('projection'), expected[target]), 'artifact_transfer_mismatch')
         for target, entries in expected.items():
             path = _collected(folder, target)
             _need((source_manifest(path) == entries) if entries else not path.exists(),
@@ -253,6 +319,8 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
         if any(isinstance(e, dict) for e in declared):
             result['artifact_selection'] = dict(declarations_sha256=declaration_pin,
                                                 exclude_profile='gnu-tar-simple-glob-v1')
+        if sidecars:
+            result['sidecar_artifacts'] = sidecars
         return result
     except CloseoutError:
         raise

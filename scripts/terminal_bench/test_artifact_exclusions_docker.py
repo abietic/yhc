@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import unittest
 import uuid
 
-from scripts.terminal_bench.artifact_closeout import CloseoutError, verify_artifacts
+from scripts.terminal_bench.artifact_closeout import CloseoutError, attest_sidecar_artifact, verify_artifacts
 from scripts.terminal_bench.artifact_integrity import attest_docker_artifact
 
 
@@ -21,20 +21,26 @@ class FixtureEnvironment:
     """Only trusted fixture commands; the real Harbor collector owns filtering."""
     capabilities = SimpleNamespace(mounted=False)
 
-    def __init__(self, docker, cid):
+    def __init__(self, docker, cid, *, sidecars=None):
         self.docker, self.cid = docker, cid
+        self.sidecars = sidecars or {}
         self.locale = None
 
-    async def service_exec(self, command, **kwargs):
+    def _container(self, service):
+        return self.cid if service in (None, 'main') else self.sidecars[service]
+
+    async def service_exec(self, command, *, service=None, **kwargs):
         env = ['--env', 'LC_ALL=' + self.locale] if self.locale else []
-        p = await asyncio.to_thread(self.docker, 'exec', *env, self.cid, '/bin/sh', '-c', command, check=False)
+        p = await asyncio.to_thread(self.docker, 'exec', *env, self._container(service),
+                                    '/bin/sh', '-c', command, check=False)
         return SimpleNamespace(return_code=p.returncode, stdout=p.stdout, stderr=p.stderr)
 
     async def service_is_dir(self, source, **kwargs):
-        return (await self.service_exec('test -d ' + shlex.quote(source))).return_code == 0
+        return (await self.service_exec('test -d ' + shlex.quote(source), **kwargs)).return_code == 0
 
-    async def service_download_file(self, *, source_path, target_path, **kwargs):
-        await asyncio.to_thread(self.docker, 'cp', self.cid + ':' + str(source_path), str(target_path))
+    async def service_download_file(self, *, source_path, target_path, service=None):
+        await asyncio.to_thread(self.docker, 'cp', self._container(service) + ':' + str(source_path),
+                                str(target_path))
 
     async def service_download_dir(self, *, source_dir, target_dir, **kwargs):
         await asyncio.to_thread(self.docker, 'cp', self.cid + ':' + source_dir + '/.', str(target_dir))
@@ -52,6 +58,13 @@ class FixtureEnvironment:
     async def upload_dir(self, *, source_dir, target_dir):
         await asyncio.to_thread(self.docker, 'cp', str(source_dir) + '/.', self.cid + ':' + target_dir)
 
+    async def upload_file(self, *, source_path, target_path):
+        await asyncio.to_thread(self.docker, 'cp', str(source_path), self.cid + ':' + str(target_path))
+
+    async def ensure_dirs(self, paths, **kwargs):
+        # This control only uploads its file to an existing fixture path.
+        assert list(paths) == ['/tmp']
+        assert (await self.service_exec('test -d /tmp')).return_code == 0
 
 @unittest.skipUnless(os.environ.get('YHC_ARTIFACT_EXCLUSIONS_DOCKER_TEST') == '1',
                      'explicit cached GNU tar / Harbor opt-in required')
@@ -72,7 +85,7 @@ class ArtifactExclusionsDockerTests(unittest.IsolatedAsyncioTestCase):
         assert re.fullmatch(r'sha256:[0-9a-f]{64}', image), 'exact cached image ID required'
         row, = json.loads(cls.docker('image', 'inspect', image).stdout)
         assert row['Os'] == 'linux'
-        for _ in range(2):
+        for _ in range(3):
             cid = cls.docker('create', '--pull=never', '--platform', 'linux/' + row['Architecture'],
                 '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
                 '--user', str(os.getuid()),
@@ -173,6 +186,65 @@ class ArtifactExclusionsDockerTests(unittest.IsolatedAsyncioTestCase):
         self.docker('exec', self.containers[1], '/bin/sh', '-c', 'printf bad > ' + shlex.quote(target))
         with self.assertRaisesRegex(ValueError, 'artifact_bytes_mismatch'):
             await attest_docker_artifact(folder / self.source.lstrip('/'), self.source, self.containers[1])
+
+    async def test_sidecar_file_follows_real_harbor_collection_and_isolated_upload(self):
+        from harbor.models.task.config import ArtifactConfig
+        from harbor.trial.artifact_handler import ArtifactHandler
+
+        main, verifier, sidecar = self.containers
+        path = self.guest + '-snapshot'
+        for cid, contents in ((main, 'decoy'), (sidecar, 'snapshot')):
+            self.docker('exec', cid, '/bin/sh', '-c', 'printf %s ' + shlex.quote(contents)
+                        + ' > ' + shlex.quote(path))
+        declared = [self.source, dict(source=path, service='queue')]
+        sender = FixtureEnvironment(self.docker, main, sidecars={'queue': sidecar})
+        logdir = PurePosixPath('/logs/artifacts')
+        handler = ArtifactHandler(artifacts=[self.source, ArtifactConfig(**declared[1])],
+                                  logger=logging.getLogger('service-artifact-fixture'))
+        folder = self.root / 'sidecar-artifacts'
+        manifest = await handler.download_artifacts(sender, folder, source_artifacts_dir=logdir)
+        host = folder / path.lstrip('/')
+        self.assertEqual(host.read_bytes(), b'snapshot')
+        session = 'fixture-sidecar__verifier__trial'
+        source_proofs = [await attest_sidecar_artifact(folder, path, 'queue', sidecar, session_id=session)]
+        with self.assertRaisesRegex(ValueError, 'artifact_bytes_mismatch'):
+            await attest_sidecar_artifact(folder, path, 'queue', main, session_id=session)
+        await handler.upload_artifacts(self.receiver, folder, source_artifacts_dir=logdir,
+                                       target_artifacts_dir=logdir)
+        isolated = dict(container_id=verifier, network_mode='none', session_id=session)
+        transfers = [dict(isolated, target=target, stage='after_upload_before_official_grading',
+                          source_and_verifier_bytes_match=True,
+                          projection=await attest_docker_artifact(folder / target.lstrip('/'), target, verifier))
+                     for target in (self.source, path)]
+        checkpoint = dict(capture='complete', captured_before_grading=True, workspace_in_archive=True,
+                          native_session_files=[dict(path=self.guest + '/native.jsonl')], cwd=self.guest,
+                          checkpoint_sha256=hashlib.sha256(self.archive.read_bytes()).hexdigest(),
+                          declared_artifacts=declared)
+
+        def verify(collected, rows, containers):
+            return verify_artifacts(collected, self.archive, declared, rows, checkpoint, transfers,
+                                    [isolated], session_id=session, sidecar_containers=containers,
+                                    sidecar_proofs=source_proofs)
+
+        result = verify(folder, manifest.to_json_data(), {'queue': sidecar})
+        self.assertEqual(result['sidecar_artifacts'][path], 'queue')
+        self.assertFalse(result['can_resume_agent'])
+        score = await self.receiver.service_exec('test "$(cat -- ' + shlex.quote(path) + ')" = snapshot')
+        self.assertEqual(score.return_code, 0)
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_proof_mismatch'):
+            verify(folder, manifest.to_json_data(), {'queue': main})
+        attested = source_proofs[0].pop('source_and_collected_bytes_match')
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_proof_mismatch'):
+            verify(folder, manifest.to_json_data(), {'queue': sidecar})
+        source_proofs[0]['source_and_collected_bytes_match'] = attested
+
+        self.docker('exec', sidecar, 'rm', '--', path)
+        handler.begin_collection()
+        missing_dir = self.root / 'missing-sidecar-artifacts'
+        missing = await handler.download_artifacts(sender, missing_dir, source_artifacts_dir=logdir)
+        self.assertFalse((missing_dir / path.lstrip('/')).exists())
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_absence_unverified'):
+            verify(missing_dir, missing.to_json_data(), {'queue': sidecar})
 
 
 if __name__ == '__main__':
