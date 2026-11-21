@@ -233,6 +233,52 @@ class ScoreReceiptTests(unittest.TestCase):
                                                         'failed': 0 if passed else 1})
                 self.assertEqual(result['failed_checks'], [] if passed else ['beta'])
 
+    def test_ctrf_fail_fast_reports_the_unexecuted_suffix(self):
+        self.ctrf(False)
+        contract = dict(self.ctrf_contract, expected_test_names=['alpha', 'beta', 'gamma'],
+                        ctrf_execution='fail_fast')
+        result = verify_score(self.folder, {'reward': 0}, contract)
+        self.assertEqual(result['test_counts'], {'total': 2, 'passed': 1, 'failed': 1})
+        self.assertEqual(result['failed_checks'], ['beta'])
+        self.assertEqual(result['tests_not_run'], ['gamma'])
+
+        with self.assertRaises(ScoreError):
+            verify_score(self.folder, {'reward': 0}, dict(contract, ctrf_execution='all'))
+        complete = verify_score(self.folder, {'reward': 0}, dict(contract, expected_test_names=['alpha', 'beta']))
+        self.assertNotIn('tests_not_run', complete)
+
+    def test_ctrf_fail_fast_rejects_invalid_order_and_stopping_points(self):
+        contract = dict(self.ctrf_contract, expected_test_names=['alpha', 'beta', 'gamma'],
+                        ctrf_execution='fail_fast')
+        for observed in ([('beta', 'failed')],
+                         [('alpha', 'passed'), ('gamma', 'failed')],
+                         [('alpha', 'passed'), ('beta', 'passed')],
+                         [('alpha', 'failed'), ('beta', 'failed')],
+                         [('alpha', 'failed'), ('beta', 'passed')]):
+            with self.subTest(observed=observed), self.assertRaises(ScoreError):
+                data = self.ctrf(False)
+                data['results']['tests'] = [{'name': name, 'status': status} for name, status in observed]
+                data['results']['summary'].update(tests=len(observed),
+                    passed=sum(status == 'passed' for _, status in observed),
+                    failed=sum(status == 'failed' for _, status in observed))
+                (self.folder / 'ctrf.json').write_text(json.dumps(data))
+                verify_score(self.folder, {'reward': 0}, contract)
+
+    def test_ctrf_fail_fast_requires_complete_coverage_for_success(self):
+        self.ctrf()
+        contract = dict(self.ctrf_contract, ctrf_execution='fail_fast')
+        self.assertEqual(verify_score(self.folder, {'reward': 1}, contract)['reward'], 1)
+        for names in (['beta', 'alpha'], ['alpha', 'beta', 'gamma']):
+            with self.subTest(names=names), self.assertRaises(ScoreError):
+                verify_score(self.folder, {'reward': 1}, dict(contract, expected_test_names=names))
+
+    def test_ctrf_execution_policy_requires_a_ctrf_contract(self):
+        self.ctrf(False)
+        with self.assertRaisesRegex(ScoreError, 'unsupported_score_contract'):
+            verify_score(self.folder, {'reward': 0}, dict(self.reward_contract, ctrf_execution='fail_fast'))
+        with self.assertRaisesRegex(ScoreError, 'unsupported_score_contract'):
+            verify_score(self.folder, {'reward': 0}, dict(self.ctrf_contract, ctrf_execution='unknown'))
+
     def test_ctrf_cannot_be_downgraded_when_missing_or_conflicting(self):
         self.ctrf()
         (self.folder / 'ctrf.json').unlink()
