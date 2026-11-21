@@ -1,7 +1,7 @@
 # Model Provider Runtime
 
 **Status:** current
-**Last verified:** 2026-11-16
+**Last verified:** 2026-11-21
 
 > **Ownership:** `engine/provider.Runtime`, provider-specific adapters,
 > credential loading in `engine/auth`, and model capability policy in
@@ -437,11 +437,11 @@ admission cannot bound their extra charges or multi-step inference; explicit
 `tool_choice: "none"` disables these tools and remains admissible. Parsed-file
 fees likewise remain the explicit resource caller's responsibility.
 
-`latest_reminder` is excluded because the official protocol does not accept it
-in Responses. Standalone OCR output, ASR, and TTS are separate service APIs with
-no current coding-agent consumer and are outside this model-adapter delivery.
-Verification uses local HTTP/SSE fixtures, including classic bridge replay and
-refusal handling; it does not establish live-provider or UI acceptance.
+`latest_reminder` remains outside Responses. [DeepSeekMedia](../../../engine/provider/deepseek_media.go)
+provides explicit SDK calls for PCM WAV transcription, complete WAV synthesis,
+and page-by-page OCR output. Typed Eino Lambda nodes can call these methods with a
+[metered budget](../runtime/budgets-and-limits.md) for seconds, characters, or pages.
+The SDK methods are available independently of chat and Desktop controls.
 
 GLM uses the project-owned
 [`agenticglm`](../../../engine/provider/agenticglm/model.go) Eino adapter. The
