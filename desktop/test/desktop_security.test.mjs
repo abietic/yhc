@@ -109,6 +109,7 @@ test('platform package resources match each staged desktop backend name', async 
     'lifecycle.cjs',
     'provider_setup.cjs',
     'request.cjs',
+    'speech.cjs',
     'preload.cjs',
     'package.json',
   ]);
@@ -287,7 +288,7 @@ test('macOS window restoration has one target-owned composition path', async () 
   assert.match(source, /createWindowRestoreCoordinator/);
   assert.match(
     source,
-    /const targetWindow = new BrowserWindow\([\s\S]*?mainWindow = targetWindow;[\s\S]*?targetWindow\.once\('closed', \(\) => \{\s*if \(mainWindow === targetWindow\) mainWindow = null;/,
+    /const targetWindow = new BrowserWindow\([\s\S]*?mainWindow = targetWindow;[\s\S]*?targetWindow\.once\('closed', \(\) => \{\s*if \(mainWindow === targetWindow\) \{\s*speechRequests\.cancelAll\(\);\s*mainWindow = null;/,
   );
   assert.match(source, /function loadRenderer\(targetWindow\)/);
   assert.match(

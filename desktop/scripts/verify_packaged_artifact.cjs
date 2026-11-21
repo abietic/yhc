@@ -15,6 +15,7 @@ const REQUIRED_ARCHIVE_FILES = Object.freeze([
   'preload.cjs',
   'provider_setup.cjs',
   'request.cjs',
+  'speech.cjs',
 ]);
 
 function requireDirectory(candidate, label) {
