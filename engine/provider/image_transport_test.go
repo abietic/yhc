@@ -15,6 +15,9 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/abietic/yhc/engine/messages"
+	"github.com/abietic/yhc/engine/transcript"
 )
 
 func TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy(t *testing.T) {
@@ -41,8 +44,27 @@ func TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy(t *testing.T) {
 				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
 					MessagePartCommon: schema.MessagePartCommon{MIMEType: "image/png", Base64Data: &original}, Detail: "auto",
 				}},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{MIMEType: "image/png", Base64Data: &original},
+					},
+					Extra: map[string]any{messages.PreserveImageEncodingKey: true},
+				},
 				{Type: schema.ChatMessagePartTypeText, Text: "after"},
 			}}}
+			dir := t.TempDir()
+			recorder := transcript.NewRecorder("image-delivery", dir)
+			if err := recorder.RecordMessages(input); err != nil {
+				t.Fatal(err)
+			}
+			if err := recorder.Close(); err != nil {
+				t.Fatal(err)
+			}
+			input, err := transcript.NewRecorder("image-delivery", dir).Load()
+			if err != nil {
+				t.Fatal(err)
+			}
 			var requestBytes int
 			var imageURL string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +74,9 @@ func TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy(t *testing.T) {
 					return
 				}
 				requestBytes = len(body)
+				if bytes.Contains(body, []byte(messages.PreserveImageEncodingKey)) {
+					t.Error("local image instruction leaked onto the wire")
+				}
 				var request struct {
 					Input []struct {
 						Content []struct {
@@ -65,13 +90,16 @@ func TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy(t *testing.T) {
 					t.Error(err)
 					return
 				}
-				if len(request.Input) != 1 || len(request.Input[0].Content) != 3 {
+				if len(request.Input) != 1 || len(request.Input[0].Content) != 4 {
 					t.Error("ordered multipart shape changed")
 					return
 				}
 				parts := request.Input[0].Content
-				if parts[0].Text != "before" || parts[2].Text != "after" || parts[1].Detail != "auto" {
+				if parts[0].Text != "before" || parts[3].Text != "after" || parts[1].Detail != "auto" || parts[2].Detail != "" {
 					t.Error("transport projection changed text order or detail")
+				}
+				if parts[2].ImageURL != "data:image/png;base64,"+original {
+					t.Error("the second copy of the PNG lost its original encoding")
 				}
 				imageURL = parts[1].ImageURL
 				if stream {
@@ -106,7 +134,7 @@ func TestDeepSeekLargeAutoPNGUsesBoundedTransportCopy(t *testing.T) {
 			} else if _, err := m.Generate(t.Context(), input); err != nil {
 				t.Fatal(err)
 			}
-			if requestBytes >= raw.Len()/4 || !strings.HasPrefix(imageURL, "data:image/jpeg;base64,") {
+			if requestBytes >= len(original)+raw.Len()/4 || !strings.HasPrefix(imageURL, "data:image/jpeg;base64,") {
 				t.Fatalf("large auto PNG still dominates request: request_bytes=%d source_bytes=%d jpeg=%t", requestBytes, raw.Len(), strings.HasPrefix(imageURL, "data:image/jpeg;base64,"))
 			}
 			decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(imageURL, "data:image/jpeg;base64,"))

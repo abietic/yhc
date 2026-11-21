@@ -215,8 +215,10 @@ attachment collector instead of formatting binary bytes as text. The active
 model must accept images and the entrypoint must provide a collector. The tool
 checks decoded dimensions before decoding pixels, limits each file to 5 MiB and
 25 million pixels, and takes MIME type from the bytes. Original encoded bytes
-remain in the canonical attachment; provider transport may derive its usual
-automatic delivery copy. Unsupported encodings, invalid content, cancellation
+remain in the canonical attachment. Pass `preserve_image_encoding: true` when
+exact pixel values matter to skip YHC's automatic transport image conversion.
+The selected provider still applies its own image processing.
+Unsupported encodings, invalid content, cancellation
 or absent media delivery return a tool error without establishing read credit.
 SVG continues through the ordinary text-window and Edit path. A successful
 visual read records only unverified observation for cold guard capture.

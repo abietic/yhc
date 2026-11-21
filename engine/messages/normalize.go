@@ -6,6 +6,10 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// PreserveImageEncodingKey is a per-image local transport instruction.
+// It does not request a provider-specific detail level.
+const PreserveImageEncodingKey = "_yhc_preserve_image_encoding"
+
 // internalExtraKeys lists Extra map keys that are internal-only metadata and
 // should not be forwarded to the model API.
 var internalExtraKeys = []string{

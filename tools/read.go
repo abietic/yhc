@@ -86,11 +86,12 @@ func isPDFExtension(path string) bool {
 func ReadTool() ToolImpl {
 	execute := func(ctx context.Context, input string) (string, error) {
 		var params struct {
-			FilePath string `json:"file_path"`
-			Limit    *int   `json:"limit"`
-			Offset   *int   `json:"offset"`
-			Line     *int   `json:"line"`
-			Pages    string `json:"pages"`
+			FilePath              string `json:"file_path"`
+			Limit                 *int   `json:"limit"`
+			Offset                *int   `json:"offset"`
+			Line                  *int   `json:"line"`
+			Pages                 string `json:"pages"`
+			PreserveImageEncoding bool   `json:"preserve_image_encoding"`
 		}
 		if err := json.Unmarshal([]byte(input), &params); err != nil {
 			return "", fmt.Errorf("read: invalid params: %w", err)
@@ -126,7 +127,7 @@ func ReadTool() ToolImpl {
 			return result, nil
 		}
 		if isImageExtension(fullPath) && strings.ToLower(filepath.Ext(fullPath)) != ".svg" {
-			result, err := readImageForTool(ctx, params.FilePath, fullPath)
+			result, err := readImageForTool(ctx, params.FilePath, fullPath, params.PreserveImageEncoding)
 			if err != nil {
 				return "", fmt.Errorf("read: %w", err)
 			}
@@ -194,11 +195,12 @@ func ReadTool() ToolImpl {
 			Name: "Read",
 			Desc: "Reads a file from the local filesystem.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"file_path": {Type: schema.String, Desc: "The absolute path to the file to read", Required: true},
-				"limit":     {Type: schema.Integer, Desc: "The number of lines to read. Only provide if the file is too large to read at once."},
-				"offset":    {Type: schema.Integer, Desc: "The zero-based line offset to start reading from. Only provide if the file is too large to read at once"},
-				"line":      {Type: schema.Integer, Desc: "The one-based target line number to center the view around"},
-				"pages":     {Type: schema.String, Desc: "Inclusive 1-indexed PDF page range such as 1-5 or 3; maximum 20 pages per request"},
+				"file_path":               {Type: schema.String, Desc: "The absolute path to the file to read", Required: true},
+				"limit":                   {Type: schema.Integer, Desc: "The number of lines to read. Only provide if the file is too large to read at once."},
+				"offset":                  {Type: schema.Integer, Desc: "The zero-based line offset to start reading from. Only provide if the file is too large to read at once"},
+				"line":                    {Type: schema.Integer, Desc: "The one-based target line number to center the view around"},
+				"pages":                   {Type: schema.String, Desc: "Inclusive 1-indexed PDF page range such as 1-5 or 3; maximum 20 pages per request"},
+				"preserve_image_encoding": {Type: schema.Boolean, Desc: "Keep original image bytes during YHC delivery when exact pixels matter."},
 			}),
 		},
 		SkipResultBudget: true,
