@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+func TestReadRejectsNegativeOffsetWithoutReadCredit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fixture.txt")
+	if err := os.WriteFile(path, []byte("first\nsecond\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ReadTool().ExecuteCtx(t.Context(), fileToolInput(t, map[string]any{
+		"file_path": path, "offset": -1,
+	}))
+	if result != "" || err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("Read result = %q, error = %v", result, err)
+	}
+	if GetFileReadState(path) != nil {
+		t.Fatal("invalid Read recorded file-read credit")
+	}
+}
+
 func TestReadCoverageFeedbackMatchesEditGuard(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -22,6 +38,7 @@ func TestReadCoverageFeedbackMatchesEditGuard(t *testing.T) {
 		{name: "offset-is-zero-based", lines: 3, params: map[string]any{"offset": 2}, wantNotice: "[Partial Read: lines 3-3 of 3.]"},
 		{name: "default-window", lines: 301, wantNotice: "[Partial Read: lines 1-250 of 301.]"},
 		{name: "centered-window", lines: 301, params: map[string]any{"line": 280, "limit": 10}, wantNotice: "[Partial Read: lines 275-284 of 301.]"},
+		{name: "centered-window-clamped-to-hard-limit", lines: 4000, params: map[string]any{"line": 2800, "limit": 5000}, wantNotice: "[Partial Read: lines 1800-3799 of 4000.]"},
 		{name: "hard-limit", lines: 2001, params: map[string]any{"limit": 5000}, wantNotice: "[Partial Read: lines 1-2000 of 2001.]"},
 		{name: "partial-after-full", lines: 3, priorFull: true, params: map[string]any{"limit": 1}, wantNotice: "[Partial Read: lines 1-1 of 3.]", canEdit: true},
 	} {

@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/abietic/yhc/engine/messages"
 )
 
 func TestReadImageDeliversOriginalRasterAttachment(t *testing.T) {
@@ -59,6 +61,19 @@ func TestReadImageDeliversOriginalRasterAttachment(t *testing.T) {
 	entry := fileReadGuardsFromContext(ctx).m[path]
 	if entry == nil || entry.sha256 != "" {
 		t.Fatal("visual read must stay unverified for content-bound guard recovery")
+	}
+	if part.Extra[messages.PreserveImageEncodingKey] != nil {
+		t.Fatal("implicit Read unexpectedly requested original delivery")
+	}
+	if _, err := ReadTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"file_path": path, "preserve_image_encoding": true})); err != nil {
+		t.Fatal(err)
+	}
+	if len(attachments) != 2 {
+		t.Fatalf("got %d attachments from two image reads", len(attachments))
+	}
+	preserved := attachments[1].UserInputMultiContent[1]
+	if preserved.Image == nil || preserved.Extra[messages.PreserveImageEncodingKey] != true || preserved.Image.Detail != "" {
+		t.Fatal("original delivery must set the local image instruction without requesting provider detail")
 	}
 }
 

@@ -44,6 +44,8 @@ data: {"type":"response.failed","sequence_number":3,"response":{"id":"private-re
 		{name: "clean eof missing terminal", wire: "event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0}\n\n", wantKind: "eof_missing_terminal"},
 		{name: "valid completed usage", wire: completed, wantKind: "completed", terminal: true, usage: true, responseID: true},
 		{name: "valid incomplete usage", wire: strings.ReplaceAll(completed, "completed", "incomplete"), wantKind: "incomplete", terminal: true, usage: true, responseID: true},
+		{name: "incomplete event with completed body", wire: strings.ReplaceAll(completed, "response.completed", "response.incomplete"), wantKind: "protocol_error"},
+		{name: "completed event with incomplete body", wire: strings.ReplaceAll(completed, `"status":"completed"`, `"status":"incomplete"`), wantKind: "protocol_error"},
 		{name: "failed with final usage", wire: failed, wantKind: "api_error", terminal: true, usage: true, responseID: true},
 		{name: "malformed failed envelope", wire: strings.ReplaceAll(failed, `"status":"failed"`, `"status":"completed"`), wantKind: "api_error"},
 		{name: "reset after reasoning", reader: io.MultiReader(strings.NewReader("event: response.created\ndata: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"private-response\",\"object\":\"response\"}}\n\nevent: response.reasoning_text.delta\ndata: {\"type\":\"response.reasoning_text.delta\",\"sequence_number\":1,\"delta\":\"private\"}\n\n"), &diagnosticFailReader{}), wantKind: "transport_error", responseID: true},

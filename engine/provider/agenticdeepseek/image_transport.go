@@ -20,7 +20,7 @@ func optimizeResponseImages(ctx context.Context, request *responseRequest) error
 		for _, parts := range [][]contentPart{item.Content, item.Output} {
 			for partIndex := range parts {
 				part := &parts[partIndex]
-				if part.Type != "input_image" || part.Detail != "" && part.Detail != "auto" {
+				if part.Type != "input_image" || part.preserveEncoding || part.Detail != "" && part.Detail != "auto" {
 					continue
 				}
 				const prefix = "data:image/png;base64,"

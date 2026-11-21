@@ -5398,7 +5398,7 @@ privacy:
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/headless_truncation_test.go
-      line: 66
+      line: 71
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
@@ -5908,7 +5908,7 @@ privacy:
       match_sha256: d9e24c02f468d6af70ef89a1fbf126993ca519a890572aa520c912928f6be154
       purpose: synthetic-security-fixture
     - path: engine/provider/agenticdeepseek/stream_diag_test.go
-      line: 106
+      line: 108
       rule_id: credential-assignment
       match_sha256: 93883450e504b26a6f1f77ed4d957ba588646096e67f7267357a1f056b30d029
       purpose: synthetic-security-fixture

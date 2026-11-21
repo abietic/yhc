@@ -202,7 +202,13 @@ func (s *streamState) convertEvent(event *streamEvent) (*schema.AgenticMessage, 
 		call.deltaEmitted = true
 		return functionCallChunk(call, event.Delta), false, nil
 	case "response.completed", "response.incomplete":
-		message, err := terminalStreamMessage(event.Response)
+		response := event.Response
+		if response != nil &&
+			(response.Status == ResponseStatusCompleted || response.Status == ResponseStatusIncomplete) &&
+			event.Type != "response."+string(response.Status) {
+			return nil, false, &ProtocolError{ReasonCode: "stream_terminal_event_status_mismatch"}
+		}
+		message, err := terminalStreamMessage(response)
 		return message, true, err
 	case "response.failed":
 		if event.Response == nil {
