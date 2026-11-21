@@ -367,6 +367,7 @@ def load_reference_trajectory(path):
     fields = {"input_tokens": "prompt_tokens", "cached_input_tokens": "cached_tokens", "output_tokens": "completion_tokens"}
     values = {key: [] for key in fields}
     thinking, cache_rows = [], []
+    out_of_range_thinking_steps = 0
     for step in steps:
         metrics = step.get("metrics")
         if metrics is None:
@@ -390,10 +391,12 @@ def load_reference_trajectory(path):
         aliases = [count(details[key]) for key in ("thinking_tokens", "reasoning_tokens")
                    if details is not None and details.get(key) is not None]
         if aliases:
-            if (len(set(aliases)) != 1
-                    or metrics.get("completion_tokens") is not None and aliases[0] > metrics["completion_tokens"]):
-                raise ValueError("conflicting or excessive reference thinking")
-            thinking.append(aliases[0])
+            if len(set(aliases)) != 1:
+                raise ValueError("conflicting reference thinking aliases")
+            if metrics.get("completion_tokens") is not None and aliases[0] > metrics["completion_tokens"]:
+                out_of_range_thinking_steps += 1
+            else:
+                thinking.append(aliases[0])
     final = data.get("final_metrics")
     if final is not None and not isinstance(final, dict):
         raise ValueError("invalid reference final metrics")
@@ -407,6 +410,10 @@ def load_reference_trajectory(path):
                 raise ValueError("reference step and final metric scopes disagree")
     reported_calls = [step.get("llm_call_count") for step in steps]
     models = sorted({atom(step.get("model_name") or data["agent"].get("model_name")) for step in steps})
+    thinking_coverage = dict(known_tokens=sum(thinking) if thinking else None, reported_steps=len(thinking),
+                             total_steps=len(steps), complete=len(thinking) == len(steps))
+    if out_of_range_thinking_steps:
+        thinking_coverage["out_of_range_steps"] = out_of_range_thinking_steps
     return dict(source_sha256=source_sha, evidence_kind="reference_trajectory", reward=None, actual_billed_cny=None,
         agent=atom(data["agent"].get("name")), model=models[0] if len(models) == 1 else "mixed", models=models,
         model_calls=sum(reported_calls) if all(c is not None for c in reported_calls) else None,
@@ -414,9 +421,7 @@ def load_reference_trajectory(path):
         usage_complete=all(len(rows) == len(steps) for rows in values.values()),
         cache_hit_rate_known_including_first=sum(c for _, c in cache_rows) / sum(p for p, _ in cache_rows)
             if sum(p for p, _ in cache_rows) else None,
-        cache_reported_steps=len(cache_rows),
-        thinking=dict(known_tokens=sum(thinking) if thinking else None, reported_steps=len(thinking),
-                      total_steps=len(steps), complete=len(thinking) == len(steps)))
+        cache_reported_steps=len(cache_rows), thinking=thinking_coverage)
 
 
 def build_report(roots, reference_trajectories=()):
@@ -497,10 +502,13 @@ def markdown(report):
                   "|---|---|---:|---:|---:|---:|"]
         for r in report["reference_trajectories"]:
             cache, thinking = r["cache_hit_rate_known_including_first"], r["thinking"]
+            coverage = f"{thinking['reported_steps']}/{thinking['total_steps']}"
+            if out_of_range := thinking.get("out_of_range_steps"):
+                coverage += f" ({out_of_range} out of range)"
             lines.append(f"| {r['agent']} | {r['model']} | {r['model_calls'] if r['model_calls'] is not None else 'unavailable'} | "
                          f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
                          f"{thinking['known_tokens'] if thinking['known_tokens'] is not None else 'unavailable'} | "
-                         f"{thinking['reported_steps']}/{thinking['total_steps']} |")
+                         f"{coverage} |")
     return "\n".join(lines) + "\n"
 
 

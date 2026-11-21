@@ -486,6 +486,23 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(got["thinking"]["known_tokens"], expected)
             self.assertFalse(got["thinking"]["complete"])
 
+    def test_reference_out_of_range_thinking_keeps_independent_usage(self):
+        trace = reference_trace()
+        trace["steps"][1]["metrics"]["extra"]["output_tokens_details"] = {"thinking_tokens": 9}
+        report = build_report([], reference_trajectories=[self.reference(trace)])
+        got = report["reference_trajectories"][0]
+        self.assertEqual((got["model_calls"], got["input_tokens"], got["output_tokens"]), (2, 400, 20))
+        self.assertTrue(got["usage_complete"])
+        self.assertEqual(got["cache_hit_rate_known_including_first"], 0.825)
+        self.assertEqual(got["thinking"], dict(known_tokens=6, reported_steps=1, total_steps=2,
+                                               complete=False, out_of_range_steps=1))
+        self.assertIn("1/2 (1 out of range)", markdown(report))
+
+        trace["steps"][2]["metrics"]["extra"]["output_tokens_details"] = {"reasoning_tokens": 13}
+        got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
+        self.assertEqual(got["thinking"], dict(known_tokens=None, reported_steps=0, total_steps=2,
+                                               complete=False, out_of_range_steps=2))
+
     def test_reference_copied_context_and_deterministic_steps_are_not_new_calls(self):
         trace = reference_trace()
         trace["steps"].append(dict(trace["steps"][1], step_id=4, is_copied_context=True))
@@ -515,7 +532,7 @@ class ComparisonTests(unittest.TestCase):
             build_report([], reference_trajectories=[path, path])
 
     def test_reference_invalid_counters_alias_conflicts_and_totals_fail_closed(self):
-        for change in (dict(thinking_tokens=True), dict(thinking_tokens=-1), dict(thinking_tokens=9),
+        for change in (dict(thinking_tokens=True), dict(thinking_tokens=-1),
                        dict(thinking_tokens=4, reasoning_tokens=5)):
             trace = reference_trace()
             trace["steps"][1]["metrics"]["extra"]["output_tokens_details"] = change

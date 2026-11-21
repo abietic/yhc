@@ -35,6 +35,7 @@ var bootstrapBuildVersionPattern = regexp.MustCompile(`^[0-9][0-9A-Za-z.+-]{0,63
 
 // Config defines the bounded local app-server runtime.
 type Config struct {
+	Speech             SpeechConfig
 	Factory            EngineFactory
 	ValidateResume     ResumeValidator
 	Token              string
@@ -62,6 +63,7 @@ type Server struct {
 	token                  string
 	startedAt              time.Time
 	factory                EngineFactory
+	speech                 SpeechConfig
 	validateResume         ResumeValidator
 	eventBuffer            int
 	maxSessions            int
@@ -144,6 +146,7 @@ func New(config Config) (*Server, error) {
 		token:              token,
 		startedAt:          now().UTC(),
 		factory:            config.Factory,
+		speech:             config.Speech,
 		validateResume:     config.ValidateResume,
 		eventBuffer:        eventBuffer,
 		maxSessions:        maxSessions,
@@ -407,6 +410,7 @@ type requestPrincipalKey struct{}
 
 func (s *Server) routes() http.Handler {
 	api := http.NewServeMux()
+	s.speechRoutes(api)
 	api.HandleFunc("GET /v1/health", s.handleHealth)
 	api.HandleFunc("POST /v1/workspaces", s.handleRegisterWorkspace)
 	api.HandleFunc("GET /v1/sessions", s.handleListSessions)

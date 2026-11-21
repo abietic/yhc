@@ -19,6 +19,7 @@ const bind = new Function('initialState', 'activeSession', 'reducer', 'canSubmit
   const queueAttempts = new Map();
   const turnDraftAttempts = new Map();
   let state = initialState;
+  let nativeSpeech;
   let persistenceEnabled = false;
   function dispatch(action) { state = reducer(state, action); }
   ${productionBetween('function updateDraft(value)', 'async function send(event)')}

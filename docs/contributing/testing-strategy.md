@@ -226,13 +226,16 @@ not establish that the paid plan started.
 
 The optional `--reference-trajectory` reads local ATIF v1.7 counters separately
 from native runs. Thinking comes from explicit `thinking_tokens` or
-`reasoning_tokens` in each step's `metrics.extra.output_tokens_details`; multiple
-tool calls in one step do not duplicate usage. Copied context and deterministic
-zero-inference steps are excluded. Missing counters retain partial coverage,
-and conflicting aliases or aggregate scopes are rejected. A reference trajectory
-supplies no reward, invoice, or matched-pair evidence. Current FreshGateway
-`known_cost` and nested `call.liability` receipts are also accepted; conflicting
-legacy and current amounts fail closed.
+`reasoning_tokens` in each step's `metrics.extra.output_tokens_details`. A step
+counts once regardless of its tool calls. Copied context and deterministic
+zero-inference steps are excluded. Missing counters retain partial coverage.
+If a step's thinking exceeds its completion tokens, the report counts the step
+in `thinking.out_of_range_steps` and excludes its thinking from the subtotal.
+The report retains independently validated usage and cache counters. Conflicting
+aliases and aggregate scopes still cause the reader to reject the reference.
+A reference trajectory supplies no reward, invoice, or matched-pair evidence.
+Current FreshGateway `known_cost` and nested `call.liability` receipts are also
+accepted. Conflicting legacy and current amounts fail closed.
 
 `collect_tool_feedback` in [`tool_feedback.py`](../../scripts/terminal_bench/tool_feedback.py)
 counts tool requests from complete captured Responses or Messages replies,
@@ -347,11 +350,23 @@ binds their digest and projects the full immutable archive through the exclusion
 rules before comparing collected and uploaded bytes. Directory exclusions use
 the case-sensitive, unanchored, recursive GNU tar `*`/`?` glob subset; excludes on
 file artifacts are ignored, matching Harbor's collector. Bracket expressions,
-backslash escapes, trailing-slash patterns, sidecars and destination remapping
-remain blocked. Locale-dependent Unicode `?` matching may disagree with the
+backslash escapes, trailing-slash patterns and destination remapping remain
+blocked. Locale-dependent Unicode `?` matching may disagree with the
 collector and therefore stays unverified rather than bypassing tree equality.
 Excluded archive entries are never extracted or executed; path traversal and
 duplicate paths are still rejected even when excluded.
+
+An operator can opt in regular files from a named sidecar with
+`artifact_sources(declared, sidecar_services=...)`. These files stay in the
+checkpoint declarations and are collected separately from the main archive.
+Pass the independently observed service container IDs as `sidecar_containers`
+and the source byte projections as `sidecar_proofs` to `verify_artifacts`.
+Use `attest_sidecar_artifact` to obtain each projection and source receipt
+from the bound container after collection and before upload. The closeout checks the
+collection's service, exact source identity and trial, and source, collected and
+uploaded byte equality. Missing sidecar files and sidecar directories fail the
+proof. The operator owns the collection hook and freshness checks for each
+source service.
 
 The caller owns capture provenance, immutable evidence, isolation observations,
 grader identity and closed usage. This check neither executes artifact contents
@@ -364,8 +379,9 @@ python3 -m unittest scripts.terminal_bench.test_artifact_closeout
 ```
 
 The opt-in Docker calibration uses the installed Harbor collector and a cached
-Linux GNU tar image, uploads to a separate `network=none` container, and checks
-the complete byte chain. It does not prove native agent sessions or task reward:
+Linux GNU tar image. It checks exclusion projection and service-qualified file
+collection through upload to a separate `network=none` container. Native agent
+sessions and official task reward require their own checks.
 
 ```bash
 YHC_ARTIFACT_EXCLUSIONS_DOCKER_TEST=1 \

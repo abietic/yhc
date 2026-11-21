@@ -8,7 +8,7 @@ import tarfile
 import tempfile
 import unittest
 
-from scripts.terminal_bench.artifact_closeout import CloseoutError, verify_artifacts
+from scripts.terminal_bench.artifact_closeout import CloseoutError, artifact_sources, verify_artifacts
 from scripts.terminal_bench.artifact_integrity import source_manifest
 
 
@@ -341,6 +341,98 @@ class ArtifactCloseoutTests(unittest.TestCase):
         (self.tree / 'new.txt').unlink()
         (self.tree / 'new.txt').symlink_to(self.collected / 'app/config')
         with self.assertRaises(CloseoutError): self.verify()
+
+
+class SidecarArtifactTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ArtifactCloseoutTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        f = self.fixture
+        self.source = '/tmp/service-snapshot'
+        self.declared = [*f.sources, dict(source=self.source, service='queue')]
+        f.checkpoint['declared_artifacts'] = self.declared
+        f.rows.append(dict(source=self.source, type='file', status='ok', service='queue'))
+        self.collected = f.collected / self.source.lstrip('/')
+        self.collected.parent.mkdir()
+        self.collected.write_bytes(b'snapshot')
+        record = {'': dict(type='file', bytes=8, sha256=hashlib.sha256(b'snapshot').hexdigest())}
+        projection = dict(scope='uploaded_projection', file_count=1, directory_count=0, bytes=8,
+                          manifest_sha256=hashlib.sha256(json.dumps(record, sort_keys=True,
+                              separators=(',', ':')).encode()).hexdigest(),
+                          additional_target_entries_unverified=0)
+        f.proofs.append(dict(f.proofs[0], target=self.source, projection=projection))
+        self.containers = {'queue': 'b'*64}
+        self.sidecar_proofs = [dict(source=self.source, service='queue', container_id='b'*64,
+                                    session_id='sample__verifier__trial',
+                                    stage='after_collection_before_upload', projection=projection.copy(),
+                                    source_and_collected_bytes_match=True)]
+
+    def verify(self):
+        f = self.fixture
+        return verify_artifacts(f.collected, f.archive, self.declared, f.rows, f.checkpoint,
+                                f.proofs, f.isolation, session_id='sample__verifier__trial',
+                                sidecar_containers=self.containers, sidecar_proofs=self.sidecar_proofs)
+
+    def test_source_service_file_uses_an_independent_origin_and_verifier_chain(self):
+        f = self.fixture
+        self.assertEqual(artifact_sources(self.declared, sidecar_services={'queue'}), f.sources)
+        # A main-container file at the same absolute path does not supply or
+        # change the sidecar artifact.
+        f.entries.extend([('tmp', None), ('tmp/service-snapshot', b'main decoy')])
+        f.write_archive()
+        report = self.verify()
+        self.assertEqual(report['sidecar_artifacts'][self.source], 'queue')
+        self.assertEqual(report['present_artifacts'][self.source]['bytes'], 8)
+        self.assertFalse(report['can_resume_agent'])
+
+    def test_manifest_cannot_substitute_another_service_or_missing_source(self):
+        row = self.fixture.rows[-1]
+        row['service'] = 'main'
+        with self.assertRaisesRegex(CloseoutError, 'artifact_collection_unqualified'):
+            self.verify()
+        row.update(service='queue', status='missing')
+        self.collected.unlink()
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_absence_unverified'):
+            self.verify()
+
+    def test_identical_bytes_do_not_substitute_wrong_container_or_trial(self):
+        good = self.sidecar_proofs[0].copy()
+        for overrides in (dict(container_id='c'*64), dict(service='main'),
+                          dict(session_id='old__verifier__trial'),
+                          dict(stage='after_official_grading'),
+                          dict(source_and_collected_bytes_match=False)):
+            with self.subTest(overrides=overrides):
+                self.sidecar_proofs[0] = dict(good, **overrides)
+                with self.assertRaises(CloseoutError):
+                    self.verify()
+        self.sidecar_proofs[0] = good
+        del good['source_and_collected_bytes_match']
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_proof_mismatch'):
+            self.verify()
+
+    def test_require_distinct_origin_attestation_and_matching_projection(self):
+        good = self.sidecar_proofs.pop()
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_proof_coverage'):
+            self.verify()
+        self.sidecar_proofs.append(good)
+        self.collected.write_bytes(b'modified')
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_proof_mismatch'):
+            self.verify()
+        self.collected.write_bytes(b'snapshot')
+        good['container_id'] = self.containers['queue'] = self.fixture.isolation[0]['container_id']
+        with self.assertRaisesRegex(CloseoutError, 'sidecar_container_unqualified'):
+            self.verify()
+
+    def test_sidecar_admission_remains_opt_in_and_file_only(self):
+        with self.assertRaises(CloseoutError):
+            artifact_sources(self.declared)
+        for entry in (dict(source=self.source + '/', service='queue'),
+                      dict(source=self.source, service='queue', destination='snapshot'),
+                      dict(source=self.source, service='queue', exclude=['*.tmp']),
+                      dict(source=self.source, service='other')):
+            with self.subTest(entry=entry), self.assertRaises(CloseoutError):
+                artifact_sources([entry], sidecar_services={'queue'})
 
 
 class ArtifactExclusionTests(unittest.TestCase):

@@ -396,6 +396,55 @@ after it observes that backend exit. If that cannot be confirmed, the app stays
 open and asks you to try quitting again. This protects the latest durable write;
 it does not turn an interrupted model response into a completed turn.
 
+## Record a draft or read an answer aloud
+
+Desktop speech uses the standalone DeepSeek API. Both actions are off by default.
+Set the variables before launching the Electron process and restart it after changes.
+
+```bash
+export YHC_DESKTOP_RECORD_DRAFT=1  # Enable microphone recording and transcription
+export YHC_DESKTOP_READ_ALOUD=1    # Enable read aloud on completed answers
+export YHC_DESKTOP_SPEECH_PRICE_CARD="$PWD/desktop-speech-prices.json"
+export YHC_DESKTOP_SPEECH_MAX_COST=1
+```
+
+Set either switch to `0` to disable that action. Supply a DeepSeek key in
+`YHC_DESKTOP_SPEECH_API_KEY` or `DEEPSEEK_API_KEY` in the launch environment.
+The maximum cost is shared by both actions for the lifetime of the local
+app-server, in the price card's currency. Restarting the app-server starts a
+new budget. YHC reserves cost before each call and pauses speech when billing
+is uncertain. The limit is a local estimate based on the supplied rates.
+
+Save an `upper_bound` price card at the configured path. This example uses the
+public CNY list prices checked on 2026-11-21. Check the published rates before
+using it. [DeepSeek prices](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+
+```json
+{
+  "version": 1,
+  "currency": "CNY",
+  "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+  "as_of": "2026-11-21T00:00:00Z",
+  "window": "upper_bound",
+  "routes": [
+    {"provider":"agenticdeepseek","model":"asr","api_model":"asr","cached_input_per_million":"0","uncached_input_per_million":"0","output_per_million":"0","metered":{"unit":"audio_second","amount":"0.78","per":3600}},
+    {"provider":"agenticdeepseek","model":"tts","api_model":"tts","cached_input_per_million":"0","uncached_input_per_million":"0","output_per_million":"0","metered":{"unit":"billing_character","amount":"3","per":10000}}
+  ]
+}
+```
+
+- **Record draft** asks for microphone permission on first use. The recording
+  stays in memory until **Stop and transcribe** or the 60-second limit. The resulting
+  text is appended to the current draft. Review it and use the normal **Send**
+  or **Queue** control. **Cancel recording** discards the pending recording.
+- **Read aloud** sends the visible answer text to DeepSeek only when clicked.
+  The button appears when Desktop can identify the final answer of a successfully
+  completed turn. **Stop reading** cancels audio generation or stops playback.
+
+Switching sessions cancels the pending speech action. Audio stays in memory
+and is discarded after use. The transcript text follows the existing draft
+behavior after insertion.
+
 ## Recover from an unexpected backend stop
 
 If the local backend stops unexpectedly, Desktop remains open and shows

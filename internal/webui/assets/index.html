@@ -155,6 +155,11 @@
           <p id="interaction-error" class="interaction-error" role="alert" hidden></p>
           <div id="interaction-actions" class="interaction-actions"></div>
         </section>
+        <p id="native-speech-config-status" class="composer-hint" role="status" hidden></p>
+        <div id="read-aloud-controls" class="composer-hint" hidden>
+          <button id="stop-read-aloud" class="quiet" type="button" hidden>Stop reading</button>
+          <span id="read-aloud-status" role="status"></span>
+        </div>
         <form id="composer" class="composer">
           <div id="command-completion" class="command-completion" hidden></div>
           <span id="command-completion-status" class="completion-status" role="status" aria-live="polite"></span>
@@ -208,6 +213,11 @@
                 <kbd aria-hidden="true">⌘⏎</kbd>
               </button>
             </div>
+          </div>
+          <div id="record-draft-controls" hidden>
+            <button id="record-draft" class="quiet" type="button" title="Send a recording to DeepSeek for transcription">Record draft</button>
+            <button id="cancel-record-draft" class="quiet" type="button" hidden>Cancel recording</button>
+            <span id="record-draft-status" class="composer-hint" role="status"></span>
           </div>
           <div id="prompt-suggestion" class="prompt-suggestion" hidden>
             <button id="suggest-prompt" type="button" class="quiet" aria-describedby="suggestion-note">Suggest next step</button>

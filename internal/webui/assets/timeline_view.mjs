@@ -1,6 +1,7 @@
 function messagePresentation(message) {
   return {
     role: message.role,
+    readAloud: message.readAloud === true,
     content: message.content,
     reasoningContent: message.reasoningContent,
     toolLabels: JSON.stringify((message.toolCalls || []).map((call) => (
@@ -11,6 +12,7 @@ function messagePresentation(message) {
 
 function samePresentation(left, right) {
   return left.role === right.role &&
+    left.readAloud === right.readAloud &&
     left.content === right.content &&
     left.reasoningContent === right.reasoningContent &&
     left.toolLabels === right.toolLabels;
