@@ -7,6 +7,22 @@ import (
 	"testing"
 )
 
+func TestReadRejectsNegativeOffsetWithoutReadCredit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fixture.txt")
+	if err := os.WriteFile(path, []byte("first\nsecond\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ReadTool().ExecuteCtx(t.Context(), fileToolInput(t, map[string]any{
+		"file_path": path, "offset": -1,
+	}))
+	if result != "" || err == nil || !strings.Contains(err.Error(), "offset must be non-negative") {
+		t.Fatalf("Read result = %q, error = %v", result, err)
+	}
+	if GetFileReadState(path) != nil {
+		t.Fatal("invalid Read recorded file-read credit")
+	}
+}
+
 func TestReadCoverageFeedbackMatchesEditGuard(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

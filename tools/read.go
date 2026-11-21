@@ -168,6 +168,9 @@ func ReadTool() ToolImpl {
 			hasExplicitRange = true
 		} else if params.Offset != nil {
 			offset = *params.Offset
+			if offset < 0 {
+				return "", fmt.Errorf("read: offset must be non-negative")
+			}
 		}
 
 		if offset >= totalLines {
