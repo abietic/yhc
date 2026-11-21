@@ -87,7 +87,7 @@ def _log_names(contract, required, reward_file):
     return names
 
 
-def _ctrf_counts(raw, contract, expected):
+def _ctrf_counts(raw, contract, expected, execution):
     names = contract.get('expected_test_names')
     if (not isinstance(names, list) or not names
             or any(not isinstance(n, str) or not n for n in names)
@@ -100,20 +100,27 @@ def _ctrf_counts(raw, contract, expected):
         raise
     except (KeyError, TypeError, ValueError, RecursionError) as error:
         raise ScoreError('score_json_invalid') from error
-    if (not isinstance(tests, list) or not isinstance(summary, dict) or len(tests) != len(names)
+    if (not isinstance(tests, list) or not isinstance(summary, dict) or not tests
             or any(not isinstance(t, dict) or not isinstance(t.get('name'), str)
-                   or t.get('status') not in ('passed', 'failed') for t in tests)
-            or sorted(t['name'] for t in tests) != sorted(names)):
+                   or t.get('status') not in ('passed', 'failed') for t in tests)):
         raise ScoreError('test_coverage_unverified')
     counts = Counter(t['status'] for t in tests)
-    for key, value in dict(tests=len(names), passed=counts['passed'], failed=counts['failed'],
+    observed = [t['name'] for t in tests]
+    if execution == 'fail_fast':
+        if observed != names[:len(tests)]:
+            raise ScoreError('test_coverage_unverified')
+        if expected == 0 and (counts['failed'] != 1 or tests[-1]['status'] != 'failed'):
+            raise ScoreError('test_coverage_unverified')
+    elif sorted(observed) != sorted(names):
+        raise ScoreError('test_coverage_unverified')
+    for key, value in dict(tests=len(tests), passed=counts['passed'], failed=counts['failed'],
                            skipped=0, pending=0, other=0).items():
         if type(summary.get(key)) is not int or summary[key] != value:
             raise ScoreError('score_summary_mismatch')
     if expected != int(counts['passed'] == len(names)):
         raise ScoreError('reward_and_tests_mismatch')
-    return (dict(total=len(names), passed=counts['passed'], failed=counts['failed']),
-            [t['name'] for t in tests if t['status'] == 'failed'])
+    return (dict(total=len(tests), passed=counts['passed'], failed=counts['failed']),
+            [t['name'] for t in tests if t['status'] == 'failed'], names[len(tests):])
 
 
 def verify_score(folder, rewards, contract):
@@ -122,6 +129,9 @@ def verify_score(folder, rewards, contract):
     Reward-only contracts require test-stdout.txt unless expected_log_names
     explicitly names other logs. Counts and failed checks remain unknown,
     including for reward.json; incidental scaffold CTRF is not interpreted.
+    A CTRF contract opting into fail_fast must give test names in execution
+    order. A zero reward can end at the first failed check, with the suffix
+    reported separately in tests_not_run. A positive reward requires all tests.
     Missing or invalid CTRF never falls back to reward-only interpretation.
     Directory aliases are resolved and rechecked; linked score files are not
     followed. Each file is bounded to 4 MiB; changing evidence is rejected.
@@ -133,6 +143,9 @@ def verify_score(folder, rewards, contract):
     json_reward = kind == 'reward_json_and_logs' and contract.get('ctrf_expected') is False
     reward_only = (kind == 'reward_txt_and_logs' and contract.get('ctrf_expected') is False) or json_reward
     if not (ctrf or reward_only):
+        raise ScoreError('unsupported_score_contract')
+    execution = contract.get('ctrf_execution', 'all')
+    if 'ctrf_execution' in contract and (not ctrf or execution not in ('all', 'fail_fast')):
         raise ScoreError('unsupported_score_contract')
     if not isinstance(rewards, dict) or set(rewards) != {'reward'}:
         raise ScoreError('reported_reward_unverified')
@@ -160,10 +173,13 @@ def verify_score(folder, rewards, contract):
             raise ScoreError('reward_text_mismatch') from error
         if text not in ('0', '1', '0.0', '1.0') or float(text) != expected:
             raise ScoreError('reward_text_mismatch')
-    counts, failed = _ctrf_counts(blobs['ctrf.json'], contract, expected) if ctrf else (None, None)
-    return dict(format=kind, reward=expected, test_counts=counts, failed_checks=failed,
-                file_sha256={n: hashlib.sha256(raw).hexdigest() for n, raw in blobs.items()},
-                grader_identity_verified_by_this_reader=False, can_resume_agent=False)
+    counts, failed, not_run = _ctrf_counts(blobs['ctrf.json'], contract, expected, execution) if ctrf else (None, None, [])
+    receipt = dict(format=kind, reward=expected, test_counts=counts, failed_checks=failed,
+                   file_sha256={n: hashlib.sha256(raw).hexdigest() for n, raw in blobs.items()},
+                   grader_identity_verified_by_this_reader=False, can_resume_agent=False)
+    if not_run:
+        receipt['tests_not_run'] = not_run
+    return receipt
 
 
 def _input_json(path):
