@@ -30,11 +30,11 @@ not a license grant or future design authority.
 
 The public tree never copies `.reference`, `.git`, `.eino-agent`, `.yhc`,
 `.claude`, ignored build evidence, local transcripts, credentials, or
-untracked files. The vendored ACP SDK retains its Apache-2.0 license plus a
-visible modification notice. The Web UI also distributes Marked 18.0.9 as
-third-party MIT material; its retained license and notice are under
-`internal/webui/assets/vendor/`. The root [`NOTICE`](../../NOTICE) records both
-third-party distributions.
+untracked files. YHC builds against the upstream Apache-2.0 ACP Go SDK.
+The Go dependency inventory records its version and license. The Web UI
+distributes Marked 18.0.9 under the MIT License. Its retained license and
+notice are under `internal/webui/assets/vendor/`. The root
+[`NOTICE`](../../NOTICE) records both attributions.
 
 `server/appserver/**`, `internal/webui/**`, `desktop/**`, and the desktop serve
 composition file are separately classified as mutually exclusive project-owned

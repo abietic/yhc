@@ -826,8 +826,8 @@ func requireACPMCPSetupError(
 	if !errors.As(err, &requestErr) {
 		t.Fatalf("setup error = %#v", err)
 	}
-	data, ok := requestErr.Data.(map[string]any)
-	if !ok ||
+	var data map[string]any
+	if err := json.Unmarshal(requestErr.Data, &data); err != nil ||
 		data["input"] != acpSessionMCPDescriptorInput ||
 		data["reason"] != reason ||
 		asInt(data["descriptor"]) != descriptor {

@@ -92,6 +92,7 @@ func (m *mockChatModel) CallCount() int {
 // --- Mock ACP Client (IDE side) ---
 
 type testClient struct {
+	unsupportedElicitationClient
 	mu                       sync.Mutex
 	updates                  []acpsdk.SessionNotification
 	extensions               []extensionNotification
@@ -1091,9 +1092,9 @@ func TestACP_Prompt_WithToolCall(t *testing.T) {
 			hasToolCallStart = true
 		}
 		if u.Update.ToolCallUpdate != nil &&
-			u.Update.ToolCallUpdate.Status != nil &&
-			(*u.Update.ToolCallUpdate.Status == acpsdk.ToolCallStatusCompleted ||
-				*u.Update.ToolCallUpdate.Status == acpsdk.ToolCallStatusFailed) {
+			u.Update.ToolCallUpdate.Status.Ptr() != nil &&
+			(*u.Update.ToolCallUpdate.Status.Ptr() == acpsdk.ToolCallStatusCompleted ||
+				*u.Update.ToolCallUpdate.Status.Ptr() == acpsdk.ToolCallStatusFailed) {
 			hasToolTerminal = true
 		}
 	}
@@ -1924,6 +1925,7 @@ func (m *infiniteToolCallModel) next() *schema.Message {
 // --- permissionTrackingClient: tracks permission requests ---
 
 type permissionTrackingClient struct {
+	unsupportedElicitationClient
 	mu               sync.Mutex
 	permRequestCount int
 	updates          []acpsdk.SessionNotification
@@ -1969,8 +1971,8 @@ func (c *permissionTrackingClient) SessionUpdate(ctx context.Context, n acpsdk.S
 		)
 	}
 	if n.Update.ToolCallUpdate != nil &&
-		n.Update.ToolCallUpdate.Status != nil {
-		status := *n.Update.ToolCallUpdate.Status
+		n.Update.ToolCallUpdate.Status.Ptr() != nil {
+		status := *n.Update.ToolCallUpdate.Status.Ptr()
 		if status == acpsdk.ToolCallStatusCompleted ||
 			status == acpsdk.ToolCallStatusFailed {
 			c.lifecycle = append(
@@ -2073,9 +2075,9 @@ func TestACP_MultipleToolCalls(t *testing.T) {
 			toolCallStarts = append(toolCallStarts, string(u.Update.ToolCall.ToolCallId))
 		}
 		if u.Update.ToolCallUpdate != nil {
-			status := u.Update.ToolCallUpdate.Status
+			status := u.Update.ToolCallUpdate.Status.Ptr()
 			switch {
-			case u.Update.ToolCallUpdate.RawInput != nil:
+			case !u.Update.ToolCallUpdate.RawInput.IsUnset():
 				toolInputUpdates = append(
 					toolInputUpdates,
 					string(u.Update.ToolCallUpdate.ToolCallId),
@@ -2334,4 +2336,14 @@ func TestAgentToolSelectionPreservesCLIState(t *testing.T) {
 	if empty == nil || empty.Preset != "" || len(empty.Names) != 0 {
 		t.Fatalf("explicit empty tools flag produced selection %#v", empty)
 	}
+}
+
+type unsupportedElicitationClient struct{}
+
+func (unsupportedElicitationClient) CreateElicitation(context.Context, acpsdk.CreateElicitationRequest) (acpsdk.CreateElicitationResponse, error) {
+	return acpsdk.CreateElicitationResponse{}, acpsdk.NewMethodNotFound(acpsdk.ClientMethodElicitationCreate)
+}
+
+func (unsupportedElicitationClient) CompleteElicitation(context.Context, acpsdk.CompleteElicitationNotification) error {
+	return acpsdk.NewMethodNotFound(acpsdk.ClientMethodElicitationComplete)
 }

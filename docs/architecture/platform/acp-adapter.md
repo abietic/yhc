@@ -1,7 +1,7 @@
 # ACP (Agent Client Protocol) Adapter
 
 **Status:** current
-**Last verified:** 2026-08-07
+**Last verified:** 2026-11-21
 
 > **Ownership:** current production wiring and observable behavior of the ACP
 > stdio adapter. Target behavior and execution order belong in
@@ -34,7 +34,7 @@ tool registry, permission authority, or transcript store.
 flowchart LR
     accTitle: ACP adapter ownership
     accDescr: The ACP SDK delegates each session to QueryEngine, which owns MCP processes, runtime events, transcripts, and strict replay data.
-    Client["ACP client"] <--> SDK["coder/acp-go-sdk v0.13.5"]
+    Client["ACP client"] <--> SDK["coder/acp-go-sdk v0.20.0"]
     SDK <--> Agent["server/acp.Agent"]
     Agent --> Session["ACP session"]
     Session --> Engine["QueryEngine"]
@@ -65,7 +65,7 @@ dimensions. A newer SDK package does not negotiate a newer wire protocol.
 |---|---|---|
 | ACP v1 | Latest stable protocol and the only production wire target | `Initialize` returns protocol version 1; all declared behavior must satisfy the v1 schema |
 | ACP v2 | Draft and not implemented | It is a breaking lifecycle change, not a dependency bump; v1 and v2 would need per-connection negotiation and separate conformance fixtures |
-| Go SDK | Community `github.com/coder/acp-go-sdk v0.13.5` through a minimal local source replacement | Its generated v1 types and JSON-RPC dispatcher own the current wire path, including generic `$/cancel_request` handling; the local delta restores `_meta` and standard `annotations` in `ContentBlock.MarshalJSON` |
+| Go SDK | Upstream `github.com/coder/acp-go-sdk v0.20.0`, generated against schema 1.32.0 | Its v1 types and JSON-RPC dispatcher own wire encoding, ordering, and generic `$/cancel_request` handling |
 | Official TypeScript SDK | Stable entrypoint v1.3.0; v2 under an explicit experimental import | It is current schema and lifecycle evidence, not a reason to rewrite this Go adapter |
 
 The current handler does not branch on a v2 surface. A v2-capable client may
@@ -82,15 +82,15 @@ sends `session/cancel` after its local request context ends. A typed prompt
 response waits for its previously queued notifications to finish. These are
 current SDK behaviors, not an adapter-defined replacement dispatcher.
 
-The upstream v0.13.5 generated `ContentBlock.MarshalJSON` drops `_meta` and
-standard `annotations` for Text, Image, Audio, ResourceLink, and Resource
-variants even though their structs admit those fields. The root module
-therefore replaces that exact version with `third_party/acp-go-sdk`; its only
-production delta copies the two fields into each generated union object.
-P30.5a still strips incoming reserved metadata before engine admission, so the
-fix does not make `_meta` durable or replay-visible. It preserves valid
-standard annotations and prevents generic SDK serialization from silently
-changing content.
+The upstream release preserves `_meta` and standard `annotations` for all
+five `ContentBlock` variants. YHC preserves valid standard annotations and
+strips reserved client metadata before engine admission, persistence, and
+replay.
+
+The SDK runs inbound requests after earlier notifications have completed.
+Generic requests can be cancelled while they wait, and a request can proceed
+when an earlier notification handler is waiting for the peer. See the
+[upstream v0.20.0 source](https://github.com/coder/acp-go-sdk/tree/v0.20.0).
 
 The private `eino-agent.goal` capability is negotiated independently inside
 `clientCapabilities._meta`. A client must offer a bounded version list
@@ -107,7 +107,7 @@ to an unnegotiated ACP client.
 | Surface | Current behavior | Boundary or defect |
 |---|---|---|
 | Prompt input | Text-only input keeps the existing `PromptInput.Render` plus `SubmitMessage` command-compatible path. Any ResourceLink, image, or embedded resource becomes one literal ordered engine-owned `UntrustedPromptInput`; ResourceLink is a bounded no-fetch descriptor, ordinary and embedded-blob images use strict selected-route admission, and embedded text/blob keep distinct durable kinds. | Image and embedded-context capabilities are advertised; audio and unknown blocks fail explicitly. Reserved `_meta` and image source URI are excluded. Exact prompt-record-backed user history replays through load; unbound provider-rich user content and unsupported provider-rich assistant shapes fail before the first update. |
-| Assistant stream | The engine yield boundary assigns one UUID to each logical assistant message before persistence and emits exact non-empty canonical deltas. ACP projects only those deltas as `agent_message_chunk` updates carrying the pinned SDK's optional unstable `messageId`. | Delta/final reconciliation emits final-only content once, suppresses an equal final, emits only a strict-prefix suffix, and fails closed on any other mismatch without logging content. `YHC_DISABLE_ACP_ASSISTANT_MESSAGE_IDS=1` omits only the optional field and preserves exact chunk bytes. |
+| Assistant stream | The engine yield boundary assigns one UUID to each logical assistant message before persistence and emits exact non-empty canonical deltas. ACP projects only those deltas as `agent_message_chunk` updates carrying an optional `messageId`. | Delta/final reconciliation emits final-only content once, suppresses an equal final, emits only a strict-prefix suffix, and fails closed on any other mismatch without logging content. `YHC_DISABLE_ACP_ASSISTANT_MESSAGE_IDS=1` omits only the optional field and preserves exact chunk bytes. |
 | Tool start | The engine emits one canonical start from the committed `schema.ToolCall`; a prompt-scoped session ledger sends one pending ACP `tool_call` with the stable call ID, semantic kind, and title. | Input is deliberately absent until the final dispatch input settles. A permission path synchronously delivers or de-duplicates the same start before requesting a decision. |
 | Tool input and progress | The engine emits one redacted complete effective-input object immediately before dispatch and complete replacement-safe progress snapshots from the tool-scoped callback. ACP sends late `rawInput`, deterministic file locations when present, and in-progress replacement content. | Provider argument fragments are not projection input. Progress producers must publish complete snapshots, not increments. |
 | Tool result | The normalized `execution.ToolResult` emits one completed or failed terminal fact with redacted actual output. The ledger sends exactly one terminal status, replacement content, and string-valued `rawOutput`; a call cancelled before execution and never shown to the client settles locally only. Replay passes the same durable result text without inferring a JSON type. | ACP v1 has no cancelled tool status, so cancellation is represented as failed while the prompt retains its protocol stop reason. After a delivery error the prompt fails or cancels and the ledger settles locally without claiming client-visible completion. JSON-looking output has no implicit schema; empty output remains an empty string rather than `nil`. |
@@ -199,7 +199,7 @@ and event ordinal. It never includes assistant content in the diagnostic.
 `TranscriptEntryID` remains the physical durable record identity and is not
 used as the live logical ID. ACP allocates no ID and consumes only canonical
 assistant deltas. The SDK wire golden proves exact `"a\n\n"` plus `" b"` bytes
-under one UUID and proves that omitting the optional unstable `messageId` field
+under one UUID and proves that omitting the optional `messageId` field
 does not alter content. This establishes the engine-to-Go-SDK boundary; it does
 not establish provider-to-engine provenance or real-client rendering.
 
@@ -524,7 +524,6 @@ production owners. Tests of those helpers do not establish behavior of
 | staged load ordering and capability truth | [`Agent.LoadSession`](../../../server/acp/agent.go) |
 | rejected private Session migration boundary | [`Agent.HandleExtensionMethod`](../../../server/acp/streaming.go), [`TestExtensionHandlerRemovedSessionMigrationMethodsReturnMethodNotFound`](../../../server/acp/agent_protocol_test.go) |
 | bounded durable-plus-active listing | [`QuerySessions`](../../../engine/session/query.go), [`Agent.ListSessions`](../../../server/acp/agent.go) |
-| ACP delete root selection and contained engine deletion | [`Agent.UnstableDeleteSession`](../../../server/acp/agent.go), [`DeleteSession`](../../../engine/session/delete.go) |
+| ACP delete root selection and contained engine deletion | [`Agent.DeleteSession`](../../../server/acp/agent.go), [`DeleteSession`](../../../engine/session/delete.go) |
 | pinned SDK and canonical wire characterization | [`agent_sdk_characterization_test.go`](../../../server/acp/agent_sdk_characterization_test.go) |
-| pinned SDK annotation/meta serialization delta | [`third_party/acp-go-sdk/types_gen.go`](../../../third_party/acp-go-sdk/types_gen.go) |
 | official TypeScript SDK v1 interoperability harness | [`verify-p23-5-acp-sdk.sh`](../../../scripts/verify-p23-5-acp-sdk.sh) |

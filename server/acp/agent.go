@@ -74,8 +74,8 @@ type Config struct {
 	ToolsFlag              []string
 	ToolsFlagSet           bool
 	SimpleTools            bool
-	// DisableACPAssistantMessageIDs omits the pinned SDK's optional unstable
-	// messageId extension without changing canonical assistant content.
+	// DisableACPAssistantMessageIDs omits the optional messageId field
+	// without changing canonical assistant content.
 	DisableACPAssistantMessageIDs bool
 	// DisableACPCommandUpdates disables available_commands_update delivery
 	// without changing the shared command registry or dispatch behavior.
@@ -483,11 +483,12 @@ func (a *Agent) Initialize(ctx context.Context, p acpsdk.InitializeRequest) (acp
 		},
 	}
 	if goalNamespace != nil {
-		capabilities.Meta = map[string]any{
-			goalNamespace.capabilityKey: map[string]any{
-				"version":       goalNamespace.version,
-				"notifications": true,
-			},
+		err := capabilities.Meta.Set(goalNamespace.capabilityKey, map[string]any{
+			"version":       goalNamespace.version,
+			"notifications": true,
+		})
+		if err != nil {
+			return acpsdk.InitializeResponse{}, fmt.Errorf("encode ACP Goal capability: %w", err)
 		}
 	}
 	return acpsdk.InitializeResponse{
@@ -835,16 +836,20 @@ func (a *Agent) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Prom
 	// Attach token usage via the unstable Usage field
 	promptTokens, completionTokens := sess.Engine.GetTotalUsage()
 	resp.Usage = &acpsdk.Usage{
-		InputTokens:  promptTokens,
-		OutputTokens: completionTokens,
-		TotalTokens:  promptTokens + completionTokens,
+		InputTokens:  int64(promptTokens),
+		OutputTokens: int64(completionTokens),
+		TotalTokens:  int64(promptTokens) + int64(completionTokens),
 	}
 
 	// Attach additional session metadata via Meta field
-	resp.Meta = map[string]any{
+	meta, err := acpsdk.NewMeta(map[string]any{
 		"model":      sess.Engine.GetModelName(),
 		"session_id": string(sess.ID),
+	})
+	if err != nil {
+		return acpsdk.PromptResponse{}, fmt.Errorf("encode ACP prompt metadata: %w", err)
 	}
+	resp.Meta = meta
 
 	return resp, nil
 }
@@ -1123,12 +1128,18 @@ func (a *Agent) ListSessions(ctx context.Context, p acpsdk.ListSessionsRequest) 
 		if sessionCWD == "" {
 			sessionCWD = cwd
 		}
+		meta, err := acpsdk.NewMeta(map[string]any{
+			"summary": info.Summary, "gitBranch": info.GitBranch, "tag": info.Tag,
+		})
+		if err != nil {
+			return acpsdk.ListSessionsResponse{}, fmt.Errorf("encode ACP session metadata: %w", err)
+		}
 		sessions = append(sessions, acpsdk.SessionInfo{
 			SessionId: acpsdk.SessionId(info.SessionID),
 			Cwd:       sessionCWD,
 			Title:     &title,
 			UpdatedAt: &updatedAt,
-			Meta:      map[string]any{"summary": info.Summary, "gitBranch": info.GitBranch, "tag": info.Tag},
+			Meta:      meta,
 		})
 	}
 	response := acpsdk.ListSessionsResponse{Sessions: sessions}
@@ -1681,7 +1692,6 @@ func (a *Agent) makeACPPermissionPrompt(sessionID acpsdk.SessionId) engine.Permi
 			callID = acpsdk.ToolCallId(fmt.Sprintf("call_%d", a.callID.Add(1)))
 		}
 		title := fmt.Sprintf("Execute: %s", request.ToolName)
-		var toolContent []acpsdk.ToolCallContent
 		options := acpPermissionOptions(request)
 
 		// Apply permission timeout to avoid indefinite blocking.
@@ -1696,8 +1706,7 @@ func (a *Agent) makeACPPermissionPrompt(sessionID acpsdk.SessionId) engine.Permi
 			SessionId: sessionID,
 			ToolCall: acpsdk.ToolCallUpdate{
 				ToolCallId: callID,
-				Title:      acpsdk.Ptr(title),
-				Content:    toolContent,
+				Title:      acpsdk.PatchSet(title),
 			},
 			Options: options,
 		})
@@ -1805,7 +1814,7 @@ func (a *Agent) requestACPPlanApproval(ctx context.Context, sessionID acpsdk.Ses
 	title := fmt.Sprintf("Approve plan revision %d: %s", plan.PlanRevision, plan.PlanFileIdentity)
 	content := []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock(string(planBytes)))}
 	for {
-		resp, err := a.requestPlanPermission(deadlineCtx, acpsdk.RequestPermissionRequest{SessionId: sessionID, ToolCall: acpsdk.ToolCallUpdate{ToolCallId: callID, Title: acpsdk.Ptr(title), Content: content}, Options: acpPlanApprovalOptions(plan)})
+		resp, err := a.requestPlanPermission(deadlineCtx, acpsdk.RequestPermissionRequest{SessionId: sessionID, ToolCall: acpsdk.ToolCallUpdate{ToolCallId: callID, Title: acpsdk.PatchSet(title), Content: acpsdk.PatchSet(content)}, Options: acpPlanApprovalOptions(plan)})
 		if err != nil {
 			return acpPlanTerminalResult(ctx, request, err)
 		}
@@ -1919,7 +1928,7 @@ func acpPlanApprovalResult(
 }
 
 func (a *Agent) acpPlanBypassConfirmation(ctx context.Context, sessionID acpsdk.SessionId, callID acpsdk.ToolCallId, request engine.PermissionPromptRequest) (bool, bool, engine.PermissionInteractionResult) {
-	resp, err := a.requestPlanPermission(ctx, acpsdk.RequestPermissionRequest{SessionId: sessionID, ToolCall: acpsdk.ToolCallUpdate{ToolCallId: callID, Title: acpsdk.Ptr("Confirm bypass permissions")}, Options: []acpsdk.PermissionOption{{Kind: acpsdk.PermissionOptionKindAllowOnce, Name: "Confirm", OptionId: "plan_bypass_confirm"}, {Kind: acpsdk.PermissionOptionKindRejectOnce, Name: "Back", OptionId: "plan_bypass_back"}}})
+	resp, err := a.requestPlanPermission(ctx, acpsdk.RequestPermissionRequest{SessionId: sessionID, ToolCall: acpsdk.ToolCallUpdate{ToolCallId: callID, Title: acpsdk.PatchSet("Confirm bypass permissions")}, Options: []acpsdk.PermissionOption{{Kind: acpsdk.PermissionOptionKindAllowOnce, Name: "Confirm", OptionId: "plan_bypass_confirm"}, {Kind: acpsdk.PermissionOptionKindRejectOnce, Name: "Back", OptionId: "plan_bypass_back"}}})
 	if err != nil {
 		return false, false, acpPlanTerminalResult(ctx, request, err)
 	}
@@ -1968,7 +1977,7 @@ func (a *Agent) makeACPRepeatedToolCallPrompt(sessionID acpsdk.SessionId) engine
 			SessionId: targetSessionID,
 			ToolCall: acpsdk.ToolCallUpdate{
 				ToolCallId: callID,
-				Title:      acpsdk.Ptr(fmt.Sprintf("Repeated tool call (%d): %s", attempt, toolName)),
+				Title:      acpsdk.PatchSet(fmt.Sprintf("Repeated tool call (%d): %s", attempt, toolName)),
 			},
 			Options: repeatedToolPermissionOptions(),
 		})
@@ -2306,10 +2315,11 @@ func promptInputFromACP(blocks []acpsdk.ContentBlock) (acpPromptInput, error) {
 			richParts = append(richParts, engine.NewPromptTextPart(text))
 		case block.ResourceLink != nil:
 			resource := promptResourceLinkFromACP(*block.ResourceLink)
+			if block.ResourceLink.Size != nil && resource.Size == nil {
+				return acpPromptInput{}, invalidACPInput("prompt.resourceLink", "resource_size_out_of_range", index)
+			}
 			legacy.Blocks = append(legacy.Blocks, engine.PromptInputBlock{
-				ResourceLink: promptResourceLinkFromACP(
-					*block.ResourceLink,
-				),
+				ResourceLink: resource,
 			})
 			richParts = append(
 				richParts,
@@ -2425,7 +2435,12 @@ func promptResourceLinkFromACP(
 		Title:       resource.Title,
 		Description: resource.Description,
 		MIMEType:    resource.MimeType,
-		Size:        resource.Size,
+	}
+	if resource.Size != nil {
+		size := int(*resource.Size)
+		if int64(size) == *resource.Size {
+			result.Size = &size
+		}
 	}
 	if resource.Annotations == nil ||
 		len(resource.Annotations.Audience) == 0 &&
@@ -2475,11 +2490,7 @@ func rejectUnsupportedSessionSetup(
 }
 
 func unsupportedACPInput(input string) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    codeUnsupportedInput,
-		Message: "Unsupported input",
-		Data:    map[string]any{"input": input},
-	}
+	return acpsdk.NewRequestError(codeUnsupportedInput, "Unsupported input", map[string]any{"input": input})
 }
 
 func unsupportedACPPromptInput(
@@ -2502,11 +2513,7 @@ func unsupportedACPPromptInput(
 	if modelName != "" {
 		data["model"] = modelName
 	}
-	return &acpsdk.RequestError{
-		Code:    codeUnsupportedInput,
-		Message: "Unsupported input",
-		Data:    data,
-	}
+	return acpsdk.NewRequestError(codeUnsupportedInput, "Unsupported input", data)
 }
 
 func mapACPPromptAdmissionError(err error) error {
@@ -2567,54 +2574,34 @@ func invalidACPInput(
 func acpSessionConflictRequestError(
 	sessionID acpsdk.SessionId,
 ) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeSessionConflict,
-		Message: "Session already active",
-		Data:    map[string]any{"sessionId": string(sessionID)},
-	}
+	return acpsdk.NewRequestError(CodeSessionConflict, "Session already active", map[string]any{"sessionId": string(sessionID)})
 }
 
 func acpSessionRootConflictRequestError(
 	sessionID acpsdk.SessionId,
 ) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeSessionConflict,
-		Message: "Session project root conflict",
-		Data:    map[string]any{"sessionId": string(sessionID)},
-	}
+	return acpsdk.NewRequestError(CodeSessionConflict, "Session project root conflict", map[string]any{"sessionId": string(sessionID)})
 }
 
 func acpSessionMCPConflictRequestError(
 	sessionID acpsdk.SessionId,
 ) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeSessionConflict,
-		Message: "Session MCP setup conflict",
-		Data: map[string]any{
-			"sessionId": string(sessionID),
-			"reason":    "mcp_setup_mismatch",
-		},
-	}
+	return acpsdk.NewRequestError(CodeSessionConflict, "Session MCP setup conflict", map[string]any{
+		"sessionId": string(sessionID),
+		"reason":    "mcp_setup_mismatch",
+	})
 }
 
 func acpSessionNotFoundRequestError(
 	sessionID acpsdk.SessionId,
 ) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeSessionNotFound,
-		Message: "Session not found",
-		Data:    map[string]any{"sessionId": string(sessionID)},
-	}
+	return acpsdk.NewRequestError(CodeSessionNotFound, "Session not found", map[string]any{"sessionId": string(sessionID)})
 }
 
 func acpLegacySessionImportRequiredRequestError(
 	sessionID acpsdk.SessionId,
 ) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeLegacySessionImportRequired,
-		Message: "legacy_session_import_required",
-		Data:    map[string]any{"sessionId": string(sessionID)},
-	}
+	return acpsdk.NewRequestError(CodeLegacySessionImportRequired, "legacy_session_import_required", map[string]any{"sessionId": string(sessionID)})
 }
 
 func admitACPSessionResume(
@@ -2771,10 +2758,10 @@ func (a *Agent) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (a
 	}, nil
 }
 
-// UnstableDeleteSession deletes an inactive session through the shared session
+// DeleteSession deletes an inactive session through the shared session
 // service. Active sessions must be closed explicitly before their durable
 // state can be deleted.
-func (a *Agent) UnstableDeleteSession(ctx context.Context, p acpsdk.UnstableDeleteSessionRequest) (acpsdk.UnstableDeleteSessionResponse, error) {
+func (a *Agent) DeleteSession(ctx context.Context, p acpsdk.DeleteSessionRequest) (acpsdk.DeleteSessionResponse, error) {
 	a.sessionLifecycleMu.Lock()
 	defer a.sessionLifecycleMu.Unlock()
 
@@ -2785,7 +2772,7 @@ func (a *Agent) UnstableDeleteSession(ctx context.Context, p acpsdk.UnstableDele
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, active := a.sessions[sessionID]; active {
-		return acpsdk.UnstableDeleteSessionResponse{}, fmt.Errorf(
+		return acpsdk.DeleteSessionResponse{}, fmt.Errorf(
 			"cannot delete active session %q",
 			sessionID,
 		)
@@ -2793,7 +2780,7 @@ func (a *Agent) UnstableDeleteSession(ctx context.Context, p acpsdk.UnstableDele
 
 	root, _, ambiguous := a.sessionRoots.resolve(sessionID, a.config.CWD)
 	if ambiguous {
-		return acpsdk.UnstableDeleteSessionResponse{},
+		return acpsdk.DeleteSessionResponse{},
 			acpSessionRootConflictRequestError(sessionID)
 	}
 	transcriptDir := acpSessionTranscriptDir(root)
@@ -2806,16 +2793,16 @@ func (a *Agent) UnstableDeleteSession(ctx context.Context, p acpsdk.UnstableDele
 		// visible to the client.
 		if errors.Is(err, os.ErrNotExist) {
 			a.sessionRoots.forget(sessionID, root)
-			return acpsdk.UnstableDeleteSessionResponse{}, nil
+			return acpsdk.DeleteSessionResponse{}, nil
 		}
-		return acpsdk.UnstableDeleteSessionResponse{}, fmt.Errorf(
+		return acpsdk.DeleteSessionResponse{}, fmt.Errorf(
 			"failed to delete session: %w",
 			err,
 		)
 	}
 	a.sessionRoots.forget(sessionID, root)
 
-	return acpsdk.UnstableDeleteSessionResponse{}, nil
+	return acpsdk.DeleteSessionResponse{}, nil
 }
 
 // streamStatusEvent sends a status notification to the client as an

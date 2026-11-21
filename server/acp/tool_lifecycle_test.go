@@ -93,37 +93,44 @@ func TestACPToolLifecycleLedgerProjectsCanonicalFactsExactlyOnce(t *testing.T) {
 		t.Fatalf("start = %#v", start)
 	}
 	input := updates[1].Update.ToolCallUpdate
-	if input == nil ||
-		input.Status == nil ||
-		*input.Status != acpsdk.ToolCallStatusInProgress ||
-		len(input.Locations) != 1 ||
-		input.Locations[0].Path != "/tmp/example.go" {
+	if input == nil {
+		t.Fatal("missing input tool update")
+	}
+	locations, _ := input.Locations.Value()
+	if !patchEquals(input.Status, acpsdk.ToolCallStatusInProgress) ||
+		len(locations) != 1 ||
+		locations[0].Path != "/tmp/example.go" {
 		t.Fatalf("input update = %#v", input)
 	}
-	rawInput, ok := input.RawInput.(map[string]any)
-	if !ok || rawInput["file_path"] != "/tmp/example.go" {
+	raw, _ := input.RawInput.Value()
+	var rawInput map[string]any
+	if err := json.Unmarshal(raw, &rawInput); err != nil || rawInput["file_path"] != "/tmp/example.go" {
 		t.Fatalf("raw input = %#v", input.RawInput)
 	}
 	progress := updates[2].Update.ToolCallUpdate
-	if progress == nil ||
-		progress.Status == nil ||
-		*progress.Status != acpsdk.ToolCallStatusInProgress ||
-		len(progress.Content) != 1 ||
-		progress.Content[0].Content == nil ||
-		progress.Content[0].Content.Content.Text == nil ||
-		progress.Content[0].Content.Content.Text.Text !=
+	if progress == nil {
+		t.Fatal("missing progress tool update")
+	}
+	progressContent, _ := progress.Content.Value()
+	if !patchEquals(progress.Status, acpsdk.ToolCallStatusInProgress) ||
+		len(progressContent) != 1 ||
+		progressContent[0].Content == nil ||
+		progressContent[0].Content.Content.Text == nil ||
+		progressContent[0].Content.Content.Text.Text !=
 			"latest complete snapshot" {
 		t.Fatalf("progress update = %#v", progress)
 	}
 	terminal := updates[3].Update.ToolCallUpdate
-	if terminal == nil ||
-		terminal.Status == nil ||
-		*terminal.Status != acpsdk.ToolCallStatusFailed ||
-		terminal.RawOutput != "permission denied" ||
-		len(terminal.Content) != 1 ||
-		terminal.Content[0].Content == nil ||
-		terminal.Content[0].Content.Content.Text == nil ||
-		terminal.Content[0].Content.Content.Text.Text !=
+	if terminal == nil {
+		t.Fatal("missing terminal tool update")
+	}
+	terminalContent, _ := terminal.Content.Value()
+	if !patchEquals(terminal.Status, acpsdk.ToolCallStatusFailed) ||
+		!rawOutputEquals(terminal.RawOutput, "permission denied") ||
+		len(terminalContent) != 1 ||
+		terminalContent[0].Content == nil ||
+		terminalContent[0].Content.Content.Text == nil ||
+		terminalContent[0].Content.Content.Text.Text !=
 			"permission denied" {
 		t.Fatalf("terminal update = %#v", terminal)
 	}
@@ -378,4 +385,14 @@ func canonicalACPToolEvent(
 		Kind:    kind,
 		Tool:    tool,
 	}
+}
+
+func patchEquals[T comparable](patch acpsdk.Patch[T], want T) bool {
+	got, present := patch.Value()
+	return present && got == want
+}
+
+func rawOutputEquals(patch acpsdk.Patch[json.RawMessage], want string) bool {
+	raw, present := patch.Value()
+	return present && equalJSONValue(raw, want)
 }

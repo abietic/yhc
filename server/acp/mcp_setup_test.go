@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -193,11 +194,11 @@ func TestP235ACPStdioDescriptorValidationFailsBeforeLaunch(t *testing.T) {
 			if !errors.As(err, &requestErr) {
 				t.Fatalf("validation error = %#v", err)
 			}
-			data, ok := requestErr.Data.(map[string]any)
-			if !ok ||
+			var data map[string]any
+			if err := json.Unmarshal(requestErr.Data, &data); err != nil ||
 				data["input"] != acpSessionMCPDescriptorInput ||
 				data["reason"] != test.wantReason ||
-				data["descriptor"] != test.wantIndex {
+				data["descriptor"] != float64(test.wantIndex) {
 				t.Fatalf("request error data = %#v", requestErr.Data)
 			}
 			for _, private := range []string{

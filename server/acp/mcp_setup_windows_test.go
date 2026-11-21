@@ -3,6 +3,7 @@
 package acp
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -22,11 +23,11 @@ func TestP235ACPStdioWindowsEnvironmentIdentity(t *testing.T) {
 		if !errors.As(err, &requestErr) {
 			t.Fatalf("validation error = %#v", err)
 		}
-		data, ok := requestErr.Data.(map[string]any)
-		if !ok ||
+		var data map[string]any
+		if err := json.Unmarshal(requestErr.Data, &data); err != nil ||
 			data["input"] != acpSessionMCPDescriptorInput ||
 			data["reason"] != "environment_name_duplicate" ||
-			data["descriptor"] != 0 {
+			data["descriptor"] != float64(0) {
 			t.Fatalf("request error data = %#v", requestErr.Data)
 		}
 	})

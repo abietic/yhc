@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,81 +72,6 @@ func TestPublicGovernanceFilesAndCanonicalLinks(t *testing.T) {
 	sum := sha256.Sum256(license)
 	if got := hex.EncodeToString(sum[:]); got != "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30" {
 		t.Fatalf("LICENSE digest = %s, want the unmodified Apache-2.0 text", got)
-	}
-
-	// These hashes freeze the subset copied from the go.sum-authenticated
-	// github.com/coder/acp-go-sdk v0.13.5 module. Any added or changed file must
-	// carry a prominent local notice, including files introduced in the future.
-	upstreamACP := map[string]string{
-		"LICENSE":          "3cf3fec4549ad049b3defd633001ce9e89923cdaee3d45d5ff4686750706e3cd",
-		"agent.go":         "d41b1a76f5a532d83681e3b37565757c0cb2c15309008e41e49a22df690417ed",
-		"agent_gen.go":     "e230317c8029043b3c1686680cc0c068b6076bad24d50fd840d60017980e1a73",
-		"client.go":        "6a6896f84c29e838ffdeaa8464d9c7c600d25ffafcf600cf4c4023058c93d4a9",
-		"client_gen.go":    "daa7ff1f9abe726662cee0f5d95c9f7eadda77d955986a625177efbad54545a1",
-		"connection.go":    "f47f0c609db5a9a5e65362ed53e24b4be4c5eda8a7ac2ab95f5a1a2209570796",
-		"constants_gen.go": "f64e0e432b6db352d4c61533fc4c3739e6699a8599213039d503da63cde04d63",
-		"doc.go":           "23e8149b3342669e9dbfbd79658d4bc1b2ec09c03ce8321a9d326623b87119aa",
-		"errors.go":        "f4f45247e75348d7b4c82b24743f30a35f14e4923b074d4d6bc37220d0b9c7de",
-		"extensions.go":    "f0a766a65f0fbbf5558ae00b8adda515677e44407f10f33459de4489b1bcb276",
-		"go.mod":           "dfbacd788612fc9479a4257fa4ef7af8a5af88a64ebbc86d6f66145b22ddbbcf",
-		"helpers.go":       "d5b7d1110aaeffcb4f9b48bc57e746c934b848c7522091bcba83f3b938fba199",
-		"helpers_gen.go":   "f8da4115da946424e6ddaf1b587cabf7a14fbb316f5853bf0766f08d115c6996",
-		"types_gen.go":     "13c09386250c7b6d3bd36efdca873dde74eafc6bb01a59f02d3e7f7fdacd29ff",
-	}
-	acpRoot := filepath.Join(root, "third_party/acp-go-sdk")
-	if walkErr := filepath.WalkDir(acpRoot, func(filePath string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			return infoErr
-		}
-		if !info.Mode().IsRegular() {
-			return &fs.PathError{Op: "audit", Path: filePath, Err: fs.ErrInvalid}
-		}
-		relative, relativeErr := filepath.Rel(acpRoot, filePath)
-		if relativeErr != nil {
-			return relativeErr
-		}
-		relative = filepath.ToSlash(relative)
-		data, readErr := os.ReadFile(filePath)
-		if readErr != nil {
-			return readErr
-		}
-		digest := sha256.Sum256(data)
-		got := hex.EncodeToString(digest[:])
-		upstream, existed := upstreamACP[relative]
-		if existed && got == upstream {
-			return nil
-		}
-		if relative == "LICENSE" {
-			t.Errorf("vendored ACP LICENSE differs from the authenticated upstream copy")
-			return nil
-		}
-		want := "Added by YHC"
-		if existed {
-			want = "Modified by YHC"
-		}
-		prefixLength := min(len(data), 512)
-		if !strings.Contains(string(data[:prefixLength]), want) {
-			t.Errorf("third_party/acp-go-sdk/%s does not begin with local notice %q", relative, want)
-		}
-		return nil
-	}); walkErr != nil {
-		t.Fatalf("audit vendored ACP files: %v", walkErr)
-	}
-	notice, err := os.ReadFile(filepath.Join(root, "NOTICE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"ContentBlock", "inbound-request"} {
-		if !strings.Contains(string(notice), want) {
-			t.Errorf("NOTICE does not describe the vendored ACP delta %q", want)
-		}
 	}
 }
 

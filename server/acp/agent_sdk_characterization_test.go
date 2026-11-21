@@ -733,7 +733,7 @@ func TestP233AssistantMessageIDRollbackAndSDKRoundTrip(t *testing.T) {
 		update := acpsdk.SessionUpdate{
 			AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{
 				Content:   acpsdk.TextBlock("exact\n\nbytes"),
-				MessageId: acpsdk.Ptr(messageID),
+				MessageId: acpsdk.Ptr(acpsdk.MessageId(messageID)),
 			},
 		}
 		encoded, err := json.Marshal(update)
@@ -831,8 +831,8 @@ func requireP231RequestError(
 	if requestErr.Code != code || requestErr.Message != message {
 		t.Fatalf("request error = %#v", requestErr)
 	}
-	actual, ok := requestErr.Data.(map[string]any)
-	if !ok {
+	var actual map[string]any
+	if err := json.Unmarshal(requestErr.Data, &actual); err != nil {
 		t.Fatalf("request error data = %#v", requestErr.Data)
 	}
 	if !equalP231JSONMap(actual, data) {

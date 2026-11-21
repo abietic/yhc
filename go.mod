@@ -2,11 +2,6 @@ module github.com/abietic/yhc
 
 go 1.27.0
 
-// v0.13.5's generated ContentBlock marshaler omits standard annotations and
-// reserved extension metadata. Keep the pinned SDK with the minimal local
-// serialization fix until an upstream release includes it.
-replace github.com/coder/acp-go-sdk => ./third_party/acp-go-sdk
-
 require (
 	charm.land/bubbles/v2 v2.1.1
 	charm.land/bubbletea/v2 v2.0.9
@@ -26,7 +21,7 @@ require (
 	github.com/cloudwego/eino-ext/components/model/agenticgemini v0.2.2
 	github.com/cloudwego/eino-ext/components/model/agenticopenai v0.2.4
 	github.com/cloudwego/eino-ext/components/model/agenticqwen v0.1.0
-	github.com/coder/acp-go-sdk v0.13.5
+	github.com/coder/acp-go-sdk v0.20.0
 	github.com/creack/pty v1.1.24
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/google/uuid v1.6.0

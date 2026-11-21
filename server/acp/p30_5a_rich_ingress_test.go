@@ -2,6 +2,7 @@ package acp
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -56,7 +57,7 @@ func TestP305aRichNewResumeAndLoadBoundary(t *testing.T) {
 		"file:///workspace/schema.json",
 	)
 	resource.ResourceLink.Annotations = &acpsdk.Annotations{
-		Meta:         map[string]any{"reserved": "must-not-persist"},
+		Meta:         acpsdk.Meta{"reserved": json.RawMessage(`"must-not-persist"`)},
 		Audience:     []acpsdk.Role{acpsdk.RoleAssistant},
 		LastModified: &lastModified,
 		Priority:     &priority,
@@ -64,7 +65,7 @@ func TestP305aRichNewResumeAndLoadBoundary(t *testing.T) {
 	imageURI := "file:///private/image-source-must-not-persist.png"
 	image := acpsdk.ImageBlock(p305aACPImageBase64, "image/png")
 	image.Image.Uri = &imageURI
-	image.Image.Meta = map[string]any{"reserved": "must-not-persist"}
+	image.Image.Meta = acpsdk.Meta{"reserved": json.RawMessage(`"must-not-persist"`)}
 	image.Image.Annotations = &acpsdk.Annotations{
 		Audience: []acpsdk.Role{acpsdk.RoleUser},
 	}
@@ -75,7 +76,7 @@ func TestP305aRichNewResumeAndLoadBoundary(t *testing.T) {
 			Uri:      "file:///workspace/context.txt",
 			MimeType: &textMIME,
 			Text:     "embedded context",
-			Meta:     map[string]any{"reserved": "must-not-persist"},
+			Meta:     acpsdk.Meta{"reserved": json.RawMessage(`"must-not-persist"`)},
 		},
 	})
 	embeddedText.Resource.Annotations = &acpsdk.Annotations{
@@ -86,7 +87,7 @@ func TestP305aRichNewResumeAndLoadBoundary(t *testing.T) {
 			Uri:      "file:///workspace/pixel.png",
 			MimeType: &blobMIME,
 			Blob:     p305aACPImageBase64,
-			Meta:     map[string]any{"reserved": "must-not-persist"},
+			Meta:     acpsdk.Meta{"reserved": json.RawMessage(`"must-not-persist"`)},
 		},
 	})
 
@@ -358,8 +359,8 @@ func TestP305aRichAdmissionErrorsAreIndexedAndRedacted(t *testing.T) {
 			if !errors.As(err, &requestErr) || requestErr.Code != tc.code {
 				t.Fatalf("request error = %#v", requestErr)
 			}
-			data, ok := requestErr.Data.(map[string]any)
-			if !ok ||
+			var data map[string]any
+			if err := json.Unmarshal(requestErr.Data, &data); err != nil ||
 				data["input"] != tc.input ||
 				data["reason"] != tc.reason ||
 				data["block"] != float64(1) {
@@ -508,11 +509,11 @@ func TestP305aMalformedUnionPrecedesUnknownSession(t *testing.T) {
 				requiredErr.Code != CodeInvalidParams {
 				t.Fatalf("request error = %#v", requiredErr)
 			}
-			data, ok := requiredErr.Data.(map[string]any)
-			if !ok ||
+			var data map[string]any
+			if err := json.Unmarshal(requiredErr.Data, &data); err != nil ||
 				data["input"] != tc.input ||
 				data["reason"] != tc.reason ||
-				data["block"] != 0 ||
+				data["block"] != float64(0) ||
 				len(data) != 3 {
 				t.Fatalf("error data = %#v", requiredErr.Data)
 			}
@@ -746,8 +747,8 @@ func requireP305aUnsupported(
 		requestErr.Code != codeUnsupportedInput {
 		t.Fatalf("request error = %#v", requestErr)
 	}
-	data, ok := requestErr.Data.(map[string]any)
-	if !ok || data["input"] != input {
+	var data map[string]any
+	if err := json.Unmarshal(requestErr.Data, &data); err != nil || data["input"] != input {
 		t.Fatalf("error data = %#v", requestErr.Data)
 	}
 	if block >= 0 && data["block"] != float64(block) {

@@ -510,18 +510,14 @@ dependencies:
     compatibility: allow
     notice: none
   - module: github.com/coder/acp-go-sdk
-    version: v0.13.5
-    source_url: https://github.com/coder/acp-go-sdk/tree/0845a3bb9eddda5bfc22a94dd3598c90cb842451
+    version: v0.20.0
+    source_url: https://github.com/coder/acp-go-sdk/tree/6217b27711bef6b0c461f8041090c6b79f69e64b
     licenses:
       - spdx: Apache-2.0
-        license_file: third_party/acp-go-sdk/LICENSE
-        license_url: https://github.com/coder/acp-go-sdk/blob/0845a3bb9eddda5bfc22a94dd3598c90cb842451/LICENSE
+        license_file: LICENSE
+        license_url: https://github.com/coder/acp-go-sdk/blob/6217b27711bef6b0c461f8041090c6b79f69e64b/LICENSE
     compatibility: allow
     notice: retain
-    replacement:
-      kind: local-vendored
-      path: third_party/acp-go-sdk
-      modified: true
   - module: github.com/creack/pty
     version: v1.1.24
     source_url: https://pkg.go.dev/github.com/creack/pty@v1.1.24
