@@ -145,8 +145,10 @@ func ReadTool() ToolImpl {
 		lines := strings.Split(string(data), "\n")
 		totalLines := len(lines)
 
-		// Determine if this is a partial view.
-		hasExplicitRange := params.Offset != nil || params.Limit != nil || params.Line != nil
+		limit := defaultLineLimit
+		if params.Limit != nil && *params.Limit > 0 {
+			limit = min(*params.Limit, maxLinesToRead)
+		}
 
 		// Handle `line` parameter: center view around the specified line.
 		// Mirrors TS FileReadTool `line` parameter behavior.
@@ -156,16 +158,11 @@ func ReadTool() ToolImpl {
 			if lineNum < 1 {
 				lineNum = 1
 			}
-			limit := defaultLineLimit
-			if params.Limit != nil && *params.Limit > 0 {
-				limit = *params.Limit
-			}
-			// Center the view around the target line.
+			// Center the returned window using its effective size.
 			offset = lineNum - 1 - limit/2
 			if offset < 0 {
 				offset = 0
 			}
-			hasExplicitRange = true
 		} else if params.Offset != nil {
 			offset = *params.Offset
 			if offset < 0 {
@@ -178,23 +175,12 @@ func ReadTool() ToolImpl {
 		}
 		lines = lines[offset:]
 
-		// Apply limit: explicit limit > default 250.
-		limit := defaultLineLimit
-		if params.Limit != nil && *params.Limit > 0 {
-			limit = *params.Limit
-			hasExplicitRange = true
-		}
-		// Clamp to hard maximum.
-		if limit > maxLinesToRead {
-			limit = maxLinesToRead
-		}
-		if limit > 0 && limit < len(lines) {
+		if limit < len(lines) {
 			lines = lines[:limit]
-			hasExplicitRange = true
 		}
 
 		// Record file-read state for Edit/Write guards.
-		isPartial := hasExplicitRange && (offset > 0 || len(lines) < totalLines)
+		isPartial := offset > 0 || len(lines) < totalLines
 		recordFileReadObserved(ctx, fullPath, isPartial, data)
 
 		result := formatReadResult(params.FilePath, offset, lines)

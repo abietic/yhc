@@ -38,6 +38,7 @@ func TestReadCoverageFeedbackMatchesEditGuard(t *testing.T) {
 		{name: "offset-is-zero-based", lines: 3, params: map[string]any{"offset": 2}, wantNotice: "[Partial Read: lines 3-3 of 3.]"},
 		{name: "default-window", lines: 301, wantNotice: "[Partial Read: lines 1-250 of 301.]"},
 		{name: "centered-window", lines: 301, params: map[string]any{"line": 280, "limit": 10}, wantNotice: "[Partial Read: lines 275-284 of 301.]"},
+		{name: "centered-window-clamped-to-hard-limit", lines: 4000, params: map[string]any{"line": 2800, "limit": 5000}, wantNotice: "[Partial Read: lines 1800-3799 of 4000.]"},
 		{name: "hard-limit", lines: 2001, params: map[string]any{"limit": 5000}, wantNotice: "[Partial Read: lines 1-2000 of 2001.]"},
 		{name: "partial-after-full", lines: 3, priorFull: true, params: map[string]any{"limit": 1}, wantNotice: "[Partial Read: lines 1-1 of 3.]", canEdit: true},
 	} {
