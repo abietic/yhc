@@ -321,7 +321,7 @@ provide their reversible-history semantics.
 | bounded saved-Goal process | [`driveHeadlessGoal`](../../../cmd/yhc/cmd/headless_goal.go) |
 | negotiated ACP Goal surface | [`Agent.handleGoalExtension`](../../../server/acp/goal_extension.go) |
 | ACP staged load and active overlay | [`Agent.LoadSession`](../../../server/acp/agent.go), [`Agent.ListSessions`](../../../server/acp/agent.go) |
-| ACP observed-root delete targeting | [`acpSessionRootLocator`](../../../server/acp/session_roots.go), [`Agent.UnstableDeleteSession`](../../../server/acp/agent.go) |
+| ACP observed-root delete targeting | [`acpSessionRootLocator`](../../../server/acp/session_roots.go), [`Agent.DeleteSession`](../../../server/acp/agent.go) |
 | deferred runtime-input recovery | [`NewRuntimeInputCoordinator`](../../../engine/input_coordinator.go), [`RuntimeInputCoordinator.commitDeferredRecovery`](../../../engine/input_coordinator.go) |
 | provider-free administration host | [`engine/session_administration.go`](../../../engine/session_administration.go) |
 | sessions CLI projection | [`cmd/yhc/cmd/sessions.go`](../../../cmd/yhc/cmd/sessions.go) |

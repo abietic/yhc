@@ -90,7 +90,7 @@ func buildACPReplayProjection(
 				updates = append(updates, acpsdk.SessionUpdate{
 					UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
 						Content:   acpsdk.TextBlock(message.Content),
-						MessageId: stringPointer(messageID),
+						MessageId: acpsdk.Ptr(acpsdk.MessageId(messageID)),
 					},
 				})
 				break
@@ -108,7 +108,7 @@ func buildACPReplayProjection(
 				updates = append(updates, acpsdk.SessionUpdate{
 					UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
 						Content:   content,
-						MessageId: stringPointer(messageID),
+						MessageId: acpsdk.Ptr(acpsdk.MessageId(messageID)),
 					},
 				})
 			}
@@ -130,9 +130,9 @@ func buildACPReplayProjection(
 				// public text parts under the one logical assistant ID.
 				// Reasoning markers, signatures, part Extra, and provider
 				// metadata never produce a wire update.
-				var wireMessageID *string
+				var wireMessageID *acpsdk.MessageId
 				if includeAssistantMessageIDs {
-					wireMessageID = stringPointer(messageID)
+					wireMessageID = acpsdk.Ptr(acpsdk.MessageId(messageID))
 				}
 				for _, text := range item.AssistantPresentation.TextParts {
 					updates = append(updates, acpsdk.SessionUpdate{
@@ -143,9 +143,9 @@ func buildACPReplayProjection(
 					})
 				}
 			} else if message.Content != "" {
-				var wireMessageID *string
+				var wireMessageID *acpsdk.MessageId
 				if includeAssistantMessageIDs {
-					wireMessageID = stringPointer(messageID)
+					wireMessageID = acpsdk.Ptr(acpsdk.MessageId(messageID))
 				}
 				updates = append(updates, acpsdk.SessionUpdate{
 					AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{
@@ -355,7 +355,9 @@ func acpReplayPromptContent(
 		block.ResourceLink.Title = cloneACPReplayString(resource.Title)
 		block.ResourceLink.Description = cloneACPReplayString(resource.Description)
 		block.ResourceLink.MimeType = cloneACPReplayString(resource.MIMEType)
-		block.ResourceLink.Size = cloneACPReplayInt(resource.Size)
+		if resource.Size != nil {
+			block.ResourceLink.Size = acpsdk.Ptr(int64(*resource.Size))
+		}
 		block.ResourceLink.Annotations = acpReplayAnnotations(resource.Annotations)
 		return block, nil
 
@@ -419,14 +421,6 @@ func acpReplayAnnotations(
 }
 
 func cloneACPReplayString(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
-}
-
-func cloneACPReplayInt(value *int) *int {
 	if value == nil {
 		return nil
 	}

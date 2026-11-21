@@ -6273,19 +6273,6 @@ rules:
     class: project-owned-original
     decision: include
     evidence: [docs/publication/README.md]
-  - id: acp-sdk-license
-    include: [third_party/acp-go-sdk/LICENSE]
-    class: license-compatible-third-party
-    decision: include
-    license: Apache-2.0
-    evidence: [third_party/acp-go-sdk/LICENSE]
-  - id: acp-sdk
-    include: [third_party/acp-go-sdk/**]
-    exclude: [third_party/acp-go-sdk/LICENSE]
-    class: license-compatible-third-party
-    decision: include
-    license: Apache-2.0
-    evidence: [third_party/acp-go-sdk/LICENSE]
   - id: tools
     include: [tools/**]
     class: reference-informed-independent

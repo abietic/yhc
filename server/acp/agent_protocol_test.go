@@ -1364,14 +1364,15 @@ func TestACPPlanApprovalReusesToolIdentityAcrossStructuredTargets(t *testing.T) 
 			if len(request.Options) != wantOptions {
 				t.Fatalf("options = %#v", request.Options)
 			}
-			if test.target != permission.ModeBypassPermissions && (len(request.ToolCall.Content) != 1 ||
-				request.ToolCall.Content[0].Content == nil ||
-				request.ToolCall.Content[0].Content.Content.Text == nil ||
-				request.ToolCall.Content[0].Content.Content.Text.Text !=
+			content, _ := request.ToolCall.Content.Value()
+			if test.target != permission.ModeBypassPermissions && (len(content) != 1 ||
+				content[0].Content == nil ||
+				content[0].Content.Content.Text == nil ||
+				content[0].Content.Content.Text.Text !=
 					string(planBytes)) {
 				t.Fatalf(
 					"ACP Plan bytes = %#v",
-					request.ToolCall.Content,
+					content,
 				)
 			}
 			for _, option := range request.Options {
@@ -1847,8 +1848,8 @@ func TestACP_ToolApprovalFlow_Deny(t *testing.T) {
 		}
 		if update.Update.ToolCallUpdate != nil &&
 			update.Update.ToolCallUpdate.ToolCallId == "call_deny_1" &&
-			update.Update.ToolCallUpdate.Status != nil &&
-			*update.Update.ToolCallUpdate.Status ==
+			update.Update.ToolCallUpdate.Status.Ptr() != nil &&
+			*update.Update.ToolCallUpdate.Status.Ptr() ==
 				acpsdk.ToolCallStatusFailed {
 			failedTerminals++
 		}
@@ -1865,6 +1866,7 @@ func TestACP_ToolApprovalFlow_Deny(t *testing.T) {
 
 // denyingPermissionClient always denies permission requests.
 type denyingPermissionClient struct {
+	unsupportedElicitationClient
 	mu      sync.Mutex
 	updates []acpsdk.SessionNotification
 }
@@ -1986,54 +1988,31 @@ func TestACP_ConcurrentPrompts_DifferentSessions(t *testing.T) {
 // --- Error Handling: Malformed Request Test ---
 
 func TestACP_MalformedPromptContent(t *testing.T) {
-	mockModel := &mockChatModel{
-		responses: []*schema.Message{
-			{Role: schema.Assistant, Content: "should not reach"},
-		},
-	}
-
-	conn, _ := setupTestACP(t, mockModel)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := conn.Initialize(ctx, acpsdk.InitializeRequest{
-		ProtocolVersion:    acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{},
+	raw := newP231RawAgentConnection(t, &mockChatModel{})
+	raw.sendRequest(t, "new", acpsdk.AgentMethodSessionNew, acpsdk.NewSessionRequest{
+		Cwd: t.TempDir(), McpServers: []acpsdk.McpServer{},
 	})
-	if err != nil {
-		t.Fatalf("Initialize: %v", err)
-		return
+	created := raw.waitResponse(t, "new")
+	result, ok := created["result"].(map[string]any)
+	if !ok || result["sessionId"] == nil {
+		t.Fatalf("session/new response = %#v", created)
 	}
 
-	sess, err := conn.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acpsdk.McpServer{}})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-		return
+	// Write null to the wire because the typed SDK normalizes nil to [].
+	params := map[string]any{"sessionId": result["sessionId"], "prompt": nil}
+	raw.sendRequest(t, "null", acpsdk.AgentMethodSessionPrompt, params)
+	response := raw.waitResponse(t, "null")
+	requestError, ok := response["error"].(map[string]any)
+	if !ok || requestError["code"] != float64(CodeInvalidParams) {
+		t.Fatalf("null prompt response = %#v", response)
 	}
 
-	// Prompt with nil content — the ACP SDK validates that prompt is required,
-	// so this should return an error (invalid params).
-	_, err = conn.Prompt(ctx, acpsdk.PromptRequest{
-		SessionId: sess.SessionId,
-		Prompt:    nil, // nil prompt triggers SDK validation
-	})
-	if err == nil {
-		t.Fatal("expected error for nil prompt content (SDK validates prompt is required)")
-		return
-	}
-
-	// Prompt with empty content blocks (empty text results in end_turn)
-	resp, err := conn.Prompt(ctx, acpsdk.PromptRequest{
-		SessionId: sess.SessionId,
-		Prompt:    []acpsdk.ContentBlock{}, // empty slice is valid
-	})
-	if err != nil {
-		t.Fatalf("Prompt with empty content blocks should not fail: %v", err)
-		return
-	}
-	if resp.StopReason != acpsdk.StopReasonEndTurn {
-		t.Fatalf("expected end_turn for empty prompt, got %q", resp.StopReason)
+	params["prompt"] = []acpsdk.ContentBlock{}
+	raw.sendRequest(t, "empty", acpsdk.AgentMethodSessionPrompt, params)
+	response = raw.waitResponse(t, "empty")
+	result, ok = response["result"].(map[string]any)
+	if !ok || result["stopReason"] != string(acpsdk.StopReasonEndTurn) {
+		t.Fatalf("empty prompt response = %#v", response)
 	}
 }
 

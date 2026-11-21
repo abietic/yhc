@@ -93,13 +93,12 @@ func (a *Agent) projectCanonicalProjection(
 		if a.conn == nil {
 			return errors.New("ACP connection is unavailable")
 		}
-		var messageID *string
+		var messageID *acpsdk.MessageId
 		if !a.config.DisableACPAssistantMessageIDs {
 			if _, err := uuid.Parse(projection.Assistant.MessageID); err != nil {
 				return errors.New("ACP canonical assistant message ID is not a UUID")
 			}
-			value := projection.Assistant.MessageID
-			messageID = &value
+			messageID = acpsdk.Ptr(acpsdk.MessageId(projection.Assistant.MessageID))
 		}
 		return a.conn.SessionUpdate(ctx, acpsdk.SessionNotification{
 			SessionId: sessionID,

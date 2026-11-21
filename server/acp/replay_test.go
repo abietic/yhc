@@ -99,7 +99,7 @@ func TestP234bACPReplayProjectionPreservesOrderBytesAndToolFacts(t *testing.T) {
 		user.MessageId == nil {
 		t.Fatalf("user update = %#v", projection.updates[0])
 	}
-	if got, want := *user.MessageId, "66013c7f-c7de-5198-823a-1cff455c3dc7"; got != want {
+	if got, want := *user.MessageId, "66013c7f-c7de-5198-823a-1cff455c3dc7"; string(got) != want {
 		t.Fatalf("user UUID = %q, want %q", got, want)
 	}
 	assistant := projection.updates[1].AgentMessageChunk
@@ -119,30 +119,31 @@ func TestP234bACPReplayProjectionPreservesOrderBytesAndToolFacts(t *testing.T) {
 		t.Fatalf("tool start = %#v", projection.updates[2])
 	}
 	terminal := projection.updates[3].ToolCallUpdate
-	if terminal == nil ||
-		terminal.ToolCallId != "call-read" ||
-		terminal.Status == nil ||
-		*terminal.Status != acpsdk.ToolCallStatusCompleted {
+	if terminal == nil {
+		t.Fatal("missing terminal tool update")
+	}
+	terminalContent, _ := terminal.Content.Value()
+	if terminal.ToolCallId != "call-read" ||
+		!patchEquals(terminal.Status, acpsdk.ToolCallStatusCompleted) {
 		t.Fatalf("tool terminal = %#v", projection.updates[3])
 	}
-	if terminal.RawOutput != `{"ok":true}` ||
-		len(terminal.Content) != 1 ||
-		terminal.Content[0].Content == nil ||
-		terminal.Content[0].Content.Content.Text == nil ||
-		terminal.Content[0].Content.Content.Text.Text != `{"ok":true}` {
+	if !rawOutputEquals(terminal.RawOutput, `{"ok":true}`) ||
+		len(terminalContent) != 1 ||
+		terminalContent[0].Content == nil ||
+		terminalContent[0].Content.Content.Text == nil ||
+		terminalContent[0].Content.Content.Text.Text != `{"ok":true}` {
 		t.Fatalf("tool output = %#v", terminal)
 	}
 	fallback := projection.updates[4].AgentMessageChunk
 	if fallback == nil || fallback.MessageId == nil {
 		t.Fatalf("fallback assistant = %#v", projection.updates[4])
 	}
-	if got, want := *fallback.MessageId, "739554bf-b3ad-5b33-8b60-b26687caf85d"; got != want {
+	if got, want := *fallback.MessageId, "739554bf-b3ad-5b33-8b60-b26687caf85d"; string(got) != want {
 		t.Fatalf("fallback UUID = %q, want %q", got, want)
 	}
 	failed := projection.updates[6].ToolCallUpdate
-	if failed == nil || failed.Status == nil ||
-		*failed.Status != acpsdk.ToolCallStatusFailed ||
-		failed.RawOutput != "exit 1" {
+	if failed == nil || !patchEquals(failed.Status, acpsdk.ToolCallStatusFailed) ||
+		!rawOutputEquals(failed.RawOutput, "exit 1") {
 		t.Fatalf("failed tool terminal = %#v", projection.updates[6])
 	}
 }

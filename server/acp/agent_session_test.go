@@ -3,6 +3,7 @@ package acp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -272,8 +273,8 @@ func TestACPResumeReturnsImportRequiredWithoutPrivateMigration(t *testing.T) {
 				requestErr.Message != "legacy_session_import_required" {
 				t.Fatalf("ACP %s error = %#v", operation.name, err)
 			}
-			data, ok := requestErr.Data.(map[string]any)
-			if !ok || len(data) != 1 || data["sessionId"] != sessionID {
+			var data map[string]any
+			if err := json.Unmarshal(requestErr.Data, &data); err != nil || len(data) != 1 || data["sessionId"] != sessionID {
 				t.Fatalf("ACP %s error data = %#v", operation.name, requestErr.Data)
 			}
 			if constructionCalls != 0 {
@@ -439,7 +440,8 @@ func TestACP_LoadSession(t *testing.T) {
 }
 
 func TestACP_DeleteSession(t *testing.T) {
-	cwd := t.TempDir()
+	raw := newP231RawAgentConnection(t, &mockChatModel{})
+	cwd := raw.agent.config.CWD
 	transcriptDir := acpSessionTranscriptDir(cwd)
 	const deleteSessionID = "session-delete-test"
 
@@ -463,20 +465,11 @@ func TestACP_DeleteSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	agent, err := NewAgent(Config{CWD: cwd})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(agent.Close)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err = agent.UnstableDeleteSession(ctx, acpsdk.UnstableDeleteSessionRequest{
+	raw.sendRequest(t, "delete", acpsdk.AgentMethodSessionDelete, acpsdk.DeleteSessionRequest{
 		SessionId: acpsdk.SessionId(deleteSessionID),
 	})
-	if err != nil {
-		t.Fatalf("DeleteSession: %v", err)
+	if response := raw.waitResponse(t, "delete"); response["error"] != nil {
+		t.Fatalf("session/delete response = %#v", response)
 	}
 
 	for _, path := range ownedPaths {
@@ -526,9 +519,9 @@ func TestACPDeleteSessionUsesObservedCrossCWDSessionRoot(t *testing.T) {
 	}
 
 	ownedPaths := acpDeleteSessionOwnedPaths(t, projectB, string(created.SessionId))
-	if _, err := agent.UnstableDeleteSession(
+	if _, err := agent.DeleteSession(
 		t.Context(),
-		acpsdk.UnstableDeleteSessionRequest{SessionId: created.SessionId},
+		acpsdk.DeleteSessionRequest{SessionId: created.SessionId},
 	); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
@@ -561,9 +554,9 @@ func TestACPDeleteSessionRebuildsRootFromList(t *testing.T) {
 	if len(listed.Sessions) != 1 || listed.Sessions[0].SessionId != sessionID {
 		t.Fatalf("ListSessions = %#v", listed.Sessions)
 	}
-	if _, err := agent.UnstableDeleteSession(
+	if _, err := agent.DeleteSession(
 		t.Context(),
-		acpsdk.UnstableDeleteSessionRequest{SessionId: sessionID},
+		acpsdk.DeleteSessionRequest{SessionId: sessionID},
 	); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
@@ -600,9 +593,9 @@ func TestACPDeleteSessionRejectsAmbiguousObservedRoot(t *testing.T) {
 		}
 	}
 
-	_, err = agent.UnstableDeleteSession(
+	_, err = agent.DeleteSession(
 		t.Context(),
-		acpsdk.UnstableDeleteSessionRequest{SessionId: sessionID},
+		acpsdk.DeleteSessionRequest{SessionId: sessionID},
 	)
 	var requestErr *acpsdk.RequestError
 	if !errors.As(err, &requestErr) || requestErr.Code != CodeSessionConflict {
@@ -766,9 +759,9 @@ func TestACP_DeleteSession_ActiveRejectedWithoutMutation(t *testing.T) {
 		t.Fatal("session should be active before delete")
 	}
 
-	if _, err := agent.UnstableDeleteSession(
+	if _, err := agent.DeleteSession(
 		ctx,
-		acpsdk.UnstableDeleteSessionRequest{
+		acpsdk.DeleteSessionRequest{
 			SessionId: acpsdk.SessionId(deleteSessionID),
 		},
 	); err == nil {
@@ -811,9 +804,9 @@ func TestACP_DeleteSession_SerializesSessionRegistration(t *testing.T) {
 	agent.sessionLifecycleMu.Lock()
 	go func() {
 		close(started)
-		_, deleteErr := agent.UnstableDeleteSession(
+		_, deleteErr := agent.DeleteSession(
 			context.Background(),
-			acpsdk.UnstableDeleteSessionRequest{SessionId: sessionID},
+			acpsdk.DeleteSessionRequest{SessionId: sessionID},
 		)
 		deleteDone <- deleteErr
 	}()
@@ -871,9 +864,9 @@ func TestACP_DeleteSession_UnsafeIDRejectedWithoutMutation(t *testing.T) {
 	}
 	t.Cleanup(agent.Close)
 
-	if _, err := agent.UnstableDeleteSession(
+	if _, err := agent.DeleteSession(
 		context.Background(),
-		acpsdk.UnstableDeleteSessionRequest{SessionId: "../victim"},
+		acpsdk.DeleteSessionRequest{SessionId: "../victim"},
 	); err == nil {
 		t.Fatal("expected unsafe session ID deletion to fail")
 	}
@@ -907,7 +900,7 @@ func TestACP_DeleteSession_NonExistent(t *testing.T) {
 	defer cancel()
 
 	// Deleting a non-existent session should not error.
-	_, err = agent.UnstableDeleteSession(ctx, acpsdk.UnstableDeleteSessionRequest{
+	_, err = agent.DeleteSession(ctx, acpsdk.DeleteSessionRequest{
 		SessionId: "does-not-exist",
 	})
 	if err != nil {
@@ -1097,6 +1090,7 @@ func TestACP_PermissionTimeout(t *testing.T) {
 // slowPermissionClient simulates a client that takes too long to respond to
 // permission requests. It responds to all other methods normally.
 type slowPermissionClient struct {
+	unsupportedElicitationClient
 	mu      sync.Mutex
 	updates []acpsdk.SessionNotification
 	blocked chan struct{}
@@ -1517,8 +1511,8 @@ func TestACP_EventStreaming_ToolCallLifecycle(t *testing.T) {
 			}
 		}
 		if u.Update.ToolCallUpdate != nil &&
-			u.Update.ToolCallUpdate.Status != nil &&
-			*u.Update.ToolCallUpdate.Status == acpsdk.ToolCallStatusFailed {
+			u.Update.ToolCallUpdate.Status.Ptr() != nil &&
+			*u.Update.ToolCallUpdate.Status.Ptr() == acpsdk.ToolCallStatusFailed {
 			hasToolCallFailed = true
 		}
 		if u.Update.AgentMessageChunk != nil {
@@ -1849,8 +1843,11 @@ func TestACP_ToolCallRawInputForwarded(t *testing.T) {
 			var raw any
 			for _, u := range client.getUpdates() {
 				if u.Update.ToolCallUpdate != nil &&
-					u.Update.ToolCallUpdate.RawInput != nil {
-					raw = u.Update.ToolCallUpdate.RawInput
+					!u.Update.ToolCallUpdate.RawInput.IsUnset() {
+					value, _ := u.Update.ToolCallUpdate.RawInput.Value()
+					if err := json.Unmarshal(value, &raw); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			if raw == nil {

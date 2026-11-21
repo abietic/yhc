@@ -135,7 +135,7 @@ type acpGoalResponse struct {
 	TerminalReason string           `json:"terminalReason,omitempty"`
 }
 
-func negotiateACPGoalNamespace(meta map[string]any) (acpGoalNegotiation, error) {
+func negotiateACPGoalNamespace(meta acpsdk.Meta) (acpGoalNegotiation, error) {
 	canonical := parseACPGoalOffer(meta, &canonicalACPGoalNamespace)
 	legacy := parseACPGoalOffer(meta, &legacyACPGoalNamespace)
 
@@ -173,7 +173,7 @@ func negotiateACPGoalNamespace(meta map[string]any) (acpGoalNegotiation, error) 
 }
 
 func parseACPGoalOffer(
-	meta map[string]any,
+	meta acpsdk.Meta,
 	namespace *acpGoalNamespace,
 ) parsedACPGoalOffer {
 	if namespace == nil {
@@ -184,8 +184,8 @@ func parseACPGoalOffer(
 		return parsedACPGoalOffer{}
 	}
 	parsed := parsedACPGoalOffer{offered: true}
-	offer, ok := raw.(map[string]any)
-	if !ok || len(offer) != 2 {
+	var offer map[string]any
+	if err := json.Unmarshal(raw, &offer); err != nil || len(offer) != 2 {
 		return parsed
 	}
 	notifications, ok := offer["notifications"].(bool)
@@ -210,60 +210,19 @@ func invalidACPGoalNegotiation() *acpsdk.RequestError {
 }
 
 func acpGoalOfferedVersions(raw any) ([]int, bool) {
-	switch values := raw.(type) {
-	case []int:
-		if len(values) == 0 || len(values) > acpGoalMaxOfferedVersions {
-			return nil, false
-		}
-		return append([]int(nil), values...), true
-	case []any:
-		if len(values) == 0 || len(values) > acpGoalMaxOfferedVersions {
-			return nil, false
-		}
-		versions := make([]int, 0, len(values))
-		for _, value := range values {
-			version, ok := acpGoalVersion(value)
-			if !ok {
-				return nil, false
-			}
-			versions = append(versions, version)
-		}
-		return versions, true
-	default:
+	values, ok := raw.([]any)
+	if !ok || len(values) == 0 || len(values) > acpGoalMaxOfferedVersions {
 		return nil, false
 	}
-}
-
-func acpGoalVersion(value any) (int, bool) {
-	switch version := value.(type) {
-	case int:
-		return version, version > 0 && version <= acpGoalMaxProtocolVersion
-	case int32:
-		return int(version), version > 0 && version <= acpGoalMaxProtocolVersion
-	case int64:
-		if version <= 0 || version > acpGoalMaxProtocolVersion {
-			return 0, false
+	versions := make([]int, 0, len(values))
+	for _, value := range values {
+		version, ok := value.(float64)
+		if !ok || version <= 0 || version > acpGoalMaxProtocolVersion || version != math.Trunc(version) {
+			return nil, false
 		}
-		return int(version), true
-	case uint:
-		if version == 0 || version > acpGoalMaxProtocolVersion {
-			return 0, false
-		}
-		return int(version), true
-	case uint64:
-		if version == 0 || version > acpGoalMaxProtocolVersion {
-			return 0, false
-		}
-		return int(version), true
-	case float64:
-		if version <= 0 || version > acpGoalMaxProtocolVersion ||
-			version != math.Trunc(version) {
-			return 0, false
-		}
-		return int(version), true
-	default:
-		return 0, false
+		versions = append(versions, int(version))
 	}
+	return versions, true
 }
 
 func (a *Agent) acpGoalCapabilityNegotiated() bool {
@@ -710,27 +669,15 @@ func newACPGoalConflict(
 			data["currentGoal"] = projectACPGoal(current)
 		}
 	}
-	return &acpsdk.RequestError{
-		Code:    CodeGoalConflict,
-		Message: "Goal request conflict",
-		Data:    data,
-	}
+	return acpsdk.NewRequestError(CodeGoalConflict, "Goal request conflict", data)
 }
 
 func newACPGoalInvalidParams(detail string) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeInvalidParams,
-		Message: "Invalid params",
-		Data:    map[string]any{"detail": detail},
-	}
+	return acpsdk.NewRequestError(CodeInvalidParams, "Invalid params", map[string]any{"detail": detail})
 }
 
 func newACPGoalSessionNotFound(sessionID string) *acpsdk.RequestError {
-	return &acpsdk.RequestError{
-		Code:    CodeSessionNotFound,
-		Message: "Session not found",
-		Data:    map[string]any{"sessionId": sessionID},
-	}
+	return acpsdk.NewRequestError(CodeSessionNotFound, "Session not found", map[string]any{"sessionId": sessionID})
 }
 
 func boundedACPGoalDetail(detail string) string {

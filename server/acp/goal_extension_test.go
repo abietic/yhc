@@ -47,13 +47,13 @@ func TestP245cInitializeNegotiatesGoalCapabilityImmutably(t *testing.T) {
 	compatible := acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		ClientCapabilities: acpsdk.ClientCapabilities{
-			Meta: map[string]any{
+			Meta: makeTestACPMeta(t, map[string]any{
 				legacyGoalCapabilityKey: map[string]any{
 					"versions":      []any{float64(1)},
 					"notifications": true,
 				},
 				"unrelated": "ignored",
-			},
+			}),
 		},
 	}
 	agent, err := NewAgent(Config{CWD: t.TempDir()})
@@ -124,9 +124,9 @@ func TestP245cGoalNegotiationRejectsMalformedOffers(t *testing.T) {
 		}
 		response, initializeErr := agent.Initialize(t.Context(), acpsdk.InitializeRequest{
 			ProtocolVersion: acpsdk.ProtocolVersionNumber,
-			ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+			ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 				legacyGoalCapabilityKey: offer,
-			}},
+			})},
 		})
 		agent.Close()
 		if initializeErr != nil {
@@ -177,7 +177,7 @@ func TestYHCACPGoalNamespaceNegotiationMatrix(t *testing.T) {
 
 			response, initializeErr := agent.Initialize(t.Context(), acpsdk.InitializeRequest{
 				ProtocolVersion:    acpsdk.ProtocolVersionNumber,
-				ClientCapabilities: acpsdk.ClientCapabilities{Meta: test.meta},
+				ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, test.meta)},
 			})
 			if test.wantErr {
 				if initializeErr == nil {
@@ -187,9 +187,9 @@ func TestYHCACPGoalNamespaceNegotiationMatrix(t *testing.T) {
 				if test.retry {
 					retried, err := agent.Initialize(t.Context(), acpsdk.InitializeRequest{
 						ProtocolVersion: acpsdk.ProtocolVersionNumber,
-						ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+						ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 							yhcGoalCapabilityKey: validCanonical,
-						}},
+						})},
 					})
 					if err != nil {
 						t.Fatalf("retry Initialize: %v", err)
@@ -239,9 +239,9 @@ func TestYHCACPGoalNamespaceRequestAndNotificationPairing(t *testing.T) {
 			conn, client, agent := setupTestACPWithAgent(t, &mockChatModel{})
 			response, err := conn.Initialize(t.Context(), acpsdk.InitializeRequest{
 				ProtocolVersion: acpsdk.ProtocolVersionNumber,
-				ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+				ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 					test.capability: yhcGoalOffer(1),
-				}},
+				})},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -310,10 +310,10 @@ func TestYHCACPGoalDualOfferFailureExposesNoGoalSurface(t *testing.T) {
 	conn, _, agent := setupTestACPWithAgent(t, &mockChatModel{})
 	_, err := conn.Initialize(t.Context(), acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+		ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 			yhcGoalCapabilityKey:    yhcGoalOffer(1),
 			legacyGoalCapabilityKey: yhcGoalOffer(2),
-		}},
+		})},
 	})
 	if err == nil {
 		t.Fatal("different valid dual offer Initialize succeeded")
@@ -322,9 +322,9 @@ func TestYHCACPGoalDualOfferFailureExposesNoGoalSurface(t *testing.T) {
 	yhcRequireNoGoalSurface(t, agent)
 	retried, err := conn.Initialize(t.Context(), acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+		ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 			yhcGoalCapabilityKey: yhcGoalOffer(1),
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatalf("retry Initialize after dual failure: %v", err)
@@ -387,9 +387,9 @@ func TestYHCACPGoalNamespaceConnectionIsolation(t *testing.T) {
 		go func() {
 			response, err := current.conn.Initialize(ctx, acpsdk.InitializeRequest{
 				ProtocolVersion: acpsdk.ProtocolVersionNumber,
-				ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+				ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 					current.capability: yhcGoalOffer(1),
-				}},
+				})},
 			})
 			initialized <- initializeResult{index: index, response: response, err: err}
 		}()
@@ -467,9 +467,9 @@ func TestYHCACPGoalSelectionIsImmutableAcrossRepeatedInitialize(t *testing.T) {
 	t.Cleanup(agent.Close)
 	first, err := agent.Initialize(t.Context(), acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+		ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 			yhcGoalCapabilityKey: yhcGoalOffer(1),
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -477,9 +477,9 @@ func TestYHCACPGoalSelectionIsImmutableAcrossRepeatedInitialize(t *testing.T) {
 	yhcRequireGoalCapability(t, first, yhcGoalCapabilityKey, map[string]any{"version": 1, "notifications": true})
 	repeated, err := agent.Initialize(t.Context(), acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+		ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 			legacyGoalCapabilityKey: yhcGoalOffer(1),
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1152,12 +1152,12 @@ func initializeP245cGoalAgent(t *testing.T, agent *Agent) {
 	t.Helper()
 	response, err := agent.Initialize(t.Context(), acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+		ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 			legacyGoalCapabilityKey: map[string]any{
 				"versions":      []int{1},
 				"notifications": true,
 			},
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1174,12 +1174,12 @@ func initializeP245cGoalConnection(
 	t.Helper()
 	response, err := conn.Initialize(t.Context(), acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
-		ClientCapabilities: acpsdk.ClientCapabilities{Meta: map[string]any{
+		ClientCapabilities: acpsdk.ClientCapabilities{Meta: makeTestACPMeta(t, map[string]any{
 			legacyGoalCapabilityKey: map[string]any{
 				"versions":      []int{1},
 				"notifications": true,
 			},
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1249,4 +1249,13 @@ func equalJSONValue(left, right any) bool {
 	return leftErr == nil &&
 		rightErr == nil &&
 		string(leftJSON) == string(rightJSON)
+}
+
+func makeTestACPMeta(t *testing.T, values map[string]any) acpsdk.Meta {
+	t.Helper()
+	meta, err := acpsdk.NewMeta(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return meta
 }

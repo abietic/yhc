@@ -13,14 +13,10 @@ candidate are recorded in quality/dependency-licenses.yaml. Retain the license,
 copyright, attribution, and NOTICE material required by that inventory whenever
 the corresponding dependency material is redistributed.
 
-This repository includes a modified copy of github.com/coder/acp-go-sdk
-v0.13.5 in third_party/acp-go-sdk. Its Apache-2.0 license is retained in
-third_party/acp-go-sdk/LICENSE. Local modifications preserve ContentBlock
-_meta and annotations during JSON marshaling and enforce inbound-request
-ordering behind already accepted notifications. Every changed or added file in
-that vendored copy identifies the local delta.
+YHC binaries include github.com/coder/acp-go-sdk, an Apache-2.0 dependency.
+The dependency inventory records its upstream license and pinned source.
 
-This repository also distributes Marked 18.0.9 under the MIT License in
+This repository distributes Marked 18.0.9 under the MIT License in
 internal/webui/assets/vendor/marked.esm.js. Its retained license and notice
 are internal/webui/assets/vendor/marked.LICENSE.txt and
 internal/webui/assets/vendor/marked.NOTICE.txt. Marked is third-party

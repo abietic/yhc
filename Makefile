@@ -241,7 +241,6 @@ clear:
 test: prepare-gotestsum test-provider-costs
 	@mkdir -p $(BUILD_DIR)
 	$(GOTEST) --junitfile $(BUILD_DIR)/test-report.xml --jsonfile $(TEST_EVENTS_FILE) -- -p=$(TEST_PACKAGE_PARALLEL) -coverprofile=$(BUILD_DIR)/coverage.out -covermode=atomic -count=1 ./...
-	$(GO) -C third_party/acp-go-sdk test ./...
 	$(GO) tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
 	@echo "Coverage report: $(BUILD_DIR)/coverage.html"
 

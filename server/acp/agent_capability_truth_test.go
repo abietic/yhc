@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestP23H1P300PromptPreservesResourceLinkOnlyAndMixedOrderWithoutFetch(t *te
 				title := "Schema"
 				description := "Current API"
 				mimeType := "application/json"
-				size := 42
+				size := int64(42)
 				resource := acpsdk.ResourceLinkBlock(
 					"schema.json",
 					"file:///workspace/schema.json",
@@ -159,9 +160,9 @@ func TestP23H1ReservedResourceMetadataIsNotModelVisible(t *testing.T) {
 		ResourceLink: &acpsdk.ContentBlockResourceLink{
 			Uri:  "file:///workspace/context",
 			Name: "context",
-			Meta: map[string]any{"private": "must-not-appear"},
+			Meta: acpsdk.Meta{"private": json.RawMessage(`"must-not-appear"`)},
 			Annotations: &acpsdk.Annotations{
-				Meta:         map[string]any{"private": "must-not-appear"},
+				Meta:         acpsdk.Meta{"private": json.RawMessage(`"must-not-appear"`)},
 				Audience:     []acpsdk.Role{acpsdk.RoleAssistant},
 				LastModified: &lastModified,
 				Priority:     &priority,
@@ -212,8 +213,8 @@ func TestP305aPromptRejectsAudioBeforeMutation(t *testing.T) {
 		requestErr.Code != codeUnsupportedInput {
 		t.Fatalf("request error = %#v", requestErr)
 	}
-	data, ok := requestErr.Data.(map[string]any)
-	if !ok ||
+	var data map[string]any
+	if err := json.Unmarshal(requestErr.Data, &data); err != nil ||
 		data["input"] != "prompt.audio" ||
 		data["reason"] != "capability_unsupported" ||
 		data["block"] != float64(1) {
@@ -247,8 +248,8 @@ func TestP23H1MalformedPromptPrecedesUnknownSessionWithoutContentLeak(t *testing
 		requestErr.Message != "Invalid params" {
 		t.Fatalf("request error = %#v", requestErr)
 	}
-	data, ok := requestErr.Data.(map[string]any)
-	if !ok ||
+	var data map[string]any
+	if err := json.Unmarshal(requestErr.Data, &data); err != nil ||
 		data["input"] != "prompt.resourceLink" ||
 		data["reason"] != "resource_uri_required" ||
 		data["block"] != float64(0) ||
@@ -484,8 +485,8 @@ func requireP23H1UnsupportedError(
 		requestErr.Message != "Unsupported input" {
 		t.Fatalf("request error = %#v", requestErr)
 	}
-	data, ok := requestErr.Data.(map[string]any)
-	if !ok || data["input"] != wantInput || len(data) != 1 {
+	var data map[string]any
+	if err := json.Unmarshal(requestErr.Data, &data); err != nil || data["input"] != wantInput || len(data) != 1 {
 		t.Fatalf("error data = %#v", requestErr.Data)
 	}
 	if requestErr.Error() == "" {
