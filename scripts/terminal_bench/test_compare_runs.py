@@ -88,6 +88,8 @@ class ComparisonTests(unittest.TestCase):
         got = report["samples"][0]
         self.assertEqual(got["cache_hit_rate_known_including_first"], 0.09)
         self.assertFalse(got["usage_complete"])
+        self.assertFalse(got["wire_usage_complete"])
+        self.assertIsNone(got["native_usage_coverage"])
         self.assertEqual(got["thinking"], dict(known_tokens=2, reported_calls=1, total_calls=3, complete=False))
         self.assertEqual(got["retained_unknown_cny"], "2.621440")
         self.assertEqual(got["known_peak_estimate_cny"], "0.0010")
@@ -95,6 +97,30 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["tool_seconds"])
         self.assertEqual(got["call_details"][2]["error_category"], "timeout")
         self.assertIsNone(got["call_details"][2]["transport_timings"]["request_sent_seconds"])
+
+    def test_complete_gateway_does_not_hide_native_unknown_attempt(self):
+        entry = row()
+        entry["normal_completion"] = False
+        entry["native"] = dict(native_usage=dict(complete=False, provider_calls=3, unknown_calls=1,
+            cost=dict(reservation=dict(retained_amount="2.621440"))))
+        report = build_report([self.write(entry, [call("1"), call("2")])])
+        got, = report["samples"]
+        self.assertTrue(got["wire_usage_complete"])
+        self.assertFalse(got["usage_complete"])
+        self.assertEqual(got["native_usage_coverage"], dict(complete=False, attempts=3, unknown_calls=1,
+                                                            in_flight=None, untracked_calls=None,
+                                                            retained_unknown_cny="2.621440"))
+        self.assertEqual((got["calls"], got["unknown_calls"], got["retained_unknown_cny"]), (2, 0, "0"))
+        self.assertEqual(got["thinking"], dict(known_tokens=4, reported_calls=2, total_calls=2, complete=True))
+        self.assertIn("Gateway known/total calls", markdown(report))
+        self.assertIn("| yhc | sample-a | 3 | 1 | 2.621440 |", markdown(report))
+
+    def test_complete_native_cannot_omit_in_flight_or_untracked_attempts(self):
+        for key in ("unknown_calls", "in_flight", "untracked_calls"):
+            entry = row()
+            entry["native"] = dict(native_usage=dict(complete=True, provider_calls=2, **{key: 1}))
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "inconsistent native usage coverage"):
+                load_run(self.write(entry, [call("1"), call("2")], name=key))
 
     def test_idle_summary_is_preserved_with_explicit_evidence_coverage(self):
         for name, values, coverage in (("summary", [None, None], "summary_only"),
@@ -111,6 +137,11 @@ class ComparisonTests(unittest.TestCase):
                 got = report["samples"][0]
                 self.assertEqual(got["known_idle_estimate_cny"], "0.0004")
                 self.assertEqual(got["known_idle_estimate_evidence"], coverage)
+                self.assertTrue(got["wire_usage_complete"])
+                self.assertTrue(got["usage_complete"])
+                self.assertIsNone(got["native_usage_coverage"])
+                self.assertEqual((got["calls"], got["known_calls"], got["unknown_calls"],
+                                  got["retained_unknown_cny"]), (2, 2, 0, "0"))
                 self.assertIn("0.0004 /", markdown(report))
                 self.assertIn(coverage, markdown(report))
                 self.assertIsNone(got["actual_billed_cny"])
