@@ -3,13 +3,124 @@ package agenticdeepseek
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httptrace"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
 )
+
+func TestDefaultHTTPClientRecoversOneDialTimeoutWithoutReplayingPOST(t *testing.T) {
+	var posts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	original := http.DefaultTransport
+	transport := original.(*http.Transport).Clone()
+	transport.Proxy = nil
+	dial := transport.DialContext
+	var dials atomic.Int32
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if dials.Add(1) == 1 {
+			httptrace.ContextClientTrace(ctx).ConnectStart(network, address)
+			return nil, context.DeadlineExceeded
+		}
+		return dial(ctx, network, address)
+	}
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+		transport.CloseIdleConnections()
+	})
+
+	m, err := New(t.Context(), &Config{APIKey: "fixture", Model: FlashModel, BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.httpClient.CloseIdleConnections)
+	response, err := m.doRequest(t.Context(), []byte(`{}`), true, true)
+	if err != nil {
+		t.Fatalf("one failed dial should not abort the POST: %v", err)
+	}
+	defer response.Body.Close()
+	if dials.Load() != 2 || posts.Load() != 1 {
+		t.Fatalf("dials=%d, POSTs=%d; want 2 dials and 1 POST", dials.Load(), posts.Load())
+	}
+}
+
+func TestDefaultHTTPClientDoesNotReplayPOSTAfterServerReceivesIt(t *testing.T) {
+	var posts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		posts.Add(1)
+		panic(http.ErrAbortHandler)
+	}))
+	defer server.Close()
+
+	m, err := New(t.Context(), &Config{APIKey: "fixture", Model: FlashModel, BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.httpClient.CloseIdleConnections)
+	if response, err := m.doRequest(t.Context(), []byte(`{}`), true, true); err == nil {
+		response.Body.Close()
+		t.Fatal("the peer closed without providing a response")
+	}
+	if posts.Load() != 1 {
+		t.Fatalf("POSTs=%d; want exactly 1", posts.Load())
+	}
+}
+
+func TestTimedOutDialKeepsOneRetryInsideOriginalBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		dialErr    error
+		cancelDial bool
+		wantDials  int
+	}{
+		{name: "two timeouts", dialErr: context.DeadlineExceeded, wantDials: 2},
+		{name: "permanent error", dialErr: syscall.ECONNREFUSED, wantDials: 1},
+		{name: "parent canceled", dialErr: context.DeadlineExceeded, cancelDial: true, wantDials: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			parentDeadline, _ := ctx.Deadline()
+			var deadlines []time.Time
+			try := retryTimedOutDial(func(ctx context.Context, _, _ string) (net.Conn, error) {
+				deadline, hasDeadline := ctx.Deadline()
+				if !hasDeadline || deadline.After(parentDeadline) {
+					t.Fatal("dial exceeded the caller's deadline")
+				}
+				deadlines = append(deadlines, deadline)
+				if tc.cancelDial {
+					cancel()
+				}
+				return nil, tc.dialErr
+			})
+			if _, err := try(ctx, "tcp", "fixture"); !errors.Is(err, tc.dialErr) {
+				t.Fatalf("dial error=%v; want %v", err, tc.dialErr)
+			}
+			if len(deadlines) != tc.wantDials {
+				t.Fatalf("dials=%d; want %d", len(deadlines), tc.wantDials)
+			}
+			if len(deadlines) == 2 && (!deadlines[0].Before(deadlines[1]) || !deadlines[1].Equal(parentDeadline)) {
+				t.Fatal("the second socket should use the remainder of the original deadline")
+			}
+		})
+	}
+}
 
 func TestDefaultHTTPClientKeepsBoundedTLSBudgetAndGlobalTransport(t *testing.T) {
 	global, ok := http.DefaultTransport.(*http.Transport)
