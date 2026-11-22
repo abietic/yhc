@@ -237,6 +237,27 @@ def native_usage_breakdown(native, usage):
     return dict(evidence="native_aggregate_checked", routes=routes)
 
 
+def native_usage_coverage(native):
+    """Project native receipt coverage separately from gateway call accounting."""
+    if not isinstance(native, dict) or type(native.get("complete")) is not bool:
+        return None
+    attempts = native.get("provider_calls")
+    attempts = count(attempts) if attempts is not None else None
+    unknown, in_flight, untracked = (
+        count(value) if value is not None else None
+        for value in (native.get("unknown_calls"), native.get("in_flight"), native.get("untracked_calls"))
+    )
+    if ((attempts is not None and (unknown or 0) + (in_flight or 0) > attempts)
+            or (native["complete"] and (unknown or in_flight or untracked))):
+        raise ValueError("inconsistent native usage coverage")
+    cost = native.get("cost")
+    reservation = cost.get("reservation") if isinstance(cost, dict) else None
+    retained = reservation.get("retained_amount") if isinstance(reservation, dict) else None
+    return dict(complete=native["complete"], attempts=attempts, unknown_calls=unknown,
+                in_flight=in_flight, untracked_calls=untracked,
+                retained_unknown_cny=str(amount(retained)) if retained is not None else None)
+
+
 def plan_identifier(record, field, legacy_field):
     identifiers = {atom(record[key]) for key in (field, legacy_field) if key in record}
     if not identifiers:
@@ -324,7 +345,13 @@ def load_run(root):
         if ledger is not None and ledger["sample"] != identifier:
             raise ValueError("ledger sample mismatch")
         usage = _usage(entry["summary"], ledger)
-        usage["usage_breakdown"] = native_usage_breakdown((entry.get("native") or {}).get("native_usage"), usage)
+        native = (entry.get("native") or {}).get("native_usage")
+        usage["usage_breakdown"] = native_usage_breakdown(native, usage)
+        coverage = native_usage_coverage(native)
+        usage["native_usage_coverage"] = coverage
+        usage["wire_usage_complete"] = usage["usage_complete"]
+        if coverage is not None and not coverage["complete"]:
+            usage["usage_complete"] = False
         if ledger is not None:
             dsh = sample["agent"] == "dsh"
             feedback = collect_tool_feedback(path.parent, ledger["records"], ledger["protocol"],
@@ -452,6 +479,7 @@ def build_report(roots, reference_trajectories=()):
                               for k, group in pairs.items() if {r["agent"] for r in group} >= {"dsh", "yhc"}],
                 stability_established=False,
                 limitations=["known_usage_cache_ratio_is_not_full_coverage_when_unknown_calls_exist",
+                             "native_and_gateway_reservations_may_overlap",
                              "request_duration_sum_is_not_wall_time_or_tool_time",
                              "thinking_characters_are_not_token_counters",
                              "reference_trajectories_do_not_establish_reward_billing_or_a_matched_pair",
@@ -461,7 +489,7 @@ def build_report(roots, reference_trajectories=()):
 
 def markdown(report):
     lines = ["# Offline harness comparison", "", "Diagnostic only; no stability or billing authority.", "",
-             "| Agent | Sample | Evidence | Reward | Known/total calls | Known CNY (idle / peak) | Unknown reserve CNY | Cache, known calls | Known thinking tokens |",
+             "| Agent | Sample | Evidence | Reward | Gateway known/total calls | Known CNY (idle / peak) | Gateway unknown reserve CNY | Cache, known calls | Known thinking tokens |",
              "|---|---|---|---:|---:|---:|---:|---:|---:|"]
     for r in report["samples"]:
         value = lambda key: "unavailable" if r.get(key) is None else str(r[key])
@@ -479,6 +507,17 @@ def markdown(report):
         lines.append(f"| {r['agent']} | {r['sample_id']} | {r['status']} | "
                      f"{r.get('operator_status') or 'unavailable'} / {r.get('outcome_reason') or r.get('terminal_reason') or 'unavailable'} | "
                      f"{r.get('known_idle_estimate_evidence', 'unavailable')} |")
+    native_samples = [(r, r["native_usage_coverage"]) for r in report["samples"]
+                      if r.get("native_usage_coverage") is not None]
+    if native_samples:
+        lines += ["", "Native attempts and retained amounts have their own coverage. The two ledgers may overlap.", "",
+                  "| Agent | Sample | Native attempts | Native unknown attempts | Native retained CNY | Native usage |",
+                  "|---|---|---:|---:|---:|---|"]
+        for r, coverage in native_samples:
+            values = ["unavailable" if coverage[key] is None else str(coverage[key])
+                      for key in ("attempts", "unknown_calls", "retained_unknown_cny")]
+            lines.append(f"| {r['agent']} | {r['sample_id']} | {' | '.join(values)} | "
+                         f"{'complete' if coverage['complete'] else 'incomplete'} |")
     routes = [(r, route) for r in report["samples"] for route in (r.get("usage_breakdown") or {}).get("routes", [])]
     if routes:
         lines += ["", "Closed native route counters match aggregate wire usage; individual call IDs are not correlated.", "",
