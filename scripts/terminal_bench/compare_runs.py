@@ -237,6 +237,15 @@ def native_usage_breakdown(native, usage):
     return dict(evidence="native_aggregate_checked", routes=routes)
 
 
+def plan_identifier(record, field, legacy_field):
+    identifiers = {atom(record[key]) for key in (field, legacy_field) if key in record}
+    if not identifiers:
+        raise ValueError(f"missing plan identifier: {field}")
+    if len(identifiers) != 1:
+        raise ValueError(f"conflicting plan identifiers: {field}")
+    return identifiers.pop()
+
+
 def load_run(root):
     root = Path(root).resolve()
     report_path = root / "report.json"
@@ -296,10 +305,11 @@ def load_run(root):
         markers = ("dispatch-claim.json", "dispatch-progress.json", "cohort", "wire", "trials")
         if any((root / name).exists() or (root / name).is_symlink() for name in markers):
             raise ValueError("execution evidence exists without a scoreboard")
-        plan = read_json(root / "plan.json")
-        return [dict(agent=atom(a["agent"]), sample_id=atom(a["new_sample_id"]), task=atom(plan["target_task"]),
-                     task_ref=atom(plan["task_ref"]), status="not_started", reward=None, calls=None,
-                     evidence_kind="unstarted", source_sha256=fingerprint(root / "plan.json")) for a in plan["arms"]]
+        plan, source_sha = read_json(root / "plan.json", with_sha256=True)
+        task, task_ref = plan_identifier(plan, "task", "target_task"), atom(plan["task_ref"])
+        return [dict(agent=atom(arm["agent"]), sample_id=plan_identifier(arm, "sample_id", "new_sample_id"),
+                     task=task, task_ref=task_ref, status="not_started", reward=None, calls=None,
+                     evidence_kind="unstarted", source_sha256=source_sha) for arm in plan["arms"]]
     classification_sha = source_sha if zero_mode else control_sha
     rows = []
     for entry in entries:

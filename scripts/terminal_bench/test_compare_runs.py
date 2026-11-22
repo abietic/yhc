@@ -206,6 +206,31 @@ class ComparisonTests(unittest.TestCase):
         self.assertIsNone(got["reward"])
         self.assertIsNone(got["calls"])
 
+    def test_unstarted_reads_current_operator_plan_with_two_arms(self):
+        path = self.root / "plan.json"
+        raw = json.dumps(dict(task="generic-task", task_ref="sha256:abc", arms=[
+            dict(agent="dsh", sample_id="next-dsh"), dict(agent="yhc", sample_id="next-yhc")])).encode()
+        path.write_bytes(raw)
+        dsh, yhc = load_run(self.root)
+
+        for entry, agent, sample in ((dsh, "dsh", "next-dsh"), (yhc, "yhc", "next-yhc")):
+            self.assertEqual(entry, dict(agent=agent, sample_id=sample, task="generic-task", task_ref="sha256:abc",
+                status="not_started", reward=None, calls=None, evidence_kind="unstarted",
+                source_sha256=hashlib.sha256(raw).hexdigest()))
+
+        (self.root / "dispatch-claim.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "execution evidence exists"):
+            load_run(self.root)
+
+    def test_unstarted_plan_rejects_conflicting_identifier_aliases(self):
+        for aliases in (dict(target_task="other-task"), dict(arms=[
+                dict(agent="dsh", sample_id="next-dsh", new_sample_id="different")])):
+            with self.subTest(aliases=aliases):
+                plan = dict(task="generic-task", task_ref="sha256:abc", arms=[dict(agent="dsh", sample_id="next-dsh")])
+                (self.root / "plan.json").write_text(json.dumps(dict(plan, **aliases)))
+                with self.assertRaisesRegex(ValueError, "conflicting plan identifiers"):
+                    load_run(self.root)
+
     def test_canonical_closeout_wins_over_a_running_scoreboard(self):
         root = self.write()
         provisional = row()
