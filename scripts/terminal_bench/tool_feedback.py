@@ -8,7 +8,8 @@ import re
 
 # Do not publish private MCP/custom names, arguments, output or error prose.
 PUBLIC_KINDS = frozenset(("Agent", "Bash", "BashOutput", "Edit", "Read", "Write", "Glob", "Grep",
-                         "Skill", "WebFetch", "WebSearch", "TodoWrite"))
+                         "Skill", "WebFetch", "WebSearch", "TodoWrite",
+                         "read_image", "job_output", "job_list", "job_kill"))
 DSH_KINDS = {"bash": "Bash", "edit": "Edit", "read": "Read", "write": "Write", "glob": "Glob",
              "grep": "Grep", "skill": "Skill", "web_fetch": "WebFetch", "web_search": "WebSearch",
              "todo_write": "TodoWrite", "subagent": "Agent", "subagent_fork": "Agent"}
