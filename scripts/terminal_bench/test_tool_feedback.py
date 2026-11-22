@@ -120,6 +120,19 @@ class ToolFeedbackTests(unittest.TestCase):
                 got = self.collect_dsh([])
                 self.assertEqual(got["emitted_counts"], {expected: 1})
 
+    def test_dsh_names_for_image_and_background_job_tools_are_reported(self):
+        public = ("read_image", "job_output", "job_list", "job_kill")
+        for name, expected in [(name, name) for name in public] + [("job_PRIVATE_SENTINEL", "other")]:
+            with self.subTest(name=name):
+                self.dsh_stream(name)
+                events = self.dsh_events()
+                events[0]["payload"]["event"]["data"]["name"] = name
+                got = self.collect_dsh(events)
+                self.assertEqual(got["emitted_counts"], {expected: 1})
+                self.assertEqual(got["native_start_counts"], {expected: 1})
+                self.assertEqual(got["unmatched_emitted_calls"], 0)
+                self.assertNotIn("PRIVATE_SENTINEL", json.dumps(got))
+
     def test_dsh_requires_explicit_session_identity(self):
         self.dsh_stream()
         with self.assertRaises(ValueError):
