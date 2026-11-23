@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -58,6 +59,8 @@ class ToolFeedbackTests(unittest.TestCase):
         self.assertEqual(got["native_start_counts"], {"Edit": 1})
         self.assertEqual(got["edit"], dict(emitted=1, matched_terminals=1, completed=1, failed=0, coverage="complete"))
         self.assertEqual(got["edit_rejections"], 0)
+        self.assertEqual(got["wire_response_integrity"],
+                         dict(verified_responses=0, legacy_unpinned_responses=1, rejected_responses=0))
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(got))
 
     def test_dsh_failed_edit_is_not_a_proven_rejection(self):
@@ -170,6 +173,27 @@ class ToolFeedbackTests(unittest.TestCase):
         self.assertEqual(got["wire_inventory"], "partial")
         self.assertEqual(got["emitted_counts"], {"Edit": 1})
         self.assertIsNone(got["edit_rejections"])
+
+    def test_changed_wire_response_cannot_change_tool_attribution(self):
+        self.native_events()
+        edit = self.response()
+        other = self.response("two", tool="Read", tool_id="second-tool")
+        records = [dict(id=name, state="known", response_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                   for name, path in (("one", edit), ("two", other))]
+        observed = self.collect(records)
+        self.assertEqual(observed["wire_inventory"], "complete")
+        self.assertEqual(observed["emitted_counts"], {"Edit": 1, "Read": 1})
+        self.assertEqual(observed["edit_rejections"], 0)
+        self.assertEqual(observed["wire_response_integrity"],
+                         dict(verified_responses=2, legacy_unpinned_responses=0, rejected_responses=0))
+
+        self.response("two", tool="Bash", tool_id="second-tool")
+        observed = self.collect(records)
+        self.assertEqual(observed["wire_inventory"], "partial")
+        self.assertEqual(observed["emitted_counts"], {"Edit": 1})
+        self.assertIsNone(observed["edit_rejections"])
+        self.assertEqual(observed["wire_response_integrity"],
+                         dict(verified_responses=1, legacy_unpinned_responses=0, rejected_responses=1))
 
     def test_parent_outcome_cannot_cover_a_child_edit_or_reused_tool_id(self):
         self.response()
