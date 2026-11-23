@@ -1,6 +1,7 @@
 """Structural tool evidence from explicit operator artifacts; no execution authority."""
 
 from collections import Counter, defaultdict
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -33,18 +34,22 @@ def _tool_id(value):
     return value
 
 
-def _lines(path):
+def _lines(path, *, with_sha256=False):
     path = Path(path)
     if path.is_symlink() or path.resolve() != path:
         raise ValueError("tool evidence must not use symbolic links")
     if not path.exists():
-        return None
+        return (None, None) if with_sha256 else None
     if not path.is_file() or path.stat().st_size > 64 * 1024 * 1024:
         raise ValueError("invalid tool evidence file")
-    lines = path.read_text(encoding="utf-8").split("\n")
+    with path.open("rb") as stream:
+        raw = stream.read(64 * 1024 * 1024 + 1)
+    if len(raw) > 64 * 1024 * 1024:
+        raise ValueError("invalid tool evidence file")
+    lines = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     if lines[-1] == "":
         lines.pop()
-    return lines
+    return (lines, hashlib.sha256(raw).hexdigest()) if with_sha256 else lines
 
 
 def _unique(pairs):
@@ -246,25 +251,38 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
     Missing/partial streams are lower bounds. Only a complete emitted Edit
     inventory matched to unique successful native terminals proves zero Edit
     rejections. A generic failed outcome cannot identify a rejection category.
+    Current receipts bind response bytes. Older receipts without that field
+    retain structural coverage, reported separately from verified responses.
     """
     tools, complete = [], 0
+    verified, legacy_unpinned, rejected = 0, 0, 0
     supported = protocol in ("responses", "messages")
     for record in records if supported else []:
         identifier = record["id"]
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,180}", identifier) or identifier in (".", ".."):
             raise ValueError("unsafe wire call identifier")
+        if record["state"] != "known":
+            continue
         path = Path(wire) / (identifier + ".response.sse")
         try:
-            lines = _lines(path)
+            lines, actual_sha256 = _lines(path, with_sha256=True)
         except UnicodeError:
             continue
-        if lines is None or record["state"] != "known":
+        if lines is None:
+            continue
+        pinned = "response_sha256" in record
+        if pinned and record["response_sha256"] != actual_sha256:
+            rejected += 1
             continue
         try:
             response = _response_tools(lines, protocol)
         except ValueError:
             continue
         complete += 1
+        if pinned:
+            verified += 1
+        else:
+            legacy_unpinned += 1
         tools.extend(response.items())
     inventory = ("complete" if supported and complete == len(records) else
                  "partial" if complete else "unavailable")
@@ -283,6 +301,8 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
     failed_edits = len(matched_edits) - completed_edits
     available = inventory == "complete" or complete > 0
     return dict(wire_inventory=inventory, complete_responses=complete, expected_responses=len(records),
+                wire_response_integrity=dict(verified_responses=verified, legacy_unpinned_responses=legacy_unpinned,
+                                             rejected_responses=rejected),
                 emitted_counts=dict(Counter(_kind(kind) for _, kind in tools)) if available else None,
                 native_inventory=native,
                 native_start_counts=(dict(Counter(_kind(kind) for values in starts.values() for kind in values))
