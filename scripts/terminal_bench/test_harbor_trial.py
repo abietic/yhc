@@ -100,6 +100,54 @@ class ActualTrialCreateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hashlib.sha256((self.task / "task.toml").read_bytes()).hexdigest(), original)
         self.assertEqual(Task(task_dir=self.task).config.verifier.network_mode, None)
 
+    async def test_factory_projects_the_declared_workspace_before_artifact_collection(self):
+        from scripts.terminal_bench.harbor_trial import IsolatedTrialConfig
+
+        path = self.task / "task.toml"
+        path.write_text(path.read_text().replace(
+            '[task]', 'artifacts=[{source="/app/", exclude=["./dependency-cache"]}]\n[task]'))
+        original = path.read_bytes()
+        config = IsolatedTrialConfig.model_validate(self.config(artifacts=["/output/"]).model_dump()
+                                                     | {"native_session_workspace": "/app"})
+        with patch("harbor.trial.single_step.SingleStepTrial", side_effect=RuntimeError("qualified")) as constructor:
+            with self.assertRaisesRegex(RuntimeError, "qualified"):
+                await IsolatedVerifierTrial.create(config)
+        task = constructor.call_args.kwargs["_task"]
+        artifact, = task.config.artifacts
+        self.assertEqual(artifact.source, "/app/")
+        self.assertEqual(artifact.exclude, ["./dependency-cache", "./.yhc/transcripts"])
+        self.assertEqual(config.artifacts, ["/output/"])
+        self.assertEqual(path.read_bytes(), original)
+
+    async def test_factory_rejects_explicit_delivery_of_native_session_files(self):
+        from scripts.terminal_bench.harbor_trial import IsolatedTrialConfig
+
+        config = IsolatedTrialConfig.model_validate(
+            self.config(artifacts=["/app/.yhc/transcripts/run.jsonl"]).model_dump()
+            | {"native_session_workspace": "/app"})
+        with patch("harbor.trial.single_step.SingleStepTrial") as constructor:
+            with self.assertRaisesRegex(PolicyError, "native_session_artifact_conflict"):
+                await IsolatedVerifierTrial.create(config)
+            constructor.assert_not_called()
+
+    async def test_hook_checks_physical_workspace_before_agent_dispatch(self):
+        from scripts.terminal_bench.harbor_trial import IsolatedTrialConfig
+        from harbor.trial.trial import TrialEvent
+
+        config = IsolatedTrialConfig.model_validate(self.config().model_dump()
+                                                     | {"native_session_workspace": "/app"})
+        execute = AsyncMock(return_value=SimpleNamespace(return_code=0, stdout="/elsewhere\n"))
+        trial = SimpleNamespace(_create_bridge=AsyncMock(), agent_environment=SimpleNamespace(exec=execute),
+                                add_hook=lambda event, hook: hooks.update({event: hook}))
+        hooks = {}
+        with patch("harbor.trial.single_step.SingleStepTrial", return_value=trial):
+            self.assertIs(await IsolatedVerifierTrial.create(config), trial)
+        with self.assertRaisesRegex(PolicyError, "native_session_workspace_mismatch"):
+            await hooks[TrialEvent.AGENT_START](None)
+        execute.assert_awaited_once_with("pwd -P", timeout_sec=15)
+        execute.return_value.stdout = "/app\n"
+        await hooks[TrialEvent.AGENT_START](None)
+
     async def test_shared_verifier_never_constructs_native_runtime(self):
         path = self.task / "task.toml"
         path.write_text(path.read_text().replace('environment_mode="separate"', 'environment_mode="shared"'))

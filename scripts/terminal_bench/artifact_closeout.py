@@ -42,6 +42,31 @@ def _below(path, parent):
     return path == parent or path.startswith(parent + '/')
 
 
+def project_native_session_artifacts(declared, workspace):
+    """Exclude the project session subtree from a qualified workspace delivery."""
+    workspace = _path(workspace)
+    _need(workspace.anchor == '/', 'native_session_workspace_unqualified')
+    native = workspace / '.yhc' / 'transcripts'
+    projected = []
+    for entry in declared:
+        rule = {'source': entry} if isinstance(entry, str) else entry
+        if rule.get('service') not in (None, 'main'):
+            projected.append(entry)
+            continue
+        source = _path(rule['source'], directory=True)
+        _need(source.anchor == '/', 'artifact_path_unqualified')
+        _need(not source.is_relative_to(native), 'native_session_artifact_conflict')
+        if not native.is_relative_to(source):
+            projected.append(entry)
+            continue
+        # Harbor collects from the directory root with GNU tar's '-C source .'.
+        pattern = './' + native.relative_to(source).as_posix()
+        _need(not any(c in pattern for c in '*?[]\\\r\n'), 'native_session_exclusion_unqualified')
+        excludes = rule.get('exclude', [])
+        projected.append({**rule, 'exclude': [*excludes, pattern] if pattern not in excludes else excludes})
+    return projected
+
+
 def _sidecar_name(value):
     return (isinstance(value, str) and value != 'main'
             and re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,62}', value) is not None)

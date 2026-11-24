@@ -16,10 +16,12 @@ import re
 import tempfile
 
 from harbor.environments.docker.docker import DockerEnvironment
-from harbor.models.task.config import NetworkMode, TaskOS, VerifierEnvironmentMode
+from harbor.models.task.config import ArtifactConfig, NetworkMode, TaskOS, VerifierEnvironmentMode
 from harbor.models.task.verifier_mode import resolve_effective_verifier_env_config
-from harbor.trial.trial import Trial
+from harbor.models.trial.config import TrialConfig
+from harbor.trial.trial import Trial, TrialEvent
 
+from scripts.terminal_bench.artifact_closeout import CloseoutError, project_native_session_artifacts
 from scripts.terminal_bench.trial_policy import (
     PolicyError, verify_compose, verify_container, verify_proof_directory,
 )
@@ -30,10 +32,26 @@ def _immutable_image(image):
             and re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9._:/-]*@)?sha256:[0-9a-f]{64}", image) is not None)
 
 
-def isolated_task(task):
+def _project_artifacts(artifacts, workspace):
+    entries = [entry if isinstance(entry, str) else entry.model_dump(exclude_defaults=True)
+               for entry in artifacts]
+    try:
+        projected = project_native_session_artifacts(entries, workspace)
+    except CloseoutError as error:
+        raise PolicyError(str(error)) from error
+    return [entry if isinstance(entry, str) else ArtifactConfig.model_validate(entry) for entry in projected]
+
+
+def isolated_task(task, *, native_session_workspace=None):
     """Clone runtime policy, retaining immutable task files and agent semantics."""
     cloned = copy.copy(task)
     cfg = task.config.model_copy(deep=True)
+    if native_session_workspace is not None:
+        if cfg.environment.os != TaskOS.LINUX:
+            raise PolicyError("native_session_artifact_os_unqualified")
+        cfg.artifacts = _project_artifacts(cfg.artifacts, native_session_workspace)
+        for step in cfg.steps or []:
+            step.artifacts = _project_artifacts(step.artifacts, native_session_workspace)
     # Resolve every inherited definition before changing any defaults.
     definitions = [(step, resolve_effective_verifier_env_config(task.config, step))
                    for step in (task.config.steps or [None])]
@@ -55,12 +73,29 @@ def isolated_task(task):
     return cloned
 
 
+class IsolatedTrialConfig(TrialConfig):
+    # The operator supplies the verified physical workspace for both arms.
+    native_session_workspace: str | None = None
+
+
 class IsolatedVerifierTrial(Trial):
     @classmethod
     async def create(cls, config):
         if config.source_trial is not None:
             raise PolicyError("source_trial_recovery_unqualified")
-        return await super().create(config)
+        workspace = getattr(config, "native_session_workspace", None)
+        if workspace is not None:
+            config = config.model_copy(deep=True)
+            config.artifacts = _project_artifacts(config.artifacts, workspace)
+        trial = await super().create(config)
+        if workspace is not None:
+            async def check_workspace(_event):
+                result = await trial.agent_environment.exec("pwd -P", timeout_sec=15)
+                if result.return_code != 0 or result.stdout.rstrip("\n") != workspace:
+                    raise PolicyError("native_session_workspace_mismatch")
+
+            trial.add_hook(TrialEvent.AGENT_START, check_workspace)
+        return trial
 
     @staticmethod
     async def _load_task(config):
@@ -74,7 +109,7 @@ class IsolatedVerifierTrial(Trial):
         if not issubclass(cls, IsolatedDockerEnvironment):
             raise PolicyError("isolated_verifier_adapter_required")
         task, download = await Trial._load_task(config)
-        return isolated_task(task), download
+        return isolated_task(task, native_session_workspace=getattr(config, "native_session_workspace", None)), download
 
 
 class IsolatedDockerEnvironment(DockerEnvironment):
