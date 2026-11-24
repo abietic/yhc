@@ -69,6 +69,28 @@ class ToolFeedbackTests(unittest.TestCase):
         self.assertEqual(got["edit"]["failed"], 1)
         self.assertIsNone(got["edit_rejections"])
 
+    def test_messages_token_limit_does_not_certify_complete_tool_inventory(self):
+        self.dsh_stream()
+        self.native.write_text("".join(json.dumps(row) + "\n" for row in self.dsh_events()))
+        for stop_reason, coverage, rejections in (
+            ("end_turn", "complete", 0),
+            ("max_tokens", "partial", None),
+            ("model_context_window_exceeded", "partial", None),
+        ):
+            with self.subTest(stop_reason=stop_reason):
+                path = self.stream("two", [dict(type="message_start", message={}),
+                    dict(type="content_block_start", index=0, content_block=dict(type="text")),
+                    dict(type="content_block_stop", index=0),
+                    dict(type="message_delta", delta=dict(stop_reason=stop_reason)),
+                    dict(type="message_stop")])
+                records = [dict(id="one", state="known"),
+                           dict(id="two", state="known", response_sha256=hashlib.sha256(path.read_bytes()).hexdigest())]
+                got = collect_tool_feedback(self.root, records, "messages", self.native,
+                                            native_format="dsh_sdk", native_session_id="root-a")
+                self.assertEqual(got["wire_inventory"], coverage)
+                self.assertEqual(got["emitted_counts"], {"Edit": 1})
+                self.assertEqual(got["edit_rejections"], rejections)
+
     def test_dsh_child_receipts_require_root_catalog_lineage(self):
         self.dsh_stream()
         child = self.dsh_events(session="child-a")

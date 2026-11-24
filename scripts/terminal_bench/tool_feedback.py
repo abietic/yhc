@@ -132,6 +132,12 @@ def _response_tools(lines, protocol):
                     if index not in started or index in finished:
                         raise ValueError("unmatched block stop")
                     finished.add(index)
+            elif kind == "message_delta":
+                delta = event.get("delta")
+                if isinstance(delta, dict) and delta.get("stop_reason") in (
+                    "max_tokens", "model_context_window_exceeded",
+                ):
+                    raise ValueError("incomplete message output")
             elif kind == "message_stop":
                 stopped += 1
                 if begun != 1 or started != finished:
