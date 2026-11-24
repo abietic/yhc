@@ -18,6 +18,17 @@ const (
 	maxTokensRecoveryPrompt      = "Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces."
 )
 
+// CanEscalateMaxTokens reports whether the override can increase the known
+// request limit after its hard ceiling is applied. Zero denotes an unknown
+// request limit or an unset ceiling.
+func CanEscalateMaxTokens(requested, ceiling int) bool {
+	retryLimit := escalatedMaxTokens
+	if ceiling > 0 {
+		retryLimit = min(retryLimit, ceiling)
+	}
+	return retryLimit > requested
+}
+
 // TryMaxTokensRecovery attempts max_output_tokens recovery:
 //  1. Escalate to 64k (one-shot)
 //  2. Multi-turn recovery message (up to 3 retries)

@@ -56,6 +56,8 @@ type canonicalModelRoundResult struct {
 	attemptedModel            string
 	usageLogicalRoundID       string
 	mediaRecoveryAttempt      mediaRecoveryAttempt
+	requestedOutputTokens     int
+	outputTokenCeiling        int
 	terminal                  *Terminal
 }
 
@@ -759,11 +761,24 @@ func runCanonicalModelRound(
 		result.shouldPreventContinuation = result.shouldPreventContinuation || streamResult.PreventContinuation
 		result.withheldError = streamResult.Withheld
 		result.withheldReason = streamResult.WithheldReason
-		if result.withheldError == nil && result.withheldReason == "max_output_tokens" {
-			result.withheldError = newAPIErrorMessage(
-				"Model response exceeded its output token limit",
-				"max_output_tokens",
-			)
+		if result.withheldReason == "max_output_tokens" {
+			if result.withheldError == nil {
+				result.withheldError = newAPIErrorMessage(
+					"Model response exceeded its output token limit",
+					"max_output_tokens",
+				)
+			}
+			if callOpts.MaxOutputTokens != nil {
+				result.requestedOutputTokens = *callOpts.MaxOutputTokens
+			}
+			if callResult.PreparedOutputTokens > 0 {
+				result.requestedOutputTokens = callResult.PreparedOutputTokens
+			}
+			result.outputTokenCeiling = input.params.modelOutputTokenLimit
+			if cap := callResult.ReservationOutputCap; cap > 0 &&
+				(result.outputTokenCeiling <= 0 || cap < result.outputTokenCeiling) {
+				result.outputTokenCeiling = cap
+			}
 		}
 		result.attemptedModel = currentModel
 		if activeAttempt != nil {

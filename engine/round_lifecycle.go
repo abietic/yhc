@@ -693,11 +693,13 @@ func runCanonicalAfterModelRound(input canonicalAfterModelInput) canonicalAfterM
 			}
 		case "max_output_tokens":
 			input.recoveryManager.RecordAttempt(RecoveryCategoryMaxTokens)
-			// A bounded invocation already requests its ceiling on the first round.
 			maxResult := recovery.TryMaxTokensRecovery(
 				maxOutputTokensRecoveryCount,
 				maxOutputTokensOverride,
-				input.params.modelOutputTokenLimit <= 0,
+				recovery.CanEscalateMaxTokens(
+					modelRound.requestedOutputTokens,
+					modelRound.outputTokenCeiling,
+				),
 			)
 			if maxResult.Continue {
 				if maxResult.MaxOutputTokensOverride != nil {

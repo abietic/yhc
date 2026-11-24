@@ -242,6 +242,25 @@ func TestTryPTLRecoveryEmptyTransformsTerminal(t *testing.T) {
 	})
 }
 
+func TestCanEscalateMaxTokens(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		requested, ceiling int
+		want               bool
+	}{
+		{name: "unknown request and ceiling", want: true},
+		{name: "room below known ceiling", requested: 4096, ceiling: 8192, want: true},
+		{name: "already at low ceiling", requested: 8192, ceiling: 8192},
+		{name: "override would reduce request", requested: 65536, ceiling: 65536},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := CanEscalateMaxTokens(tc.requested, tc.ceiling); got != tc.want {
+				t.Fatalf("CanEscalateMaxTokens(%d, %d) = %t, want %t", tc.requested, tc.ceiling, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTryMaxTokensRecoveryStages(t *testing.T) {
 	escalated := TryMaxTokensRecovery(0, nil, true)
 	if escalated == nil || !escalated.Retry || !escalated.Continue || escalated.Terminal {
