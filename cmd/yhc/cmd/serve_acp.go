@@ -15,6 +15,7 @@ import (
 
 func newServeACPCommand() *cobra.Command {
 	flags := &runtimeFlags{}
+	var disableLongSessionServices bool
 	command := &cobra.Command{
 		Use:   "acp",
 		Short: "Start ACP server (stdio)",
@@ -22,14 +23,16 @@ func newServeACPCommand() *cobra.Command {
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.captureExplicit(cmd)
-			return runServeACP(cmd, *flags)
+			return runServeACP(cmd, *flags, disableLongSessionServices)
 		},
 	}
 	bindRuntimeFlags(command.Flags(), flags)
+	command.Flags().BoolVar(&disableLongSessionServices, "disable-long-session-services", false,
+		"Disable long-session background services, including model-backed memory extraction")
 	return command
 }
 
-func runServeACP(cmd *cobra.Command, flags runtimeFlags) error {
+func runServeACP(cmd *cobra.Command, flags runtimeFlags, disableLongSessionServices bool) error {
 	cwd := mustCwd()
 	appConfig, err := config.LoadEffectiveConfig(cwd)
 	if err != nil {
@@ -66,6 +69,7 @@ func runServeACP(cmd *cobra.Command, flags runtimeFlags) error {
 		ToolsFlag:                     append([]string(nil), flags.tools...),
 		ToolsFlagSet:                  flags.toolsSet,
 		SimpleTools:                   environment.SimpleTools,
+		DisableLongSessionServices:    disableLongSessionServices,
 		DisableACPAssistantMessageIDs: environment.DisableAssistantMessageIDs,
 		DisableACPCommandUpdates:      environment.DisableCommandUpdates,
 	})

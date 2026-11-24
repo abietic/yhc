@@ -25,6 +25,61 @@ import (
 
 // --- Tests for session management enhancements ---
 
+func TestACPLongSessionServicesFollowLaunchPolicy(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("disabled=%t", disabled), func(t *testing.T) {
+			cwd := t.TempDir()
+			newAgent := func() *Agent {
+				agent, err := NewAgent(Config{CWD: cwd, DisableLongSessionServices: disabled})
+				if err != nil {
+					t.Fatal(err)
+				}
+				agent.mockModel = &mockChatModel{responses: []*schema.Message{{
+					Role: schema.Assistant, Content: "fixture report",
+				}}}
+				t.Cleanup(agent.Close)
+				return agent
+			}
+			ctx := t.Context()
+			initial := newAgent()
+			created, err := initial.NewSession(ctx, acpsdk.NewSessionRequest{Cwd: cwd})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sessionID := created.SessionId
+			assertPolicy := func(stage string, agent *Agent) {
+				t.Helper()
+				session := agent.sessions[sessionID]
+				if session == nil || session.Engine.LongSessionServicesEnabled() != !disabled {
+					t.Fatalf("%s: want long-session services enabled=%t", stage, !disabled)
+				}
+			}
+			assertPolicy("new", initial)
+			if _, err := initial.Prompt(ctx, acpsdk.PromptRequest{
+				SessionId: sessionID, Prompt: []acpsdk.ContentBlock{acpsdk.TextBlock("Draft a report.")},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := initial.CloseSession(ctx, acpsdk.CloseSessionRequest{SessionId: sessionID}); err != nil {
+				t.Fatal(err)
+			}
+			resumed := newAgent()
+			if _, err := resumed.ResumeSession(ctx, acpsdk.ResumeSessionRequest{Cwd: cwd, SessionId: sessionID}); err != nil {
+				t.Fatal(err)
+			}
+			assertPolicy("resume", resumed)
+			if _, err := resumed.CloseSession(ctx, acpsdk.CloseSessionRequest{SessionId: sessionID}); err != nil {
+				t.Fatal(err)
+			}
+			loaded := newAgent()
+			if _, err := loaded.LoadSession(ctx, acpsdk.LoadSessionRequest{Cwd: cwd, SessionId: sessionID}); err != nil {
+				t.Fatal(err)
+			}
+			assertPolicy("load", loaded)
+		})
+	}
+}
+
 func TestACP_ResumeSession(t *testing.T) {
 	cwd := t.TempDir()
 	transcriptDir := acpSessionTranscriptDir(cwd)
