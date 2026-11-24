@@ -9,10 +9,12 @@ cache implementation, billing receipt, or prediction of a cache-hit target.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 
-from scripts.terminal_bench.compare_runs import atom, count, fingerprint, read_json
+from scripts.terminal_bench.compare_runs import atom, count, parse_evidence_json, read_evidence_bytes, read_json
 
 
 def canonical(value):
@@ -59,19 +61,19 @@ def compare_requests(previous, current, protocol):
 
 def audit(wire):
     root = Path(wire).resolve()
-    ledger_path = root / "ledger.json"
-    ledger = read_json(ledger_path)
+    ledger, ledger_sha256 = read_json(root / "ledger.json", with_sha256=True)
     records, protocol = ledger["records"], ledger["protocol"]
     if protocol not in ("responses", "messages"):
         raise ValueError("unsupported ledger dialect")
     identifiers = [atom(row["id"]) for row in records]
     if len(set(identifiers)) != len(records) or any("/" in key or key in (".", "..") for key in identifiers):
         raise ValueError("unsafe or duplicate call identifier")
-    rows, previous, previous_raw = [], None, None
+    rows = []
+    previous, previous_raw, previous_verified = None, None, False
     input_tokens, cached_tokens, known_calls = 0, 0, 0
     for index, record in enumerate(records):
         path = root / (record["id"] + ".request.json")
-        item = dict(call_index=index, request_available=path.is_file(), comparison=None)
+        item = dict(call_index=index, request_available=path.is_file(), request_integrity="missing", comparison=None)
         if record["state"] == "known":
             prompt = count(record["input_tokens"])
             cached = count(record["cached_input_tokens"])
@@ -82,33 +84,45 @@ def audit(wire):
             known_calls += 1
         elif record["state"] != "unknown":
             raise ValueError("call not closed")
-        if path.is_file():
+        if item["request_available"]:
             if not path.resolve().is_relative_to(root) or path.resolve() != path:
                 raise ValueError("request must not use symbolic links")
-            body = read_json(path)
+            raw = read_evidence_bytes(path)
+            digest = hashlib.sha256(raw).hexdigest()
+            item["request_sha256"] = digest
+            if "body_sha256" not in record:
+                item["request_integrity"] = "legacy_unpinned"
+            else:
+                item["request_integrity"] = "verified" if digest == record["body_sha256"] else "rejected"
+        integrity = item["request_integrity"]
+        if integrity in ("verified", "legacy_unpinned"):
+            body = parse_evidence_json(raw)
             shape(body, protocol)
-            raw = path.read_bytes()
-            item["request_sha256"] = fingerprint(path)
+            verified = integrity == "verified"
             if previous is not None:
                 item["comparison"] = compare_requests(previous, body, protocol)
                 item["comparison"]["common_wire_prefix_bytes"] = common_bytes(previous_raw, raw)
-            previous, previous_raw = body, raw
+                item["comparison"]["request_digests_verified"] = previous_verified and verified
+            previous, previous_raw, previous_verified = body, raw, verified
         else:
-            # A gap must break adjacency; never skip missing requests and call
-            # the resulting non-adjacent pair an append-only transition.
-            previous, previous_raw = None, None
+            # Either kind of gap breaks adjacency for the next capture.
+            previous, previous_raw, previous_verified = None, None, False
         rows.append(item)
+    integrity_counts = Counter(row["request_integrity"] for row in rows)
+    capture_integrity = {f"{state}_requests": integrity_counts[state]
+                         for state in ("verified", "legacy_unpinned", "rejected", "missing")}
     return dict(schema_version=1, authority="diagnostic_only", protocol=atom(protocol),
-                ledger_sha256=fingerprint(ledger_path), calls=len(records), known_usage_calls=known_calls,
+                ledger_sha256=ledger_sha256, calls=len(records), known_usage_calls=known_calls,
                 input_tokens_known=input_tokens, cached_input_tokens_known=cached_tokens,
                 cache_hit_rate_known_including_first=cached_tokens/input_tokens if input_tokens else None,
-                usage_complete=known_calls == len(records), transitions=rows,
+                usage_complete=known_calls == len(records), transitions=rows, request_capture_integrity=capture_integrity,
                 cache_token_prediction=None, actual_billed_cny=None,
                 limitations=["canonical_json_is_not_provider_tokenization_or_cache_key",
                              "adjacent_requests_may_belong_to_different_conversation_branches",
                              "wire_whitespace_or_key_order_may_differ_without_semantic_change",
                              "static_field_changes_do_not_by_themselves_prove_cache_misses",
-                             "missing_requests_break_adjacency_and_are_not_reconstructed",
+                             "missing_or_digest_mismatched_requests_break_adjacency",
+                             "legacy_unpinned_requests_have_structural_evidence_only",
                              "no_request_text_or_thinking_content_is_exported"])
 
 

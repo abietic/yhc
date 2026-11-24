@@ -52,12 +52,19 @@ def seconds(value):
     return value
 
 
-def read_json(path, *, with_sha256=False):
+def read_evidence_bytes(path):
     path = Path(path)
     if path.is_symlink() or not path.is_file():
         raise ValueError("evidence must be a regular non-symlink file")
     if path.stat().st_size > 64 * 1024 * 1024:
         raise ValueError("evidence file too large")
+    raw = path.read_bytes()
+    if len(raw) > 64 * 1024 * 1024:
+        raise ValueError("evidence file too large")
+    return raw
+
+
+def parse_evidence_json(raw):
     def unique(pairs):
         out = {}
         for key, value in pairs:
@@ -65,10 +72,12 @@ def read_json(path, *, with_sha256=False):
                 raise ValueError("duplicate JSON key")
             out[key] = value
         return out
-    raw = path.read_bytes()
-    if len(raw) > 64 * 1024 * 1024:
-        raise ValueError("evidence file too large")
-    value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique)
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=unique)
+
+
+def read_json(path, *, with_sha256=False):
+    raw = read_evidence_bytes(path)
+    value = parse_evidence_json(raw)
     return (value, hashlib.sha256(raw).hexdigest()) if with_sha256 else value
 
 
