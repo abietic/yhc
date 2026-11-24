@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -55,6 +56,32 @@ class PrefixTests(unittest.TestCase):
             self.assertIsNone(report["cache_token_prediction"])
             self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
             self.assertNotIn(directory, json.dumps(report))
+
+    def test_request_digest_mismatch_breaks_adjacency_without_dropping_usage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            requests = [canonical({"input": list(range(length))}) for length in range(1, 6)]
+            records = []
+            for index, raw in enumerate(requests):
+                record = dict(id=str(index), state="known", input_tokens=10, cached_input_tokens=9)
+                if index != 4:
+                    record["body_sha256"] = hashlib.sha256(raw).hexdigest()
+                records.append(record)
+                captured = requests[1] if index == 2 else raw
+                (root / f"{index}.request.json").write_bytes(captured)
+            (root / "ledger.json").write_text(json.dumps(dict(records=records, protocol="responses")))
+
+            report = audit(root)
+            rows = report["transitions"]
+            self.assertIsNone(rows[2]["comparison"])
+            self.assertIsNone(rows[3]["comparison"])
+            self.assertTrue(rows[1]["comparison"]["request_digests_verified"])
+            self.assertFalse(rows[4]["comparison"]["request_digests_verified"])
+            self.assertTrue(rows[4]["comparison"]["history_append_only"])
+            self.assertEqual(report["request_capture_integrity"], dict(
+                verified_requests=3, legacy_unpinned_requests=1, rejected_requests=1, missing_requests=0))
+            self.assertEqual(report["cache_hit_rate_known_including_first"], 0.9)
+            self.assertTrue(report["usage_complete"])
 
     def test_unclosed_duplicate_or_escaping_calls_are_rejected(self):
         for records in ([dict(id="a", state="reserved")], [dict(id="../a", state="unknown")],

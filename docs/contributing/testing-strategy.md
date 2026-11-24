@@ -256,11 +256,13 @@ python3 -m scripts.terminal_bench.prefix_audit \
 ```
 
 It distinguishes append-only message history, changes to static instructions or
-tool definitions, and JSON representation differences. Missing request bodies
-break adjacency. Canonical JSON and byte prefixes are not provider tokenization
-or cache keys; the audit does not predict cache-hit tokens or claim that a field
-change caused a cache miss. Reports export identifiers, counters, structural
-positions and digests, without request text, tool arguments, or thinking text.
+tool definitions, and JSON representation differences. A missing request body
+or a mismatch with the ledger's `body_sha256` breaks adjacency. Older captures
+without that field still support structural comparisons. The report marks a
+comparison as digest-verified only when both captures matched their ledger
+digests. Usage counters come from the ledger and have separate coverage.
+Provider tokenization and cache keys are outside this audit's scope. Reports
+export identifiers, counters, structural positions, and digests.
 Keep raw input artifacts private. Both commands refuse to replace existing
 reports and make no network, model, funding, or agent-dispatch calls.
 
