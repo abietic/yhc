@@ -10,6 +10,7 @@ import (
 
 	"github.com/abietic/yhc/engine/compact"
 	"github.com/abietic/yhc/engine/execution"
+	enginemessages "github.com/abietic/yhc/engine/messages"
 	"github.com/abietic/yhc/engine/permission"
 	"github.com/abietic/yhc/tools"
 	"github.com/cloudwego/eino/schema"
@@ -218,14 +219,18 @@ func emitStreamingToolResult(
 	if completed == nil {
 		return nil
 	}
-	for _, msg := range completed.BeforeMessages {
+	emitAttachment := func(msg *schema.Message) {
 		if msg == nil {
-			continue
+			return
 		}
+		msg = enginemessages.MarkToolRoundAttachment(msg, completed.ToolCallID)
 		yield(QueryEvent{Type: EventAttachment, AttachmentMessage: msg})
 		if toolResults != nil {
 			*toolResults = append(*toolResults, msg)
 		}
+	}
+	for _, msg := range completed.BeforeMessages {
+		emitAttachment(msg)
 	}
 	terminal, err := buildCanonicalToolTerminalProjection(completed)
 	if err != nil {
@@ -239,13 +244,7 @@ func emitStreamingToolResult(
 		}
 	}
 	for _, msg := range completed.AfterMessages {
-		if msg == nil {
-			continue
-		}
-		yield(QueryEvent{Type: EventAttachment, AttachmentMessage: msg})
-		if toolResults != nil {
-			*toolResults = append(*toolResults, msg)
-		}
+		emitAttachment(msg)
 	}
 	if completed.ContextPublisher != nil {
 		completed.ContextPublisher()
@@ -674,107 +673,7 @@ func normalizeMessagesForAPI(messages []*schema.Message) []*schema.Message {
 		}
 	}
 
-	// Step 10: Ensure every assistant tool_call has a matching tool result.
-	// After interruptions, compaction, or other message pipeline operations,
-	// an assistant message with ToolCalls may lack corresponding tool result
-	// messages. The API requires each tool_call_id to have a following tool
-	// message. Synthesize placeholders for any that are missing.
-	result = ensureToolCallResultPairing(result)
-
-	return result
-}
-
-// ensureToolCallResultPairing checks that every tool call in assistant messages
-// has a corresponding tool result message IMMEDIATELY following it (before any
-// non-tool message). The API requires tool results to be adjacent to their
-// assistant message. If any are missing or misplaced (due to interruption,
-// compaction, message reordering, or other pipeline operations), synthetic
-// placeholder results are inserted immediately after the assistant message's
-// tool result group. Orphaned tool messages (those not adjacent to a matching
-// assistant) are removed to prevent API rejection.
-func ensureToolCallResultPairing(messages []*schema.Message) []*schema.Message {
-	// Quick check: scan for any assistant with tool_calls that might need repair.
-	hasToolCalls := false
-	for _, msg := range messages {
-		if msg != nil && msg.Role == schema.Assistant && len(msg.ToolCalls) > 0 {
-			hasToolCalls = true
-			break
-		}
-	}
-	if !hasToolCalls {
-		return messages
-	}
-
-	// Rebuild: adjacent tool results are consumed by the inner loop after each
-	// assistant message. Any tool message encountered in the OUTER loop is
-	// therefore non-adjacent (orphaned) and gets dropped.
-	out := make([]*schema.Message, 0, len(messages)+4)
-	for i := 0; i < len(messages); i++ {
-		msg := messages[i]
-		if msg == nil {
-			continue
-		}
-
-		// Drop orphaned tool results — they are not adjacent to any assistant
-		// with matching tool_calls. Adjacent tool results are consumed by the
-		// inner loop below, so they never reach this check.
-		if msg.Role == schema.Tool {
-			continue
-		}
-
-		out = append(out, msg)
-
-		if msg.Role != schema.Assistant || len(msg.ToolCalls) == 0 {
-			continue
-		}
-
-		// Collect tool_call_ids that need results for this assistant.
-		needed := make(map[string]string, len(msg.ToolCalls)) // id → function name
-		for _, tc := range msg.ToolCalls {
-			if tc.ID != "" {
-				needed[tc.ID] = tc.Function.Name
-			}
-		}
-
-		// Consume immediately adjacent tool result messages that belong to this
-		// assistant. Streaming persistence can leave delayed or duplicate results
-		// next to a later assistant message; forwarding those results makes the
-		// provider see a tool_call_id that was never issued by that assistant.
-		for i+1 < len(messages) && messages[i+1] != nil && messages[i+1].Role == schema.Tool {
-			i++
-			toolResult := messages[i]
-			toolName, expected := needed[toolResult.ToolCallID]
-			if !expected {
-				continue
-			}
-			if toolResult.ToolName == "" && toolName != "" {
-				clone := *toolResult
-				clone.ToolName = toolName
-				toolResult = &clone
-			}
-			out = append(out, toolResult)
-			delete(needed, toolResult.ToolCallID)
-		}
-
-		// Synthesize placeholders for tool_calls not answered in the
-		// immediate group (even if they exist elsewhere in the conversation).
-		for _, tc := range msg.ToolCalls {
-			if tc.ID == "" {
-				continue
-			}
-			if _, still := needed[tc.ID]; !still {
-				continue
-			}
-			out = append(out, &schema.Message{
-				Role:       schema.Tool,
-				Content:    "[Tool result unavailable - execution was interrupted]",
-				ToolCallID: tc.ID,
-				ToolName:   tc.Function.Name,
-			})
-			delete(needed, tc.ID)
-		}
-	}
-	return out
+	return enginemessages.PairToolCallResults(result)
 }
 
 // checkSleepRan returns true if any tool result in this turn was from the Sleep tool.

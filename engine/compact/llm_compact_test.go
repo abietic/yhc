@@ -341,6 +341,44 @@ func TestRunLLMCompactSanitizesMediaBeforeSummaryModel(t *testing.T) {
 	}
 }
 
+func TestRunLLMCompactReceivesInterleavedToolResultsBeforeAttachments(t *testing.T) {
+	mock := &mockCompactModel{response: "summary"}
+	assistant := &schema.Message{Role: schema.Assistant, Content: "checking files", ToolCalls: []schema.ToolCall{
+		{ID: "read-file", Function: schema.FunctionCall{Name: "Read"}},
+		{ID: "find-files", Function: schema.FunctionCall{Name: "Glob"}},
+	}}
+	first := &schema.Message{Role: schema.Tool, ToolCallID: "read-file", ToolName: "Read", Content: "read complete"}
+	attachment := &schema.Message{
+		Role: schema.User, Content: "post-tool context",
+		Extra: map[string]any{"is_meta": true, "attachment_kind": "hook"},
+	}
+	second := &schema.Message{Role: schema.Tool, ToolCallID: "find-files", ToolName: "Glob", Content: "found two files"}
+	history := []*schema.Message{assistant, first, attachment, second}
+	if _, err := RunLLMCompact(context.Background(), history, LLMCompactOptions{
+		ChatModel: mock,
+		ModelName: "test-model",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	index := -1
+	for i, msg := range mock.receivedMessages {
+		if msg.Role == schema.Assistant && len(msg.ToolCalls) == 2 {
+			index = i
+			break
+		}
+	}
+	if index < 0 || index+3 >= len(mock.receivedMessages) {
+		t.Fatal("summary request is missing the full tool result group")
+	}
+	for i, want := range []*schema.Message{first, second, attachment} {
+		got := mock.receivedMessages[index+1+i]
+		if got.Role != want.Role || got.ToolCallID != want.ToolCallID || got.Content != want.Content {
+			t.Fatalf("summary request message %d = (%s, %s, %q), want (%s, %s, %q)",
+				i, got.Role, got.ToolCallID, got.Content, want.Role, want.ToolCallID, want.Content)
+		}
+	}
+}
+
 func (m *mockCompactModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	msg, err := m.Generate(ctx, msgs, opts...)
 	if err != nil {
