@@ -8,8 +8,30 @@ import tarfile
 import tempfile
 import unittest
 
-from scripts.terminal_bench.artifact_closeout import CloseoutError, artifact_sources, verify_artifacts
+from scripts.terminal_bench.artifact_closeout import (
+    CloseoutError, artifact_sources, project_native_session_artifacts, verify_artifacts,
+)
 from scripts.terminal_bench.artifact_integrity import source_manifest
+
+
+class NativeSessionProjectionTests(unittest.TestCase):
+    def test_projection_retains_existing_excludes_and_leaves_sidecar_paths_alone(self):
+        sidecar = {'source': '/work/project/.yhc/transcripts', 'service': 'events'}
+        entries = [{'source': '/work/', 'exclude': ['*.cache']}, '/out', sidecar]
+        original = copy.deepcopy(entries)
+        projected = project_native_session_artifacts(entries, '/work/project')
+        self.assertEqual(projected, [
+            {'source': '/work/', 'exclude': ['*.cache', './project/.yhc/transcripts']},
+            '/out',
+            sidecar,
+        ])
+        self.assertEqual(project_native_session_artifacts(projected, '/work/project'), projected)
+        self.assertEqual(entries, original)
+
+    def test_projection_rejects_ambiguous_workspace_paths(self):
+        for workspace in ('relative', '/work/../project', '//work', '/work/app*'):
+            with self.subTest(workspace=workspace), self.assertRaises(CloseoutError):
+                project_native_session_artifacts(['/work'], workspace)
 
 
 class ArtifactCloseoutTests(unittest.TestCase):

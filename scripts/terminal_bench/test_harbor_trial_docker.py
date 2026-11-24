@@ -15,12 +15,14 @@ from uuid import uuid4
 
 from harbor.agents.base import BaseAgent
 from harbor.environments.docker.docker import _sanitize_docker_compose_project_name
-from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
+from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig
 from harbor.models.task.config import EnvironmentConfig as TaskEnvironment, NetworkMode, NetworkPolicy
 from harbor.models.trial.paths import TrialPaths
 from harbor.trial.trial import Trial
 
-from scripts.terminal_bench.harbor_trial import IsolatedDockerEnvironment, IsolatedVerifierTrial, collect_verifier_proofs
+from scripts.terminal_bench.harbor_trial import (
+    IsolatedDockerEnvironment, IsolatedTrialConfig, IsolatedVerifierTrial, collect_verifier_proofs,
+)
 
 
 class FixtureAgent(BaseAgent):
@@ -38,6 +40,15 @@ class FixtureAgent(BaseAgent):
         # Trusted deterministic fixture, never a model-produced host program.
         await environment.exec("mkdir -p /workspace; printf '%s' '" + instruction.strip()
                                + "' > /workspace/proof")
+        if instruction.strip() == "projection":
+            result = await environment.exec(
+                "set -eu; mkdir -p /workspace/.yhc/transcripts /workspace/nested/.yhc/transcripts; "
+                "echo native > /workspace/.yhc/transcripts/run.jsonl; "
+                "echo owned > /workspace/.yhc/settings.json; "
+                "echo nested > /workspace/nested/.yhc/transcripts/note; "
+                "cp /workspace/.yhc/transcripts/run.jsonl /logs/agent/native-capture")
+            if result.return_code != 0:
+                raise RuntimeError("fixture workspace creation failed")
 
 
 @unittest.skipUnless(os.environ.get("YHC_BENCH_DOCKER_TEST") == "1", "explicit local Docker opt-in required")
@@ -57,6 +68,11 @@ class DockerTrialTests(unittest.IsolatedAsyncioTestCase):
 set -eu
 test ! -e /sys/class/net/eth0
 value=$(cat /workspace/proof)
+if test "$value" = projection; then
+    test ! -e /workspace/.yhc/transcripts
+    test "$(cat /workspace/.yhc/settings.json)" = owned
+    test "$(cat /workspace/nested/.yhc/transcripts/note)" = nested
+fi
 if test "$value" = grader-failure; then exit 7; fi
 mkdir -p /logs/verifier
 if test "$value" = grader-timeout; then
@@ -154,7 +170,7 @@ print(json.dumps(row))
     async def test_actual_upload_grading_and_failure_are_isolated(self):
         from harbor.trial.artifact_handler import ArtifactHandler
         upload = ArtifactHandler.upload_artifacts
-        for mode in ("ok", "zero", "grader-failure", "grader-timeout"):
+        for mode in ("ok", "zero", "grader-failure", "grader-timeout", "projection"):
             with self.subTest(mode=mode):
                 root = self.root / mode
                 task = root / "task"
@@ -170,6 +186,9 @@ print(json.dumps(row))
                               if not any(u.version == 4 and n.overlaps(u) for u in used))
                 (task / "environment/docker-compose.yaml").write_text(
                     "networks:\n  default:\n    ipam:\n      config:\n        - subnet: " + str(subnet) + "\n")
+                if mode == "projection":
+                    compose = task / "environment/docker-compose.yaml"
+                    compose.write_text(compose.read_text() + "services:\n  main:\n    working_dir: /workspace\n")
                 (task / "task.toml").write_text(
                     'schema_version="2.0"\nartifacts=["/workspace"]\n'
                     '[task]\nname="local/verifier-contract"\n'
@@ -180,7 +199,8 @@ print(json.dumps(row))
                 sample = "tb4-verifier-pf-" + uuid4().hex[:12]
                 if mode == "zero":
                     sample += "-long-identity-" + "x" * 50
-                cfg = TrialConfig(task=TaskConfig(path=task), trial_name=sample, trials_dir=root / "trials",
+                cfg = IsolatedTrialConfig(task=TaskConfig(path=task), trial_name=sample, trials_dir=root / "trials",
+                    native_session_workspace="/workspace" if mode == "projection" else None,
                     agent=AgentConfig(import_path=__name__ + ":FixtureAgent"),
                     environment=EnvironmentConfig(type="docker", delete=True,
                         import_path="scripts.terminal_bench.harbor_trial:IsolatedDockerEnvironment",
@@ -223,6 +243,10 @@ print(json.dumps(row))
                     else:
                         self.assertIsNone(result.exception_info)
                         self.assertEqual(result.verifier_result.rewards["reward"], float(mode != "zero"))
+                    if mode == "projection":
+                        collected = trial.paths.artifacts_dir / "workspace"
+                        self.assertFalse((collected / ".yhc/transcripts").exists())
+                        self.assertEqual((trial.paths.agent_dir / "native-capture").read_text(), "native\n")
                 finally:
                     # Only this UUID's resources; never prune shared Docker state.
                     sessions = (trial.agent_environment.session_id, trial._separate_verifier_session_id("trial"))
