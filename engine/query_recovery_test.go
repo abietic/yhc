@@ -177,6 +177,47 @@ func TestQueryMaxOutputTokensEscalatesThenInjectsRecoveryMessage(t *testing.T) {
 	}
 }
 
+func TestQueryMaxOutputTokensRecoversAtInvocationLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		limit int
+	}{
+		{name: "below escalation", limit: 16000},
+		{name: "at escalation", limit: 64000},
+		{name: "above escalation", limit: 65536},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &scriptedRecoveryModel{streams: [][]*schema.Message{
+				{{
+					Role:             schema.Assistant,
+					ReasoningContent: "unfinished reasoning",
+					ResponseMeta:     &schema.ResponseMeta{FinishReason: "max_output_tokens"},
+				}},
+				{{Role: schema.Assistant, Content: "finished"}},
+			}}
+			_, terminal := collectEvents(t.Context(), QueryParams{
+				Messages:              []*schema.Message{{Role: schema.User, Content: "do the work"}},
+				SystemPrompt:          &schema.Message{Role: schema.System, Content: "You are helpful."},
+				QuerySource:           QuerySourceSDK,
+				ChatModel:             model,
+				modelOutputTokenLimit: tc.limit,
+			})
+
+			if terminal.Reason != TerminalCompleted || model.callCount != 2 {
+				t.Fatalf("terminal = %+v, model calls = %d", terminal, model.callCount)
+			}
+			if got := model.maxOutputTokens; len(got) != 2 || got[0] != tc.limit || got[1] != tc.limit {
+				t.Fatalf("output limits = %v, want [%d %d]", got, tc.limit, tc.limit)
+			}
+			retry := model.inputs[1]
+			last := retry[len(retry)-1]
+			if last.Role != schema.User || last.Extra["is_meta"] != true || !strings.Contains(last.Content, "Output token limit hit") {
+				t.Fatalf("expected immediate continuation hint at the invocation limit, got %+v", last)
+			}
+		})
+	}
+}
+
 func TestQueryMaxOutputTokensExhaustionSurfacesModelError(t *testing.T) {
 	ctx := context.Background()
 	model := &scriptedRecoveryModel{streams: [][]*schema.Message{

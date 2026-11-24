@@ -164,7 +164,7 @@ the same bounded cascade as explicit max-output API errors, including responses
 that contain only reasoning or terminal usage. A truncated response never
 commits its pending tools; complete usage receipts remain accounted for.
 
-1. When enabled, raise the output cap to the bounded override once.
+1. Without an invocation output ceiling, try the bounded override once.
 2. Add the continuation recovery message for a bounded number of retries.
 3. Surface `model_error` after exhaustion.
 
