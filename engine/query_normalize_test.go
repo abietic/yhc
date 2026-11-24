@@ -412,6 +412,32 @@ func TestNormalizeDropsDelayedToolResultFromLaterToolGroup(t *testing.T) {
 	}
 }
 
+func TestNormalizeStopsToolResultPairingAtUserInput(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		extra map[string]any
+	}{
+		{name: "submitted"},
+		{name: "queued", extra: map[string]any{"is_meta": true, "attachment_kind": "queued_command"}},
+		{name: "unmarked image", extra: map[string]any{"attachment_kind": "image"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := &schema.Message{Role: schema.User, Content: "next request", Extra: tc.extra}
+			got := normalizeMessagesForAPI([]*schema.Message{
+				{Role: schema.Assistant, Content: "reading", ToolCalls: []schema.ToolCall{
+					{ID: "old-read", Function: schema.FunctionCall{Name: "Read"}},
+				}},
+				user,
+				{Role: schema.Tool, ToolCallID: "old-read", Content: "late result"},
+			})
+			if len(got) != 3 || got[2] != user || got[1].ToolCallID != "old-read" ||
+				got[1].Content != "[Tool result unavailable - execution was interrupted]" {
+				t.Fatalf("request crossed the user input boundary: %v", got)
+			}
+		})
+	}
+}
+
 // --- Integration / ordering tests ---
 
 func TestNormalizeFullPipeline(t *testing.T) {

@@ -109,8 +109,63 @@ func TestEmitStreamingToolResultOrdersSupplementalAttachments(t *testing.T) {
 		events[3].Type != EventAttachment {
 		t.Fatalf("streaming event order = %#v", events)
 	}
-	if len(messages) != 3 || messages[0] != before || messages[1] != result || messages[2] != after {
+	if len(messages) != 3 || messages[0].Content != before.Content || messages[1] != result ||
+		messages[2].Content != after.Content {
 		t.Fatalf("streaming message order = %#v", messages)
+	}
+	if messages[0] != events[0].AttachmentMessage || messages[2] != events[3].AttachmentMessage ||
+		messages[0].Extra["is_meta"] != true || messages[2].Extra["is_meta"] != true ||
+		before.Extra != nil || after.Extra != nil {
+		t.Fatal("streaming projection failed to mark published attachments without mutating its inputs")
+	}
+}
+
+func TestProviderProjectionKeepsBothResultsFromInterleavedToolAttachments(t *testing.T) {
+	assistant := &schema.Message{Role: schema.Assistant, Content: "reading two files", ToolCalls: []schema.ToolCall{
+		{ID: "first-read", Function: schema.FunctionCall{Name: "Read"}},
+		{ID: "second-read", Function: schema.FunctionCall{Name: "Read"}},
+	}}
+	history := []*schema.Message{assistant}
+	results := make([]*schema.Message, 0, len(assistant.ToolCalls))
+	attachments := make([]*schema.Message, 0, len(assistant.ToolCalls))
+	for _, call := range assistant.ToolCalls {
+		attachment := &schema.Message{
+			Role: schema.User, Content: "supplement for " + call.ID,
+			Extra: map[string]any{"attachment_kind": "custom_post_tool_context"},
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{}},
+			},
+		}
+		message := &schema.Message{
+			Role: schema.Tool, ToolCallID: call.ID,
+			ToolName: call.Function.Name, Content: "read completed " + call.ID,
+		}
+		completed := &execution.ToolResult{
+			ToolCallID: call.ID, ToolName: call.Function.Name, Result: message.Content,
+			Message: message, AfterMessages: []*schema.Message{attachment},
+		}
+		if err := emitStreamingToolResult(func(QueryEvent) {}, &history, completed); err != nil {
+			t.Fatal(err)
+		}
+		results = append(results, message)
+		attachments = append(attachments, attachment)
+	}
+
+	got := normalizeMessagesForAPI(history)
+	want := []*schema.Message{assistant, results[0], results[1], attachments[0], attachments[1]}
+	if len(got) != len(want) {
+		t.Fatalf("request has %d messages, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Role != want[i].Role || got[i].Content != want[i].Content ||
+			got[i].ToolCallID != want[i].ToolCallID || len(got[i].UserInputMultiContent) != len(want[i].UserInputMultiContent) {
+			t.Fatalf("request message %d = (%s, %q), want (%s, %q)",
+				i, got[i].Role, got[i].Content, want[i].Role, want[i].Content)
+		}
+	}
+	if history[2].Content != attachments[0].Content || history[3] != results[1] ||
+		attachments[0].Extra["is_meta"] != nil {
+		t.Fatal("provider projection reordered canonical history")
 	}
 }
 

@@ -50,6 +50,9 @@ next iteration in that order.
 
 - Context helpers return copies or new slices; callers must not mutate shared
   history while a model request is in flight.
+- Model and compaction requests group results for each assistant tool batch
+  before its tool-owned attachments. Attachments keep their relative order,
+  and submitted or queued user input ends the group.
 - `PrependUserContext` skips injection when `NODE_ENV=test`.
 - Missing instruction files are non-errors; malformed or inaccessible files are
   handled by their discovery/load contract.

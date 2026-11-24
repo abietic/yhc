@@ -10,6 +10,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/abietic/yhc/engine/execution"
+	enginemessages "github.com/abietic/yhc/engine/messages"
 )
 
 const (
@@ -156,7 +157,7 @@ func callCompactModel(
 
 	// Ensure every assistant tool_call has a matching tool result.
 	// Raw conversation messages may have orphaned tool_calls from interruptions.
-	apiMessages = ensureToolCallResultPairing(apiMessages)
+	apiMessages = enginemessages.PairToolCallResults(apiMessages)
 
 	maxTokens := CompactMaxOutputTokens
 	result, err := execution.SideQueryWithRetry(ctx, chatModel, execution.SideQueryOptions{
@@ -408,61 +409,4 @@ func FindPartialCompactPivot(messages []*schema.Message) int {
 	}
 
 	return bestPivot
-}
-
-// ensureToolCallResultPairing checks that every tool call in assistant messages
-// has a corresponding tool result message IMMEDIATELY following it (before any
-// non-tool message). If any are missing or misplaced, synthetic placeholder
-// results are inserted immediately after the assistant message's tool result group.
-func ensureToolCallResultPairing(messages []*schema.Message) []*schema.Message {
-	hasToolCalls := false
-	for _, msg := range messages {
-		if msg != nil && msg.Role == schema.Assistant && len(msg.ToolCalls) > 0 {
-			hasToolCalls = true
-			break
-		}
-	}
-	if !hasToolCalls {
-		return messages
-	}
-
-	out := make([]*schema.Message, 0, len(messages)+4)
-	for i := 0; i < len(messages); i++ {
-		msg := messages[i]
-		out = append(out, msg)
-
-		if msg.Role != schema.Assistant || len(msg.ToolCalls) == 0 {
-			continue
-		}
-
-		needed := make(map[string]string, len(msg.ToolCalls))
-		for _, tc := range msg.ToolCalls {
-			if tc.ID != "" {
-				needed[tc.ID] = tc.Function.Name
-			}
-		}
-
-		for i+1 < len(messages) && messages[i+1] != nil && messages[i+1].Role == schema.Tool {
-			i++
-			out = append(out, messages[i])
-			delete(needed, messages[i].ToolCallID)
-		}
-
-		for _, tc := range msg.ToolCalls {
-			if tc.ID == "" {
-				continue
-			}
-			if _, still := needed[tc.ID]; !still {
-				continue
-			}
-			out = append(out, &schema.Message{
-				Role:       schema.Tool,
-				Content:    "[Tool result unavailable - execution was interrupted]",
-				ToolCallID: tc.ID,
-				ToolName:   tc.Function.Name,
-			})
-			delete(needed, tc.ID)
-		}
-	}
-	return out
 }
