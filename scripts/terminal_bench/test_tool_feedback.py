@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.terminal_bench.tool_feedback import collect_tool_feedback
+from scripts.terminal_bench.tool_feedback import _lines, _response_tools, collect_tool_feedback
 
 
 class ToolFeedbackTests(unittest.TestCase):
@@ -52,6 +52,17 @@ class ToolFeedbackTests(unittest.TestCase):
         return collect_tool_feedback(self.root, [dict(id="one", state="known")], "messages", self.native,
                                      native_format="dsh_sdk", native_session_id="root-a")
 
+    def test_response_tool_parser_preserves_mapping_for_archived_readers(self):
+        self.response("responses", tool="Bash", tool_id="bash-a")
+        self.dsh_stream("bash")
+        for identifier, protocol, expected in (
+            ("responses", "responses", {"bash-a": "Bash"}),
+            ("one", "messages", {"edit-a": "bash"}),
+        ):
+            with self.subTest(protocol=protocol):
+                lines = _lines(self.root / (identifier + ".response.sse"))
+                self.assertEqual(dict(_response_tools(lines, protocol).items()), expected)
+
     def test_dsh_edit_matches_its_native_receipt_without_private_text(self):
         self.dsh_stream()
         got = self.collect_dsh(self.dsh_events())
@@ -90,6 +101,56 @@ class ToolFeedbackTests(unittest.TestCase):
                 self.assertEqual(got["wire_inventory"], coverage)
                 self.assertEqual(got["emitted_counts"], {"Edit": 1})
                 self.assertEqual(got["edit_rejections"], rejections)
+
+    def test_pinned_reasoning_only_output_limit_preserves_edit_coverage(self):
+        self.response()
+        self.native_events()
+        output = dict(type="reasoning", id="r-one")
+        response = dict(id="res-a", status="incomplete", incomplete_details=dict(reason="max_output_tokens"),
+                        output=[output], usage=dict(input_tokens=10, input_tokens_details=dict(cached_tokens=8),
+                            output_tokens=16, output_tokens_details=dict(reasoning_tokens=16), total_tokens=26))
+        events = [
+            dict(type="response.created", response=dict(id="res-a", status="in_progress", output=[])),
+            dict(type="response.output_item.added", item=output, output_index=0),
+            dict(type="response.reasoning_text.delta", item_id="r-one", output_index=0, delta="PRIVATE_SENTINEL"),
+            dict(type="response.output_item.done", item=output, output_index=0),
+            dict(type="response.incomplete", response=response),
+        ]
+        for index, event in enumerate(events):
+            event["sequence_number"] = index
+        record = dict(id="two", state="known", usage_known=True, input_tokens=10,
+                      cached_input_tokens=8, output_tokens=16, thinking_tokens=16)
+        for name, stream, override, pinned, complete in (
+            ("positive", events, {}, True, True),
+            ("unbound", events, {}, False, False),
+            ("unknown_usage", events, {"usage_known": False}, True, False),
+            ("usage_mismatch", events, {"thinking_tokens": 15}, True, False),
+            ("changed_bytes", events, {"response_sha256": "0" * 64}, True, False),
+            ("sequence_gap", [*events[:2], *events[3:]], {}, True, False),
+            ("missing_terminal", events[:-1], {}, True, False),
+            ("wrong_response", [*events[:-1], dict(events[-1], response=dict(response, id="res-b"))],
+             {}, True, False),
+            ("wrong_reason", [*events[:-1], dict(events[-1], response=dict(
+                response, incomplete_details=dict(reason="content_filter")))], {}, True, False),
+            ("tool_item", [events[0], dict(events[1], item=dict(type="function_call")),
+                           *events[2:]], {}, True, False),
+            ("tool_delta", [*events[:2], dict(events[2], type="response.function_call_arguments.delta"),
+                            *events[3:]], {}, True, False),
+            ("tool_in_terminal", [*events[:-1], dict(events[-1], response=dict(
+                response, output=[output, dict(type="function_call")]))], {}, True, False),
+            ("extra_terminal", [*events, events[-1]], {}, True, False),
+        ):
+            with self.subTest(name=name):
+                path = self.stream("two", stream)
+                receipt = record | override
+                if pinned and "response_sha256" not in receipt:
+                    receipt["response_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+                got = self.collect([dict(id="one", state="known"), receipt])
+                self.assertEqual(got["wire_inventory"], "complete" if complete else "partial")
+                self.assertEqual(got["emitted_counts"], {"Edit": 1})
+                self.assertEqual(got["edit_rejections"], 0 if complete else None)
+                self.assertEqual(got["verified_reasoning_only_truncations"], int(complete))
+                self.assertNotIn("PRIVATE_SENTINEL", json.dumps(got))
 
     def test_dsh_child_receipts_require_root_catalog_lineage(self):
         self.dsh_stream()

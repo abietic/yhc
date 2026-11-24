@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import re
 
+from scripts.terminal_bench.budgeted_stream import usage_counters
+
 
 # Do not publish private MCP/custom names, arguments, output or error prose.
 PUBLIC_KINDS = frozenset(("Agent", "Bash", "BashOutput", "Edit", "Read", "Write", "Glob", "Grep",
@@ -83,14 +85,71 @@ def _events(lines):
         raise ValueError("unfinished stream event")
 
 
+def _reasoning_output(items):
+    return isinstance(items, list) and all(isinstance(item, dict) and item.get("type") == "reasoning"
+                                          for item in items)
+
+
+def _reasoning_stream_event(event, response_id):
+    kind = event.get("type")
+    if kind in ("response.created", "response.in_progress"):
+        response = event.get("response")
+        return (isinstance(response, dict) and response.get("id") == response_id
+                and response.get("status") == "in_progress"
+                and _reasoning_output(response.get("output")))
+    if kind in ("response.output_item.added", "response.output_item.done"):
+        return _reasoning_output([event.get("item")])
+    if kind in ("response.content_part.added", "response.content_part.done"):
+        part = event.get("part")
+        return isinstance(part, dict) and part.get("type") == "reasoning_text"
+    return kind in ("response.reasoning_text.delta", "response.reasoning_text.done")
+
+
+def _reasoning_limit(response, response_id, record):
+    if not isinstance(response, dict) or response.get("id") != response_id or response.get("status") != "incomplete":
+        return False
+    details, output = response.get("incomplete_details"), response.get("output")
+    if not isinstance(details, dict) or details.get("reason") != "max_output_tokens":
+        return False
+    if not output or not _reasoning_output(output):
+        return False
+    counts = usage_counters("responses", response.get("usage"))
+    return (counts["output_tokens"] > 0 and counts["output_tokens"] == counts["thinking_tokens"]
+            and all(type(record.get(key)) is int and record[key] == counts[key]
+                    for key in ("input_tokens", "cached_input_tokens", "output_tokens", "thinking_tokens")))
+
+
 def _response_tools(lines, protocol):
+    """Return the tool ID-to-name mapping used by archived trajectory readers."""
+    tools, _ = _response_tool_inventory(lines, protocol)
+    return tools
+
+
+def _response_tool_inventory(lines, protocol, *, verified_record=None):
     tools, stopped, begun, started, finished = {}, 0, 0, set(), set()
-    for event in _events(lines):
+    reasoning_only = protocol == "responses" and verified_record is not None and verified_record.get("usage_known") is True
+    reasoning_limit, response_id = False, None
+    for index, event in enumerate(_events(lines)):
         kind = event.get("type")
-        if kind in ("error", "response.failed", "response.incomplete"):
-            raise ValueError("unsuccessful response terminal")
         if stopped and kind != "ping":
             raise ValueError("event after response terminal")
+        if reasoning_only:
+            if index == 0 and kind == "response.created" and isinstance(event.get("response"), dict):
+                response_id = event["response"].get("id")
+            sequence = event.get("sequence_number")
+            reasoning_only = (isinstance(response_id, str) and bool(response_id)
+                              and (index == 0 or kind != "response.created")
+                              and type(sequence) is int and sequence == index)
+        if kind == "response.incomplete" and reasoning_only and _reasoning_limit(
+            event.get("response"), response_id, verified_record
+        ):
+            stopped += 1
+            reasoning_limit = True
+            continue
+        if kind in ("error", "response.failed", "response.incomplete"):
+            raise ValueError("unsuccessful response terminal")
+        if reasoning_only:
+            reasoning_only = _reasoning_stream_event(event, response_id)
         if protocol == "responses" and kind == "response.completed":
             response = event.get("response")
             output = response.get("output") if isinstance(response, dict) else None
@@ -144,7 +203,7 @@ def _response_tools(lines, protocol):
                     raise ValueError("unfinished message blocks")
     if stopped != 1 or started != finished:
         raise ValueError("complete response terminal unavailable")
-    return tools
+    return tools, reasoning_limit
 
 
 def _dsh_native(lines, session_id):
@@ -254,13 +313,14 @@ def _native(path, *, native_format="yhc_events", native_session_id=None):
 def collect_tool_feedback(wire, records, protocol, native_path, *, native_format="yhc_events", native_session_id=None):
     """Count emitted calls separately from native terminal receipts and side effects.
 
-    Missing/partial streams are lower bounds. Only a complete emitted Edit
-    inventory matched to unique successful native terminals proves zero Edit
+    Missing/partial streams are lower bounds. A verified reasoning-only
+    truncation has an empty tool inventory even though generation stopped.
+    Only a complete emitted Edit inventory matched to unique successful native terminals proves zero Edit
     rejections. A generic failed outcome cannot identify a rejection category.
     Current receipts bind response bytes. Older receipts without that field
     retain structural coverage, reported separately from verified responses.
     """
-    tools, complete = [], 0
+    tools, complete, reasoning_only_truncations = [], 0, 0
     verified, legacy_unpinned, rejected = 0, 0, 0
     supported = protocol in ("responses", "messages")
     for record in records if supported else []:
@@ -281,10 +341,12 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
             rejected += 1
             continue
         try:
-            response = _response_tools(lines, protocol)
+            response, reasoning_only_limit = _response_tool_inventory(
+                lines, protocol, verified_record=record if pinned else None)
         except ValueError:
             continue
         complete += 1
+        reasoning_only_truncations += int(reasoning_only_limit)
         if pinned:
             verified += 1
         else:
@@ -307,6 +369,7 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
     failed_edits = len(matched_edits) - completed_edits
     available = inventory == "complete" or complete > 0
     return dict(wire_inventory=inventory, complete_responses=complete, expected_responses=len(records),
+                verified_reasoning_only_truncations=reasoning_only_truncations,
                 wire_response_integrity=dict(verified_responses=verified, legacy_unpinned_responses=legacy_unpinned,
                                              rejected_responses=rejected),
                 emitted_counts=dict(Counter(_kind(kind) for _, kind in tools)) if available else None,
