@@ -696,7 +696,10 @@ func runCanonicalAfterModelRound(input canonicalAfterModelInput) canonicalAfterM
 			maxResult := recovery.TryMaxTokensRecovery(
 				maxOutputTokensRecoveryCount,
 				maxOutputTokensOverride,
-				true,
+				recovery.CanEscalateMaxTokens(
+					modelRound.requestedOutputTokens,
+					modelRound.outputTokenCeiling,
+				),
 			)
 			if maxResult.Continue {
 				if maxResult.MaxOutputTokensOverride != nil {

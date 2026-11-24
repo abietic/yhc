@@ -5398,7 +5398,7 @@ privacy:
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture
     - path: cmd/yhc/cmd/headless_truncation_test.go
-      line: 71
+      line: 83
       rule_id: private-url
       match_sha256: 64ef0e1ec01dbce2c53b395977fc0f316ef134fdbe6309baf1ed564c2470a65f
       purpose: synthetic-security-fixture

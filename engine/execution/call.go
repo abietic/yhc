@@ -46,6 +46,9 @@ type CallModelResult struct {
 	Model             string
 	ProviderUsageCall ProviderUsageCall
 	ProviderOrigin    *providerorigin.Origin
+	// A prepared request may apply a different limit from the query options.
+	PreparedOutputTokens int
+	ReservationOutputCap int
 }
 
 // TaskBudget carries API task_budget values through the model-call seam.
@@ -163,6 +166,7 @@ func CallModel(
 
 	var preparedCostStream providercost.Stream
 	var costBound *providercost.Bound
+	var reservationOutputCap int
 	if policy, ok := opts.ProviderUsage.(interface{ ProviderCostReservationPolicy() (bool, int) }); ok {
 		if required, cap := policy.ProviderCostReservationPolicy(); required {
 			preparer, ok := chatModel.(providercost.Preparer)
@@ -181,6 +185,7 @@ func CallModel(
 			}
 			bound := preparedCostStream.CostBound()
 			costBound = &bound
+			reservationOutputCap = cap
 		}
 	}
 
@@ -251,9 +256,13 @@ func CallModel(
 	}
 
 	result := &CallModelResult{
-		StreamReader:      sr,
-		Model:             opts.Model,
-		ProviderUsageCall: providerUsageCall,
+		StreamReader:         sr,
+		Model:                opts.Model,
+		ProviderUsageCall:    providerUsageCall,
+		ReservationOutputCap: reservationOutputCap,
+	}
+	if costBound != nil && reservationOutputCap > 0 && costBound.OutputTokens <= uint64(reservationOutputCap) {
+		result.PreparedOutputTokens = int(costBound.OutputTokens)
 	}
 	if origin, ok := dispatchState.Snapshot(); ok {
 		copied := origin

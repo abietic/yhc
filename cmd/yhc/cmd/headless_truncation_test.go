@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,8 +24,9 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 		unknown                      bool
 	}{
 		{"recovered", "completed", "completed", "0.000088000000", 8, 2, false},
+		{"high_output_ceiling", "completed", "completed", "0.262224000000", 8, 2, false},
 		{"truncated_tool", "completed", "completed", "0.000088000000", 8, 2, false},
-		{"exhausted", "model_error", "failed", "0.000220000000", 8, 5, false},
+		{"exhausted", "model_error", "failed", "0.000176000000", 8, 4, false},
 		{"call_limit", "run_budget_exceeded", "failed", "0.000044000000", 1, 1, false},
 		{"unknown_usage", "run_usage_unknown", "failed", "0.000000000000", 8, 1, true},
 		{"contradictory_terminal", "run_usage_unknown", "failed", "0.000000000000", 8, 1, true},
@@ -34,22 +36,32 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 				repo := prepareHeadlessJSONLProviderTest(t)
 				t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 				artifact := filepath.Join(repo, "truncated-write.txt")
+				outputCap := 16
+				if tc.name == "high_output_ceiling" {
+					outputCap = 65536
+				}
 				var calls atomic.Int32
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					n := calls.Add(1)
 					var body struct {
-						MaxOutputTokens int `json:"max_output_tokens"`
+						MaxOutputTokens int             `json:"max_output_tokens"`
+						Input           json.RawMessage `json:"input"`
 					}
-					if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MaxOutputTokens <= 0 || body.MaxOutputTokens > 16 {
-						t.Errorf("recovery exceeded the per-call output cap: %+v, %v", body, err)
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MaxOutputTokens != outputCap {
+						t.Errorf("request %d max_output_tokens = %d, want %d (decode error: %v)", n, body.MaxOutputTokens, outputCap, err)
+					}
+					if hasHint := strings.Contains(string(body.Input), "Output token limit hit."); hasHint != (n > 1) {
+						t.Errorf("request %d continuation hint present = %t, want %t", n, hasHint, n > 1)
 					}
 					usage := `{"input_tokens":20,"output_tokens":2,"total_tokens":22,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":1}}`
 					if tc.name == "unknown_usage" {
 						usage = `null`
+					} else if tc.name == "high_output_ceiling" && n == 1 {
+						usage = `{"input_tokens":20,"output_tokens":65536,"total_tokens":65556,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":65536}}`
 					}
 					status, details := "incomplete", `,"incomplete_details":{"reason":"max_output_tokens"}`
 					deltaType, delta := "reasoning_text", "synthetic planning"
-					if (tc.name == "recovered" || tc.name == "truncated_tool") && n == 2 {
+					if tc.status == "completed" && n == 2 {
 						status, details, deltaType, delta = "completed", "", "output_text", "finished"
 					}
 					w.Header().Set("Content-Type", "text/event-stream")
@@ -83,7 +95,7 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 					"--api-key", p430FakeKey, "--max-turns", "8", "--price-card", card,
 					"--permission-mode", "acceptEdits", "--tools", "Write",
 					"--max-provider-calls", strconv.Itoa(tc.limit), "--max-estimated-cost", "5",
-					"--reserve-cost-before-dispatch", "--max-output-tokens-per-call", "16",
+					"--reserve-cost-before-dispatch", "--max-output-tokens-per-call", strconv.Itoa(outputCap),
 				})
 				ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 				defer cancel()
@@ -106,7 +118,7 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 				if tc.status == "failed" && (result.Error == nil || result.ExitCode != ExitFailure) {
 					t.Fatal("truncation failure reported a successful exit")
 				}
-				if tc.name == "recovered" && result.Output != "finished" {
+				if tc.status == "completed" && result.Output != "finished" {
 					t.Fatalf("recovery did not deliver the completed answer: %q", result.Output)
 				}
 				usage := result.Usage
@@ -117,8 +129,16 @@ func TestExecNativeTruncationUsesBoundedRecovery(t *testing.T) {
 					if usage.Complete || usage.UnknownCalls != 1 || usage.Cost.Reservation.RetainedAmount != "2.097216000000" {
 						t.Fatalf("unknown truncation retried or released its reserve: %+v", usage)
 					}
-				} else if !usage.Complete || usage.KnownCalls != uint64(tc.calls) || usage.UnknownCalls != 0 || usage.PromptTokens != uint64(tc.calls)*20 || usage.CompletionTokens != uint64(tc.calls)*2 || usage.ReasoningTokens != uint64(tc.calls) || usage.Cost.Reservation.RetainedAmount != "0.000000000000" {
-					t.Fatalf("known truncation lost terminal usage: %+v", usage)
+				} else {
+					completionTokens, reasoningTokens := uint64(tc.calls)*2, uint64(tc.calls)
+					if tc.name == "high_output_ceiling" {
+						completionTokens, reasoningTokens = 65538, 65537
+					}
+					if !usage.Complete || usage.KnownCalls != uint64(tc.calls) || usage.UnknownCalls != 0 ||
+						usage.PromptTokens != uint64(tc.calls)*20 || usage.CompletionTokens != completionTokens ||
+						usage.ReasoningTokens != reasoningTokens || usage.Cost.Reservation.RetainedAmount != "0.000000000000" {
+						t.Fatalf("known truncation lost terminal usage: %+v", usage)
+					}
 				}
 			})
 		}
