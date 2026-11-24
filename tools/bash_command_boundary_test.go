@@ -2,8 +2,11 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,16 +85,42 @@ func TestShellManagerCompleteCommandBoundary(t *testing.T) {
 }
 
 func TestShellManagerTerminatedCommandRetiresShell(t *testing.T) {
-	for _, command := range []string{"exit 7", "set -e; false"} {
-		t.Run(command, func(t *testing.T) {
+	for _, test := range []struct {
+		name, command string
+		want          []string
+	}{
+		{name: "empty", command: "exit 7"},
+		{
+			name: "errexit with unterminated diagnostic", command: "set -e; printf 'missing synthetic header' >&2; false",
+			want: []string{"[partial shell output]", "missing synthetic header"},
+		},
+		{
+			name: "bounded preview", command: "printf 'diagnostic head\\n'; printf '%12000s' ' '; printf '\\ndiagnostic tail'; exit 7",
+			want: []string{"diagnostic head", "[stdout truncated; showing head and tail]", "diagnostic tail"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			manager := NewShellManager()
 			t.Cleanup(func() { _ = manager.KillAll() })
 			original, err := manager.GetOrCreate("")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := manager.Execute(context.Background(), "", command, time.Second); err == nil {
-				t.Fatal("expected shell termination error")
+			result, err := manager.Execute(context.Background(), "", test.command, time.Second)
+			if result != nil || !errors.Is(err, io.EOF) {
+				t.Fatalf("expected an unverified EOF, result=%+v err=%v", result, err)
+			}
+			message := err.Error()
+			if len(test.want) == 0 && message != "read from shell: EOF" {
+				t.Fatalf("unexpected diagnostic for empty output: %q", message)
+			}
+			for _, marker := range test.want {
+				if !strings.Contains(message, marker) {
+					t.Errorf("error missing diagnostic marker %q", marker)
+				}
+			}
+			if len(message) > bashMaxOutputPerStream+len("read from shell: EOF\n[partial shell output]\n") || strings.Contains(message, "[exit code:") {
+				t.Fatal("shell error exceeded the preview budget or reported an unverified exit code")
 			}
 			assertShellCommandCompletes(t, manager, "printf 'recovered\\n'")
 			replacement, err := manager.GetOrCreate("")

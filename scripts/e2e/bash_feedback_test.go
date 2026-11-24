@@ -25,11 +25,12 @@ func TestBashFailureFeedbackReachesNextModelRequest(t *testing.T) {
 	const check = "printf 'check started\\n'\nprintf '%12000s' ' '\nprintf '\\nFINAL_ASSERTION_FAILED\\n'\nexit 7\n"
 	digest := sha256.Sum256([]byte(check))
 	for _, test := range []struct {
-		name    string
-		command string
-		model   string
-		extra   []string
-		masked  bool
+		name      string
+		command   string
+		model     string
+		extra     []string
+		masked    bool
+		shellExit bool
 	}{
 		{name: "large output", command: "bash check.sh"},
 		{name: "command preview and large output", command: "bash check.sh\n# " + strings.Repeat("padding ", 750)},
@@ -46,6 +47,13 @@ func TestBashFailureFeedbackReachesNextModelRequest(t *testing.T) {
 			extra:   []string{"--provider", "agenticdeepseek", "--model", "deepseek-flash"},
 			masked:  true,
 		},
+		{
+			name:      "native DeepSeek diagnostic before shell exits",
+			command:   "set -e; bash check.sh",
+			model:     "deepseek-flash",
+			extra:     []string{"--provider", "agenticdeepseek", "--model", "deepseek-flash"},
+			shellExit: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			args, err := json.Marshal(map[string]string{"command": test.command})
@@ -61,7 +69,9 @@ func TestBashFailureFeedbackReachesNextModelRequest(t *testing.T) {
 				},
 			}
 			prior := []priorToolResult{{CallID: "fixture-check", Contains: "FINAL_ASSERTION_FAILED"}}
-			if !test.masked {
+			if test.shellExit {
+				prior = append(prior, priorToolResult{CallID: "fixture-check", Contains: "[partial shell output]"})
+			} else if !test.masked {
 				prior = append(prior, priorToolResult{CallID: "fixture-check", Contains: "[exit code: 7]"})
 			}
 			// A compound command reports its final command's status. Its earlier

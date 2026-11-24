@@ -196,6 +196,9 @@ nonzero-exit, timeout, and cancellation markers. Commands up to 512 bytes keep
 their existing echoed text.
 On a timeout or cancellation, Bash keeps the output it already captured and
 reports the interruption in the final progress event.
+If the persistent shell exits before its terminal record, Bash returns a tool
+error with a bounded preview of the captured command output. An exit code
+requires a complete terminal record from the shell.
 These are presentation limits: a preview cannot recover bytes already dropped
 by the shell's containment output cap, and it does not change execution,
 permissions, background-shell monitoring, or tool-error classification.
