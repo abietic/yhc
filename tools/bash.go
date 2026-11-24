@@ -147,15 +147,21 @@ func BashTool() ToolImpl {
 				return "", fmt.Errorf("bash: shell execution failed: %w", err)
 			}
 
-			// Emit final progress event with completion.
+			status, outcome := shellResultOutcome(result)
+			progress := fmt.Sprintf("exit code: %d", result.ExitCode)
+			if result.TimedOut || result.Canceled {
+				progress = strings.TrimSpace(outcome)
+			}
+
+			// An interrupted command has no verified process exit code.
 			EmitProgress(ctx, ToolProgressEvent{
 				ToolName: "Bash",
 				IsFinal:  true,
-				Content:  fmt.Sprintf("exit code: %d", result.ExitCode),
+				Content:  progress,
 			})
 
 			// Track git operations for session metadata
-			if result.ExitCode == 0 && DefaultGitTracker != nil {
+			if status == "completed" && DefaultGitTracker != nil {
 				trackGitOperation(params.Command, result.Stdout, DefaultGitTracker)
 			}
 

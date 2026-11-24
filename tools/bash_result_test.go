@@ -1,10 +1,66 @@
 package tools
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func TestBashInterruptedFeedback(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		timeout    int
+		command    string
+		diagnostic string
+		outcome    string
+	}{
+		{
+			name: "deadline", timeout: 1000,
+			command:    "printf '%s%s\\n' 'setup-' 'diagnostic'; sleep 10",
+			diagnostic: "setup-diagnostic",
+			outcome:    "[timeout]",
+		},
+		{
+			name: "cancellation after progress", timeout: 10000,
+			command:    "while true; do printf '%s%s\\n' 'progress-' 'diagnostic'; sleep 0.05; done",
+			diagnostic: "progress-diagnostic",
+			outcome:    "[canceled]",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewShellManager()
+			t.Cleanup(func() { _ = manager.KillAll() })
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var final string
+			ctx = WithProgressFn(WithShellManager(ctx, manager), func(event ToolProgressEvent) {
+				if event.IsFinal {
+					final = event.Content
+				} else if test.outcome == "[canceled]" && strings.Contains(event.Content, " lines] ") {
+					cancel()
+				}
+			})
+
+			result, err := BashTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+				"command": test.command,
+				"timeout": test.timeout,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(result, "\n"+test.diagnostic+"\n") || !strings.Contains(result, test.outcome) {
+				t.Errorf("result lost captured diagnostic or interruption status: %q", result)
+			}
+			if strings.Contains(result, "___SENTINEL_") {
+				t.Error("the shell control frame leaked into the tool result")
+			}
+			if final != test.outcome {
+				t.Errorf("final progress = %q, want %q", final, test.outcome)
+			}
+		})
+	}
+}
 
 func TestFormatShellResultLongCommandPreservesOutcome(t *testing.T) {
 	for _, test := range []struct {

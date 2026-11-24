@@ -625,6 +625,17 @@ func appendBoundedShellOutput(output *strings.Builder, max int64, fragment strin
 	output.WriteString(fragment)
 }
 
+// shellOutputBeforePartialMarker releases bytes held for the delimiter scan
+// without exposing the beginning of an unfinished shell control marker.
+func shellOutputBeforePartialMarker(window, marker string) string {
+	for offset := range len(window) {
+		if strings.HasPrefix(marker, window[offset:]) {
+			return window[:offset]
+		}
+	}
+	return window
+}
+
 // normalizeShellOutput preserves the historical line-oriented Bash result:
 // CRLF becomes LF and exactly one terminal line delimiter is omitted.
 func normalizeShellOutput(raw string) string {
@@ -777,6 +788,14 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 		const emitInterval = 500 * time.Millisecond
 		const maxRecent = 5
 
+		finish := func(cwd string, exitCode int, err error) {
+			normalized := normalizeShellOutput(output.String())
+			if truncated {
+				normalized += "\n[stdout truncated]"
+			}
+			resultCh <- readResult{output: normalized, cwd: cwd, exitCode: exitCode, truncated: truncated, err: err}
+		}
+
 		observeProgress := func(fragment string) {
 			if fragment == "" {
 				return
@@ -824,15 +843,7 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 				appendBoundedShellOutput(&output, shell.outputMax, prefix, &truncated)
 				observeProgress(prefix)
 				commandCWD, exitCode, err := readShellProtocol(shell.stdout, combined[index+len(cwdMarker):], endMarker)
-				if err != nil {
-					resultCh <- readResult{err: err}
-					return
-				}
-				normalized := normalizeShellOutput(output.String())
-				if truncated {
-					normalized += "\n[stdout truncated]"
-				}
-				resultCh <- readResult{output: normalized, cwd: commandCWD, exitCode: exitCode, truncated: truncated}
+				finish(commandCWD, exitCode, err)
 				return
 			}
 
@@ -847,7 +858,9 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 				terminalWindow = combined
 			}
 			if readErr != nil && !errors.Is(readErr, bufio.ErrBufferFull) {
-				resultCh <- readResult{err: readErr}
+				appendBoundedShellOutput(&output, shell.outputMax,
+					shellOutputBeforePartialMarker(terminalWindow, cwdMarker), &truncated)
+				finish("", 0, readErr)
 				return
 			}
 		}
@@ -857,21 +870,27 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	var output string
 	var commandCWD string
 	var exitCode int
-	truncated := false
+	var truncated bool
 	timedOut := false
 	canceled := false
 
 	select {
 	case <-ctx.Done():
+		var notice string
 		if ctx.Err() == context.DeadlineExceeded {
 			timedOut = true
-			output = "(command timed out)"
+			notice = "(command timed out)"
 		} else {
 			canceled = true
-			output = "(command canceled)"
+			notice = "(command canceled)"
 		}
 		m.retireLocked(shellID, shell)
-		<-resultCh
+		res := <-resultCh
+		output, truncated = res.output, res.truncated
+		if output != "" {
+			output += "\n"
+		}
+		output += notice
 	case res := <-resultCh:
 		if res.err != nil {
 			m.retireLocked(shellID, shell)

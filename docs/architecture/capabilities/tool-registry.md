@@ -194,6 +194,8 @@ tail without splitting valid UTF-8, so final test summaries remain visible.
 The combined result stays within 30,000 bytes and preserves the existing
 nonzero-exit, timeout, and cancellation markers. Commands up to 512 bytes keep
 their existing echoed text.
+On a timeout or cancellation, Bash keeps the output it already captured and
+reports the interruption in the final progress event.
 These are presentation limits: a preview cannot recover bytes already dropped
 by the shell's containment output cap, and it does not change execution,
 permissions, background-shell monitoring, or tool-error classification.
