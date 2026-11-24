@@ -894,7 +894,11 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	case res := <-resultCh:
 		if res.err != nil {
 			m.retireLocked(shellID, shell)
-			return nil, fmt.Errorf("read from shell: %w", res.err)
+			diagnostic := ""
+			if res.output != "" {
+				diagnostic = "\n[partial shell output]\n" + truncateShellText(res.output, bashMaxOutputPerStream, "stdout")
+			}
+			return nil, fmt.Errorf("read from shell: %w%s", res.err, diagnostic)
 		}
 		output = res.output
 		commandCWD = res.cwd
