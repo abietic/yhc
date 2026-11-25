@@ -288,10 +288,19 @@ names unknown, including when reward is zero. The JSON format reads only
 key with a binary number matching the reported reward. Duplicate keys,
 non-finite values and contradictions are rejected without falling back to
 `reward.txt`. Incidental scaffold CTRF is not interpreted: a grader can report
-all scaffold tests passed while recording a zero behavior reward. Additional
-logs are bound as opaque bytes, not interpreted as behavior-test coverage.
+all scaffold tests passed while recording a zero behavior reward.
 For example, `{"format":"reward_json_and_logs","ctrf_expected":false}`
 binds `reward.json` and `test-stdout.txt` without reading scaffold test results.
+
+When CTRF repeats a display name across parameterized pytest cases, use
+`pytest_test_summary` in the all-tests CTRF contract in place of
+`expected_test_names`. Set its `log` to a file listed in `expected_log_names`
+and its `cases` to a mapping of full pytest node IDs to CTRF display names.
+The log must end with a single complete pytest `-rA` summary. The reader
+matches every declared case exactly once and checks that the case statuses
+agree with CTRF by display name. Failed checks carry the full node IDs.
+Other bound logs remain opaque bytes.
+
 The reader resolves directory aliases and rechecks their target, while rejecting linked score files,
 non-regular or changing evidence, and files larger than 4 MiB. It emits hashes
 and parsed results as JSON, without executing artifacts or making provider calls.
