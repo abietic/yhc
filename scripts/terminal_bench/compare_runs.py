@@ -98,9 +98,17 @@ def call_detail(index, record):
         "connected_seconds", "request_attempt_seconds", "request_sent_seconds", "headers_seconds",
         "first_byte_seconds", "terminal_seconds", "closed_seconds", "elapsed_seconds")}
     error = record.get("error")
+    timed_out = error in ("TimeoutError", "socket_timeout", "stream_deadline")
+    if error == "upstream_attempt_failed":
+        # Prefer the initial failure over a later timeout during cleanup.
+        first_error = diagnostics.get("first_error_code")
+        connect_timeout = (first_error == "connect_error"
+                           and diagnostics.get("first_timeout_reason") == "connect_timeout"
+                           and diagnostics.get("first_timeout_source") == "socket_timeout")
+        timed_out = first_error in ("socket_timeout", "stream_deadline") or connect_timeout
     # Never copy provider/exception prose into a report. These categories also
     # do not establish whether the provider received or billed a request.
-    category = ("timeout" if error in ("TimeoutError", "socket_timeout", "stream_deadline") else
+    category = ("timeout" if timed_out else
                 "usage_missing" if error in ("usage_missing", "stream_ended_without_complete_usage") else
                 "other" if error else None)
     return dict(call_index=index, state=record["state"], elapsed_seconds=seconds(record.get("elapsed_seconds")),
