@@ -30,6 +30,12 @@
 session owns a normal `QueryEngine`; ACP does not have a second query loop,
 tool registry, permission authority, or transcript store.
 
+Managed hosts can start `yhc serve acp --disable-long-session-services` to
+disable the engine's long-session services, including model-backed memory
+extraction and auto-dream. The launch setting applies to sessions created,
+loaded, and resumed by that ACP process. Regular prompt handling and transcript
+persistence continue. ACP starts long-session services by default.
+
 ```mermaid
 flowchart LR
     accTitle: ACP adapter ownership

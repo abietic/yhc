@@ -74,6 +74,8 @@ type Config struct {
 	ToolsFlag              []string
 	ToolsFlagSet           bool
 	SimpleTools            bool
+	// DisableLongSessionServices applies to every new and restored ACP session.
+	DisableLongSessionServices bool
 	// DisableACPAssistantMessageIDs omits the optional messageId field
 	// without changing canonical assistant content.
 	DisableACPAssistantMessageIDs bool
@@ -1589,7 +1591,7 @@ func (a *Agent) createEngineWithSessionMCP(
 		PermissionProjectRoot:     cwd,
 		RootSessionID:             string(sessionID),
 		HookExecutor:              hooks.NewExecutor(),
-		EnableLongSessionServices: true,
+		EnableLongSessionServices: !a.config.DisableLongSessionServices,
 		CommandEntrypoint:         commands.EntrypointACP,
 		GoalCapability:            a.acpGoalCapabilityConfig(appConfig),
 	}
@@ -2923,7 +2925,7 @@ func (a *Agent) createEngineForSessionWithConstructor(
 		PermissionProjectRoot:     cwd,
 		RootSessionID:             sessionID,
 		HookExecutor:              hooks.NewExecutor(),
-		EnableLongSessionServices: true,
+		EnableLongSessionServices: !a.config.DisableLongSessionServices,
 		CommandEntrypoint:         commands.EntrypointACP,
 		GoalCapability:            a.acpGoalCapabilityConfig(appConfig),
 	}
