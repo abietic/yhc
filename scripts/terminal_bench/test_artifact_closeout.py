@@ -418,6 +418,44 @@ class SidecarArtifactTests(unittest.TestCase):
         with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_absence_unverified'):
             self.verify()
 
+    def set_sidecar_absence(self):
+        self.fixture.rows[-1]['status'] = 'failed'
+        self.fixture.proofs.pop()
+        self.collected.unlink()
+        proof = self.sidecar_proofs[0]
+        del proof['projection'], proof['source_and_collected_bytes_match']
+        proof.update(stage='after_upload_before_official_grading',
+                     source_absent_before_and_after_collection=True,
+                     verifier_artifact_absent=True,
+                     verifier_container_id=self.fixture.isolation[0]['container_id'])
+        return proof
+
+    def test_missing_sidecar_file_requires_source_and_disconnected_verifier_observations(self):
+        self.set_sidecar_absence()
+        report = self.verify()
+        self.assertEqual(report['missing_artifacts'], [self.source])
+        self.assertNotIn(self.source, report['present_artifacts'])
+        self.assertFalse(report['can_resume_agent'])
+
+    def test_missing_sidecar_file_rejects_unqualified_absence_evidence(self):
+        good = self.set_sidecar_absence().copy()
+        for override in (
+            dict(source_absent_before_and_after_collection=False),
+            dict(verifier_artifact_absent=1),
+            dict(verifier_container_id='c'*64),
+            dict(stage='after_official_grading'),
+            dict(container_id='c'*64),
+            dict(session_id='other__verifier__trial'),
+        ):
+            with self.subTest(override=override):
+                self.sidecar_proofs[0] = dict(good, **override)
+                with self.assertRaises(CloseoutError):
+                    self.verify()
+        self.sidecar_proofs[0] = good
+        self.collected.write_bytes(b'unexpected delivery')
+        with self.assertRaises(CloseoutError):
+            self.verify()
+
     def test_identical_bytes_do_not_substitute_wrong_container_or_trial(self):
         good = self.sidecar_proofs[0].copy()
         for overrides in (dict(container_id='c'*64), dict(service='main'),
