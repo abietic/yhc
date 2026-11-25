@@ -60,7 +60,10 @@ def usage_counters(protocol, usage):
     output = counter(usage.get("output_tokens"))
     details = usage.get("output_tokens_details")
     require(details is None or isinstance(details, dict), "invalid_usage_details")
-    thinking = (details or {}).get("reasoning_tokens", usage.get("thinking_tokens", usage.get("reasoning_tokens")))
+    thinking = usage.get("thinking_tokens", usage.get("reasoning_tokens"))
+    if details:
+        # DeepSeek Messages calls this thinking_tokens; Responses uses reasoning_tokens.
+        thinking = details.get("reasoning_tokens", details.get("thinking_tokens", thinking))
     if thinking is not None:
         counter(thinking)
         require(thinking <= output, "thinking_exceeds_output")

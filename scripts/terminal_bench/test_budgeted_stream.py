@@ -31,10 +31,13 @@ def response_events(terminal="completed", thinking=8, output=20):
                                                          status=terminal, usage=usage)))
 
 
-def message_events(stop=True, output=20):
+def message_events(stop=True, output=20, thinking=None):
     raw = event("message_start", message=dict(id="message-fixture", model="deepseek-flash", role="assistant",
         usage=dict(input_tokens=10, cache_read_input_tokens=80, cache_creation_input_tokens=10, output_tokens=0)))
-    raw += event("message_delta", delta=dict(stop_reason="end_turn"), usage=dict(output_tokens=output))
+    usage = dict(output_tokens=output)
+    if thinking is not None:
+        usage["output_tokens_details"] = {"thinking_tokens": thinking}
+    raw += event("message_delta", delta=dict(stop_reason="end_turn"), usage=usage)
     return raw + (event("message_stop") if stop else b"")
 
 
