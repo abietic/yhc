@@ -30,6 +30,7 @@ func TestWebFetchContinueExtractedPage(t *testing.T) {
 	var reads atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		reads.Add(1)
+		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, "<article>", text, "</article>")
 	}))
 	defer server.Close()

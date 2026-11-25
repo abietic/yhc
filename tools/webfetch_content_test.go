@@ -14,6 +14,49 @@ import (
 	"testing"
 )
 
+func TestWebFetchTextExtractionFollowsMediaType(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentType, body, extracted string
+	}{
+		{name: "plain text with markup", contentType: "text/plain; charset=utf-8", body: "<html>\n  document &amp; example\n</html>\n"},
+		{name: "JSON", contentType: "application/json", body: "{\"example\":\"<tag>&amp;</tag>\"}\n"},
+		{name: "XML", contentType: "application/xml", body: "<?xml version=\"1.0\"?><policy value=\"true\"/>\n"},
+		{name: "Markdown", contentType: "text/markdown", body: "Use `[]<T>` as the type.\n"},
+		{name: "JavaScript", contentType: "application/javascript", body: "const template = '<div>&amp;</div>';\n"},
+		{name: "HTML", contentType: "text/html", body: "<article><h1>Title</h1><p>Read &amp; write</p></article>", extracted: "# Title\n\nRead & write"},
+		{name: "XHTML", contentType: "application/xhtml+xml", body: "<html><h1>Title</h1><p>Read &amp; write</p></html>", extracted: "# Title\n\nRead & write"},
+		{name: "sniffed HTML", contentType: "application/octet-stream", body: "<html><p>Read &amp; write</p></html>", extracted: "Read & write"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			transport := http.DefaultTransport
+			http.DefaultTransport = server.Client().Transport
+			t.Cleanup(func() { http.DefaultTransport = transport })
+			model := &pageSummaryRecorder{}
+			ctx := WithWebFetchModel(t.Context(), model)
+			tool := WebFetchTool()
+			want := tc.extracted
+			if want == "" {
+				want = tc.body
+			}
+			raw, _ := json.Marshal(map[string]any{"url": server.URL, "prompt": "inspect", "raw_mode": true})
+			result, err := tool.ExecuteCtx(ctx, string(raw))
+			if err != nil || result != want || len(model.inputs) != 0 {
+				t.Errorf("raw extraction = %q, err = %v, model calls = %d; want %q and zero calls", result, err, len(model.inputs), want)
+			}
+			summary, _ := json.Marshal(map[string]any{"url": server.URL, "prompt": "inspect"})
+			result, err = tool.ExecuteCtx(ctx, string(summary))
+			if err != nil || result != "summary" || len(model.inputs) != 1 || !strings.HasSuffix(model.inputs[0], "\n--- Web Page Content ---\n\n"+want) {
+				t.Fatalf("summary result = %q, err = %v, inputs = %q; want exact extracted content %q", result, err, model.inputs, want)
+			}
+		})
+	}
+}
+
 func TestWebFetchBinaryNeverReachesSummary(t *testing.T) {
 	for _, tc := range []struct {
 		name string
