@@ -158,11 +158,21 @@ def _verify_sidecars(sidecars, containers, proofs, verifier_ids, session_id, exp
         source = proof['source']
         service = sidecars[source]
         _need(proof.get('service') == service and proof.get('container_id') == containers[service]
-              and proof.get('session_id') == session_id
-              and proof.get('stage') == 'after_collection_before_upload'
-              and proof.get('source_and_collected_bytes_match') is True
-              and _matches_projection(proof.get('projection'), expected[source]),
+              and proof.get('session_id') == session_id,
               'sidecar_artifact_proof_mismatch')
+        if expected[source]:
+            _need(proof.get('stage') == 'after_collection_before_upload'
+                  and proof.get('source_and_collected_bytes_match') is True
+                  and _matches_projection(proof.get('projection'), expected[source]),
+                  'sidecar_artifact_proof_mismatch')
+        else:
+            _need(proof.get('stage') == 'after_upload_before_official_grading'
+                  and proof.get('source_absent_before_and_after_collection') is True
+                  and proof.get('verifier_artifact_absent') is True
+                  and verifier_ids == {proof.get('verifier_container_id')}
+                  and proof.get('projection') is None
+                  and proof.get('source_and_collected_bytes_match') is None,
+                  'sidecar_artifact_absence_unverified')
 
 
 def _collected(folder, target):
@@ -261,9 +271,10 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
     require absence inside a captured workspace. Empty directories are present.
     Main-service paths may be strings or JSON declarations with supported GNU
     tar excludes. Original declarations must also be bound in the checkpoint.
-    For sidecar files, the caller supplies container IDs from the source
-    environment and separate operator byte proofs obtained before upload.
-    Main archive absence cannot prove the absence of any sidecar output.
+    For sidecar files, the caller supplies source container IDs and separate
+    operator proofs. A present file requires proof of the collected bytes
+    before upload. A missing file requires source absence on both sides of
+    collection and verifier absence after upload, before grading.
     """
     try:
         if sidecar_containers is None:
@@ -306,9 +317,9 @@ def verify_artifacts(folder, archive, declared, manifest, checkpoint, transfers,
                       'artifact_empty_mismatch')
                 expected[target] = entries
             else:
-                _need(service is None, 'sidecar_artifact_absence_unverified')
                 _need(row.get('status') in ('missing', 'failed') and not path.exists()
-                      and _below(paths[target], cwd), 'artifact_absence_unverified')
+                      and (service is not None or _below(paths[target], cwd)),
+                      'sidecar_artifact_absence_unverified' if service else 'artifact_absence_unverified')
                 missing.append(target)
                 expected[target] = {}
         main_expected = {p: entries for p, entries in expected.items() if p not in sidecars}

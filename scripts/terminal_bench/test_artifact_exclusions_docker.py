@@ -246,6 +246,45 @@ class ArtifactExclusionsDockerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(CloseoutError, 'sidecar_artifact_absence_unverified'):
             verify(missing_dir, missing.to_json_data(), {'queue': sidecar})
 
+    async def test_missing_sidecar_file_is_verified_in_source_and_disconnected_verifier(self):
+        from harbor.models.task.config import ArtifactConfig
+        from harbor.trial.artifact_handler import ArtifactHandler
+
+        main, verifier, sidecar = self.containers
+        path = self.guest + '-missing-snapshot'
+        # A same-path decoy in main must not contribute to this declaration.
+        self.docker('exec', main, 'touch', path)
+        declaration = dict(source=path, service='queue')
+        handler = ArtifactHandler(artifacts=[ArtifactConfig(**declaration)],
+                                  logger=logging.getLogger('missing-sidecar-fixture'))
+        sender = FixtureEnvironment(self.docker, main, sidecars={'queue': sidecar})
+        folder = self.root / 'verified-missing-sidecar'
+        logdir = PurePosixPath('/logs/artifacts')
+        quoted = shlex.quote(path)
+        absent = f'test -d /tmp && test ! -e {quoted} && test ! -L {quoted}'
+        self.docker('exec', sidecar, '/bin/sh', '-ec', absent)
+        manifest = await handler.download_artifacts(sender, folder, source_artifacts_dir=logdir)
+        self.docker('exec', sidecar, '/bin/sh', '-ec', absent)
+        self.assertFalse((folder / path.lstrip('/')).exists())
+        await handler.upload_artifacts(self.receiver, folder, source_artifacts_dir=logdir,
+                                       target_artifacts_dir=logdir)
+        self.docker('exec', verifier, '/bin/sh', '-ec', absent)
+        session = 'fixture-missing-sidecar__verifier__trial'
+        isolation = dict(container_id=verifier, network_mode='none', session_id=session)
+        proof = dict(source=path, service='queue', container_id=sidecar, session_id=session,
+                     stage='after_upload_before_official_grading',
+                     source_absent_before_and_after_collection=True,
+                     verifier_artifact_absent=True, verifier_container_id=verifier)
+        checkpoint = dict(capture='complete', captured_before_grading=True, workspace_in_archive=True,
+                          native_session_files=[dict(path=self.guest + '/native.jsonl')], cwd=self.guest,
+                          checkpoint_sha256=hashlib.sha256(self.archive.read_bytes()).hexdigest(),
+                          declared_artifacts=[declaration])
+        verified = verify_artifacts(folder, self.archive, [declaration], manifest.to_json_data(),
+                                    checkpoint, [], [isolation], session_id=session,
+                                    sidecar_containers={'queue': sidecar}, sidecar_proofs=[proof])
+        self.assertEqual(verified['missing_artifacts'], [path])
+        self.assertFalse(verified['can_resume_agent'])
+
 
 if __name__ == '__main__':
     unittest.main()
