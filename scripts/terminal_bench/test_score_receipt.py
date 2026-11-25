@@ -232,6 +232,7 @@ class ScoreReceiptTests(unittest.TestCase):
                 self.assertEqual(result['test_counts'], {'total': 2, 'passed': 2 if passed else 1,
                                                         'failed': 0 if passed else 1})
                 self.assertEqual(result['failed_checks'], [] if passed else ['beta'])
+                self.assertNotIn('pytest_error_checks', result)
 
     def test_ctrf_fail_fast_reports_the_unexecuted_suffix(self):
         self.ctrf(False)
@@ -291,6 +292,7 @@ class ScoreReceiptTests(unittest.TestCase):
                 self.assertEqual(receipt['test_counts'],
                                  {'total': 2, 'passed': 2 if passed else 1, 'failed': int(not passed)})
                 self.assertEqual(receipt['failed_checks'], [] if passed else [second])
+                self.assertEqual(receipt['pytest_error_checks'], [second] if status == 'ERROR' else [])
                 self.assertIn('test-stdout.txt', receipt['file_sha256'])
 
     def test_pytest_summary_rejects_incomplete_or_conflicting_case_evidence(self):

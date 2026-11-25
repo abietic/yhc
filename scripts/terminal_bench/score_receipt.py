@@ -113,6 +113,7 @@ def _pytest_summary_cases(spec, logs, blobs):
 
     statuses = {'PASSED': 'passed', 'FAILED': 'failed', 'ERROR': 'failed'}
     cases = {}
+    errors = []
     observed = Counter()
     for line in lines[headings[0] + 1:-1]:
         status, _, detail = line.partition(' ')
@@ -120,6 +121,8 @@ def _pytest_summary_cases(spec, logs, blobs):
         if status not in statuses or node not in aliases or node in cases:
             raise ScoreError('pytest_summary_unverified')
         cases[node] = (aliases[node], statuses[status])
+        if status == 'ERROR':
+            errors.append(node)
         observed[status] += 1
     if cases.keys() != aliases.keys():
         raise ScoreError('test_coverage_unverified')
@@ -133,7 +136,7 @@ def _pytest_summary_cases(spec, logs, blobs):
     reported.pop('WARNING', None)
     if reported != observed:
         raise ScoreError('pytest_summary_unverified')
-    return cases
+    return cases, errors
 
 
 def _ctrf_counts(raw, contract, expected, execution, pytest_cases):
@@ -189,6 +192,8 @@ def verify_score(folder, rewards, contract):
     An all-tests CTRF contract can bind pytest_test_summary with a captured
     log and a cases mapping from full pytest node IDs to CTRF names. The
     terminal pytest -rA summary must agree with CTRF coverage and statuses.
+    The receipt also lists full node IDs reported as ERROR. This captures the
+    pytest label for diagnosis while preserving the grader's reward and counts.
     Missing or invalid CTRF never falls back to reward-only interpretation.
     Directory aliases are resolved and rechecked; linked score files are not
     followed. Each file is bounded to 4 MiB; changing evidence is rejected.
@@ -233,15 +238,17 @@ def verify_score(folder, rewards, contract):
             raise ScoreError('reward_text_mismatch') from error
         if text not in ('0', '1', '0.0', '1.0') or float(text) != expected:
             raise ScoreError('reward_text_mismatch')
-    pytest_cases = None
+    pytest_cases, pytest_errors = None, None
     if 'pytest_test_summary' in contract:
-        pytest_cases = _pytest_summary_cases(contract['pytest_test_summary'], logs, blobs)
+        pytest_cases, pytest_errors = _pytest_summary_cases(contract['pytest_test_summary'], logs, blobs)
     counts, failed, not_run = (None, None, [])
     if ctrf:
         counts, failed, not_run = _ctrf_counts(blobs['ctrf.json'], contract, expected, execution, pytest_cases)
     receipt = dict(format=kind, reward=expected, test_counts=counts, failed_checks=failed,
                    file_sha256={n: hashlib.sha256(raw).hexdigest() for n, raw in blobs.items()},
                    grader_identity_verified_by_this_reader=False, can_resume_agent=False)
+    if pytest_errors is not None:
+        receipt['pytest_error_checks'] = pytest_errors
     if not_run:
         receipt['tests_not_run'] = not_run
     return receipt
