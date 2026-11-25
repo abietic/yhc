@@ -237,6 +237,13 @@ A reference trajectory supplies no reward, invoice, or matched-pair evidence.
 Current FreshGateway `known_cost` and nested `call.liability` receipts are also
 accepted. Conflicting legacy and current amounts fail closed.
 
+The report's `upstream_attempts` counts model requests and Files operations
+separately using their own `upstream_attempted` markers. Local operations such as
+listing tracked files contribute zero upstream attempts. Missing markers leave
+the corresponding count unavailable, and an explicitly disabled Files
+transport reports zero. The counts describe transport activity. Billing and
+response outcomes retain their own evidence.
+
 `collect_tool_feedback` in [`tool_feedback.py`](../../scripts/terminal_bench/tool_feedback.py)
 counts tool requests from complete captured Responses or Messages replies,
 including child replies absent from the parent's native event stream. It reports

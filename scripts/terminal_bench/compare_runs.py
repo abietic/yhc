@@ -120,6 +120,15 @@ def receipt_amount(record, legacy, native):
     return values[0]
 
 
+def count_upstream_attempts(records):
+    if not isinstance(records, list) or any(not isinstance(row, dict) or
+            ("upstream_attempted" in row and type(row["upstream_attempted"]) is not bool) for row in records):
+        raise ValueError("invalid upstream attempt evidence")
+    if any("upstream_attempted" not in row for row in records):
+        return None
+    return sum(row["upstream_attempted"] for row in records)
+
+
 def _usage(summary, ledger):
     fields = ("input_tokens", "cached_input_tokens", "output_tokens")
     total = count(summary["calls"])
@@ -147,6 +156,15 @@ def _usage(summary, ledger):
         if (ledger.get("currency") != "CNY" or not isinstance(records, list) or len(records) != total
                 or len({atom(r["id"]) for r in records}) != total):
             raise ValueError("per-call ledger inventory mismatch")
+        files = ledger.get("files")
+        if isinstance(files, dict):
+            file_attempts = count_upstream_attempts(files.get("operations"))
+        elif files is not None:
+            raise ValueError("invalid upstream attempt evidence")
+        else:
+            # Current ledgers use null when the Files transport is disabled.
+            file_attempts = 0 if "files" in ledger else None
+        result["upstream_attempts"] = dict(model=count_upstream_attempts(records), files=file_attempts)
         known = [r for r in records if r["state"] == "known"]
         if len(known) != total-unknown or any(r["state"] not in ("known", "unknown") for r in records):
             raise ValueError("unclosed or conflicting call state")
@@ -516,6 +534,15 @@ def markdown(report):
         lines.append(f"| {r['agent']} | {r['sample_id']} | {r['status']} | "
                      f"{r.get('operator_status') or 'unavailable'} / {r.get('outcome_reason') or r.get('terminal_reason') or 'unavailable'} | "
                      f"{r.get('known_idle_estimate_evidence', 'unavailable')} |")
+    attempts = [(row, row["upstream_attempts"]) for row in report["samples"]
+                if any(value is not None for value in row.get("upstream_attempts", {}).values())]
+    if attempts:
+        lines += ["", "Upstream attempts describe gateway transport activity. Billing and response success have separate evidence.", "",
+                  "| Agent | Sample | Model upstream attempts | Files upstream attempts |",
+                  "|---|---|---:|---:|"]
+        for row, counters in attempts:
+            model, files = ["unavailable" if counters[key] is None else str(counters[key]) for key in ("model", "files")]
+            lines.append(f"| {row['agent']} | {row['sample_id']} | {model} | {files} |")
     native_samples = [(r, r["native_usage_coverage"]) for r in report["samples"]
                       if r.get("native_usage_coverage") is not None]
     if native_samples:

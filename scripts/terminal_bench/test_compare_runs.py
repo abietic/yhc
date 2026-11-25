@@ -57,7 +57,7 @@ class ComparisonTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
-    def write(self, entry=None, records=None, name="one", synthetic=False):
+    def write(self, entry=None, records=None, name="one", synthetic=False, ledger_extra=None):
         root = self.root / name
         root.mkdir()
         entry = row() if entry is None else entry
@@ -73,9 +73,45 @@ class ComparisonTests(unittest.TestCase):
             if not synthetic:
                 wire /= entry["sample"]["sample_id"]
             wire.mkdir(parents=True)
-            (wire / "ledger.json").write_text(json.dumps(dict(protocol="messages" if synthetic else "responses",
-                sample=entry["sample"]["sample_id"], currency="CNY", records=records, denials=[])))
+            protocol = "messages" if synthetic or entry["sample"]["agent"] == "dsh" else "responses"
+            (wire / "ledger.json").write_text(json.dumps(dict(protocol=protocol,
+                sample=entry["sample"]["sample_id"], currency="CNY", records=records, denials=[],
+                **(ledger_extra or {}))))
         return root
+
+    def test_reports_file_requests_separately_from_model_attempts(self):
+        entry = row(agent="dsh")
+        entry["summary"].update(calls=3, unknown_calls=1, usage_complete=False)
+        records = [dict(call("1"), upstream_attempted=True), dict(call("2"), upstream_attempted=True),
+                   dict(id="3", state="unknown", reserved_cny="2.621440", upstream_attempted=False)]
+        operations = [dict(method="POST", upstream_attempted=True, state="verified", file_id="PRIVATE_SENTINEL"),
+                      dict(method="GET", upstream_attempted=False, state="verified"),
+                      dict(method="POST", upstream_attempted=True, state="unverified")]
+        report = build_report([self.write(entry, records, ledger_extra={"files": {"operations": operations}})])
+        got, = report["samples"]
+        self.assertEqual(got["calls"], 3)
+        self.assertEqual(got["upstream_attempts"], {"model": 2, "files": 2})
+        rendered = markdown(report)
+        self.assertIn("Model upstream attempts", rendered)
+        self.assertIn("| dsh | sample-a | 2 | 2 |", rendered)
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+
+    def test_upstream_attempts_retain_legacy_and_disabled_evidence(self):
+        legacy = self.write(records=[dict(call("1"), upstream_attempted=True), call("2")], name="legacy")
+        self.assertEqual(load_run(legacy)[0]["upstream_attempts"], {"model": None, "files": None})
+        disabled = self.write(records=[dict(call("1"), upstream_attempted=True),
+                                       dict(call("2"), upstream_attempted=True)], name="disabled",
+                              ledger_extra={"files": None})
+        self.assertEqual(load_run(disabled)[0]["upstream_attempts"], {"model": 2, "files": 0})
+
+    def test_rejects_invalid_upstream_attempt_markers(self):
+        for name, records, extra in (
+            ("model", [dict(call("1"), upstream_attempted="true"), call("2")], {}),
+            ("files", [call("1"), call("2")], {"files": {"operations": [{"upstream_attempted": 1}]}}),
+            ("inventory", [call("1"), call("2")], {"files": {"operations": None}}),
+        ):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "invalid upstream attempt"):
+                load_run(self.write(records=records, name=name, ledger_extra=extra))
 
     def test_weighted_ratio_partial_thinking_and_retained_unknown(self):
         entry = row()
