@@ -19,13 +19,19 @@ func extractWebFetchText(ctx context.Context, response webFetchResponse, pages s
 	if !webFetchTextMediaType(detected) {
 		return "", fmt.Errorf("unsupported content type %s; download the file and use an appropriate file reader", detected)
 	}
-	if declared != "" && declared != "application/octet-stream" && !webFetchTextMediaType(declared) {
+	if declared == "" || declared == "application/octet-stream" {
+		declared = detected
+	}
+	if !webFetchTextMediaType(declared) {
 		return "", fmt.Errorf("unsupported content type %s; download the file and use an appropriate file reader", declared)
 	}
 	if pages != "" {
 		return "", fmt.Errorf("pages is only supported for PDF content")
 	}
-	return htmlToText(string(response.body)), nil
+	if declared == "text/html" || declared == "application/xhtml+xml" {
+		return htmlToText(string(response.body)), nil
+	}
+	return string(response.body), nil
 }
 
 func webFetchTextMediaType(value string) bool {

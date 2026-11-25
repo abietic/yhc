@@ -170,8 +170,10 @@ to use its existing direct-page implementation; this change integrates Search.
 
 WebFetch downloads use the caller's cancellation, a 30-second HTTP timeout,
 and a 5 MB body limit. Response media metadata and byte signatures select
-text extraction before either raw output or a model summary. Text PDFs reuse
-Read's local Poppler extraction and optional `pages` range, with at most 20
+text extraction before either raw output or a model summary. HTML and XHTML
+are converted to readable text. JSON, XML, and other textual responses retain
+their source markup and whitespace. Text PDFs reuse Read's local Poppler
+extraction and optional `pages` range, with at most 20
 pages per request; PDFs over 10 pages require an explicit range. The existing
 byte offsets address extracted text within that selection. PDF extraction
 retains Read's subprocess deadlines and text limit, removes its private
