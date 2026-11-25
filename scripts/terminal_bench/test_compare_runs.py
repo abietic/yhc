@@ -134,6 +134,29 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(got["call_details"][2]["error_category"], "timeout")
         self.assertIsNone(got["call_details"][2]["transport_timings"]["request_sent_seconds"])
 
+    def test_report_classifies_wrapped_transport_timeouts_from_first_cause(self):
+        entry = row()
+        entry["normal_completion"] = False
+        entry["summary"].update(calls=3, unknown_calls=1, usage_complete=False)
+        cases = (
+            ("deadline", {"first_error_code": "stream_deadline", "request_sent_seconds": 0.08}, "timeout"),
+            ("last-error-only", {"error_code": "stream_deadline"}, "other"),
+            ("connect-timeout", {"first_error_code": "connect_error", "first_timeout_reason": "connect_timeout",
+                                 "first_timeout_source": "socket_timeout"}, "timeout"),
+            ("connect-failure", {"first_error_code": "connect_error"}, "other"),
+            ("cleanup-deadline", {"first_error_code": "upstream_read_error", "error_code": "stream_deadline"}, "other"),
+            ("unavailable", {}, "other"),
+        )
+        for name, diagnostics, expected in cases:
+            with self.subTest(name=name):
+                records = [call("1"), call("2"), dict(
+                    id="3", state="unknown", reserved_cny="2.621440",
+                    error="upstream_attempt_failed", stream_diagnostics=diagnostics)]
+                sample, = load_run(self.write(entry, records, name=name))
+                self.assertEqual(sample["call_details"][-1]["error_category"], expected)
+                self.assertFalse(sample["usage_complete"])
+                self.assertEqual(sample["retained_unknown_cny"], "2.621440")
+
     def test_complete_gateway_does_not_hide_native_unknown_attempt(self):
         entry = row()
         entry["normal_completion"] = False
