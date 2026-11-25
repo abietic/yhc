@@ -83,17 +83,6 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(row['call']['bound']['reserved_amount'],'5.242880000000')
         self.assertEqual(row['input_tokens'],100)
 
-    def test_messages_receipt_preserves_provider_thinking_count(self):
-        events = stream_fixture.message_events(thinking=8)
-        budget, gateway = self.create('messages', raw=events)
-        self.assertEqual(self.post(gateway), (200, events))
-        ledger = json.loads((gateway.root / 'ledger.json').read_bytes())
-        row, = ledger['records']
-        self.assertTrue(row['usage_known'])
-        self.assertEqual(row['thinking_tokens'], 8)
-        self.assertEqual(row['output_tokens'], 20)
-        self.assertEqual(budget.snapshot()['known_cost'], '0.000203200000')
-
     def test_foreign_authentication_cannot_revoke_the_owned_session(self):
         budget, gateway = self.create()
         self.assertEqual(self.post(gateway,token='sentinel-provider-credential')[0],402)
@@ -329,6 +318,18 @@ class GatewayTests(unittest.TestCase):
         self.assertFalse(self.connections)
         self.assertEqual(list(foreign.iterdir()),[])
         self.assertEqual(budget.snapshot()['retained'],'2.621440000000')
+
+
+    def test_messages_receipt_preserves_provider_thinking_count(self):
+        events = stream_fixture.message_events(thinking=8)
+        budget, gateway = self.create('messages', raw=events)
+        self.assertEqual(self.post(gateway), (200, events))
+        ledger = json.loads((gateway.root / 'ledger.json').read_bytes())
+        row, = ledger['records']
+        self.assertTrue(row['usage_known'])
+        self.assertEqual(row['thinking_tokens'], 8)
+        self.assertEqual(row['output_tokens'], 20)
+        self.assertEqual(budget.snapshot()['known_cost'], '0.000203200000')
 
 
 if __name__=='__main__': unittest.main()
