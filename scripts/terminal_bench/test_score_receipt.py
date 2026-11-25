@@ -264,6 +264,78 @@ class ScoreReceiptTests(unittest.TestCase):
                 (self.folder / 'ctrf.json').write_text(json.dumps(data))
                 verify_score(self.folder, {'reward': 0}, contract)
 
+    def test_pytest_summary_resolves_distinct_cases_sharing_a_ctrf_name(self):
+        first = 'tests/checks.py::test_value[positive]'
+        second = 'tests/checks.py::test_value[negative]'
+        alias = 'checks.py::test_value'
+        contract = {'format': 'ctrf_and_reward_txt', 'ctrf_expected': True,
+                    'expected_log_names': ['test-stdout.txt'],
+                    'pytest_test_summary': {'log': 'test-stdout.txt',
+                                            'cases': {first: alias, second: alias}}}
+        for status in ('PASSED', 'FAILED', 'ERROR'):
+            with self.subTest(status=status):
+                passed = status == 'PASSED'
+                data = self.ctrf(passed)
+                for test in data['results']['tests']:
+                    test['name'] = alias
+                (self.folder / 'ctrf.json').write_text(json.dumps(data))
+                outcome = {'PASSED': '2 passed', 'FAILED': '1 failed, 1 passed',
+                           'ERROR': '1 passed, 1 error'}[status]
+                diagnostic = '' if passed else ' - ValueError: invalid value'
+                self.reward(str(int(passed)), (
+                    '==== short test summary info ====\n'
+                    f'PASSED {first}\n{status} {second}{diagnostic}\n'
+                    f'==== {outcome} in 0.01s ====\n'
+                ).encode())
+                receipt = verify_score(self.folder, {'reward': int(passed)}, contract)
+                self.assertEqual(receipt['test_counts'],
+                                 {'total': 2, 'passed': 2 if passed else 1, 'failed': int(not passed)})
+                self.assertEqual(receipt['failed_checks'], [] if passed else [second])
+                self.assertIn('test-stdout.txt', receipt['file_sha256'])
+
+    def test_pytest_summary_rejects_incomplete_or_conflicting_case_evidence(self):
+        first = 'tests/checks.py::test_value[a]'
+        second = 'tests/checks.py::test_value[b]'
+        other = 'tests/checks.py::test_other'
+        alias = 'checks.py::test_value'
+        other_alias = 'checks.py::test_other'
+        contract = {'format': 'ctrf_and_reward_txt', 'ctrf_expected': True,
+                    'expected_log_names': ['test-stdout.txt'],
+                    'pytest_test_summary': {'log': 'test-stdout.txt', 'cases': {
+                        first: alias, second: alias, other: other_alias}}}
+        data = self.ctrf(False)
+        data['results']['tests'] = [
+            {'name': alias, 'status': 'passed'}, {'name': alias, 'status': 'failed'},
+            {'name': other_alias, 'status': 'passed'}]
+        data['results']['summary'].update(tests=3, passed=2)
+        (self.folder / 'ctrf.json').write_text(json.dumps(data))
+        heading = '==== short test summary info ====\n'
+        rows = f'PASSED {first}\nFAILED {second}\nPASSED {other}\n'
+        footer = '==== 1 failed, 2 passed in 0.01s ====\n'
+        self.reward('0', (heading + rows + footer).encode())
+        self.assertEqual(verify_score(self.folder, {'reward': 0}, contract)['failed_checks'], [second])
+        invalid_logs = {
+            'missing_case': heading + rows.replace(f'FAILED {second}\n', '') + footer,
+            'repeated_id': heading + rows.replace(second, first) + footer,
+            'unknown_case': heading + rows.replace(second, second + 'x') + footer,
+            'missing_footer': heading + rows,
+            'conflicting_footer': heading + rows + footer.replace('1 failed', '1 error'),
+            'other_ctrf_label_failed': heading + (
+                f'PASSED {first}\nPASSED {second}\nFAILED {other}\n') + footer,
+        }
+        for scenario, log in invalid_logs.items():
+            with self.subTest(scenario=scenario), self.assertRaises(ScoreError):
+                self.reward('0', log.encode())
+                verify_score(self.folder, {'reward': 0}, contract)
+
+        self.reward('0', (heading + rows + footer).encode())
+        for invalid in (dict(contract, expected_log_names=[]),
+                        dict(contract, ctrf_execution='fail_fast'),
+                        dict(contract, expected_test_names=[first, second, other]),
+                        dict(self.reward_contract, pytest_test_summary=contract['pytest_test_summary'])):
+            with self.subTest(invalid=invalid), self.assertRaises(ScoreError):
+                verify_score(self.folder, {'reward': 0}, invalid)
+
     def test_ctrf_fail_fast_requires_complete_coverage_for_success(self):
         self.ctrf()
         contract = dict(self.ctrf_contract, ctrf_execution='fail_fast')

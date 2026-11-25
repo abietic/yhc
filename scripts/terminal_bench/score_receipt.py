@@ -87,8 +87,57 @@ def _log_names(contract, required, reward_file):
     return names
 
 
-def _ctrf_counts(raw, contract, expected, execution):
-    names = contract.get('expected_test_names')
+def _pytest_summary_cases(spec, logs, blobs):
+    if (not isinstance(spec, dict) or set(spec) != {'log', 'cases'}
+            or spec['log'] not in logs):
+        raise ScoreError('unsupported_score_contract')
+    aliases = spec['cases']
+    if (not isinstance(aliases, dict) or not aliases
+            or any(not isinstance(node, str) or '::' not in node or not node.isprintable()
+                   or node != node.strip() or ' - ' in node
+                   or not isinstance(alias, str) or not alias for node, alias in aliases.items())):
+        raise ScoreError('unsupported_score_contract')
+
+    try:
+        lines = blobs[spec['log']].decode('utf-8').rstrip().splitlines()
+    except UnicodeError as error:
+        raise ScoreError('pytest_summary_unverified') from error
+    headings = [i for i, line in enumerate(lines)
+                if re.fullmatch(r'=+ short test summary info =+', line)]
+    footer = lines[-1] if lines else ''
+    totals = re.fullmatch(
+        r'=+ (?P<counts>\d{1,9} [a-z]+(?:, \d{1,9} [a-z]+)*) in '
+        r'\d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))? =+', footer)
+    if len(headings) != 1 or totals is None:
+        raise ScoreError('pytest_summary_unverified')
+
+    statuses = {'PASSED': 'passed', 'FAILED': 'failed', 'ERROR': 'failed'}
+    cases = {}
+    observed = Counter()
+    for line in lines[headings[0] + 1:-1]:
+        status, _, detail = line.partition(' ')
+        node = detail.partition(' - ')[0]
+        if status not in statuses or node not in aliases or node in cases:
+            raise ScoreError('pytest_summary_unverified')
+        cases[node] = (aliases[node], statuses[status])
+        observed[status] += 1
+    if cases.keys() != aliases.keys():
+        raise ScoreError('test_coverage_unverified')
+    reported = {}
+    for item in totals['counts'].split(', '):
+        count, label = item.split()
+        status = {'errors': 'ERROR', 'warnings': 'WARNING'}.get(label, label.upper())
+        if status in reported:
+            raise ScoreError('pytest_summary_unverified')
+        reported[status] = int(count)
+    reported.pop('WARNING', None)
+    if reported != observed:
+        raise ScoreError('pytest_summary_unverified')
+    return cases
+
+
+def _ctrf_counts(raw, contract, expected, execution, pytest_cases):
+    names = list(pytest_cases) if pytest_cases is not None else contract.get('expected_test_names')
     if (not isinstance(names, list) or not names
             or any(not isinstance(n, str) or not n for n in names)
             or len(set(names)) != len(names)):
@@ -105,12 +154,17 @@ def _ctrf_counts(raw, contract, expected, execution):
                    or t.get('status') not in ('passed', 'failed') for t in tests)):
         raise ScoreError('test_coverage_unverified')
     counts = Counter(t['status'] for t in tests)
+    failed = [t['name'] for t in tests if t['status'] == 'failed']
     observed = [t['name'] for t in tests]
     if execution == 'fail_fast':
         if observed != names[:len(tests)]:
             raise ScoreError('test_coverage_unverified')
         if expected == 0 and (counts['failed'] != 1 or tests[-1]['status'] != 'failed'):
             raise ScoreError('test_coverage_unverified')
+    elif pytest_cases is not None:
+        if Counter((test['name'], test['status']) for test in tests) != Counter(pytest_cases.values()):
+            raise ScoreError('pytest_ctrf_mismatch')
+        failed = [node for node, (_, status) in pytest_cases.items() if status == 'failed']
     elif sorted(observed) != sorted(names):
         raise ScoreError('test_coverage_unverified')
     for key, value in dict(tests=len(tests), passed=counts['passed'], failed=counts['failed'],
@@ -120,7 +174,7 @@ def _ctrf_counts(raw, contract, expected, execution):
     if expected != int(counts['passed'] == len(names)):
         raise ScoreError('reward_and_tests_mismatch')
     return (dict(total=len(tests), passed=counts['passed'], failed=counts['failed']),
-            [t['name'] for t in tests if t['status'] == 'failed'], names[len(tests):])
+            failed, names[len(tests):])
 
 
 def verify_score(folder, rewards, contract):
@@ -132,6 +186,9 @@ def verify_score(folder, rewards, contract):
     A CTRF contract opting into fail_fast must give test names in execution
     order. A zero reward can end at the first failed check, with the suffix
     reported separately in tests_not_run. A positive reward requires all tests.
+    An all-tests CTRF contract can bind pytest_test_summary with a captured
+    log and a cases mapping from full pytest node IDs to CTRF names. The
+    terminal pytest -rA summary must agree with CTRF coverage and statuses.
     Missing or invalid CTRF never falls back to reward-only interpretation.
     Directory aliases are resolved and rechecked; linked score files are not
     followed. Each file is bounded to 4 MiB; changing evidence is rejected.
@@ -146,6 +203,9 @@ def verify_score(folder, rewards, contract):
         raise ScoreError('unsupported_score_contract')
     execution = contract.get('ctrf_execution', 'all')
     if 'ctrf_execution' in contract and (not ctrf or execution not in ('all', 'fail_fast')):
+        raise ScoreError('unsupported_score_contract')
+    if 'pytest_test_summary' in contract and (
+            not ctrf or execution != 'all' or 'expected_test_names' in contract):
         raise ScoreError('unsupported_score_contract')
     if not isinstance(rewards, dict) or set(rewards) != {'reward'}:
         raise ScoreError('reported_reward_unverified')
@@ -173,7 +233,12 @@ def verify_score(folder, rewards, contract):
             raise ScoreError('reward_text_mismatch') from error
         if text not in ('0', '1', '0.0', '1.0') or float(text) != expected:
             raise ScoreError('reward_text_mismatch')
-    counts, failed, not_run = _ctrf_counts(blobs['ctrf.json'], contract, expected, execution) if ctrf else (None, None, [])
+    pytest_cases = None
+    if 'pytest_test_summary' in contract:
+        pytest_cases = _pytest_summary_cases(contract['pytest_test_summary'], logs, blobs)
+    counts, failed, not_run = (None, None, [])
+    if ctrf:
+        counts, failed, not_run = _ctrf_counts(blobs['ctrf.json'], contract, expected, execution, pytest_cases)
     receipt = dict(format=kind, reward=expected, test_counts=counts, failed_checks=failed,
                    file_sha256={n: hashlib.sha256(raw).hexdigest() for n, raw in blobs.items()},
                    grader_identity_verified_by_this_reader=False, can_resume_agent=False)
