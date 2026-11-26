@@ -310,16 +310,21 @@ def _native(path, *, native_format="yhc_events", native_session_id=None):
     return "available" if valid else "partial", starts, terminals
 
 
-def _has_result_text(content):
+def _result_texts(content):
     if isinstance(content, str):
-        return bool(content)
-    return isinstance(content, list) and any(
-        isinstance(block, dict) and block.get("type") in ("text", "input_text", "output_text")
-        and isinstance(block.get("text"), str) and block["text"] for block in content)
+        return [content] if content else []
+    if isinstance(content, list):
+        return [block["text"] for block in content
+                if isinstance(block, dict) and block.get("type") in ("text", "input_text", "output_text")
+                and isinstance(block.get("text"), str) and block["text"]]
+    return []
 
 
-def _request_text_feedback(path, pin, protocol):
-    """Read only result identities from a hash-bound capture."""
+_NONZERO_EXIT_LINE = re.compile(r"(?m)^\[exit code: ([1-9][0-9]{0,2})\]\r?$")
+
+
+def _request_text_feedback(path, pin, protocol, bash_ids):
+    """Project result identities and canonical Bash marker observations."""
     lines, digest = _lines(path, with_sha256=True)
     if lines is None or digest != pin:
         raise ValueError("unverified tool feedback request")
@@ -329,17 +334,28 @@ def _request_text_feedback(path, pin, protocol):
         raise ValueError("invalid tool feedback request")
     history = body[key]
     if protocol == "responses" and isinstance(history, str):
-        return set()
+        return set(), set()
     if not isinstance(history, list):
         raise ValueError("invalid tool feedback request history")
     if protocol == "responses":
-        return {_tool_id(item.get("call_id")) for item in history
-                if isinstance(item, dict) and item.get("type") == "function_call_output"
-                and _has_result_text(item.get("output"))}
-    return {_tool_id(item.get("tool_use_id")) for message in history
-            if isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), list)
-            for item in message["content"] if isinstance(item, dict) and item.get("type") == "tool_result"
-            and _has_result_text(item.get("content"))}
+        items = ((item.get("call_id"), item.get("output")) for item in history
+                 if isinstance(item, dict) and item.get("type") == "function_call_output")
+    else:
+        items = ((item.get("tool_use_id"), item.get("content")) for message in history
+                 if isinstance(message, dict) and message.get("role") == "user"
+                 and isinstance(message.get("content"), list)
+                 for item in message["content"] if isinstance(item, dict) and item.get("type") == "tool_result")
+    returned, nonzero = set(), set()
+    for call_id, content in items:
+        texts = _result_texts(content)
+        if not texts:
+            continue
+        call_id = _tool_id(call_id)
+        returned.add(call_id)
+        if call_id in bash_ids and call_id not in nonzero and any(
+                int(match[1]) <= 255 for text in texts for match in _NONZERO_EXIT_LINE.finditer(text)):
+            nonzero.add(call_id)
+    return returned, nonzero
 
 
 def collect_tool_feedback(wire, records, protocol, native_path, *, native_format="yhc_events", native_session_id=None):
@@ -353,10 +369,13 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
     retain structural coverage, reported separately from verified responses.
     Later verified requests can show that result text was available even when
     a native terminal is absent. These observations are a lower bound.
+    A nonzero exit marker is a text observation, including when the native
+    tool returned normally. Missing markers give no process exit evidence.
     """
     tools, complete, reasoning_only_truncations = [], 0, 0
     verified, legacy_unpinned, rejected = 0, 0, 0
     pinned_emissions, later_text_returns, verified_requests = set(), set(), 0
+    pinned_bash, later_nonzero_markers = set(), set()
     supported = protocol in ("responses", "messages")
     for record in records if supported else []:
         identifier = record["id"]
@@ -366,12 +385,15 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
             continue
         if record.get("upstream_attempted") is True and record.get("body_sha256"):
             try:
-                feedback_ids = _request_text_feedback(Path(wire) / (identifier + ".request.json"), record["body_sha256"], protocol)
+                feedback_ids, nonzero = _request_text_feedback(
+                    Path(wire) / (identifier + ".request.json"), record["body_sha256"], protocol,
+                    pinned_bash - later_nonzero_markers)
             except (OSError, ValueError):
                 pass
             else:
                 verified_requests += 1
                 later_text_returns.update(feedback_ids & pinned_emissions)
+                later_nonzero_markers.update(nonzero)
         path = Path(wire) / (identifier + ".response.sse")
         try:
             lines, actual_sha256 = _lines(path, with_sha256=True)
@@ -393,6 +415,7 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
         if pinned:
             verified += 1
             pinned_emissions.update(response)
+            pinned_bash.update(identifier for identifier, name in response.items() if _kind(name) == "Bash")
         else:
             legacy_unpinned += 1
         tools.extend(response.items())
@@ -408,6 +431,11 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
         return (ids[identifier] == 1 and starts.get(identifier) == [kind]
                 and len(terminals.get(identifier, [])) == 1)
 
+    bash_available = verified_requests > 0 and bool(unique_pinned & pinned_bash)
+    bash_nonzero = later_nonzero_markers & unique_pinned
+    bash_completed_nonzero = sum(
+        identifier in bash_nonzero and matched(identifier, kind) and terminals[identifier] == ["completed"]
+        for identifier, kind in tools)
     edits = [(identifier, kind) for identifier, kind in tools if _kind(kind) == "Edit"]
     matched_edits = [identifier for identifier, kind in edits if matched(identifier, kind)]
     edit_complete = (inventory == "complete" and native == "available" and bool(edits)
@@ -425,6 +453,10 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
                                             sum(identifier in confirmed and not matched(identifier, kind)
                                                 for identifier, kind in tools)
                                             if text_available and native != "unavailable" else None)),
+                bash_exit_markers=dict(text_returns=len(confirmed & pinned_bash) if bash_available else None,
+                                       nonzero=len(bash_nonzero) if bash_available else None,
+                                       native_completed_nonzero=(bash_completed_nonzero
+                                           if bash_available and native != "unavailable" else None)),
                 emitted_counts=dict(Counter(_kind(kind) for _, kind in tools)) if available else None,
                 native_inventory=native,
                 native_start_counts=(dict(Counter(_kind(kind) for values in starts.values() for kind in values))
