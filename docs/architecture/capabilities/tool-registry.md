@@ -352,11 +352,11 @@ Migration decisions remain in [`migration/PLAN.md`](../../migration/PLAN.md).
 
 ## Background command feedback
 
-Background Bash publishes a bounded completed-result preview to `BashOutput`,
-with an explicit running/completed/failed/timeout/cancelled state. While a
-command is running, this path does not claim to stream its stdout. Each completed
-preview is consumed once; the terminal state remains visible on later reads and
-survives an optional regex filter. Invalid filters do not consume output.
+Background Bash exposes a bounded preview of recent captured output through
+`BashOutput` and `Monitor` while the command runs. Both tools return the preview
+on request and leave the completed result available. `BashOutput` consumes the
+completed-result preview once. Terminal state remains visible on later reads
+and survives an optional regex filter. Invalid filters leave output available.
 Records belong to one process-local ShellManager identity. `KillShell` and
 `KillAll` terminate the owned shell generations and discard their background
 records. Canceling a background launch prevents it from starting a replacement

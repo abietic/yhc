@@ -57,7 +57,7 @@ func MonitorTool() ToolImpl {
 	return ToolImpl{
 		Info: &schema.ToolInfo{
 			Name: "Monitor",
-			Desc: "Immediately checks the status and recent pending output of a command started with Bash run_in_background. Leaves pending output available for BashOutput.",
+			Desc: "Immediately checks the status and recent output of a command started with Bash run_in_background. Leaves pending output available for BashOutput.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"process_id": {Type: schema.String, Desc: "The ID of the background process to monitor", Required: true},
 				"tail_lines": {Type: schema.Integer, Desc: "Number of recent output lines to return (default: 20)"},
@@ -148,6 +148,9 @@ func monitorShellSnapshot(manager *ShellManager, id string, tailLines int) strin
 		return ""
 	}
 	status, outcome, output, notice := entry.status, entry.outcome, entry.output, entry.outputNotice
+	if status == "running" {
+		output = entry.runningPreview()
+	}
 	entry.mu.Unlock()
 
 	var result strings.Builder
@@ -158,8 +161,10 @@ func monitorShellSnapshot(manager *ShellManager, id string, tailLines int) strin
 	}
 	result.WriteString(outcome)
 	var lines []string
-	output = strings.TrimPrefix(output, "$ "+entry.Command+"\n")
-	output = strings.TrimSuffix(output, outcome)
+	if status != "running" {
+		output = strings.TrimPrefix(output, "$ "+entry.Command+"\n")
+		output = strings.TrimSuffix(output, outcome)
+	}
 	if output != "" {
 		lines = strings.Split(strings.TrimSuffix(output, "\n"), "\n")
 	}

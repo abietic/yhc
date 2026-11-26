@@ -33,22 +33,24 @@ func getDefaultShellManager() *ShellManager {
 const (
 	bashDefaultForegroundTimeout = 2 * time.Minute
 	bashMaxExecutionTimeout      = 10 * time.Minute
+	bashMaxRunningOutputBytes    = 4 * 1024
 )
 
 // backgroundShells tracks shells running in background mode.
 var backgroundShells sync.Map // shellID -> *backgroundShellEntry
 
 type backgroundShellEntry struct {
-	ShellID      string
-	Command      string
-	StartedAt    time.Time
-	owner        string
-	mu           sync.Mutex
-	status       string
-	outcome      string
-	output       string
-	outputNotice string
-	done         chan struct{}
+	ShellID       string
+	Command       string
+	StartedAt     time.Time
+	owner         string
+	mu            sync.Mutex
+	status        string
+	outcome       string
+	output        string
+	runningOutput []byte
+	outputNotice  string
+	done          chan struct{}
 }
 
 func ownedBackgroundShell(manager *ShellManager, id string) *backgroundShellEntry {
@@ -64,6 +66,32 @@ func ownedBackgroundShell(manager *ShellManager, id string) *backgroundShellEntr
 		return nil
 	}
 	return entry
+}
+
+func (entry *backgroundShellEntry) observeOutput(fragment string) {
+	if len(fragment) > bashMaxRunningOutputBytes {
+		fragment = fragment[len(fragment)-bashMaxRunningOutputBytes:]
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.runningOutput == nil {
+		entry.runningOutput = make([]byte, 0, bashMaxRunningOutputBytes)
+	}
+	if overflow := len(entry.runningOutput) + len(fragment) - bashMaxRunningOutputBytes; overflow > 0 {
+		length := copy(entry.runningOutput, entry.runningOutput[overflow:])
+		entry.runningOutput = entry.runningOutput[:length]
+	}
+	entry.runningOutput = append(entry.runningOutput, fragment...)
+}
+
+// runningPreview requires the entry lock. A byte-bounded tail can start
+// inside a rune, so drop the leading continuation bytes before rendering.
+func (entry *backgroundShellEntry) runningPreview() string {
+	preview := entry.runningOutput
+	for len(preview) > 0 && !utf8.RuneStart(preview[0]) {
+		preview = preview[1:]
+	}
+	return normalizeShellOutput(string(preview))
 }
 
 func (entry *backgroundShellEntry) finish(command string, result *ShellResult, err error) {
@@ -89,6 +117,7 @@ func (entry *backgroundShellEntry) finishWithContext(ctx context.Context, comman
 	defer entry.mu.Unlock()
 	entry.status, entry.outcome, entry.output = status, outcome, output
 	entry.outputNotice = notice
+	entry.runningOutput = nil
 	if entry.done != nil {
 		close(entry.done)
 	}
@@ -258,7 +287,7 @@ func BashOutputTool() ToolImpl {
 	impl := ToolImpl{
 		Info: &schema.ToolInfo{
 			Name: "BashOutput",
-			Desc: "Retrieves output from a running or completed background bash shell. Optionally waits for completion without changing the command's execution timeout.",
+			Desc: "Reads the recent output preview of a running background Bash shell, or consumes its output after completion. Optionally waits for completion without changing the command's execution timeout.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"bash_id":    {Type: schema.String, Desc: "The ID of the background shell", Required: true},
 				"filter":     {Type: schema.String, Desc: "Optional regex to filter output lines"},
@@ -341,16 +370,21 @@ func executeBashOutputCtx(ctx context.Context, manager *ShellManager, input stri
 		}
 	}
 	// A wait cannot retain authority over a removed or replaced record.
-	if current, exists := backgroundShells.Load(params.BashID); !exists || current != entry {
+	entry.mu.Lock()
+	if ownedBackgroundShell(manager, params.BashID) != entry {
+		entry.mu.Unlock()
 		return fmt.Sprintf("No background shell found with ID %q", params.BashID), nil
 	}
-	entry.mu.Lock()
 	if err := ctx.Err(); err != nil {
 		entry.mu.Unlock()
 		return "", fmt.Errorf("bash_output: %w", err)
 	}
 	status, outcome, output, outputNotice := entry.status, entry.outcome, entry.output, entry.outputNotice
-	entry.output = ""
+	if status == "running" {
+		output = entry.runningPreview()
+	} else {
+		entry.output = ""
+	}
 	entry.mu.Unlock()
 	if filter != nil && output != "" {
 		var kept []string
@@ -370,7 +404,9 @@ func executeBashOutputCtx(ctx context.Context, manager *ShellManager, input stri
 	}
 	// Terminal facts survive output consumption and user-supplied filters.
 	sb.WriteString(outcome)
-	if output != "" {
+	if status == "running" && output != "" {
+		fmt.Fprintf(&sb, "Recent output preview:\n%s\n", output)
+	} else if output != "" {
 		fmt.Fprintf(&sb, "Output:\n%s\n", output)
 	} else if status == "running" {
 		sb.WriteString("(command still running; completed output is not available yet)\n")
@@ -460,7 +496,7 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 	// Fire and forget — execute in background goroutine.
 	go func() {
 		backgroundCtx := context.WithoutCancel(ctx)
-		result, err := mgr.executeBackground(backgroundCtx, shell, command, timeout)
+		result, err := mgr.executeBackground(backgroundCtx, shell, command, timeout, entry.observeOutput)
 		entry.finishWithContext(backgroundCtx, command, result, err)
 	}()
 
