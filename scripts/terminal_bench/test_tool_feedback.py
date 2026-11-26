@@ -340,6 +340,53 @@ class ToolFeedbackTests(unittest.TestCase):
         records[1] = self.capture("two", {"input": [reply]})
         self.assertEqual(self.collect(records)["wire_text_feedback"]["uniquely_pinned_emissions"], 0)
 
+    def test_bash_exit_marker_survives_a_completed_native_tool_outcome(self):
+        for protocol, key, name in (("responses", "input", "Bash"), ("messages", "messages", "bash")):
+            with self.subTest(protocol=protocol):
+                output = "PRIVATE_SENTINEL\n[exit code: 127]\n"
+                if protocol == "responses":
+                    self.response(tool=name)
+                    self.native_events(tool=name)
+                    empty = [dict(type="response.completed", response=dict(output=[]))]
+                    reply = dict(type="function_call_output", call_id="edit-a", output=output)
+                    options = {}
+                else:
+                    self.dsh_stream(name)
+                    events = self.dsh_events()
+                    events[0]["payload"]["event"]["data"]["name"] = name
+                    self.native.write_text("".join(json.dumps(row) + "\n" for row in events))
+                    empty = [dict(type="message_start", message={}), dict(type="message_stop")]
+                    reply = dict(role="user", content=[dict(type="tool_result", tool_use_id="edit-a",
+                        content=[dict(type="text", text=output)], is_error=False)])
+                    options = dict(native_format="dsh_sdk", native_session_id="root-a")
+                self.stream("two", empty)
+                self.stream("three", empty)
+                records = [self.capture("one", {key: []}), self.capture("two", {key: [reply]}),
+                           self.capture("three", {key: [reply]})]
+                got = collect_tool_feedback(self.root, records, protocol, self.native, **options)
+                self.assertEqual(got["bash_exit_markers"], dict(text_returns=1, nonzero=1, native_completed_nonzero=1))
+                self.assertEqual(got["native_terminal_counts"], {"completed": 1})
+                self.assertNotIn("PRIVATE_SENTINEL", json.dumps(got))
+
+    def test_bash_exit_marker_does_not_infer_success_or_count_unbound_text(self):
+        self.response(tool="Bash", tool_id="bash-a")
+        self.stream("two", [dict(type="response.completed", response=dict(output=[]))])
+        first = self.capture("one", {"input": []})
+        for text in ("[exit code: 0]", "[exit code: 256]", "echo '[exit code: 7]'", "[timeout]"):
+            with self.subTest(text=text):
+                second = self.capture("two", {"input": [
+                    dict(type="function_call_output", call_id="bash-a", output=text),
+                    dict(type="function_call_output", call_id="unbound", output="[exit code: 9]"),
+                ]})
+                got = self.collect([first, second])
+                self.assertEqual(got["bash_exit_markers"], dict(text_returns=1, nonzero=0, native_completed_nonzero=None))
+        second = self.capture("two", {"input": [
+            dict(type="function_call_output", call_id="bash-a", output="[exit code: 7]"),
+        ]})
+        (self.root / "two.request.json").write_text("{}")
+        got = self.collect([first, second])
+        self.assertEqual(got["bash_exit_markers"], dict(text_returns=0, nonzero=0, native_completed_nonzero=None))
+
     def test_parent_outcome_cannot_cover_a_child_edit_or_reused_tool_id(self):
         self.response()
         self.native_events()

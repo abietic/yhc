@@ -634,6 +634,17 @@ def markdown(report):
                      f"{capture_coverage} | "
                      f"{value(edit.get('completed'))}/{value(edit.get('failed'))}/{value(edit.get('emitted'))} "
                      f"({edit.get('coverage', 'unavailable')}) | {value(r.get('edit_rejections'))} |")
+    bash_rows = [(row, (row.get("tool_feedback") or {}).get("bash_exit_markers", {}))
+                 for row in report["samples"]]
+    if any(markers.get("text_returns") is not None for _, markers in bash_rows):
+        lines += ["", "Exit markers are text observations from later verified requests. "
+                  "Shell stdout can contain the same marker. Missing markers give no process exit evidence.", "",
+                  "| Agent | Sample | Bash text returns | Nonzero exit marker | Also native completed |",
+                  "|---|---|---:|---:|---:|"]
+        for row, markers in bash_rows:
+            counts = ["unavailable" if markers.get(key) is None else str(markers[key])
+                      for key in ("text_returns", "nonzero", "native_completed_nonzero")]
+            lines.append(f"| {row['agent']} | {row['sample_id']} | {' | '.join(counts)} |")
     if report.get("reference_trajectories"):
         lines += ["", "Reference counters only; scoring, billing and matched-pair evidence are separate.", "",
                   "| Reference agent | Model | Reported calls | Cache, reported steps | Known thinking tokens | Thinking steps |",

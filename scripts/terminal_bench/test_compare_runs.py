@@ -576,6 +576,35 @@ class ComparisonTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
         self.assertIn("Bash=1, Edit=1", markdown(report))
 
+    def test_comparison_renders_bash_exit_marker_separately_from_native_completion(self):
+        first_response = ("data: " + json.dumps(dict(type="response.completed", response=dict(output=[
+            dict(type="function_call", name="Bash", call_id="bash-a", arguments="PRIVATE_SENTINEL")]))) + "\n\n").encode()
+        later_request = json.dumps(dict(input=[dict(type="function_call_output", call_id="bash-a",
+            output="PRIVATE_SENTINEL\n[exit code: 7]\n")])).encode()
+        root = self.write(records=[
+            dict(call("1"), response_sha256=hashlib.sha256(first_response).hexdigest()),
+            dict(call("2"), upstream_attempted=True, body_sha256=hashlib.sha256(later_request).hexdigest()),
+        ])
+        wire = root / "wire/sample-a"
+        (wire / "1.response.sse").write_bytes(first_response)
+        (wire / "2.request.json").write_bytes(later_request)
+        agent = root / "trials/sample-a/agent"
+        agent.mkdir(parents=True)
+        rows = [
+            dict(kind="tool_start", tool=dict(tool_call_id="bash-a", tool_name="Bash")),
+            dict(kind="tool_terminal", tool=dict(tool_call_id="bash-a", outcome="completed")),
+        ]
+        (agent / "yhc.jsonl").write_text("".join(
+            json.dumps(dict(schema_version=1, type="event", event=item)) + "\n" for item in rows))
+
+        report = build_report([root])
+        self.assertEqual(report["samples"][0]["tool_feedback"]["bash_exit_markers"],
+                         dict(text_returns=1, nonzero=1, native_completed_nonzero=1))
+        rendered = markdown(report)
+        self.assertIn("Bash text returns | Nonzero exit marker | Also native completed", rendered)
+        self.assertIn("| yhc | sample-a | 1 | 1 | 1 |", rendered)
+        self.assertNotIn("PRIVATE_SENTINEL", rendered)
+
     def test_duplicate_call_or_sample_bad_counters_and_conflicting_summary_fail(self):
         cases = [[call("1"), call("1")], [call("1", cached=51), call("2")],
                  [dict(call("1"), input_tokens=True), call("2")],
