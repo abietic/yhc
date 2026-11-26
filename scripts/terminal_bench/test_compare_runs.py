@@ -684,6 +684,29 @@ class ComparisonTests(unittest.TestCase):
         got = build_report([], reference_trajectories=[self.reference(trace)])["reference_trajectories"][0]
         self.assertIsNone(got["model_calls"])
 
+    def test_claude_synthetic_reference_message_is_separate_from_provider_steps(self):
+        trace = reference_trace()
+        trace["agent"]["name"] = "claude-code"
+        placeholder = dict(step_id=4, source="agent", model_name="<synthetic>", llm_call_count=1,
+            message="PRIVATE_SENTINEL", metrics=dict(prompt_tokens=0, cached_tokens=0, completion_tokens=0,
+                extra=dict(output_tokens_details=None, server_tool_use={"web_fetch_requests": 0})))
+        trace["steps"].append(placeholder)
+        report = build_report([], reference_trajectories=[self.reference(trace)])
+        got = report["reference_trajectories"][0]
+        self.assertEqual(got["synthetic_agent_steps"], 1)
+        self.assertEqual((got["model_calls"], got["input_tokens"], got["output_tokens"]), (2, 400, 20))
+        self.assertEqual(got["models"], ["reference-model"])
+        self.assertEqual(got["thinking"], dict(known_tokens=10, reported_steps=2, total_steps=2, complete=True))
+        self.assertIn("1 Claude Code synthetic", markdown(report))
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+
+        for invalid in (dict(completion_tokens=1), dict(prompt_tokens=True),
+                        dict(extra=dict(output_tokens_details={"reasoning_tokens": 1})),
+                        dict(extra=dict(server_tool_use={"web_fetch_requests": 1}))):
+            trace["steps"][-1] = dict(placeholder, metrics=dict(placeholder["metrics"], **invalid))
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                build_report([], reference_trajectories=[self.reference(trace)])
+
     def test_reference_partial_token_coverage_does_not_infer_zero_or_call_count(self):
         trace = reference_trace()
         trace["steps"][1]["llm_call_count"] = 3

@@ -228,7 +228,9 @@ The optional `--reference-trajectory` reads local ATIF v1.7 counters separately
 from native runs. Thinking comes from explicit `thinking_tokens` or
 `reasoning_tokens` in each step's `metrics.extra.output_tokens_details`. A step
 counts once regardless of its tool calls. Copied context and deterministic
-zero-inference steps are excluded. Missing counters retain partial coverage.
+zero-inference steps are excluded. The reader counts Claude Code synthetic
+messages with validated zero usage in `synthetic_agent_steps`, separately from
+reported model calls and tokens. Missing counters retain partial coverage.
 If a step's thinking exceeds its completion tokens, the report counts the step
 in `thinking.out_of_range_steps` and excludes its thinking from the subtotal.
 The report retains independently validated usage and cache counters. Conflicting

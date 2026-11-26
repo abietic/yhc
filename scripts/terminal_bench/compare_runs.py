@@ -420,6 +420,28 @@ def load_run(root):
     return rows
 
 
+def validate_synthetic_reference_step(step, token_fields):
+    """Recognize Claude Code's generated assistant message with zero usage."""
+    metrics = step.get("metrics")
+    if (step.get("llm_call_count") != 1 or not isinstance(metrics, dict)
+            or any(count(metrics.get(field)) for field in token_fields)):
+        raise ValueError("synthetic reference step has unverified usage")
+    extra = metrics.get("extra")
+    if extra is None:
+        return
+    if not isinstance(extra, dict):
+        raise ValueError("invalid synthetic reference metrics extra")
+    for name in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+        if extra.get(name) is not None and count(extra[name]):
+            raise ValueError("synthetic reference step has usage")
+    for name in ("output_tokens_details", "server_tool_use", "cache_creation"):
+        details = extra.get(name)
+        if details is None:
+            continue
+        if not isinstance(details, dict) or any(count(value) for value in details.values() if value is not None):
+            raise ValueError("synthetic reference step has unverified usage")
+
+
 def load_reference_trajectory(path):
     """ATIF v1.7 counters only; messages, reasoning and tool payloads never leave this reader."""
     data, source_sha = read_json(path, with_sha256=True)
@@ -427,6 +449,8 @@ def load_reference_trajectory(path):
             or not isinstance(data.get("steps"), list) or not isinstance(data.get("agent"), dict)):
         raise ValueError("unsupported reference trajectory")
     steps, identifiers = [], set()
+    fields = {"input_tokens": "prompt_tokens", "cached_input_tokens": "cached_tokens", "output_tokens": "completion_tokens"}
+    synthetic_steps = 0
     for step in data["steps"]:
         if not isinstance(step, dict):
             raise ValueError("invalid reference step")
@@ -446,10 +470,13 @@ def load_reference_trajectory(path):
             if step.get("metrics") is not None:
                 raise ValueError("deterministic reference step has usage")
         elif not copied:
-            steps.append(step)
+            if data["agent"].get("name") == "claude-code" and step.get("model_name") == "<synthetic>":
+                validate_synthetic_reference_step(step, fields.values())
+                synthetic_steps += 1
+            else:
+                steps.append(step)
     if not steps:
         raise ValueError("reference contains no model steps")
-    fields = {"input_tokens": "prompt_tokens", "cached_input_tokens": "cached_tokens", "output_tokens": "completion_tokens"}
     values = {key: [] for key in fields}
     thinking, cache_rows = [], []
     out_of_range_thinking_steps = 0
@@ -499,6 +526,7 @@ def load_reference_trajectory(path):
                              total_steps=len(steps), complete=len(thinking) == len(steps))
     if out_of_range_thinking_steps:
         thinking_coverage["out_of_range_steps"] = out_of_range_thinking_steps
+    synthetic_coverage = {"synthetic_agent_steps": synthetic_steps} if synthetic_steps else {}
     return dict(source_sha256=source_sha, evidence_kind="reference_trajectory", reward=None, actual_billed_cny=None,
         agent=atom(data["agent"].get("name")), model=models[0] if len(models) == 1 else "mixed", models=models,
         model_calls=sum(reported_calls) if all(c is not None for c in reported_calls) else None,
@@ -506,7 +534,7 @@ def load_reference_trajectory(path):
         usage_complete=all(len(rows) == len(steps) for rows in values.values()),
         cache_hit_rate_known_including_first=sum(c for _, c in cache_rows) / sum(p for p, _ in cache_rows)
             if sum(p for p, _ in cache_rows) else None,
-        cache_reported_steps=len(cache_rows), thinking=thinking_coverage)
+        cache_reported_steps=len(cache_rows), thinking=thinking_coverage, **synthetic_coverage)
 
 
 def build_report(roots, reference_trajectories=()):
@@ -619,6 +647,9 @@ def markdown(report):
                          f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
                          f"{thinking['known_tokens'] if thinking['known_tokens'] is not None else 'unavailable'} | "
                          f"{coverage} |")
+        synthetic = sum(r.get("synthetic_agent_steps", 0) for r in report["reference_trajectories"])
+        if synthetic:
+            lines += ["", f"Counted {synthetic} Claude Code synthetic agent step(s) separately from reported model usage."]
     return "\n".join(lines) + "\n"
 
 
