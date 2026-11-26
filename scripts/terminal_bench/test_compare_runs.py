@@ -358,6 +358,26 @@ class ComparisonTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_run(root)
 
+    def test_cohort_scoreboard_cannot_replace_missing_canonical_closeout(self):
+        cases = (
+            ("completed", dict(factory_calls=2, validated_zero_requests={})),
+            ("budget_paused", dict(factory_calls=2, validated_zero_requests={})),
+            ("zero_preflight_passed", dict(factory_calls=0, validated_zero_requests={"sample-a": 1},
+                                          zero_mode=True, real_provider_calls=0)),
+            ("completed", dict(finalization_checks_passed=True)),
+        )
+        for index, (status, markers) in enumerate(cases):
+            with self.subTest(status=status, markers=markers):
+                root = self.write(name=str(index), records=[call("1"), call("2")])
+                data = dict(status=status, samples=[row()], **markers)
+                (root / "scoreboard.json").write_text(json.dumps(data))
+                with self.assertRaisesRegex(ValueError, "canonical dispatch closeout is missing"):
+                    build_report([root])
+
+                data["finalization_checks_passed"] = True
+                (root / "dispatch-closeout.json").write_text(json.dumps(data))
+                self.assertEqual(build_report([root])["samples"][0]["reward"], 1)
+
     def test_unstarted_plan_rejects_execution_evidence_without_scoreboard(self):
         for index, marker in enumerate(("dispatch-claim.json", "dispatch-progress.json", "cohort/ledger.json",
                                         "wire/sample/ledger.json", "trials/sample/agent/native-result.json")):
