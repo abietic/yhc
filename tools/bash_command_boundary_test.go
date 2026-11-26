@@ -84,6 +84,73 @@ func TestShellManagerCompleteCommandBoundary(t *testing.T) {
 	}
 }
 
+func TestShellManagerCommandBoundaryWithOutputOverrides(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   string
+		command string
+		stdout  string
+	}{
+		{
+			name:    "echo alias from a previous command",
+			setup:   "shopt -s expand_aliases\nalias echo='builtin printf alias:%s'",
+			command: "echo diagnostic; (exit 9)",
+			stdout:  "alias:diagnostic",
+		},
+		{
+			name:    "printf function defined in the same command",
+			command: "printf() { builtin printf 'function:%s' \"$1\"; }\nprintf diagnostic; (exit 9)",
+			stdout:  "function:diagnostic",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager := NewShellManager()
+			t.Cleanup(func() { _ = manager.KillAll() })
+			if test.setup != "" {
+				assertShellCommandCompletes(t, manager, test.setup)
+			}
+			result, err := manager.Execute(context.Background(), "", test.command, 2*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.TimedOut || result.Canceled || result.ExitCode != 9 || result.Stdout != test.stdout {
+				t.Fatalf("command feedback = %+v, want %q and exit code 9", result, test.stdout)
+			}
+			assertShellCommandCompletes(t, manager, "builtin printf 'next command\\n'")
+		})
+	}
+}
+
+func TestShellManagerInitialCWDWithStartupFunction(t *testing.T) {
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	startup := filepath.Join(cwd, "startup.sh")
+	if err := os.WriteFile(startup, []byte("pwd() { builtin printf 'custom-pwd\\n'; }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BASH_ENV", filepath.ToSlash(startup))
+	manager := NewShellManager()
+	t.Cleanup(func() { _ = manager.KillAll() })
+	shell, err := manager.GetOrCreateAt("", cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialCWD := shell.cwd
+	result, err := manager.Execute(context.Background(), "", "pwd", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TimedOut || result.ExitCode != 0 || result.Stdout != "custom-pwd" {
+		t.Fatalf("explicit user pwd did not use the configured function: %+v", result)
+	}
+	if result.CWD == "" || initialCWD != result.CWD {
+		t.Fatalf("initial shell directory = %q, command terminal reported %q", initialCWD, result.CWD)
+	}
+}
+
 func TestShellManagerTerminatedCommandRetiresShell(t *testing.T) {
 	for _, test := range []struct {
 		name, command string
