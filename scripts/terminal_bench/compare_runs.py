@@ -94,9 +94,17 @@ def reward(value):
 
 def call_detail(index, record):
     diagnostics = record.get("stream_diagnostics") or {}
+    # Failed attempts attach diagnostics to the row. Successful attempts
+    # retain them inside the forwarding result.
+    result = record.get("result")
+    if not diagnostics and isinstance(result, dict) and result.get("call_id") == record["id"]:
+        diagnostics = result.get("stream_diagnostics") or {}
     timings = {key: seconds(diagnostics.get(key)) for key in (
         "connected_seconds", "request_attempt_seconds", "request_sent_seconds", "headers_seconds",
         "first_byte_seconds", "terminal_seconds", "closed_seconds", "elapsed_seconds")}
+    elapsed = seconds(record.get("elapsed_seconds"))
+    if elapsed is None:
+        elapsed = timings["elapsed_seconds"]
     error = record.get("error")
     timed_out = error in ("TimeoutError", "socket_timeout", "stream_deadline")
     if error == "upstream_attempt_failed":
@@ -111,7 +119,7 @@ def call_detail(index, record):
     category = ("timeout" if timed_out else
                 "usage_missing" if error in ("usage_missing", "stream_ended_without_complete_usage") else
                 "other" if error else None)
-    return dict(call_index=index, state=record["state"], elapsed_seconds=seconds(record.get("elapsed_seconds")),
+    return dict(call_index=index, state=record["state"], elapsed_seconds=elapsed,
                 transport_timings=timings, timing_evidence_available=bool(diagnostics),
                 error_category=category, authority="diagnostic_only")
 
@@ -191,14 +199,15 @@ def _usage(summary, ledger):
         all_reported = len(reported) == len(known)
         if thinking is not None and (not all_reported or thinking != sum(reported)):
             raise ValueError("summary and per-call thinking disagree")
-        timed = [seconds(r.get("elapsed_seconds")) for r in records if r.get("elapsed_seconds") is not None]
+        details = [call_detail(i, r) for i, r in enumerate(records)]
+        timed = [detail["elapsed_seconds"] for detail in details if detail["elapsed_seconds"] is not None]
         result.update(call_evidence="per_call_checked", protocol=atom(ledger["protocol"]),
             retained_unknown_cny=str(sum((receipt_amount(r, "reserved_cny", "liability")
                                          for r in records if r["state"] == "unknown"), Decimal(0))),
             thinking=dict(known_tokens=sum(reported) if reported else None, reported_calls=len(reported),
                           total_calls=total, complete=complete and len(reported) == total),
             known_peak_estimate_cny=str(cost), sum_request_elapsed_seconds=sum(timed) if timed else None,
-            call_details=[call_detail(i, r) for i, r in enumerate(records)],
+            call_details=details,
             timed_calls=len(timed), routes=(sorted({(atom(r["requested_model"]), atom(r["effort"])) for r in records})
                                            if all(r.get("requested_model") and r.get("effort") for r in records) else []))
         idle_receipts = [amount(r["known_idle_estimate_cny"]) for r in known
