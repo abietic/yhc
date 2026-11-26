@@ -140,6 +140,77 @@ func TestBackgroundBashRetainsOutputAndFailure(t *testing.T) {
 	}
 }
 
+func TestBackgroundToolsReadOutputBeforeCommandExits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture requires Bash")
+	}
+	const signal = "fixture-ready"
+	const command = `sleep 0.6
+printf 'fixture-ready\n'
+while [ ! -f release ]; do sleep 0.01; done
+(exit 7)`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "check.sh"), []byte(command), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewShellManager()
+	t.Cleanup(func() { _ = manager.KillAll() })
+	ctx := WithShellManager(WithExecutionCWD(t.Context(), dir), manager)
+	observed := make(chan struct{}, 1)
+	ctx = WithProgressFn(ctx, func(progress ToolProgressEvent) {
+		if progress.ToolName == "Bash" && strings.Contains(progress.Content, signal) {
+			select {
+			case observed <- struct{}{}:
+			default:
+			}
+		}
+	})
+	launch, err := BashTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+		"command": "bash check.sh", "run_in_background": true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, tail, found := strings.Cut(launch, "Shell ID: ")
+	id, _, _ := strings.Cut(tail, "\n")
+	if !found || id == "" {
+		t.Fatal("background command did not supply a handle")
+	}
+	select {
+	case <-observed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("background reader did not release the complete short readiness line")
+	}
+	monitor, err := MonitorTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"process_id": id, "tail_lines": 1}))
+	if err != nil || !strings.Contains(monitor, "Status: running") || !strings.Contains(monitor, signal) {
+		t.Fatalf("running Monitor missed the readiness line: %q, %v", monitor, err)
+	}
+	read := func(params map[string]any) string {
+		t.Helper()
+		params["bash_id"] = id
+		output, err := BashOutputTool().ExecuteCtx(ctx, fileToolInput(t, params))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return output
+	}
+	peek := read(map[string]any{"wait": true, "timeout_ms": 10, "filter": "fixture-ready"})
+	if !strings.Contains(peek, "Status: running") || !strings.Contains(peek, "wait timed out") || !strings.Contains(peek, signal) {
+		t.Fatalf("BashOutput wait expiry missed the live preview: %q", peek)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := read(map[string]any{"wait": true})
+	if !strings.Contains(result, "Status: failed") || !strings.Contains(result, "[exit code: 7]") || !strings.Contains(result, signal) {
+		t.Fatalf("live query consumed the terminal result: %q", result)
+	}
+	again := read(map[string]any{})
+	if !strings.Contains(again, "[exit code: 7]") || strings.Contains(again, signal) {
+		t.Fatalf("terminal result did not retain its existing one-read behavior: %q", again)
+	}
+}
+
 func TestMonitorReadsOwnedBashWithoutConsumingOutput(t *testing.T) {
 	manager, id := backgroundFeedbackFixture(t, "printf 'first-monitor-line\\nlast-monitor-line\\n'; (exit 7)")
 	other := NewShellManager()
@@ -322,7 +393,7 @@ func TestCanceledBackgroundLaunchDoesNotReplaceShell(t *testing.T) {
 	if err := manager.KillAll(); err != nil {
 		t.Fatal(err)
 	}
-	result, err := manager.executeBackground(t.Context(), shell, ": > started", time.Second)
+	result, err := manager.executeBackground(t.Context(), shell, ": > started", time.Second, nil)
 	if err != nil || result == nil || !result.Canceled || len(manager.ListShells()) != 0 {
 		t.Fatalf("detached execution did not stay canceled: %+v, %v", result, err)
 	}

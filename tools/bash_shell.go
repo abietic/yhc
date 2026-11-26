@@ -704,21 +704,21 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 		shell.mu.Unlock()
 	}
 	defer shell.mu.Unlock()
-	return m.executeLocked(ctx, shell, command, timeout)
+	return m.executeLocked(ctx, shell, command, timeout, nil)
 }
 
 // executeBackground runs only on the shell allocated for this background
 // handle. A stopped handle must never create a replacement generation.
-func (m *ShellManager) executeBackground(ctx context.Context, shell *PersistentShell, command string, timeout time.Duration) (*ShellResult, error) {
+func (m *ShellManager) executeBackground(ctx context.Context, shell *PersistentShell, command string, timeout time.Duration, observeOutput func(string)) (*ShellResult, error) {
 	shell.mu.Lock()
 	defer shell.mu.Unlock()
 	if shell.isStopping() || !m.isCurrent(shell.shellID, shell) {
 		return &ShellResult{Canceled: true, CWD: shell.cwd}, nil
 	}
-	return m.executeLocked(ctx, shell, command, timeout)
+	return m.executeLocked(ctx, shell, command, timeout, observeOutput)
 }
 
-func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell, command string, timeout time.Duration) (*ShellResult, error) {
+func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell, command string, timeout time.Duration, observeOutput func(string)) (*ShellResult, error) {
 	shellID := shell.shellID
 	if shell.binding != nil {
 		if shell.binding.Digest() != m.GuestBindingDigest() {
@@ -822,6 +822,9 @@ func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell
 			if fragment == "" {
 				return
 			}
+			if observeOutput != nil {
+				observeOutput(fragment)
+			}
 			lineCount += strings.Count(fragment, "\n")
 			partialLine = !strings.HasSuffix(fragment, "\n")
 			progressLine := strings.TrimRight(fragment, "\n\r")
@@ -870,6 +873,11 @@ func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell
 			}
 
 			keep := len(cwdMarker) - 1
+			// The marker has no newline, so a complete line cannot end in
+			// a partial marker. Release short readiness lines immediately.
+			if strings.HasSuffix(combined, "\n") {
+				keep = 0
+			}
 			safe := len(combined) - keep
 			if safe > 0 {
 				prefix := combined[:safe]
