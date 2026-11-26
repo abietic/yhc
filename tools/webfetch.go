@@ -67,6 +67,7 @@ func WebFetchTool() ToolImpl {
 				"url":          {Type: schema.String, Desc: "The URL to fetch content from", Required: true},
 				"prompt":       {Type: schema.String, Desc: "The prompt to run on the fetched content", Required: true},
 				"offset_bytes": {Type: schema.Integer, Desc: "Zero-based byte offset into the extracted page text. Defaults to 0. Continuing refetches the URL; use the offset returned by the previous call."},
+				"limit_bytes":  {Type: schema.Integer, Desc: "Maximum bytes of extracted text to return when raw_mode is true, from 4 to 102400. Use for small excerpts. Defaults to 102400."},
 				"raw_mode":     {Type: schema.Boolean, Desc: "Set to true to return raw content without AI processing. Defaults to false (AI processing mode)"},
 				"pages":        {Type: schema.String, Desc: "Inclusive 1-indexed PDF page range such as 1-5 or 3; maximum 20 pages per request"},
 			}),
@@ -86,11 +87,12 @@ func executeWebFetch(input string) (string, error) {
 
 func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 	var params struct {
-		URI     string `json:"url"`
-		Prompt  string `json:"prompt"`
-		RawMode *bool  `json:"raw_mode"`
-		Offset  int    `json:"offset_bytes"`
-		Pages   string `json:"pages"`
+		URI        string `json:"url"`
+		Prompt     string `json:"prompt"`
+		RawMode    *bool  `json:"raw_mode"`
+		Offset     int    `json:"offset_bytes"`
+		LimitBytes *int   `json:"limit_bytes"`
+		Pages      string `json:"pages"`
 	}
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return "", fmt.Errorf("webfetch: invalid params: %w", err)
@@ -112,6 +114,16 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 	}
 
 	rawMode := params.RawMode != nil && *params.RawMode
+	rawLimit := webFetchMaxResponseBytes
+	if params.LimitBytes != nil {
+		if !rawMode {
+			return "", fmt.Errorf("webfetch: limit_bytes requires raw_mode=true")
+		}
+		if *params.LimitBytes < utf8.UTFMax || *params.LimitBytes > webFetchMaxResponseBytes {
+			return "", fmt.Errorf("webfetch: limit_bytes must be between %d and %d", utf8.UTFMax, webFetchMaxResponseBytes)
+		}
+		rawLimit = *params.LimitBytes
+	}
 
 	// Validate and normalize the URL.
 	fetchURL, err := normalizeURL(params.URI)
@@ -148,7 +160,7 @@ func executeWebFetchCtx(ctx context.Context, input string) (string, error) {
 	if params.Offset > 0 && params.Offset == len(text) {
 		return "", fmt.Errorf("webfetch: offset_bytes is at the end of the page")
 	}
-	page, next := webFetchWindow(text, params.Offset, webFetchMaxResponseBytes)
+	page, next := webFetchWindow(text, params.Offset, rawLimit)
 	if rawMode {
 		return next + page, nil
 	}
