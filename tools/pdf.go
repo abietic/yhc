@@ -272,8 +272,8 @@ func extractPDFText(ctx context.Context, path string, selected pdfPageRange, run
 	if len(stdout) > pdfMaxExtractedTextBytes {
 		return "", &pdfCommandError{kind: pdfFailureTooLarge, message: fmt.Sprintf("extracted PDF text exceeds %d KB; request a smaller page range", pdfMaxExtractedTextBytes/1024)}
 	}
-	text := strings.TrimSpace(strings.ReplaceAll(string(stdout), "\x00", ""))
-	if text == "" {
+	text := strings.ReplaceAll(string(stdout), "\x00", "")
+	if strings.TrimSpace(text) == "" {
 		return "", errPDFNoText
 	}
 	return text, nil
@@ -288,18 +288,16 @@ func formatPDFText(displayPath string, selected pdfPageRange, pageCount int, tex
 	b.WriteString("\n")
 
 	parts := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\f")
-	nonEmpty := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			nonEmpty = append(nonEmpty, trimmed)
-		}
-	}
-	if len(nonEmpty) <= 1 {
+	if len(parts) == 1 || selected.First == selected.Last {
 		fmt.Fprintf(&b, "\n--- Pages %s ---\n%s\n", formatPDFRange(selected), strings.TrimSpace(text))
 		return b.String()
 	}
-	for i, part := range nonEmpty {
-		fmt.Fprintf(&b, "\n--- Page %d ---\n%s\n", selected.First+i, part)
+	// Poppler emits a form feed for blank pages too. Keep those positions
+	// even though blank page text is omitted.
+	for i, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			fmt.Fprintf(&b, "\n--- Page %d ---\n%s\n", selected.First+i, trimmed)
+		}
 	}
 	return b.String()
 }
