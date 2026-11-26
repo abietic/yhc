@@ -88,10 +88,15 @@ func (t *repeatedToolCallTicket) release(overridden bool) {
 }
 
 func (t *repeatedToolCallTicket) releaseAfterPredecessor() {
-	go func() {
-		<-t.prev
+	select {
+	case <-t.prev:
 		t.release(false)
-	}()
+	default:
+		go func() {
+			<-t.prev
+			t.release(false)
+		}()
+	}
 }
 
 func (g *repeatedToolCallGuard) reset() {
