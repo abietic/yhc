@@ -134,6 +134,31 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(got["call_details"][2]["error_category"], "timeout")
         self.assertIsNone(got["call_details"][2]["transport_timings"]["request_sent_seconds"])
 
+    def test_successful_request_timing_is_read_from_forwarding_receipt(self):
+        first = call("1")
+        del first["elapsed_seconds"]
+        first.update(stream_diagnostics=None, result=dict(call_id="1", stream_diagnostics={
+            "first_byte_seconds": 0.25, "terminal_seconds": 1.5, "elapsed_seconds": 1.75,
+        }))
+        second = dict(call("2"), elapsed_seconds=0)
+        sample, = load_run(self.write(records=[first, second]))
+        self.assertEqual(sample["timed_calls"], 2)
+        self.assertEqual(sample["sum_request_elapsed_seconds"], 1.75)
+        self.assertTrue(sample["call_details"][0]["timing_evidence_available"])
+        self.assertEqual(sample["call_details"][0]["transport_timings"]["first_byte_seconds"], 0.25)
+        self.assertEqual(sample["call_details"][0]["elapsed_seconds"], 1.75)
+        self.assertEqual(sample["call_details"][1]["elapsed_seconds"], 0)
+        self.assertIsNone(sample["tool_seconds"])
+
+    def test_nested_timing_requires_the_same_call_identity(self):
+        first = call("1")
+        del first["elapsed_seconds"]
+        first["result"] = dict(call_id="foreign", stream_diagnostics={"elapsed_seconds": 2.5})
+        sample, = load_run(self.write(records=[first, call("2")]))
+        self.assertEqual(sample["timed_calls"], 1)
+        self.assertEqual(sample["sum_request_elapsed_seconds"], 1)
+        self.assertFalse(sample["call_details"][0]["timing_evidence_available"])
+
     def test_report_classifies_wrapped_transport_timeouts_from_first_cause(self):
         entry = row()
         entry["normal_completion"] = False
