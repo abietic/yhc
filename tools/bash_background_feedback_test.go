@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +137,139 @@ func TestBackgroundBashRetainsOutputAndFailure(t *testing.T) {
 	}
 	if strings.Contains(next, "stdout-proof") {
 		t.Fatal("a repeated read replayed already consumed output")
+	}
+}
+
+func TestCancelAnActiveBackgroundBash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture checks Unix process group cancellation")
+	}
+	for _, mode := range []string{"KillShell", "KillAll"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			manager := NewShellManager()
+			release := filepath.Join(dir, "release")
+			t.Cleanup(func() {
+				_ = os.WriteFile(release, nil, 0o600)
+				_ = manager.KillAll()
+			})
+			ctx := WithExecutionCWD(WithShellManager(t.Context(), manager), dir)
+			started, err := BashTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+				"command":           "(end=$((SECONDS+8)); : > active; while [ ! -f release ] && [ \"$SECONDS\" -lt \"$end\" ]; do sleep 0.02; done) & printf '%s' \"$!\" > child.pid; wait",
+				"timeout":           5000,
+				"run_in_background": true,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, tail, ok := strings.Cut(started, "Shell ID: ")
+			if !ok {
+				t.Fatal("background start omitted its handle")
+			}
+			id, _, _ := strings.Cut(tail, "\n")
+			shell, err := manager.GetOrCreate(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value, ok := backgroundShells.Load(id)
+			if !ok {
+				t.Fatal("missing background result record")
+			}
+			entry := value.(*backgroundShellEntry)
+			ready := filepath.Join(dir, "active")
+			deadline := time.NewTimer(2 * time.Second)
+			defer deadline.Stop()
+			poll := time.NewTicker(5 * time.Millisecond)
+			defer poll.Stop()
+			var childPID int
+			for {
+				if _, err := os.Stat(ready); err == nil {
+					rawPID, _ := os.ReadFile(filepath.Join(dir, "child.pid"))
+					childPID, _ = strconv.Atoi(string(rawPID))
+					if childPID > 1 {
+						break
+					}
+				}
+				select {
+				case <-poll.C:
+				case <-deadline.C:
+					t.Fatal("child process never reached its gate")
+				}
+			}
+			input := fileToolInput(t, map[string]any{"shell_id": id})
+			done := make(chan error, 1)
+			go func() {
+				if mode == "KillAll" {
+					done <- manager.KillAll()
+					return
+				}
+				result, err := KillShellTool().ExecuteCtx(ctx, input)
+				if err == nil && !strings.Contains(result, "terminated successfully") {
+					err = errors.New(result)
+				}
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(2 * time.Second):
+				_ = os.WriteFile(release, nil, 0o600)
+				<-done
+				t.Fatal("cancellation waited for the active command")
+			}
+			select {
+			case <-entry.done:
+				if entry.status != "canceled" || !strings.Contains(entry.outcome, "[canceled]") {
+					t.Fatalf("unexpected interrupted outcome: %s %s", entry.status, entry.outcome)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("canceled command did not publish an outcome")
+			}
+			if shell.cmd.ProcessState == nil || len(manager.ListShells()) != 0 {
+				t.Fatal("cancellation did not reap the shell generation")
+			}
+			deadline.Reset(2 * time.Second)
+			for {
+				// An orphan can remain a zombie until init reaps it. It can
+				// no longer execute shell code once the process exits.
+				state, err := exec.Command("ps", "-p", strconv.Itoa(childPID), "-o", "stat=").Output()
+				var exitErr *exec.ExitError
+				if (errors.As(err, &exitErr) && exitErr.ExitCode() == 1) ||
+					(err == nil && strings.HasPrefix(strings.TrimSpace(string(state)), "Z")) {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-poll.C:
+				case <-deadline.C:
+					t.Fatal("background child stayed alive after cancellation")
+				}
+			}
+		})
+	}
+}
+
+func TestCanceledBackgroundLaunchDoesNotReplaceShell(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewShellManager()
+	t.Cleanup(func() { _ = manager.KillAll() })
+	shell, err := manager.GetOrCreateAt("background-fixture", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.KillAll(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := manager.executeBackground(t.Context(), shell, ": > started", time.Second)
+	if err != nil || result == nil || !result.Canceled || len(manager.ListShells()) != 0 {
+		t.Fatalf("detached execution did not stay canceled: %+v, %v", result, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "started")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("canceled background command reached the workspace")
 	}
 }
 

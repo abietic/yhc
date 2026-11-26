@@ -432,6 +432,58 @@ func TestShellManagerTimeoutRetiresShellAndRecovers(t *testing.T) {
 	}
 }
 
+func TestShellManagerKillAllowsFreshForegroundGeneration(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewShellManager()
+	release := filepath.Join(dir, "release")
+	t.Cleanup(func() {
+		_ = os.WriteFile(release, nil, 0o600)
+		_ = manager.KillAll()
+	})
+	original, err := manager.GetOrCreateAt("foreground", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	outcome := make(chan *ShellResult, 1)
+	go func() {
+		result, _ := manager.ExecuteAt(ctx, "foreground", dir,
+			": > active; while [ ! -f release ]; do sleep 0.02; done", 5*time.Second)
+		outcome <- result
+	}()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "active")); err == nil {
+			break
+		}
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("foreground command did not start")
+		}
+	}
+	// Both the command context and the manager can request retirement.
+	killed := make(chan error, 1)
+	go func() { killed <- manager.Kill("foreground") }()
+	cancel()
+	<-killed // If context retirement wins, the original ID is already gone.
+	if result := <-outcome; result == nil || !result.Canceled || original.cmd.ProcessState == nil {
+		t.Fatalf("foreground shell did not retire on cancellation: %+v", result)
+	}
+	next, err := manager.ExecuteAt(t.Context(), "foreground", dir, "printf recovered", time.Second)
+	if err != nil || next == nil || next.Stdout != "recovered" {
+		t.Fatalf("foreground shell did not recover: %+v, %v", next, err)
+	}
+	replacement, err := manager.GetOrCreateAt("foreground", dir)
+	if err != nil || replacement == original {
+		t.Fatal("canceled foreground generation was reused")
+	}
+}
+
 func TestShellManagerContextCancellationRetiresShell(t *testing.T) {
 	mgr := NewShellManager()
 	t.Cleanup(func() { _ = mgr.KillAll() })

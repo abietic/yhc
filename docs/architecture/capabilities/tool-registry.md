@@ -357,9 +357,10 @@ with an explicit running/completed/failed/timeout/cancelled state. While a
 command is running, this path does not claim to stream its stdout. Each completed
 preview is consumed once; the terminal state remains visible on later reads and
 survives an optional regex filter. Invalid filters do not consume output.
-Records belong to one process-local ShellManager identity, and `KillAll`
-discards that manager's registered records. This does not establish cold recovery
-of background processes. Foreground command exit markers retain their existing
+Records belong to one process-local ShellManager identity. `KillShell` and
+`KillAll` terminate the owned shell generations and discard their background
+records. Canceling a background launch prevents it from starting a replacement
+shell. Foreground command exit markers retain their existing
 tool-return semantics; ordinary nonzero exit does not become an engine exception.
 
 A positive Bash `timeout` sets the execution limit in milliseconds in either
