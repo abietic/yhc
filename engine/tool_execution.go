@@ -46,6 +46,15 @@ func executeToolCall(
 	if toolCall == nil {
 		return nil
 	}
+	ticket := repeatedToolTicket(toolCall)
+	ticketReleased := false
+	defer func() {
+		if ticket != nil && !ticketReleased {
+			// A rejected call still owns its place in model order. Let its
+			// successors through once the preceding admission has settled.
+			ticket.releaseAfterPredecessor()
+		}
+	}()
 	if yieldFn != nil {
 		startEvent, err := buildCanonicalToolStartProjection(toolCall)
 		if err != nil {
@@ -71,16 +80,9 @@ func executeToolCall(
 			),
 		}
 	}
-	ticket := repeatedToolTicket(toolCall)
 	if ticket == nil && params.repeatedToolGuard != nil {
 		ticket = params.repeatedToolGuard.reserve()
 	}
-	ticketReleased := false
-	defer func() {
-		if ticket != nil && !ticketReleased {
-			ticket.release(false)
-		}
-	}()
 	input, parseErr := parseToolInput(toolCall.Function.Arguments)
 	if parseErr != nil {
 		return &toolExecutionOutcome{

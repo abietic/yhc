@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/tools"
@@ -209,6 +211,87 @@ func TestRepeatedToolBatchAdmissionUsesModelOrder(t *testing.T) {
 	}
 	if got := <-promptedID; got != "three" {
 		t.Fatalf("prompted tool use ID = %q, want third model call", got)
+	}
+}
+
+func TestRepeatedToolRoundContinuesAfterUnavailableTool(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		var executions atomic.Int32
+		result, err := runCanonicalToolRound(ctx, canonicalToolRoundInput{
+			toolCalls: []*schema.ToolCall{
+				repeatedToolTestCall("unavailable", "EnterWorktree", `{}`),
+				repeatedToolTestCall("valid", "Count", `{"count":5}`),
+			},
+			params: QueryParams{
+				ToolRegistry:      newRepeatedToolTestRegistry(),
+				repeatedToolGuard: newRepeatedToolCallGuard(),
+				ToolExecutor: func(context.Context, string, string) (string, error) {
+					executions.Add(1)
+					return "count completed", nil
+				},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.toolResults) != 2 {
+			t.Fatalf("tool results = %d, want 2", len(result.toolResults))
+		}
+		denial, successor := result.toolResults[0], result.toolResults[1]
+		if denial.ToolCallID != "unavailable" || denial.Extra["is_error"] != true ||
+			!strings.Contains(denial.Content, "Tool unavailable") {
+			t.Fatalf("unavailable tool result = %#v", denial)
+		}
+		if successor.ToolCallID != "valid" || successor.Content != "count completed" || executions.Load() != 1 {
+			t.Fatalf("successor result = %#v, executions = %d, context = %v", successor, executions.Load(), ctx.Err())
+		}
+	})
+}
+
+func TestRepeatedToolEarlyRejectionPreservesAdmissionOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name, tool, arguments string
+	}{
+		{"unavailable", "ExitWorktree", `{}`},
+		{"invalid JSON", "Count", `{`},
+		{"invalid input", "Count", `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				guard := newRepeatedToolCallGuard()
+				predecessor := guard.reserve()
+				call := reserveRepeatedToolCall(repeatedToolTestCall("invalid", tc.tool, tc.arguments), guard)
+				ticket := repeatedToolTicket(call)
+				defer predecessor.release(false)
+				defer ticket.release(false)
+				result := executeToolCall(context.Background(), QueryParams{
+					ToolRegistry:      newRepeatedToolTestRegistry(),
+					repeatedToolGuard: guard,
+					ToolExecutor: func(context.Context, string, string) (string, error) {
+						t.Error("rejected tool executed")
+						return "", nil
+					},
+				}, nil, nil, call, nil)
+				if result == nil || result.Result == nil || result.Result.Extra["is_error"] != true {
+					t.Fatalf("rejected tool outcome = %#v", result)
+				}
+				synctest.Wait()
+				select {
+				case <-ticket.done:
+					t.Fatal("rejected tool released before its unresolved predecessor")
+				default:
+				}
+				predecessor.release(false)
+				synctest.Wait()
+				select {
+				case <-ticket.done:
+				default:
+					t.Fatal("rejected tool still blocks its successor after predecessor release")
+				}
+			})
+		})
 	}
 }
 
