@@ -310,6 +310,38 @@ def _native(path, *, native_format="yhc_events", native_session_id=None):
     return "available" if valid else "partial", starts, terminals
 
 
+def _has_result_text(content):
+    if isinstance(content, str):
+        return bool(content)
+    return isinstance(content, list) and any(
+        isinstance(block, dict) and block.get("type") in ("text", "input_text", "output_text")
+        and isinstance(block.get("text"), str) and block["text"] for block in content)
+
+
+def _request_text_feedback(path, pin, protocol):
+    """Read only result identities from a hash-bound capture."""
+    lines, digest = _lines(path, with_sha256=True)
+    if lines is None or digest != pin:
+        raise ValueError("unverified tool feedback request")
+    body = json.loads("\n".join(lines), object_pairs_hook=_unique)
+    key = "input" if protocol == "responses" else "messages"
+    if not isinstance(body, dict) or key not in body:
+        raise ValueError("invalid tool feedback request")
+    history = body[key]
+    if protocol == "responses" and isinstance(history, str):
+        return set()
+    if not isinstance(history, list):
+        raise ValueError("invalid tool feedback request history")
+    if protocol == "responses":
+        return {_tool_id(item.get("call_id")) for item in history
+                if isinstance(item, dict) and item.get("type") == "function_call_output"
+                and _has_result_text(item.get("output"))}
+    return {_tool_id(item.get("tool_use_id")) for message in history
+            if isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), list)
+            for item in message["content"] if isinstance(item, dict) and item.get("type") == "tool_result"
+            and _has_result_text(item.get("content"))}
+
+
 def collect_tool_feedback(wire, records, protocol, native_path, *, native_format="yhc_events", native_session_id=None):
     """Count emitted calls separately from native terminal receipts and side effects.
 
@@ -319,9 +351,12 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
     rejections. A generic failed outcome cannot identify a rejection category.
     Current receipts bind response bytes. Older receipts without that field
     retain structural coverage, reported separately from verified responses.
+    Later verified requests can show that result text was available even when
+    a native terminal is absent. These observations are a lower bound.
     """
     tools, complete, reasoning_only_truncations = [], 0, 0
     verified, legacy_unpinned, rejected = 0, 0, 0
+    pinned_emissions, later_text_returns, verified_requests = set(), set(), 0
     supported = protocol in ("responses", "messages")
     for record in records if supported else []:
         identifier = record["id"]
@@ -329,6 +364,14 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
             raise ValueError("unsafe wire call identifier")
         if record["state"] != "known":
             continue
+        if record.get("upstream_attempted") is True and record.get("body_sha256"):
+            try:
+                feedback_ids = _request_text_feedback(Path(wire) / (identifier + ".request.json"), record["body_sha256"], protocol)
+            except (OSError, ValueError):
+                pass
+            else:
+                verified_requests += 1
+                later_text_returns.update(feedback_ids & pinned_emissions)
         path = Path(wire) / (identifier + ".response.sse")
         try:
             lines, actual_sha256 = _lines(path, with_sha256=True)
@@ -349,6 +392,7 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
         reasoning_only_truncations += int(reasoning_only_limit)
         if pinned:
             verified += 1
+            pinned_emissions.update(response)
         else:
             legacy_unpinned += 1
         tools.extend(response.items())
@@ -356,6 +400,9 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
                  "partial" if complete else "unavailable")
     native, starts, terminals = _native(native_path, native_format=native_format, native_session_id=native_session_id)
     ids = Counter(identifier for identifier, _ in tools)
+    unique_pinned = {identifier for identifier in pinned_emissions if ids[identifier] == 1}
+    confirmed = later_text_returns & unique_pinned
+    text_available = verified_requests > 0 and bool(unique_pinned)
 
     def matched(identifier, kind):
         return (ids[identifier] == 1 and starts.get(identifier) == [kind]
@@ -372,6 +419,12 @@ def collect_tool_feedback(wire, records, protocol, native_path, *, native_format
                 verified_reasoning_only_truncations=reasoning_only_truncations,
                 wire_response_integrity=dict(verified_responses=verified, legacy_unpinned_responses=legacy_unpinned,
                                              rejected_responses=rejected),
+                wire_text_feedback=dict(verified_requests=verified_requests, uniquely_pinned_emissions=len(unique_pinned),
+                                        observed_returns=len(confirmed) if text_available else None,
+                                        native_unmatched_with_return=(
+                                            sum(identifier in confirmed and not matched(identifier, kind)
+                                                for identifier, kind in tools)
+                                            if text_available and native != "unavailable" else None)),
                 emitted_counts=dict(Counter(_kind(kind) for _, kind in tools)) if available else None,
                 native_inventory=native,
                 native_start_counts=(dict(Counter(_kind(kind) for values in starts.values() for kind in values))

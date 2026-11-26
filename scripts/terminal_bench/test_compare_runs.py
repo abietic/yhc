@@ -431,13 +431,20 @@ class ComparisonTests(unittest.TestCase):
         wire = root / "wire/dsh-sample"
         ledger = json.loads((wire / "ledger.json").read_text())
         ledger["protocol"] = "messages"
-        (wire / "ledger.json").write_text(json.dumps(ledger))
         frames = [dict(type="message_start", message={}),
                   dict(type="content_block_start", index=0,
                        content_block=dict(type="tool_use", id="edit-a", name="edit", input={})),
                   dict(type="content_block_stop", index=0), dict(type="message_stop")]
         (wire / "1.response.sse").write_text("".join("data: " + json.dumps(e) + "\n\n" for e in frames))
         (wire / "2.response.sse").write_text('data: {"type":"message_start","message":{}}\n\ndata: {"type":"message_stop"}\n\n')
+        reply = dict(role="user", content=[dict(type="tool_result", tool_use_id="edit-a", content="PRIVATE_SENTINEL")])
+        for record, messages in zip(ledger["records"], ([], [reply])):
+            identifier = record["id"]
+            request = json.dumps({"messages": messages}).encode()
+            (wire / (identifier + ".request.json")).write_bytes(request)
+            record.update(body_sha256=hashlib.sha256(request).hexdigest(), upstream_attempted=True,
+                          response_sha256=hashlib.sha256((wire / (identifier + ".response.sse")).read_bytes()).hexdigest())
+        (wire / "ledger.json").write_text(json.dumps(ledger))
         native = root / "trials/dsh-sample/agent"
         native.mkdir(parents=True)
         events = [dict(type="tool/call", data=dict(callId="edit-a", name="edit")),
@@ -448,9 +455,13 @@ class ComparisonTests(unittest.TestCase):
         # A different harness's receipt cannot supply or contradict the DSH result.
         (native / "yhc.jsonl").write_text(json.dumps(dict(type="event", schema_version=1,
             event=dict(kind="tool_terminal", tool=dict(tool_call_id="edit-a", outcome="failed")))) + "\n")
-        got = load_run(root)[0]
+        report = build_report([root])
+        got = report["samples"][0]
         self.assertEqual(got["tool_feedback"]["edit"]["completed"], 1)
         self.assertEqual(got["edit_rejections"], 0)
+        self.assertEqual(got["tool_feedback"]["wire_text_feedback"]["observed_returns"], 1)
+        self.assertIn("| dsh | complete | Edit=1 | 0 | 0 | 2/2 |", markdown(report))
+        self.assertNotIn("PRIVATE_SENTINEL", markdown(report))
 
     def test_synthetic_does_not_pair_with_real_and_missing_thinking_is_not_zero(self):
         real = self.write(records=[call("1"), call("2")])

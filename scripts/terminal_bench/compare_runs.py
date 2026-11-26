@@ -579,18 +579,22 @@ def markdown(report):
                          f"{route['input_tokens']} / {route['cached_input_tokens']} / {route['output_tokens']} | "
                          f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
                          f"{thinking if thinking is not None else 'unavailable'} |")
-    lines += ["", "Emitted tool requests and native terminal receipts have separate coverage; neither proves side effects.", "",
-              "| Agent | Wire inventory | Emitted tool requests | Unmatched emitted calls | Edit completed/failed/emitted | Edit rejections |",
-              "|---|---|---|---:|---:|---:|"]
+    lines += ["", "Text returns are observations from later digest-verified requests. Tool execution and side effects have separate evidence.", "",
+              "| Agent | Wire inventory | Emitted tool requests | Native unmatched | Unmatched with text return | Verified request captures | Edit completed/failed/emitted | Edit rejections |",
+              "|---|---|---|---:|---:|---:|---:|---:|"]
     for r in report["samples"]:
         feedback = r.get("tool_feedback") or {}
         counts = feedback.get("emitted_counts")
         counts = ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) if counts else (
             "0" if counts == {} else "unavailable")
         edit = feedback.get("edit") or {}
+        returns = feedback.get("wire_text_feedback") or {}
         value = lambda v: "unavailable" if v is None else str(v)
+        capture_coverage = f"{returns['verified_requests']}/{feedback['expected_responses']}" if returns else "unavailable"
         lines.append(f"| {r['agent']} | {feedback.get('wire_inventory', 'unavailable')} | {counts} | "
                      f"{value(feedback.get('unmatched_emitted_calls'))} | "
+                     f"{value(returns.get('native_unmatched_with_return'))} | "
+                     f"{capture_coverage} | "
                      f"{value(edit.get('completed'))}/{value(edit.get('failed'))}/{value(edit.get('emitted'))} "
                      f"({edit.get('coverage', 'unavailable')}) | {value(r.get('edit_rejections'))} |")
     if report.get("reference_trajectories"):
