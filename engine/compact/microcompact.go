@@ -87,8 +87,8 @@ func unconsumedToolRoundStart(messages []*schema.Message) int {
 	return len(messages)
 }
 
-// TrimLongToolResults truncates tool results longer than maxLen characters.
-// It keeps the first 1500 chars + "\n...[truncated]...\n" + last 1500 chars.
+// TrimLongToolResults truncates tool results longer than maxLen bytes.
+// It retains up to 1500 bytes at each end without splitting UTF-8 characters.
 // Only Tool role messages are affected. Returns the modified messages and
 // an estimate of tokens freed.
 func TrimLongToolResults(messages []*schema.Message, maxLen int) ([]*schema.Message, int) {
@@ -124,7 +124,8 @@ func TrimLongToolResults(messages []*schema.Message, maxLen int) ([]*schema.Mess
 			continue
 		}
 
-		truncated := content[:head] + separator + content[originalLen-tail:]
+		headEnd, tailStart := utf8MiddleCutBounds(content, head, tail)
+		truncated := content[:headEnd] + separator + content[tailStart:]
 		freed := roughTextTokens(content) - roughTextTokens(truncated)
 		if freed < 0 {
 			freed = 0
@@ -261,18 +262,25 @@ func trimReasoningText(text string, maxLen int) string {
 		return text
 	}
 	const separator = "\n...[reasoning truncated]...\n"
-	head, tail := maxLen*2/5, len(text)-maxLen*2/5
-	// Keep valid UTF-8 even when a byte budget splits a multibyte rune.
-	for head > 0 && !utf8.RuneStart(text[head]) {
-		head--
-	}
-	for tail < len(text) && !utf8.RuneStart(text[tail]) {
-		tail++
-	}
-	if head+len(separator)+len(text)-tail >= len(text) {
+	edgeBytes := maxLen * 2 / 5
+	headEnd, tailStart := utf8MiddleCutBounds(text, edgeBytes, edgeBytes)
+	if headEnd+len(separator)+len(text)-tailStart >= len(text) {
 		return text
 	}
-	return text[:head] + separator + text[tail:]
+	return text[:headEnd] + separator + text[tailStart:]
+}
+
+// utf8MiddleCutBounds moves each cut inward to retain whole characters within
+// the caller's nonoverlapping byte budgets.
+func utf8MiddleCutBounds(text string, headBytes, tailBytes int) (headEnd, tailStart int) {
+	headEnd, tailStart = headBytes, len(text)-tailBytes
+	for headEnd > 0 && !utf8.RuneStart(text[headEnd]) {
+		headEnd--
+	}
+	for tailStart < len(text) && !utf8.RuneStart(text[tailStart]) {
+		tailStart++
+	}
+	return headEnd, tailStart
 }
 
 // Snip performs the lightweight pre-compact pass that trims obvious

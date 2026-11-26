@@ -2,14 +2,14 @@ package compact
 
 import "github.com/cloudwego/eino/schema"
 
-// toolResultBudgetMax is the maximum character length for a single tool result.
+// toolResultBudgetMax is the maximum byte length for a single tool result.
 // Results exceeding this are replaced with a truncated version.
 const toolResultBudgetMax = 30000
 
-// toolResultKeepHead is how many characters to keep from the start when truncating.
+// toolResultKeepHead is the byte budget for the start of a truncated result.
 const toolResultKeepHead = 10000
 
-// toolResultKeepTail is how many characters to keep from the end when truncating.
+// toolResultKeepTail is the byte budget for the end of a truncated result.
 const toolResultKeepTail = 10000
 
 // ApplyToolResultBudget enforces per-message budget on aggregate tool result size.
@@ -87,9 +87,10 @@ func ApplyToolResultBudget(
 		}
 
 		// Truncate: keep head + separator + tail.
-		truncated := content[:toolResultKeepHead] +
+		headEnd, tailStart := utf8MiddleCutBounds(content, toolResultKeepHead, toolResultKeepTail)
+		truncated := content[:headEnd] +
 			"\n\n...[output truncated due to length]...\n\n" +
-			content[len(content)-toolResultKeepTail:]
+			content[tailStart:]
 
 		clone := *msg
 		clone.Content = truncated
