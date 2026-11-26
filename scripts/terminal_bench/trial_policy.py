@@ -36,10 +36,12 @@ def classify_trial(*, accounting, usage_complete, native_completed,
         accounting_closed = False
     if not accounting_closed or usage_complete is not True:
         return TrialOutcome("unknown_usage", "usage_unverified")
-    if checkpoint_complete is not True:
-        return TrialOutcome("failed", "checkpoint_unverified")
+    # The operator deadline can interrupt the normal checkpoint path. Its
+    # receipt records the stop cause independently of checkpoint readiness.
     if deadline_reason == "deadline_exceeded":
         return TrialOutcome("failed", "agent_deadline")
+    if checkpoint_complete is not True:
+        return TrialOutcome("failed", "checkpoint_unverified")
     if error_type:
         return TrialOutcome("failed", "trial_failed")
     if result is not None and not isinstance(result, dict):
