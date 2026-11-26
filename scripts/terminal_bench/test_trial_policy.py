@@ -62,6 +62,17 @@ class OutcomeTests(unittest.TestCase):
                 self.assertEqual((result.ledger_status, result.reason), ("failed", reason))
                 self.assertFalse(result.can_resume_agent)
 
+    def test_deadline_without_normal_checkpoint_reports_deadline(self):
+        facts = dict(deadline_reason="deadline_exceeded", native_completed=False,
+                     checkpoint_complete=False, result=None, isolation_verified=False)
+        result = self.outcome(**facts)
+        self.assertEqual((result.ledger_status, result.reason), ("failed", "agent_deadline"))
+        self.assertFalse(result.can_resume_agent)
+
+        unresolved = self.outcome(**facts, usage_complete=False)
+        self.assertEqual((unresolved.ledger_status, unresolved.reason), ("unknown_usage", "usage_unverified"))
+        self.assertFalse(unresolved.can_resume_agent)
+
     def test_unknown_or_unclosed_usage_has_precedence(self):
         for change in ({"accounting": {"unknown_usage": True, "outstanding": "0"}},
                        {"accounting": {"unknown_usage": False, "outstanding": "1"}},
