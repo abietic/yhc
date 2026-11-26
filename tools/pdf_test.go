@@ -153,6 +153,25 @@ func TestReadPDFExplicitRangeSkipsPageCount(t *testing.T) {
 	}
 }
 
+func TestReadPDFKeepsPageNumbersAcrossBlankPages(t *testing.T) {
+	path := writePDFTestFile(t, "blank-page fixture")
+	runner := pdfRunnerFunc(func(_ context.Context, name string, _ ...string) ([]byte, []byte, error) {
+		if name != "pdftotext" {
+			t.Fatalf("explicit range invoked %s", name)
+		}
+		return []byte("\fpage five\r\n\f \n\fpage seven\n\f"), nil, nil
+	})
+
+	output, err := readPDFForTool(context.Background(), path, path, "4-7", runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "PDF file: " + path + "\nPages: 4-7\n\n--- Page 5 ---\npage five\n\n--- Page 7 ---\npage seven\n"
+	if output != want {
+		t.Fatalf("PDF output = %q, want %q", output, want)
+	}
+}
+
 func TestReadPDFFallsBackToImageAttachment(t *testing.T) {
 	path := writePDFTestFile(t, "scan fixture")
 	var renderDir string
