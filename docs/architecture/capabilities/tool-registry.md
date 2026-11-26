@@ -363,6 +363,11 @@ records. Canceling a background launch prevents it from starting a replacement
 shell. Foreground command exit markers retain their existing
 tool-return semantics; ordinary nonzero exit does not become an engine exception.
 
+`Monitor` reads the current status and optional tail of the same owned
+background Bash record. It returns immediately and leaves pending output
+available for `BashOutput`. Terminal status and exit information remain
+available after the output is read.
+
 A positive Bash `timeout` sets the execution limit in milliseconds in either
 mode, up to 600,000 ms. The default is two minutes in the foreground and ten
 minutes in the background.

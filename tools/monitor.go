@@ -57,18 +57,23 @@ func MonitorTool() ToolImpl {
 	return ToolImpl{
 		Info: &schema.ToolInfo{
 			Name: "Monitor",
-			Desc: "Checks the status and recent output of background processes. Use to monitor long-running commands started with run_in_background.",
+			Desc: "Immediately checks the status and recent pending output of a command started with Bash run_in_background. Leaves pending output available for BashOutput.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"process_id": {Type: schema.String, Desc: "The ID of the background process to monitor", Required: true},
 				"tail_lines": {Type: schema.Integer, Desc: "Number of recent output lines to return (default: 20)"},
 			}),
 		},
 		Execute:           executeMonitor,
+		ExecuteCtx:        executeMonitorCtx,
 		IsConcurrencySafe: func(input map[string]any) bool { return true },
 	}
 }
 
 func executeMonitor(input string) (string, error) {
+	return executeMonitorCtx(context.Background(), input)
+}
+
+func executeMonitorCtx(ctx context.Context, input string) (string, error) {
 	var params struct {
 		ProcessID string `json:"process_id"`
 		TailLines *int   `json:"tail_lines"`
@@ -85,9 +90,22 @@ func executeMonitor(input string) (string, error) {
 		tailLines = *params.TailLines
 	}
 
+	manager := ShellManagerFromCtx(ctx)
+	scoped := manager != nil
+	if !scoped {
+		manager = getDefaultShellManager()
+	}
+	if result := monitorShellSnapshot(manager, params.ProcessID, tailLines); result != "" {
+		return result, nil
+	}
+	if scoped {
+		return monitorNotFound(params.ProcessID), nil
+	}
+
+	// The unscoped Go tool API still supports explicitly registered processes.
 	p := GetBackgroundProcess(params.ProcessID)
 	if p == nil {
-		return fmt.Sprintf("Process %s not found. No background process with this ID exists.", params.ProcessID), nil
+		return monitorNotFound(params.ProcessID), nil
 	}
 
 	status := "running"
@@ -110,21 +128,59 @@ func executeMonitor(input string) (string, error) {
 	output := p.Output
 	bgMu.RUnlock()
 
-	if len(output) > 0 {
-		start := 0
-		if len(output) > tailLines {
-			start = len(output) - tailLines
-		}
-		result.WriteString("\n--- Recent Output ---\n")
-		for _, line := range output[start:] {
-			result.WriteString(line)
-			result.WriteString("\n")
-		}
-	} else {
-		result.WriteString("\n(no output captured)\n")
-	}
+	writeMonitorTail(&result, output, tailLines)
 
 	return result.String(), nil
+}
+
+func monitorNotFound(id string) string {
+	return fmt.Sprintf("Process %s not found. No background process with this ID exists.", id)
+}
+
+func monitorShellSnapshot(manager *ShellManager, id string, tailLines int) string {
+	entry := ownedBackgroundShell(manager, id)
+	if entry == nil {
+		return ""
+	}
+	entry.mu.Lock()
+	if ownedBackgroundShell(manager, id) != entry {
+		entry.mu.Unlock()
+		return ""
+	}
+	status, outcome, output, notice := entry.status, entry.outcome, entry.output, entry.outputNotice
+	entry.mu.Unlock()
+
+	var result strings.Builder
+	fmt.Fprintf(&result, "Process: %s\nCommand: %s\nStatus: %s\nStarted: %s\n",
+		id, entry.Command, status, entry.StartedAt.Format(time.RFC3339))
+	if status == "running" {
+		fmt.Fprintf(&result, "Running for: %s\n", time.Since(entry.StartedAt).Truncate(time.Second))
+	}
+	result.WriteString(outcome)
+	var lines []string
+	output = strings.TrimPrefix(output, "$ "+entry.Command+"\n")
+	output = strings.TrimSuffix(output, outcome)
+	if output != "" {
+		lines = strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	}
+	writeMonitorTail(&result, lines, tailLines)
+	result.WriteString(notice)
+	return result.String()
+}
+
+func writeMonitorTail(result *strings.Builder, output []string, tailLines int) {
+	if len(output) == 0 {
+		result.WriteString("\n(no output captured)\n")
+		return
+	}
+	if len(output) > tailLines {
+		output = output[len(output)-tailLines:]
+	}
+	result.WriteString("\n--- Recent Output ---\n")
+	for _, line := range output {
+		result.WriteString(line)
+		result.WriteByte('\n')
+	}
 }
 
 // SleepTool creates a tool that pauses execution for a specified duration.

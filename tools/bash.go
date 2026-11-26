@@ -51,6 +51,21 @@ type backgroundShellEntry struct {
 	done         chan struct{}
 }
 
+func ownedBackgroundShell(manager *ShellManager, id string) *backgroundShellEntry {
+	if manager == nil || manager.backgroundOwner == "" {
+		return nil
+	}
+	value, ok := backgroundShells.Load(id)
+	if !ok {
+		return nil
+	}
+	entry := value.(*backgroundShellEntry)
+	if entry.owner != manager.backgroundOwner {
+		return nil
+	}
+	return entry
+}
+
 func (entry *backgroundShellEntry) finish(command string, result *ShellResult, err error) {
 	entry.finishWithContext(context.Background(), command, result, err)
 }
@@ -301,11 +316,10 @@ func executeBashOutputCtx(ctx context.Context, manager *ShellManager, input stri
 		return "", fmt.Errorf("bash_output: %w", err)
 	}
 
-	value, ok := backgroundShells.Load(params.BashID)
-	if !ok || manager == nil || manager.backgroundOwner == "" || value.(*backgroundShellEntry).owner != manager.backgroundOwner {
+	entry := ownedBackgroundShell(manager, params.BashID)
+	if entry == nil {
 		return fmt.Sprintf("No background shell found with ID %q", params.BashID), nil
 	}
-	entry := value.(*backgroundShellEntry)
 	waitExpired := false
 	if params.Wait {
 		entry.mu.Lock()

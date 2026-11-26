@@ -140,6 +140,64 @@ func TestBackgroundBashRetainsOutputAndFailure(t *testing.T) {
 	}
 }
 
+func TestMonitorReadsOwnedBashWithoutConsumingOutput(t *testing.T) {
+	manager, id := backgroundFeedbackFixture(t, "printf 'first-monitor-line\\nlast-monitor-line\\n'; (exit 7)")
+	other := NewShellManager()
+	t.Cleanup(func() { _ = other.KillAll() })
+	entry, ok := backgroundShells.Load(id)
+	if !ok {
+		t.Fatal("background Bash did not publish its ID")
+	}
+	select {
+	case <-entry.(*backgroundShellEntry).done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("background Bash did not publish a terminal result")
+	}
+	monitor := MonitorTool()
+	input := fileToolInput(t, map[string]any{"process_id": id, "tail_lines": 1})
+	call := func(owner *ShellManager) (string, error) {
+		if monitor.ExecuteCtx == nil {
+			return monitor.Execute(input)
+		}
+		return monitor.ExecuteCtx(WithShellManager(t.Context(), owner), input)
+	}
+	foreign, err := call(other)
+	if err != nil || !strings.Contains(foreign, "not found") || strings.Contains(foreign, "last-monitor-line") {
+		t.Fatalf("foreign monitor = %q, %v", foreign, err)
+	}
+	got, err := call(manager)
+	_, tail, _ := strings.Cut(got, "\n--- Recent Output ---\n")
+	if err != nil || !strings.Contains(got, "Status: failed") || !strings.Contains(got, "[exit code: 7]") ||
+		!strings.Contains(tail, "last-monitor-line") || strings.Contains(tail, "first-monitor-line") {
+		t.Fatalf("owner monitor = %q, %v", got, err)
+	}
+	output, err := executeBashOutput(manager, fileToolInput(t, map[string]any{"bash_id": id}))
+	if err != nil || !strings.Contains(output, "first-monitor-line") || !strings.Contains(output, "last-monitor-line") {
+		t.Fatalf("Monitor drained BashOutput: %q, %v", output, err)
+	}
+	consumed, err := call(manager)
+	if err != nil || !strings.Contains(consumed, "[exit code: 7]") || strings.Contains(consumed, "--- Recent Output ---") {
+		t.Fatalf("Monitor after BashOutput = %q, %v", consumed, err)
+	}
+
+	legacyID := t.Name()
+	RegisterBackgroundProcess(&BackgroundProcess{ID: legacyID})
+	AppendProcessOutput(legacyID, "legacy-output-proof")
+	t.Cleanup(func() {
+		bgMu.Lock()
+		delete(backgroundProcesses, legacyID)
+		bgMu.Unlock()
+	})
+	legacyInput := fileToolInput(t, map[string]any{"process_id": legacyID})
+	if got, err := monitor.Execute(legacyInput); err != nil || !strings.Contains(got, "legacy-output-proof") {
+		t.Fatalf("unscoped registered process = %q, %v", got, err)
+	}
+	if got, err := monitor.ExecuteCtx(WithShellManager(t.Context(), manager), legacyInput); err != nil ||
+		!strings.Contains(got, "not found") || strings.Contains(got, "legacy-output-proof") {
+		t.Fatalf("session-bound registered process = %q, %v", got, err)
+	}
+}
+
 func TestCancelAnActiveBackgroundBash(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture checks Unix process group cancellation")
