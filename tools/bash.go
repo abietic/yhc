@@ -84,12 +84,21 @@ func (entry *backgroundShellEntry) observeOutput(fragment string) {
 	entry.runningOutput = append(entry.runningOutput, fragment...)
 }
 
-// runningPreview requires the entry lock. A byte-bounded tail can start
-// inside a rune, so drop the leading continuation bytes before rendering.
+// runningPreview requires the entry lock. The byte limit can split the first
+// rune and a pending write can split the last one. Keep the pending bytes in
+// runningOutput so the next write can complete the rune.
 func (entry *backgroundShellEntry) runningPreview() string {
 	preview := entry.runningOutput
 	for len(preview) > 0 && !utf8.RuneStart(preview[0]) {
 		preview = preview[1:]
+	}
+	for start := len(preview) - 1; start >= max(0, len(preview)-utf8.UTFMax); start-- {
+		if utf8.RuneStart(preview[start]) {
+			if !utf8.FullRune(preview[start:]) {
+				preview = preview[:start]
+			}
+			break
+		}
 	}
 	return normalizeShellOutput(string(preview))
 }

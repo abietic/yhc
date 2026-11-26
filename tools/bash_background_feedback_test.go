@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func backgroundFeedbackFixture(t *testing.T, body string) (*ShellManager, string) {
@@ -273,6 +274,41 @@ printf 'items processed: 42'
 	if err != nil || !strings.Contains(final, "Status: failed") || !strings.Contains(final, "[exit code: 7]") ||
 		!strings.Contains(final, progress+"\ritems processed: 42") || strings.Contains(final, "___SENTINEL_") {
 		t.Fatalf("background terminal output or exit was damaged: %q, %v", final, err)
+	}
+}
+
+func TestRunningBashPreviewsWaitForCompleteUTF8(t *testing.T) {
+	const id = "bg-utf8-preview-fixture"
+	const prefix = "progress: "
+	for _, character := range []string{"é", "界", "🙂"} {
+		t.Run(character, func(t *testing.T) {
+			manager := NewShellManager()
+			entry := &backgroundShellEntry{ShellID: id, owner: manager.backgroundOwner, status: "running", StartedAt: time.Now()}
+			backgroundShells.Store(id, entry)
+			t.Cleanup(func() { backgroundShells.CompareAndDelete(id, entry) })
+			ctx := WithShellManager(t.Context(), manager)
+			bashInput := fileToolInput(t, map[string]any{"bash_id": id})
+			monitorInput := fileToolInput(t, map[string]any{"process_id": id})
+			check := func(want string) {
+				t.Helper()
+				bash, err := BashOutputTool().ExecuteCtx(ctx, bashInput)
+				if err != nil || !utf8.ValidString(bash) || !strings.HasSuffix(bash, want+"\n") {
+					t.Errorf("BashOutput should show %q: %q, %v", want, bash, err)
+				}
+				monitor, err := MonitorTool().ExecuteCtx(ctx, monitorInput)
+				if err != nil || !utf8.ValidString(monitor) || !strings.HasSuffix(monitor, want+"\n") {
+					t.Errorf("Monitor should show %q: %q, %v", want, monitor, err)
+				}
+			}
+			entry.observeOutput(prefix)
+			for i := range len(character) {
+				entry.observeOutput(character[i : i+1])
+				if i+1 < len(character) {
+					check(prefix)
+				}
+			}
+			check(prefix + character)
+		})
 	}
 }
 
