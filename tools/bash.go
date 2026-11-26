@@ -420,7 +420,7 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 
 	// Start a new dedicated shell for this background command.
 	requested, _ := containment.FromContext(ctx)
-	_, err := mgr.getOrCreateAt(shellID, cwd, requested)
+	shell, err := mgr.getOrCreateAt(shellID, cwd, requested)
 	if err != nil {
 		return "", fmt.Errorf("bash: failed to create background shell: %w", err)
 	}
@@ -434,12 +434,19 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 		status:    "running",
 		done:      make(chan struct{}),
 	}
+	// Publish the handle only while the manager still owns this shell.
+	mgr.mu.Lock()
+	if mgr.shells[shellID] != shell {
+		mgr.mu.Unlock()
+		return "", fmt.Errorf("bash: background shell stopped before launch")
+	}
 	backgroundShells.Store(shellID, entry)
+	mgr.mu.Unlock()
 
 	// Fire and forget — execute in background goroutine.
 	go func() {
 		backgroundCtx := context.WithoutCancel(ctx)
-		result, err := mgr.ExecuteAt(backgroundCtx, shellID, cwd, command, timeout)
+		result, err := mgr.executeBackground(backgroundCtx, shell, command, timeout)
 		entry.finishWithContext(backgroundCtx, command, result, err)
 	}()
 

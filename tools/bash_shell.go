@@ -50,9 +50,10 @@ type PersistentShell struct {
 	stdout    *bufio.Reader
 	stderr    *bufio.Reader
 	mu        sync.Mutex
+	stopOnce  sync.Once
+	stopping  chan struct{}
 	cwd       string
 	env       map[string]string
-	running   bool
 	shellID   string
 	startedAt time.Time
 	stderrBuf *stderrBuffer
@@ -66,7 +67,7 @@ func (s *PersistentShell) UpdateCWD() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.running {
+	if s.isStopping() {
 		return s.cwd
 	}
 
@@ -459,7 +460,7 @@ func (m *ShellManager) startShell(id, cwd string) (*PersistentShell, error) {
 		stderr:    bufio.NewReaderSize(stderrPipe, 64*1024),
 		cwd:       cwd,
 		env:       make(map[string]string),
-		running:   true,
+		stopping:  make(chan struct{}),
 		shellID:   id,
 		policy:    m.policy,
 		binding:   binding,
@@ -697,12 +698,28 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 		}
 
 		shell.mu.Lock()
-		if shell.running && m.isCurrent(shellID, shell) {
+		if !shell.isStopping() && m.isCurrent(shellID, shell) {
 			break
 		}
 		shell.mu.Unlock()
 	}
 	defer shell.mu.Unlock()
+	return m.executeLocked(ctx, shell, command, timeout)
+}
+
+// executeBackground runs only on the shell allocated for this background
+// handle. A stopped handle must never create a replacement generation.
+func (m *ShellManager) executeBackground(ctx context.Context, shell *PersistentShell, command string, timeout time.Duration) (*ShellResult, error) {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	if shell.isStopping() || !m.isCurrent(shell.shellID, shell) {
+		return &ShellResult{Canceled: true, CWD: shell.cwd}, nil
+	}
+	return m.executeLocked(ctx, shell, command, timeout)
+}
+
+func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell, command string, timeout time.Duration) (*ShellResult, error) {
+	shellID := shell.shellID
 	if shell.binding != nil {
 		if shell.binding.Digest() != m.GuestBindingDigest() {
 			m.retireLocked(shellID, shell)
@@ -760,6 +777,9 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 
 	_, err := io.WriteString(shell.stdin, wrappedCmd)
 	if err != nil {
+		if shell.isStopping() {
+			return &ShellResult{Stdout: "(command canceled)", CWD: shell.cwd, Duration: time.Since(start), Canceled: true}, nil
+		}
 		m.retireLocked(shellID, shell)
 		return nil, fmt.Errorf("write to shell: %w", err)
 	}
@@ -869,52 +889,48 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	}()
 
 	// Wait for either result or context cancellation.
-	var output string
-	var commandCWD string
-	var exitCode int
-	var truncated bool
-	timedOut := false
-	canceled := false
+	var result readResult
+	var timedOut, canceled bool
 
 	select {
 	case <-ctx.Done():
-		var notice string
-		if ctx.Err() == context.DeadlineExceeded {
-			timedOut = true
-			notice = "(command timed out)"
-		} else {
-			canceled = true
-			notice = "(command canceled)"
-		}
+		timedOut = ctx.Err() == context.DeadlineExceeded
+		canceled = !timedOut
 		m.retireLocked(shellID, shell)
-		res := <-resultCh
-		output, truncated = res.output, res.truncated
-		if output != "" {
-			output += "\n"
-		}
-		output += notice
-	case res := <-resultCh:
-		if res.err != nil {
-			m.retireLocked(shellID, shell)
-			diagnostic := ""
-			if res.output != "" {
-				diagnostic = "\n[partial shell output]\n" + truncateShellText(res.output, bashMaxOutputPerStream, "stdout")
+		result = <-resultCh
+	case result = <-resultCh:
+		if result.err != nil {
+			if !shell.isStopping() {
+				m.retireLocked(shellID, shell)
+				diagnostic := ""
+				if result.output != "" {
+					diagnostic = "\n[partial shell output]\n" + truncateShellText(result.output, bashMaxOutputPerStream, "stdout")
+				}
+				return nil, fmt.Errorf("read from shell: %w%s", result.err, diagnostic)
 			}
-			return nil, fmt.Errorf("read from shell: %w%s", res.err, diagnostic)
+			canceled = true
 		}
-		output = res.output
-		commandCWD = res.cwd
-		exitCode = res.exitCode
-		truncated = res.truncated
 	}
 
 	duration := time.Since(start)
+	if timedOut || canceled {
+		if result.output != "" {
+			result.output += "\n"
+		}
+		if timedOut {
+			result.output += "(command timed out)"
+		} else {
+			result.output += "(command canceled)"
+		}
+		result.exitCode = 0
+		result.cwd = ""
+	}
 
 	// The terminal protocol captures the persistent shell CWD inside the same
 	// wall-time-bounded read as command output.
 	currentCWD := shell.cwd
-	if !timedOut && shell.running && commandCWD != "" {
-		currentCWD = commandCWD
+	if !shell.isStopping() && result.cwd != "" {
+		currentCWD = result.cwd
 		shell.cwd = currentCWD
 	}
 
@@ -925,14 +941,14 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	}
 
 	return &ShellResult{
-		Stdout:    output,
+		Stdout:    result.output,
 		Stderr:    stderr,
-		ExitCode:  exitCode,
+		ExitCode:  result.exitCode,
 		CWD:       currentCWD,
 		Duration:  duration,
 		TimedOut:  timedOut,
 		Canceled:  canceled,
-		Truncated: truncated || stderrTruncated,
+		Truncated: result.truncated || stderrTruncated,
 	}, nil
 }
 
@@ -952,15 +968,7 @@ func (m *ShellManager) retireLocked(id string, shell *PersistentShell) {
 	}
 	m.mu.Unlock()
 
-	if !shell.running {
-		return
-	}
-	shell.running = false
-	_ = shell.stdin.Close()
-	killProcessGroup(shell.cmd)
-	_ = shell.stdoutRC.Close()
-	_ = shell.stderrRC.Close()
-	_ = shell.cmd.Wait()
+	shell.terminate()
 }
 
 // parseExitCode extracts the exit code from the end sentinel line.
@@ -1004,7 +1012,8 @@ func (m *ShellManager) Kill(id string) error {
 		return fmt.Errorf("shell %q not found", id)
 	}
 
-	return killShell(shell)
+	shell.terminate()
+	return nil
 }
 
 // KillAll terminates all active shell sessions.
@@ -1023,36 +1032,32 @@ func (m *ShellManager) KillAll() error {
 	})
 	m.mu.Unlock()
 
-	var firstErr error
 	for _, shell := range shells {
-		if err := killShell(shell); err != nil && firstErr == nil {
-			firstErr = err
-		}
+		shell.terminate()
 	}
-	return firstErr
+	return nil
 }
 
-// killShell closes stdin and sends SIGKILL to the shell process.
-func killShell(shell *PersistentShell) error {
-	shell.mu.Lock()
-	defer shell.mu.Unlock()
-
-	if !shell.running {
-		return nil
+func (s *PersistentShell) isStopping() bool {
+	select {
+	case <-s.stopping:
+		return true
+	default:
+		return false
 	}
-	shell.running = false
+}
 
-	// Close stdin to signal EOF
-	_ = shell.stdin.Close()
-
-	// Kill the process group
-	killProcessGroup(shell.cmd)
-	_ = shell.stdoutRC.Close()
-	_ = shell.stderrRC.Close()
-
-	_ = shell.cmd.Wait()
-
-	return nil
+// terminate interrupts active pipe I/O without the execution lock. Only one
+// caller may signal and reap a generation, even across cancellation and EOF.
+func (s *PersistentShell) terminate() {
+	s.stopOnce.Do(func() {
+		close(s.stopping)
+		killProcessGroup(s.cmd)
+		_ = s.stdin.Close()
+		_ = s.stdoutRC.Close()
+		_ = s.stderrRC.Close()
+		_ = s.cmd.Wait()
+	})
 }
 
 // ListShells returns metadata about all active shell sessions.
@@ -1070,7 +1075,7 @@ func (m *ShellManager) ListShells() []ShellInfo {
 		infos = append(infos, ShellInfo{
 			ID:        shell.shellID,
 			CWD:       shell.cwd,
-			Running:   shell.running,
+			Running:   !shell.isStopping(),
 			StartedAt: shell.startedAt,
 		})
 		shell.mu.Unlock()
