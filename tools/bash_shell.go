@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -606,6 +607,21 @@ func readShellFragment(reader *bufio.Reader) (string, error) {
 	return string(fragment), err
 }
 
+// readAvailableShellFragment waits for the first byte, then releases already
+// buffered output without waiting for a line delimiter or a full buffer.
+func readAvailableShellFragment(reader *bufio.Reader) (string, error) {
+	if _, err := reader.Peek(1); err != nil {
+		return "", err
+	}
+	fragment, _ := reader.Peek(reader.Buffered())
+	if end := bytes.IndexByte(fragment, '\n'); end >= 0 {
+		fragment = fragment[:end+1]
+	}
+	output := string(fragment)
+	_, err := reader.Discard(len(fragment))
+	return output, err
+}
+
 func appendBoundedShellOutput(output *strings.Builder, max int64, fragment string, truncated *bool) {
 	if fragment == "" {
 		return
@@ -849,7 +865,11 @@ func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell
 		}
 
 		for {
-			fragment, readErr := readShellFragment(shell.stdout)
+			readFragment := readShellFragment
+			if inOutput && observeOutput != nil {
+				readFragment = readAvailableShellFragment
+			}
+			fragment, readErr := readFragment(shell.stdout)
 			if !inOutput {
 				if strings.Contains(fragment, startMarker) {
 					inOutput = true
@@ -872,13 +892,13 @@ func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell
 				return
 			}
 
-			keep := len(cwdMarker) - 1
-			// The marker has no newline, so a complete line cannot end in
-			// a partial marker. Release short readiness lines immediately.
-			if strings.HasSuffix(combined, "\n") {
-				keep = 0
+			safe := len(combined)
+			if !strings.HasSuffix(combined, "\n") {
+				// Hold only a possible split marker. Keeping a fixed-width
+				// suffix would hide short progress writes between reads.
+				windowStart := max(0, len(combined)-len(cwdMarker)+1)
+				safe = windowStart + len(shellOutputBeforePartialMarker(combined[windowStart:], cwdMarker))
 			}
-			safe := len(combined) - keep
 			if safe > 0 {
 				prefix := combined[:safe]
 				appendBoundedShellOutput(&output, shell.outputMax, prefix, &truncated)

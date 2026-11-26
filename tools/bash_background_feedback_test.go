@@ -211,6 +211,71 @@ while [ ! -f release ]; do sleep 0.01; done
 	}
 }
 
+func TestBackgroundBashShowsProgressWithoutNewline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture requires Bash")
+	}
+	dir := t.TempDir()
+	script := `printf 'items processed: 17\r'
+: > emitted
+while [ ! -f release ]; do sleep 0.01; done
+printf 'items processed: 42'
+(exit 7)`
+	if err := os.WriteFile(filepath.Join(dir, "progress.sh"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewShellManager()
+	t.Cleanup(func() { _ = manager.KillAll() })
+	ctx := WithShellManager(WithExecutionCWD(t.Context(), dir), manager)
+	launch, err := BashTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+		"command": "bash progress.sh", "run_in_background": true,
+	}))
+	_, tail, found := strings.Cut(launch, "Shell ID: ")
+	id, _, _ := strings.Cut(tail, "\n")
+	if err != nil || !found || id == "" {
+		t.Fatalf("background launch failed: %q, %v", launch, err)
+	}
+	const progress = "items processed: 17"
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	var snapshot string
+	for {
+		snapshot, err = MonitorTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+			"process_id": id, "tail_lines": 1,
+		}))
+		if err != nil || !strings.Contains(snapshot, "Status: running") {
+			t.Fatalf("blocked command was not running: %q, %v", snapshot, err)
+		}
+		if strings.HasSuffix(snapshot, progress+"\n") {
+			break
+		}
+		select {
+		case <-deadline.C:
+			if _, err := os.Stat(filepath.Join(dir, "emitted")); err != nil {
+				t.Fatalf("fixture never reached its independent emission marker: %v", err)
+			}
+			t.Fatalf("running Monitor hid already emitted progress without newline: %q", snapshot)
+		case <-tick.C:
+		}
+	}
+	peek, err := BashOutputTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{"bash_id": id}))
+	if err != nil || !strings.Contains(peek, "Status: running") || !strings.Contains(peek, progress) {
+		t.Fatalf("running BashOutput missed the same progress: %q, %v", peek, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	final, err := BashOutputTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+		"bash_id": id, "wait": true,
+	}))
+	if err != nil || !strings.Contains(final, "Status: failed") || !strings.Contains(final, "[exit code: 7]") ||
+		!strings.Contains(final, progress+"\ritems processed: 42") || strings.Contains(final, "___SENTINEL_") {
+		t.Fatalf("background terminal output or exit was damaged: %q, %v", final, err)
+	}
+}
+
 func TestMonitorReadsOwnedBashWithoutConsumingOutput(t *testing.T) {
 	manager, id := backgroundFeedbackFixture(t, "printf 'first-monitor-line\\nlast-monitor-line\\n'; (exit 7)")
 	other := NewShellManager()
