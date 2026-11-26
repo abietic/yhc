@@ -33,6 +33,14 @@ class ToolFeedbackTests(unittest.TestCase):
         records = [dict(id="one", state="known")] if records is None else records
         return collect_tool_feedback(self.root, records, protocol, self.native)
 
+    def capture(self, identifier, body):
+        request = json.dumps(body).encode()
+        (self.root / (identifier + ".request.json")).write_bytes(request)
+        response = (self.root / (identifier + ".response.sse")).read_bytes()
+        return dict(id=identifier, state="known", upstream_attempted=True,
+                    body_sha256=hashlib.sha256(request).hexdigest(),
+                    response_sha256=hashlib.sha256(response).hexdigest())
+
     def dsh_stream(self, tool="edit"):
         self.stream("one", [dict(type="message_start", message={}),
             dict(type="content_block_start", index=0,
@@ -277,6 +285,60 @@ class ToolFeedbackTests(unittest.TestCase):
         self.assertIsNone(observed["edit_rejections"])
         self.assertEqual(observed["wire_response_integrity"],
                          dict(verified_responses=1, legacy_unpinned_responses=0, rejected_responses=1))
+
+    def test_reports_text_return_even_with_missing_native_terminal(self):
+        self.native.write_text("")
+        text = [dict(type="text", text="PRIVATE_SENTINEL")]
+        for protocol, key, reply in (
+            ("responses", "input", dict(type="function_call_output", call_id="edit-a",
+                                       output=[dict(text[0], type="input_text")])),
+            ("messages", "messages", dict(role="user", content=[dict(type="tool_result", tool_use_id="edit-a", content=text)])),
+        ):
+            with self.subTest(protocol=protocol):
+                if protocol == "responses":
+                    self.response()
+                    self.stream("two", [dict(type="response.completed", response=dict(output=[]))])
+                    options = {}
+                else:
+                    self.dsh_stream()
+                    self.stream("two", [dict(type="message_start", message={}), dict(type="message_stop")])
+                    self.native.write_text(json.dumps(self.dsh_events()[0]) + "\n")
+                    options = dict(native_format="dsh_sdk", native_session_id="root-a")
+                records = [self.capture("one", {key: []}), self.capture("two", {key: [reply]})]
+                got = collect_tool_feedback(self.root, records, protocol, self.native, **options)
+                self.assertEqual(got["wire_text_feedback"], dict(verified_requests=2, uniquely_pinned_emissions=1,
+                                  observed_returns=1, native_unmatched_with_return=1))
+                self.assertEqual(got["unmatched_emitted_calls"], 1)
+                self.assertIsNone(got["edit_rejections"])
+                self.assertNotIn("PRIVATE_SENTINEL", json.dumps(got))
+
+    def test_text_feedback_requires_pinned_later_request_and_unique_pinned_emission(self):
+        self.response()
+        self.stream("two", [dict(type="response.completed", response=dict(output=[]))])
+        self.native.write_text("")
+        reply = dict(type="function_call_output", call_id="edit-a", output="PRIVATE_SENTINEL")
+        for name in ("changed request", "unpinned request", "not sent", "same request", "empty text", "image only"):
+            with self.subTest(name=name):
+                first = self.capture("one", {"input": [reply] if name == "same request" else []})
+                output = {"empty text": "", "image only": [dict(type="input_image", image_url="PRIVATE_SENTINEL")]}
+                next_items = [] if name == "same request" else [dict(reply, output=output.get(name, reply["output"]))]
+                second = self.capture("two", {"input": next_items})
+                if name == "changed request":
+                    (self.root / "two.request.json").write_text("{}")
+                elif name == "unpinned request":
+                    second.pop("body_sha256")
+                elif name == "not sent":
+                    second["upstream_attempted"] = False
+                got = self.collect([first, second])["wire_text_feedback"]
+                self.assertEqual(got["observed_returns"], 0)
+                self.assertEqual(got["native_unmatched_with_return"], 0)
+        records = [self.capture("one", {"input": []}), self.capture("two", {"input": [reply]})]
+        records[0].pop("response_sha256")
+        self.assertIsNone(self.collect(records)["wire_text_feedback"]["observed_returns"])
+        self.response("two")
+        records[0] = self.capture("one", {"input": []})
+        records[1] = self.capture("two", {"input": [reply]})
+        self.assertEqual(self.collect(records)["wire_text_feedback"]["uniquely_pinned_emissions"], 0)
 
     def test_parent_outcome_cannot_cover_a_child_edit_or_reused_tool_id(self):
         self.response()
