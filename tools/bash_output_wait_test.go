@@ -220,7 +220,7 @@ func TestBashOutputWaitLeavesManagedCommandAlive(t *testing.T) {
 	// The independent file gate keeps the real process running until after
 	// both readers have returned, without relying on process-start timing.
 	started, err := runBackgroundCommand(t.Context(), manager, dir,
-		"while [ ! -f release ]; do sleep 0.02; done; printf 'survived-wait-proof\\n'; (exit 7)", "wait lifetime fixture")
+		"while [ ! -f release ]; do sleep 0.02; done; printf 'survived-wait-proof\\n'; (exit 7)", "wait lifetime fixture", bashMaxExecutionTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}

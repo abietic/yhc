@@ -362,6 +362,10 @@ discards that manager's registered records. This does not establish cold recover
 of background processes. Foreground command exit markers retain their existing
 tool-return semantics; ordinary nonzero exit does not become an engine exception.
 
+A positive Bash `timeout` sets the execution limit in milliseconds in either
+mode, up to 600,000 ms. The default is two minutes in the foreground and ten
+minutes in the background.
+
 `BashOutput` reads immediately by default. With `wait=true` it waits for the
 owned command to complete, for caller cancellation, or for `timeout_ms` (default
 30,000; range 1–120,000). The duration parameter requires `wait=true`. Expiry
