@@ -515,7 +515,7 @@ func (s *PersistentShell) getCWDUnsafe() string {
 	startMarker := fmt.Sprintf("___SENTINEL_START_%s___", sentinel)
 	endMarker := fmt.Sprintf("___SENTINEL_END_%s_", sentinel)
 
-	cmd := fmt.Sprintf("echo '%s'; pwd; echo '%s'\"0\"'___'\n", startMarker, endMarker)
+	cmd := fmt.Sprintf("builtin printf '%%s\\n' '%s'; builtin pwd; builtin printf '%%s0___\\n' '%s'\n", startMarker, endMarker)
 	_, err := io.WriteString(s.stdin, cmd)
 	if err != nil {
 		return ""
@@ -742,8 +742,10 @@ func (m *ShellManager) ExecuteAt(ctx context.Context, shellID, cwd, command stri
 	// multiline option/alias changes and keeps trailing comments or heredoc
 	// delimiters from consuming protocol syntax. eval runs in the persistent
 	// shell and merges stderr for the complete command, without a subshell.
+	// Emit the markers with builtin printf so command aliases and functions
+	// named echo or printf cannot intercept them.
 	quotedCommand := "'" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'"
-	wrappedCmd := fmt.Sprintf("echo '%s'; builtin eval -- %s 2>&1\n__eino_status=$?\nprintf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
+	wrappedCmd := fmt.Sprintf("builtin printf '%%s\\n' '%s'; builtin eval -- %s 2>&1\n__eino_status=$?\nbuiltin printf '%s%%s%s%%s___\\n' \"$PWD\" \"$__eino_status\"\n",
 		startMarker, quotedCommand, cwdMarker, endMarker)
 
 	if shell.binding != nil && containment.IsContainedAdapter(shell.binding.AdapterFamily()) {
