@@ -318,7 +318,8 @@ def load_run(root):
             raise ValueError("synthetic evidence contains real provider calls")
     closeout = root / "dispatch-closeout.json"
     has_closeout = closeout.exists() or closeout.is_symlink()
-    # Older launchers can leave the progress scoreboard behind the closeout.
+    # Legacy runs may have only a scoreboard. Cohort launchers publish a
+    # progress scoreboard before committing the canonical dispatch closeout.
     receipt = closeout if has_closeout else root / "scoreboard.json"
     nested_ledger_layout = receipt.exists() or receipt.is_symlink()
     if nested_ledger_layout:
@@ -327,6 +328,9 @@ def load_run(root):
         if (status in ("not_started", "running")
                 or (has_closeout and (not isinstance(status, str) or not status.strip()))):
             raise ValueError("execution record is not terminal")
+        if not has_closeout and ("finalization_checks_passed" in data
+                                 or {"factory_calls", "validated_zero_requests"} <= data.keys()):
+            raise ValueError("canonical dispatch closeout is missing")
         entries = data["samples"]
         zero_mode = data.get("zero_mode", False)
         if type(zero_mode) is not bool:
