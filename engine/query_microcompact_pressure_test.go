@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -24,6 +25,60 @@ func TestQueryMicrocompactStillRelievesPressure(t *testing.T) {
 	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
 	t.Setenv("TIME_BASED_MC_ENABLED", "false")
 	assertQueryMicrocompactPressure(t, true, &ToolUseOptions{MainLoopModel: "deepseek-flash"}, 1000)
+}
+
+func TestQueryToolResultTrimKeepsUTF8(t *testing.T) {
+	t.Setenv("TIME_BASED_MC_ENABLED", "false")
+	t.Setenv("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "")
+	for _, tc := range []struct {
+		name, window, marker string
+		repeats, edgeBytes   int
+	}{
+		{"per-result budget", "", "\n\n...[output truncated due to length]...\n\n", 11000, 10000},
+		{"microcompaction under pressure", "16000", "\n...[truncated]...\n", 6000, 1500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", tc.window)
+			text := "开始: " + strings.Repeat("界", tc.repeats) + "\n最终断言"
+			tool := &schema.Message{Role: schema.Tool, ToolCallID: "read-old", Content: text}
+			history := []*schema.Message{
+				{Role: schema.User, Content: "Inspect the fixture."},
+				{
+					Role: schema.Assistant, ReasoningContent: strings.Repeat("reasoning step\n", 1000),
+					ToolCalls: []schema.ToolCall{{ID: "read-old", Type: "function", Function: schema.FunctionCall{Name: "Read", Arguments: `{}`}}},
+				},
+				tool,
+				{Role: schema.Assistant, Content: "The read result has been consumed."},
+				{Role: schema.User, Content: "Continue."},
+			}
+			capture := &captureInputModel{}
+			terminal := Query(t.Context(), QueryParams{
+				Messages: history, QuerySource: QuerySourceSDK, ChatModel: capture,
+				ToolUseContext: &ToolUseContext{Options: &ToolUseOptions{MainLoopModel: "deepseek-flash"}},
+			}, func(QueryEvent) {})
+			if terminal.Reason != TerminalCompleted || len(capture.inputs) != 1 {
+				t.Fatalf("terminal=%s provider calls=%d", terminal.Reason, len(capture.inputs))
+			}
+			for _, message := range capture.inputs[0] {
+				if message.ToolCallID != tool.ToolCallID {
+					continue
+				}
+				head, tail, ok := strings.Cut(message.Content, tc.marker)
+				if !ok || len(head) == 0 || len(tail) == 0 || len(head) > tc.edgeBytes || len(tail) > tc.edgeBytes {
+					t.Fatalf("truncation marker=%t head_bytes=%d tail_bytes=%d, want both within %d bytes",
+						ok, len(head), len(tail), tc.edgeBytes)
+				}
+				if !strings.HasPrefix(text, head) || !strings.HasSuffix(text, tail) || !utf8.ValidString(message.Content) {
+					t.Error("model-visible truncation damaged the original UTF-8 text")
+				}
+				if tool.Content != text {
+					t.Error("tool result mutation escaped into the original history")
+				}
+				return
+			}
+			t.Fatal("prepared request lost the tool result")
+		})
+	}
 }
 
 func TestQueryMicrocompactUsesPlanModel(t *testing.T) {
