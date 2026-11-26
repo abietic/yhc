@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/hooks"
 	"github.com/abietic/yhc/tools"
@@ -522,6 +524,56 @@ func TestFormatToolErrorTruncatesLong(t *testing.T) {
 		t.Errorf("expected '10000 characters truncated' in output, got truncation section: %q",
 			got[halfToolErrorLength:len(got)-halfToolErrorLength])
 	}
+}
+
+func TestQueryLongBashErrorKeepsUnicodeDiagnostics(t *testing.T) {
+	command := "printf '开始诊断\\n'; for ((i=0;i<3500;i++)); do printf '界'; done; printf '\\n最终断言'; exit 7"
+	args, err := json.Marshal(map[string]string{"command": command})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := &singleToolCallModel{toolName: "Bash", args: string(args)}
+	manager := tools.NewShellManager()
+	t.Cleanup(func() { _ = manager.KillAll() })
+	registry := tools.NewRegistry()
+	tools.RegisterDefaults(registry)
+	maxTurns := 4
+	events, terminal := collectEvents(t.Context(), QueryParams{
+		Messages:     []*schema.Message{{Role: schema.User, Content: "run the diagnostic"}},
+		SystemPrompt: &schema.Message{Role: schema.System, Content: "Run the requested diagnostic."},
+		QuerySource:  QuerySourceSDK,
+		MaxTurns:     &maxTurns,
+		ChatModel:    model,
+		ToolRegistry: registry,
+		CanUseTool: func(context.Context, string, map[string]any, *ToolUseContext) (bool, string) {
+			return true, ""
+		},
+		ToolExecutor: func(ctx context.Context, _, input string) (string, error) {
+			return tools.BashTool().ExecuteCtx(tools.WithShellManager(ctx, manager), input)
+		},
+	})
+	if terminal.Reason != TerminalCompleted {
+		t.Fatalf("query terminal = %q, want completed", terminal.Reason)
+	}
+	for _, event := range events {
+		if event.Type != EventToolResult {
+			continue
+		}
+		result := event.ToolResultMessage
+		if result == nil || result.Extra["is_error"] != true {
+			t.Fatal("closed shell did not produce an error tool result")
+		}
+		for _, diagnostic := range []string{"开始诊断", "最终断言", "characters truncated"} {
+			if !strings.Contains(result.Content, diagnostic) {
+				t.Errorf("tool result lost %q", diagnostic)
+			}
+		}
+		if !utf8.ValidString(result.Content) {
+			t.Error("tool-result truncation split a UTF-8 character")
+		}
+		return
+	}
+	t.Fatal("query emitted no tool result")
 }
 
 func TestQueryEmptyToolResultInjection(t *testing.T) {

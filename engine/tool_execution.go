@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/containment"
 	"github.com/abietic/yhc/engine/execution"
@@ -824,23 +825,28 @@ func maybeOffloadToolResult(rs *storage.ResultStorage, toolName, result string) 
 }
 
 const (
-	// maxToolErrorLength is the maximum length for tool error messages before truncation.
+	// maxToolErrorLength is the byte budget for the retained diagnostic text.
 	// Mirrors TS utils/toolErrors.ts MAX_ERROR_LENGTH.
 	maxToolErrorLength  = 10000
 	halfToolErrorLength = 5000
 )
 
 // formatToolError truncates long error messages to prevent context bloat.
-// Shows first 5000 + last 5000 chars with truncation notice in between.
+// Keeps up to 5000 bytes at each end without splitting a UTF-8 character.
 // Mirrors TS utils/toolErrors.ts:5-22 formatError().
 func formatToolError(errMsg string) string {
 	if len(errMsg) <= maxToolErrorLength {
 		return errMsg
 	}
-	head := errMsg[:halfToolErrorLength]
-	tail := errMsg[len(errMsg)-halfToolErrorLength:]
+	headEnd, tailStart := halfToolErrorLength, len(errMsg)-halfToolErrorLength
+	for headEnd > 0 && !utf8.RuneStart(errMsg[headEnd]) {
+		headEnd--
+	}
+	for tailStart < len(errMsg) && !utf8.RuneStart(errMsg[tailStart]) {
+		tailStart++
+	}
 	return fmt.Sprintf("%s\n\n... [%d characters truncated] ...\n\n%s",
-		head, len(errMsg)-maxToolErrorLength, tail)
+		errMsg[:headEnd], utf8.RuneCountInString(errMsg[headEnd:tailStart]), errMsg[tailStart:])
 }
 
 // maybeRecordFileState updates the engine's FileStateCache and persists a snapshot
