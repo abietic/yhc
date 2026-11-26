@@ -18,7 +18,7 @@ func backgroundFeedbackFixture(t *testing.T, body string) (*ShellManager, string
 	marker := filepath.Join(dir, "command-finished")
 	quoted := "'" + strings.ReplaceAll(marker, "'", "'\\''") + "'"
 	command := body + "\nyhc_feedback_code=$?\n: > " + quoted + "\n(exit \"$yhc_feedback_code\")"
-	result, err := runBackgroundCommand(t.Context(), manager, dir, command, "feedback fixture")
+	result, err := runBackgroundCommand(t.Context(), manager, dir, command, "feedback fixture", bashMaxExecutionTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +68,55 @@ func waitBackgroundFeedback(t *testing.T, manager *ShellManager, id, status stri
 			t.Fatalf("finished command has no %s feedback: %s", status, result)
 		case <-tick.C:
 		}
+	}
+}
+
+func TestBashExplicitExecutionTimeoutInForegroundAndBackground(t *testing.T) {
+	for _, mode := range []struct {
+		name       string
+		background bool
+	}{
+		{name: "foreground"},
+		{name: "background", background: true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			dir := t.TempDir()
+			manager := NewShellManager()
+			t.Cleanup(func() {
+				// Release the fixture even if the execution bound regresses.
+				if err := os.WriteFile(filepath.Join(dir, "release"), nil, 0o600); err != nil {
+					t.Error(err)
+				}
+				_ = manager.KillAll()
+			})
+			ctx := WithExecutionCWD(WithShellManager(t.Context(), manager), dir)
+			// Neither arm can exit normally. The wait bound is longer than
+			// the requested execution timeout and cannot terminate the job.
+			result, err := BashTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+				"command":           "while [ ! -f release ]; do sleep 0.02; done",
+				"timeout":           250,
+				"run_in_background": mode.background,
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode.background {
+				_, tail, ok := strings.Cut(result, "Shell ID: ")
+				if !ok {
+					t.Fatal("background start omitted its handle")
+				}
+				id, _, _ := strings.Cut(tail, "\n")
+				result, err = BashOutputTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
+					"bash_id": id, "wait": true, "timeout_ms": 2000,
+				}))
+				if err != nil || !strings.Contains(result, "Status: timed_out") {
+					t.Fatalf("background execution did not reach a timed-out terminal: %s, %v", result, err)
+				}
+			}
+			if !strings.Contains(result, "[timeout]") || strings.Contains(result, "[exit code:") {
+				t.Fatalf("execution timeout did not preserve the shell outcome: %s", result)
+			}
+		})
 	}
 }
 

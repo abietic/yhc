@@ -30,6 +30,11 @@ func getDefaultShellManager() *ShellManager {
 	return defaultShellManager
 }
 
+const (
+	bashDefaultForegroundTimeout = 2 * time.Minute
+	bashMaxExecutionTimeout      = 10 * time.Minute
+)
+
 // backgroundShells tracks shells running in background mode.
 var backgroundShells sync.Map // shellID -> *backgroundShellEntry
 
@@ -81,7 +86,7 @@ func BashTool() ToolImpl {
 			Desc: "Executes a shell command in a persistent shell session.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"command":           {Type: schema.String, Desc: "Command to execute", Required: true},
-				"timeout":           {Type: schema.Integer, Desc: "Max execution time in milliseconds (default 120000, max 600000)"},
+				"timeout":           {Type: schema.Integer, Desc: "Execution timeout in milliseconds (foreground defaults to 120000, background to 600000, maximum 600000)"},
 				"description":       {Type: schema.String, Desc: "Short description of what the command does"},
 				"run_in_background": {Type: schema.Boolean, Desc: "Run in background, returns shell ID for later monitoring"},
 			}),
@@ -101,12 +106,13 @@ func BashTool() ToolImpl {
 				return "", fmt.Errorf("bash: command is required")
 			}
 
-			timeoutMs := 120000
+			background := params.RunInBackground != nil && *params.RunInBackground
+			timeout := bashDefaultForegroundTimeout
+			if background {
+				timeout = bashMaxExecutionTimeout
+			}
 			if params.Timeout != nil && *params.Timeout > 0 {
-				timeoutMs = *params.Timeout
-				if timeoutMs > 600000 {
-					timeoutMs = 600000
-				}
+				timeout = time.Duration(min(*params.Timeout, int(bashMaxExecutionTimeout/time.Millisecond))) * time.Millisecond
 			}
 
 			mgr := ShellManagerFromCtx(ctx)
@@ -125,13 +131,11 @@ func BashTool() ToolImpl {
 			}
 
 			// Background execution mode.
-			if params.RunInBackground != nil && *params.RunInBackground {
-				return runBackgroundCommand(ctx, mgr, cwd, params.Command, params.Description)
+			if background {
+				return runBackgroundCommand(ctx, mgr, cwd, params.Command, params.Description, timeout)
 			}
 
 			// Foreground execution in the default persistent shell.
-			timeout := time.Duration(timeoutMs) * time.Millisecond
-
 			// Emit progress event when execution starts.
 			EmitProgress(ctx, ToolProgressEvent{
 				ToolName: "Bash",
@@ -410,7 +414,7 @@ func executeKillShell(manager *ShellManager, input string) (string, error) {
 }
 
 // runBackgroundCommand starts a command in a dedicated background shell.
-func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, description string) (string, error) {
+func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, description string, timeout time.Duration) (string, error) {
 	// Create a unique shell ID for the background task.
 	shellID := fmt.Sprintf("bg-%d", time.Now().UnixNano())
 
@@ -435,7 +439,7 @@ func runBackgroundCommand(ctx context.Context, mgr *ShellManager, cwd, command, 
 	// Fire and forget — execute in background goroutine.
 	go func() {
 		backgroundCtx := context.WithoutCancel(ctx)
-		result, err := mgr.ExecuteAt(backgroundCtx, shellID, cwd, command, 10*time.Minute)
+		result, err := mgr.ExecuteAt(backgroundCtx, shellID, cwd, command, timeout)
 		entry.finishWithContext(backgroundCtx, command, result, err)
 	}()
 
