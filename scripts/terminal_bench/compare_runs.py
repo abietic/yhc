@@ -333,6 +333,33 @@ def plan_identifier(record, field, legacy_field):
     return identifiers.pop()
 
 
+def captured_request_routes(wire, records, protocol):
+    """Recover explicit routing from pinned request bodies in legacy ledgers."""
+    effort_key = {"responses": "reasoning", "messages": "output_config"}.get(protocol)
+    if effort_key is None:
+        return []
+    routes = set()
+    for record in records:
+        if record.get("upstream_attempted") is not True or not record.get("body_sha256"):
+            return []
+        # Tool feedback validates the wire call IDs before this fallback runs.
+        path = wire / (record["id"] + ".request.json")
+        try:
+            body, pin = read_json(path, with_sha256=True)
+            if pin != record["body_sha256"] or not isinstance(body, dict):
+                return []
+            config = body.get(effort_key)
+            if not isinstance(config, dict):
+                return []
+            model, effort = atom(body.get("model")), atom(config.get("effort"))
+        except (OSError, ValueError):
+            return []
+        if record.get("requested_model") not in (None, model) or record.get("effort") not in (None, effort):
+            return []
+        routes.add((model, effort))
+    return sorted(routes)
+
+
 def load_run(root):
     root = Path(root).resolve()
     report_path = root / "report.json"
@@ -423,16 +450,23 @@ def load_run(root):
         usage["wire_usage_complete"] = usage["usage_complete"]
         if coverage is not None and not coverage["complete"]:
             usage["usage_complete"] = False
+        route_evidence = "ledger_metadata" if usage["routes"] else "unavailable"
         if ledger is not None:
             dsh = sample["agent"] == "dsh"
             feedback = collect_tool_feedback(path.parent, ledger["records"], ledger["protocol"],
                 root / "trials" / identifier / "agent" / ("notifications.jsonl" if dsh else "yhc.jsonl"),
                 native_format="dsh_sdk" if dsh else "yhc_events", native_session_id=identifier if dsh else None)
             usage.update(tool_feedback=feedback, edit_rejections=feedback["edit_rejections"])
+            if not usage["routes"]:
+                usage["routes"] = captured_request_routes(path.parent, ledger["records"], ledger["protocol"])
+                if usage["routes"]:
+                    route_evidence = "digest_bound_requests"
         deadline = entry.get("deadline") or {}
         outcome = entry.get("outcome") or {}
         rows.append(dict(agent=atom(sample["agent"]), sample_id=identifier, task=atom(sample["task"]),
             task_ref=atom(sample["task_ref"]), evidence_kind=kind, source_sha256=source_sha,
+            route_evidence=route_evidence,
+            dispatch_closeout_sha256=source_sha if has_closeout and kind == "recorded_run" else None,
             classification_source_sha256=classification_sha if zero_mode or synthetic else None,
             ledger_sha256=fingerprint(path) if ledger is not None else None,
             status="completed" if entry.get("normal_completion") is True else "interrupted_or_unverified",
@@ -573,9 +607,14 @@ def build_report(roots, reference_trajectories=()):
     references = [load_reference_trajectory(path) for path in reference_trajectories]
     if len({r["source_sha256"] for r in references}) != len(references):
         raise ValueError("duplicate reference would double count")
+    paired = []
+    for (task_ref, _), group in pairs.items():
+        if {r["agent"] for r in group} >= {"dsh", "yhc"}:
+            closeouts = {r["dispatch_closeout_sha256"] for r in group}
+            paired.append(dict(task_ref=task_ref, samples=[r["sample_id"] for r in group],
+                               same_dispatch_closeout=None if None in closeouts else len(closeouts) == 1))
     return dict(schema_version=1, authority="diagnostic_only", samples=rows, reference_trajectories=references,
-                paired_tasks=[dict(task_ref=k[0], samples=[r["sample_id"] for r in group])
-                              for k, group in pairs.items() if {r["agent"] for r in group} >= {"dsh", "yhc"}],
+                paired_tasks=paired,
                 stability_established=False,
                 limitations=["known_usage_cache_ratio_is_not_full_coverage_when_unknown_calls_exist",
                              "native_and_gateway_reservations_may_overlap",
@@ -600,12 +639,19 @@ def markdown(report):
                      f"{format(cache, '.2%') if cache is not None else 'unavailable'} | "
                      f"{thinking if thinking is not None else 'unavailable'} |")
     lines += ["", "Idle estimates retain their own evidence coverage; they are not provider bills.", "",
-              "| Agent | Sample | Completion | Operator status / reason | Idle estimate evidence |",
-              "|---|---|---|---|---|"]
+              "| Agent | Sample | Completion | Operator status / reason | Idle estimate evidence | Requested route evidence |",
+              "|---|---|---|---|---|---|"]
     for r in report["samples"]:
         lines.append(f"| {r['agent']} | {r['sample_id']} | {r['status']} | "
                      f"{r.get('operator_status') or 'unavailable'} / {r.get('outcome_reason') or r.get('terminal_reason') or 'unavailable'} | "
-                     f"{r.get('known_idle_estimate_evidence', 'unavailable')} |")
+                     f"{r.get('known_idle_estimate_evidence', 'unavailable')} | {r.get('route_evidence', 'unavailable')} |")
+    if report.get("paired_tasks"):
+        lines += ["", "Groups share a task reference and requested routes. Dispatch scope does not establish equal budgets.",
+                  "", "| Task reference | Samples | Dispatch scope |", "|---|---|---|"]
+        scopes = {True: "Same canonical closeout", False: "Multiple canonical closeouts", None: "Unavailable"}
+        for group in report["paired_tasks"]:
+            lines.append(f"| {group['task_ref']} | {', '.join(group['samples'])} | "
+                         f"{scopes[group.get('same_dispatch_closeout')]} |")
     budget_rows = [(row, evidence) for row in report["samples"] if (evidence := row.get("budget_admission"))
                    and (row.get("operator_status") == "budget_paused" or evidence["native_stop_cause"]
                         or evidence["observed_gateway_budget_denials"])]
