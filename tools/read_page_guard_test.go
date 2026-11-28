@@ -65,7 +65,7 @@ func TestReadPagesEditGuard(t *testing.T) {
 					if tc.changeBefore > 0 && i == tc.changeBefore {
 						change()
 					}
-					result := readPage(t, ctx, path, p.offset, p.limit, tc.lines)
+					result := readPage(ctx, t, path, p.offset, p.limit, tc.lines)
 					complete := strings.Contains(result, "[Read coverage complete across calls for this file.]")
 					if complete != (i == len(tc.pages)-1 && (tc.allow || tc.changeAfter)) {
 						t.Error("coverage notice did not match the pages shown")
@@ -101,13 +101,13 @@ func TestPagedReadWriteGuardsRemainSessionScoped(t *testing.T) {
 	reader := WithSessionID(t.Context(), "reader-session")
 	other := WithSessionID(t.Context(), "other-session")
 	writeInput := fileToolInput(t, map[string]any{"file_path": path, "content": "replacement"})
-	readPage(t, reader, path, 0, 2, 3)
-	readPage(t, other, path, 2, 1, 3)
+	readPage(reader, t, path, 0, 2, 3)
+	readPage(other, t, path, 2, 1, 3)
 	if _, err := WriteTool().ExecuteCtx(other, writeInput); err == nil {
 		t.Fatal("write admitted with pages from different sessions")
 	}
-	readPage(t, reader, path, 0, 2, 3)
-	readPage(t, reader, path, 2, 1, 3)
+	readPage(reader, t, path, 0, 2, 3)
+	readPage(reader, t, path, 2, 1, 3)
 	if _, err := WriteTool().ExecuteCtx(other, writeInput); err == nil {
 		t.Fatal("write reused another session's verified page coverage")
 	}
@@ -129,13 +129,13 @@ func TestPagedReadDoesNotMixAgentIdentitiesInSharedOwner(t *testing.T) {
 	owner := WithFileReadGuards(WithSessionID(t.Context(), "shared-session"), NewFileReadGuards())
 	first := WithAgentID(WithThreadID(owner, "one-thread"), "one-agent")
 	other := WithAgentID(WithThreadID(owner, "other-thread"), "other-agent")
-	readPage(t, first, path, 0, 2, 3)
-	readPage(t, other, path, 2, 1, 3)
+	readPage(first, t, path, 0, 2, 3)
+	readPage(other, t, path, 2, 1, 3)
 	if hasFileBeenReadContext(other, path) {
 		t.Fatal("another Agent's partial read supplied page coverage")
 	}
-	readPage(t, first, path, 0, 2, 3)
-	readPage(t, first, path, 2, 1, 3)
+	readPage(first, t, path, 0, 2, 3)
+	readPage(first, t, path, 2, 1, 3)
 	if !hasFileBeenReadContext(first, path) || hasFileBeenReadContext(other, path) {
 		t.Fatal("completed coverage escaped the original Thread and Agent")
 	}
@@ -153,7 +153,7 @@ func TestIncompleteReadPagesDoNotSurviveColdRestore(t *testing.T) {
 	}
 	owner := NewFileReadGuards()
 	ctx := WithFileReadGuards(t.Context(), owner)
-	readPage(t, ctx, path, 0, 2, 3)
+	readPage(ctx, t, path, 0, 2, 3)
 	snapshot, err := owner.Snapshot(root)
 	if err != nil || len(snapshot.Entries) != 1 || !snapshot.Entries[0].IsPartial {
 		t.Fatalf("incomplete page coverage was not captured as partial: %v", err)
@@ -163,17 +163,17 @@ func TestIncompleteReadPagesDoNotSurviveColdRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	cold := WithFileReadGuards(t.Context(), fresh)
-	readPage(t, cold, path, 2, 1, 3)
+	readPage(cold, t, path, 2, 1, 3)
 	if hasFileBeenReadContext(cold, path) {
 		t.Fatal("recovered partial state contributed a previously read range")
 	}
-	readPage(t, cold, path, 0, 2, 3)
+	readPage(cold, t, path, 0, 2, 3)
 	if !hasFileBeenReadContext(cold, path) {
 		t.Fatal("all pages were observed again in the restored owner")
 	}
 }
 
-func readPage(t *testing.T, ctx context.Context, path string, offset, limit, total int) string {
+func readPage(ctx context.Context, t *testing.T, path string, offset, limit, total int) string {
 	t.Helper()
 	text, err := ReadTool().ExecuteCtx(ctx, fileToolInput(t, map[string]any{
 		"file_path": path, "offset": offset, "limit": limit,
