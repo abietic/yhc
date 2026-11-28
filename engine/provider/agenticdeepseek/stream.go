@@ -338,5 +338,7 @@ func readSSE(reader io.Reader, maxEventBytes int, handle func(sseRecord) error) 
 		}
 		return &transportError{err: err, phase: transportPhaseBody}
 	}
-	return dispatch()
+	// A blank line commits an SSE record. EOF discards the pending record,
+	// even if its data contains complete JSON.
+	return nil
 }
