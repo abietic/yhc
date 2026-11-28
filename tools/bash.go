@@ -92,15 +92,21 @@ func (entry *backgroundShellEntry) runningPreview() string {
 	for len(preview) > 0 && !utf8.RuneStart(preview[0]) {
 		preview = preview[1:]
 	}
-	for start := len(preview) - 1; start >= max(0, len(preview)-utf8.UTFMax); start-- {
-		if utf8.RuneStart(preview[start]) {
-			if !utf8.FullRune(preview[start:]) {
-				preview = preview[:start]
+	return normalizeShellOutput(trimIncompleteUTF8Suffix(string(preview)))
+}
+
+// trimIncompleteUTF8Suffix removes only a final rune interrupted by a byte
+// boundary. The caller decides when output is known to end at such a boundary.
+func trimIncompleteUTF8Suffix(text string) string {
+	for start := len(text) - 1; start >= max(0, len(text)-utf8.UTFMax); start-- {
+		if utf8.RuneStart(text[start]) {
+			if !utf8.FullRuneInString(text[start:]) {
+				return text[:start]
 			}
 			break
 		}
 	}
-	return normalizeShellOutput(string(preview))
+	return text
 }
 
 func (entry *backgroundShellEntry) finish(command string, result *ShellResult, err error) {
