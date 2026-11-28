@@ -649,7 +649,60 @@ class ComparisonTests(unittest.TestCase):
         b = self.write(row("dsh", "sample-b"), [call("3"), call("4")], name="two")
         report = build_report([a, b])
         self.assertEqual(len(report["paired_tasks"]), 1)
+        self.assertIsNone(report["paired_tasks"][0]["same_dispatch_closeout"])
         self.assertFalse(report["stability_established"])
+
+    def write_legacy_request_captures(self, agent, sample, body, *, partial_effort=None):
+        data = json.dumps(body).encode()
+        records = [dict(call(str(i)), body_sha256=hashlib.sha256(data).hexdigest(), upstream_attempted=True)
+                   for i in (1, 2)]
+        for record in records:
+            del record["requested_model"], record["effort"]
+        if partial_effort is not None:
+            records[0]["effort"] = partial_effort
+        root = self.write(row(agent, sample), records, name=sample)
+        (root / "scoreboard.json").rename(root / "dispatch-closeout.json")
+        for record in records:
+            (root / "wire" / sample / (record["id"] + ".request.json")).write_bytes(data)
+        return root
+
+    def test_bound_legacy_requests_recover_routes_and_distinguish_dispatches(self):
+        a = self.write_legacy_request_captures("yhc", "sample-a", dict(model="flash", input="PRIVATE_SENTINEL",
+                                                                        reasoning=dict(effort="high")))
+        b = self.write_legacy_request_captures("dsh", "sample-b", dict(model="flash", messages=[],
+                                                                        output_config=dict(effort="high")))
+        report = build_report([a, b])
+        for sample in report["samples"]:
+            self.assertEqual(sample["routes"], [("flash", "high")])
+            self.assertEqual(sample["route_evidence"], "digest_bound_requests")
+        self.assertFalse(report["paired_tasks"][0]["same_dispatch_closeout"])
+        self.assertIn("Multiple canonical closeouts", markdown(report))
+        self.assertNotIn("PRIVATE_SENTINEL", json.dumps(report))
+
+        (b / "wire" / "sample-b").rename(a / "wire" / "sample-b")
+        closeout = a / "dispatch-closeout.json"
+        data = json.loads(closeout.read_text())
+        data["samples"].extend(json.loads((b / closeout.name).read_text())["samples"])
+        closeout.write_text(json.dumps(data))
+        report = build_report([a])
+        self.assertTrue(report["paired_tasks"][0]["same_dispatch_closeout"])
+        self.assertIn("Same canonical closeout", markdown(report))
+
+    def test_legacy_route_stays_unknown_without_consistent_capture_evidence(self):
+        for sample, reasoning, partial_effort in (("mismatch", dict(effort="high"), None),
+                                                  ("missing", dict(), None),
+                                                  ("conflict", dict(effort="high"), "low")):
+            with self.subTest(sample=sample):
+                root = self.write_legacy_request_captures("yhc", sample, dict(model="flash", input=[],
+                                                                             reasoning=reasoning),
+                                                          partial_effort=partial_effort)
+                if sample == "mismatch":
+                    path = root / "wire" / sample / "2.request.json"
+                    path.write_bytes(path.read_bytes() + b"\n")
+                got, = load_run(root)
+                self.assertEqual(got["routes"], [])
+                self.assertEqual(got["route_evidence"], "unavailable")
+                self.assertEqual(got["known_calls"], 2)
 
     def test_invalid_and_private_fields_cannot_enter_output(self):
         entry = row()
