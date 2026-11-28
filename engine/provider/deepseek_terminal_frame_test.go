@@ -68,8 +68,9 @@ func TestDeepSeekStreamCommitsOnlyFramedTerminal(t *testing.T) {
 				}, nil
 			})
 			inner, err := agenticdeepseek.New(t.Context(), &agenticdeepseek.Config{
-				APIKey: "fixture", BaseURL: "http://fixture.invalid",
-				Model: agenticdeepseek.FlashModel, HTTPClient: &http.Client{Transport: transport},
+				APIKey:     "fixture",
+				Model:      agenticdeepseek.FlashModel,
+				HTTPClient: &http.Client{Transport: transport},
 			})
 			if err != nil {
 				t.Fatal(err)
