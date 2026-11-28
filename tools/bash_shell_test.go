@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abietic/yhc/engine/containment"
 )
@@ -392,6 +393,41 @@ func TestP511GuestCommandLifecycleIsBoundedAndCompatible(t *testing.T) {
 			t.Fatalf("hard wall time result=%#v elapsed=%s", result, time.Since(started))
 		}
 	})
+}
+
+func TestGuestBashCaptureLimitPreservesCompleteUTF8(t *testing.T) {
+	binding, adapter := p51GuestBinding(t)
+	manager := p51GuestShellManager(t, binding, adapter)
+	t.Cleanup(func() { _ = manager.KillAll() })
+
+	for _, test := range []struct {
+		name      string
+		zeros     int
+		suffix    string
+		truncated bool
+	}{
+		{name: "one byte of three", zeros: 127, suffix: "\n[stdout truncated]", truncated: true},
+		{name: "two bytes of three", zeros: 126, suffix: "\n[stdout truncated]", truncated: true},
+		{name: "complete rune at limit", zeros: 125, suffix: "界\n[stdout truncated]", truncated: true},
+		{name: "complete capture", zeros: 124, suffix: "界Z"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := fmt.Sprintf("printf '%%0%dd%%s' 0 '界Z'; (exit 7)", test.zeros)
+			result, err := manager.ExecuteAt(t.Context(), "guest", binding.Policy().Spec().CWD, command, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.Repeat("0", test.zeros) + test.suffix
+			if result.Stdout != want || result.ExitCode != 7 || result.Truncated != test.truncated {
+				t.Fatalf("stdout=%q exit=%d truncated=%v, want stdout=%q exit=7 truncated=%v",
+					result.Stdout, result.ExitCode, result.Truncated, want, test.truncated)
+			}
+			feedback := formatShellResult(command, result)
+			if !utf8.ValidString(feedback) || !strings.Contains(feedback, "[exit code: 7]") {
+				t.Errorf("invalid terminal feedback: %q", feedback)
+			}
+		})
+	}
 }
 
 func TestShellManagerTimeoutRetiresShellAndRecovers(t *testing.T) {

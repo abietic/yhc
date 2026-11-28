@@ -827,7 +827,11 @@ func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell
 		const maxRecent = 5
 
 		finish := func(cwd string, exitCode int, err error) {
-			normalized := normalizeShellOutput(output.String())
+			captured := output.String()
+			if truncated {
+				captured = trimIncompleteUTF8Suffix(captured)
+			}
+			normalized := normalizeShellOutput(captured)
 			if truncated {
 				normalized += "\n[stdout truncated]"
 			}
@@ -965,7 +969,7 @@ func (m *ShellManager) executeLocked(ctx context.Context, shell *PersistentShell
 	// Collect stderr
 	stderr, stderrTruncated := shell.getStderrBuffer()
 	if stderrTruncated {
-		stderr += "[stderr truncated]"
+		stderr = trimIncompleteUTF8Suffix(stderr) + "[stderr truncated]"
 	}
 
 	return &ShellResult{
