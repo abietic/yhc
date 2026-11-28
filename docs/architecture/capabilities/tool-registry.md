@@ -1,7 +1,7 @@
 # Tool Registry and Model-Visible Pool
 
 **Status:** current
-**Last verified:** 2026-10-26
+**Last verified:** 2026-11-28
 
 > **Ownership:** `tools.Registry` for dispatch; QueryEngine and `AssembleToolPool` for model visibility
 
@@ -230,12 +230,15 @@ or absent media delivery return a tool error without establishing read credit.
 SVG continues through the ordinary text-window and Edit path. A successful
 visual read records only unverified observation for cold guard capture.
 
-Edit and overwriting Write still require complete read/write state. Partial
-windows alone, even several separate windows, and shell reads do not establish
-that state. Model-visible Read/Edit/Write guidance states this existing rule;
-neither the state tracker nor the guard is relaxed. The per-call line limit
-still prevents a first complete Read of files larger than that limit; cumulative
-range admission is outside this change.
+Edit and overwriting Write require complete read/write state. On Linux and
+macOS, Read can accumulate untruncated text ranges within one guard owner and
+session, thread, and Agent identity. An explicit owner also supports standalone
+calls without a runtime identity. Each range must come from the same file bytes.
+Read announces when the ranges cover every line. The write tools verify the
+file against that evidence before modifying it. This path uses the existing
+4 MiB file verification bound. Shell reads supply no read credit. Incomplete
+ranges stay process-local and must be collected again after restore. A
+workspace restore retains complete coverage for matching, unaffected paths.
 
 `DefaultPermissionAllowed` is not a read-only claim or a general Auto escape:
 QueryEngine accepts it only for a declared built-in process-local action.

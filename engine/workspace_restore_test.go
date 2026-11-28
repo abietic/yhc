@@ -365,6 +365,42 @@ func TestWorkspaceRestoreRejectsForeignReadScopeBeforeModelDispatch(t *testing.T
 	}
 }
 
+func TestWorkspaceRestoreRetainsOnlyMatchingUnaffectedPagedReads(t *testing.T) {
+	eng, restored, turn, _, _ := newRestoreEngineFixture(t, PermissionAllowOnce)
+	identity := eng.workspaceRevisionIdentity()
+	ctx := tools.WithThreadID(tools.WithSessionID(t.Context(), identity.sessionID), identity.threadID)
+	other := tools.WithSessionID(ctx, "other-session")
+	paths := []string{filepath.Join(identity.cwd, "unaffected.txt"), filepath.Join(identity.cwd, "foreign.txt")}
+	for i, reader := range []context.Context{ctx, other} {
+		if err := os.WriteFile(paths[i], []byte("one\ntwo"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for offset := range 2 {
+			input, _ := json.Marshal(map[string]any{"file_path": paths[i], "offset": offset, "limit": 1})
+			if _, err := tools.ReadTool().ExecuteCtx(reader, string(input)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	preview, err := eng.PrepareWorkspaceRestore(turn, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.ConfirmWorkspaceRestore(t.Context(), preview.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	ctx, _, err = eng.workspaceRestoreQueryContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, path := range append(paths, restored) {
+		input, _ := json.Marshal(map[string]string{"file_path": path, "content": "replacement"})
+		if _, err := tools.WriteTool().ExecuteCtx(ctx, string(input)); (err == nil) != (i == 0) {
+			t.Errorf("affected or foreign paged evidence mismatched at index %d: %v", i, err)
+		}
+	}
+}
+
 func TestWorkspaceExternalWriterRejectsChildAndRelativeWorkspace(t *testing.T) {
 	for _, test := range []struct{ name, cwd, agent string }{{"relative", ".", ""}, {"child", t.TempDir(), "child"}} {
 		t.Run(test.name, func(t *testing.T) {
