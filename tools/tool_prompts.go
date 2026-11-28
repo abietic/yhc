@@ -27,8 +27,8 @@ func readToolPrompt() string {
 - The file_path parameter must be an absolute path, not a relative path.
 - By default, it reads up to 250 lines starting from the beginning of the file; one call can read at most 2000 lines.
 - Use offset and limit to inspect a range. offset is zero-based; line is a one-based target that centers the view.
-- Partial Read notices identify the displayed range and total line count. An existing file needs one Read covering all its lines before the first Edit or overwrite; a partial view alone does not satisfy that guard. For a file within the per-call line limit, omit offset/line and set limit high enough to cover it.
-- Successful Write/Edit also establishes complete read state, and a later partial reread preserves it. Bash, cat, and grep do not record a Read. Separate partial reads do not accumulate into a complete read.
+- Partial Read notices identify the displayed range and total line count. Read all lines before the first Edit or overwrite. For a file within the per-call limit, omit offset/line and set limit high enough to cover it. On Linux and macOS, untruncated ranges from a text file up to 4 MiB can qualify once Read reports complete coverage across calls.
+- Successful Write/Edit also establishes complete read state, and a later partial reread preserves it. Bash, cat, and grep do not record a Read.
 - Results are returned using cat -n format, with line numbers starting at 1.
 - Very long lines may be shortened in the displayed text.
 - PNG, JPEG and static WebP files are delivered as image attachments when the active model and entrypoint support images. Limits are 5 MiB and 25 million pixels per file; convert other raster formats first. SVG remains source text.
@@ -41,7 +41,7 @@ func readToolPrompt() string {
 func editToolPrompt() string {
 	return `# Instructions for Edit tool usage
 
-- Before editing an existing file, use Read to cover all its lines. A partial Read or a shell read does not satisfy this guard. A prior complete Read or successful Write/Edit supplies the required state; a later partial reread does not remove it.
+- Before editing an existing file, use Read to cover all its lines. Read can report complete coverage across ranges of the same file version. A prior complete Read or successful Write/Edit supplies the required state; a later partial reread does not remove it.
 - When editing text from Read tool output, preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix.
 - ALWAYS prefer editing existing files. NEVER write new files unless explicitly required.
 - The edit will FAIL if old_string is not unique in the file. Provide a larger string with more context to make it unique, or use replace_all.

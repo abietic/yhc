@@ -182,11 +182,19 @@ func ReadTool() ToolImpl {
 
 		// Record file-read state for Edit/Write guards.
 		isPartial := offset > 0 || len(lines) < totalLines
-		recordFileReadObserved(ctx, fullPath, isPartial, data)
+		covered := false
+		if isPartial && canRecordReadPage(ctx, len(data), lines) {
+			covered = recordFileReadPage(ctx, fullPath, data, readLineSpan{offset, offset + len(lines)}, totalLines)
+		} else {
+			recordFileReadObserved(ctx, fullPath, isPartial, data)
+		}
 
 		result := formatReadResult(params.FilePath, offset, lines)
 		if isPartial {
 			result += fmt.Sprintf("\n[Partial Read: lines %d-%d of %d.]\n", offset+1, offset+len(lines), totalLines)
+		}
+		if covered {
+			result += "[Read coverage complete across calls for this file.]\n"
 		}
 		return result, nil
 	}

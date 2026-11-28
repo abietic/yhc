@@ -8,9 +8,12 @@ import (
 // ReadFileEntry records when a file was read and whether it was a partial view.
 type ReadFileEntry struct {
 	Timestamp int64 // Unix milliseconds
-	IsPartial bool  // true if offset/limit was used (partial view)
+	IsPartial bool  // true until the read observation covers the file
 	sha256    string
 	size      int64
+	paged     bool
+	pageOwner readPageOwner
+	pages     *readPageCoverage
 }
 
 // readFileState tracks which files have been read by the Read tool.
@@ -31,13 +34,12 @@ func RecordFileRead(path string, isPartial bool) {
 	defer readFileState.Unlock()
 	// A narrower reread does not erase knowledge from a prior complete read,
 	// write, or edit. Keep partial-only files guarded until a complete read.
-	if previous := readFileState.m[path]; previous != nil && !previous.IsPartial {
-		isPartial = false
+	entry := ReadFileEntry{IsPartial: isPartial}
+	if previous := readFileState.m[path]; isPartial && previous != nil && !previous.IsPartial {
+		entry = *previous
 	}
-	readFileState.m[path] = &ReadFileEntry{
-		Timestamp: time.Now().UnixMilli(),
-		IsPartial: isPartial,
-	}
+	entry.Timestamp = time.Now().UnixMilli()
+	readFileState.m[path] = &entry
 }
 
 // GetFileReadState returns the read state for a file, or nil if not read.
@@ -47,10 +49,10 @@ func GetFileReadState(path string) *ReadFileEntry {
 	return readFileState.m[path]
 }
 
-// HasFileBeenRead returns true if the file has been fully read (not partial).
+// HasFileBeenRead reports the compatibility guard's complete unscoped reads.
 func HasFileBeenRead(path string) bool {
 	entry := GetFileReadState(path)
-	return entry != nil && !entry.IsPartial
+	return entry != nil && !entry.IsPartial && !entry.paged
 }
 
 // ResetFileReadState clears all read state (used in testing).

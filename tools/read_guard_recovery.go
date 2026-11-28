@@ -116,7 +116,11 @@ func ForkFileReadGuards(ctx context.Context, roots []string) *FileReadGuards {
 			}
 		}
 		if inside {
+			if entry.paged && entry.pageOwner != readPageOwnerFromContext(ctx) {
+				continue
+			}
 			copy := *entry
+			copy.pages = nil
 			result.m[path] = &copy
 		}
 	}
@@ -158,7 +162,9 @@ func recordFileReadObserved(ctx context.Context, path string, partial bool, data
 	if previous := guards.m[path]; previous != nil && !previous.IsPartial && partial {
 		// Preserve the exact earlier full-read evidence. A partial view of
 		// changed bytes must not manufacture fresh complete-read authority.
-		entry.IsPartial, entry.sha256, entry.size = false, previous.sha256, previous.size
+		stamp := entry.Timestamp
+		*entry = *previous
+		entry.Timestamp = stamp
 	}
 	guards.m[path] = entry
 	guards.revision++
@@ -186,8 +192,19 @@ func hasFileBeenReadContext(ctx context.Context, path string) bool {
 	}
 	entry, root, restored := *value, guards.root, guards.restored
 	guards.RUnlock()
-	if !restored {
+	if entry.paged && entry.pageOwner != readPageOwnerFromContext(ctx) {
+		return false
+	}
+	if !restored && !entry.paged {
 		return true
+	}
+	if !restored {
+		var err error
+		root, err = filepath.EvalSymlinks(filepath.Dir(path))
+		if err != nil {
+			return false
+		}
+		path = filepath.Join(root, filepath.Base(path))
 	}
 	actual, err := readGuardFile(root, path)
 	return err == nil && actual.SHA256 == entry.sha256 && actual.Size == entry.size

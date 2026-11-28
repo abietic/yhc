@@ -369,7 +369,9 @@ func (e *QueryEngine) invalidateRestoredPaths(identity workspaceRevisionIdentity
 	}
 	roots := []string{identity.cwd, root}
 	if c.restoreReadGuards == nil {
-		c.restoreReadGuards = tools.ForkFileReadGuards(context.Background(), roots)
+		ctx := tools.WithSessionID(context.Background(), identity.sessionID)
+		ctx = tools.WithThreadID(ctx, identity.threadID)
+		c.restoreReadGuards = tools.ForkFileReadGuards(ctx, roots)
 	}
 	var paths []string
 	for _, path := range relative {
