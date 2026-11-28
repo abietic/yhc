@@ -145,6 +145,28 @@ def count_upstream_attempts(records):
     return sum(row["upstream_attempted"] for row in records)
 
 
+def budget_admission_evidence(native, ledger):
+    """Keep native stop receipts and observed gateway denials independent."""
+    native = native if isinstance(native, dict) else {}
+    cause, denied = native.get("budget_stop_cause"), native.get("denied_calls")
+    denials = ledger.get("denials") if ledger is not None else None
+    dropped = ledger.get("denials_dropped") if ledger is not None else None
+    observed = None
+    if denials is not None:
+        if not isinstance(denials, list) or any(not isinstance(row, dict) for row in denials):
+            raise ValueError("invalid gateway denial evidence")
+        observed = {}
+        for row in denials:
+            reason = row.get("error")
+            if (row.get("upstream_opened") is False
+                    and reason in ("sample_budget_exhausted", "cohort_budget_exhausted", "sample_call_limit")):
+                observed[reason] = observed.get(reason, 0) + 1
+    return dict(native_stop_cause=atom(cause) if cause else None,
+                native_denied_calls=count(denied) if denied is not None else None,
+                observed_gateway_budget_denials=observed,
+                gateway_denials_dropped=count(dropped) if dropped is not None else None)
+
+
 def _usage(summary, ledger):
     fields = ("input_tokens", "cached_input_tokens", "output_tokens")
     total = count(summary["calls"])
@@ -394,6 +416,7 @@ def load_run(root):
             raise ValueError("ledger sample mismatch")
         usage = _usage(entry["summary"], ledger)
         native = (entry.get("native") or {}).get("native_usage")
+        usage["budget_admission"] = budget_admission_evidence(native, ledger)
         usage["usage_breakdown"] = native_usage_breakdown(native, usage)
         coverage = native_usage_coverage(native)
         usage["native_usage_coverage"] = coverage
@@ -583,6 +606,20 @@ def markdown(report):
         lines.append(f"| {r['agent']} | {r['sample_id']} | {r['status']} | "
                      f"{r.get('operator_status') or 'unavailable'} / {r.get('outcome_reason') or r.get('terminal_reason') or 'unavailable'} | "
                      f"{r.get('known_idle_estimate_evidence', 'unavailable')} |")
+    budget_rows = [(row, evidence) for row in report["samples"] if (evidence := row.get("budget_admission"))
+                   and (row.get("operator_status") == "budget_paused" or evidence["native_stop_cause"]
+                        or evidence["observed_gateway_budget_denials"])]
+    if budget_rows:
+        lines += ["", "Native and gateway denials are reported separately. Omitted gateway receipts may include any denial reason.", "",
+                  "| Agent | Sample | Native budget stop cause | Native denied calls | Observed gateway budget denials before upstream | Omitted gateway denial receipts |",
+                  "|---|---|---|---:|---|---:|"]
+        for row, evidence in budget_rows:
+            observed = evidence["observed_gateway_budget_denials"]
+            breakdown = ("unavailable" if observed is None else
+                         ", ".join(f"{reason}={total}" for reason, total in sorted(observed.items())) or "0")
+            cause, denied, dropped = ("unavailable" if evidence[key] is None else str(evidence[key])
+                for key in ("native_stop_cause", "native_denied_calls", "gateway_denials_dropped"))
+            lines.append(f"| {row['agent']} | {row['sample_id']} | {cause} | {denied} | {breakdown} | {dropped} |")
     attempts = [(row, row["upstream_attempts"]) for row in report["samples"]
                 if any(value is not None for value in row.get("upstream_attempts", {}).values())]
     if attempts:

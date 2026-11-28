@@ -74,9 +74,10 @@ class ComparisonTests(unittest.TestCase):
                 wire /= entry["sample"]["sample_id"]
             wire.mkdir(parents=True)
             protocol = "messages" if synthetic or entry["sample"]["agent"] == "dsh" else "responses"
-            (wire / "ledger.json").write_text(json.dumps(dict(protocol=protocol,
-                sample=entry["sample"]["sample_id"], currency="CNY", records=records, denials=[],
-                **(ledger_extra or {}))))
+            ledger = dict(protocol=protocol, sample=entry["sample"]["sample_id"], currency="CNY",
+                          records=records, denials=[])
+            ledger.update(ledger_extra or {})
+            (wire / "ledger.json").write_text(json.dumps(ledger))
         return root
 
     def test_reports_file_requests_separately_from_model_attempts(self):
@@ -298,6 +299,32 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual((got["reward"], got["operator_status"], got["outcome_reason"]), (1, "budget_paused", "budget_admission_denied"))
         self.assertEqual(got["terminal_reason"], "native_error")
         self.assertIn("budget_admission_denied", markdown(report))
+
+    def test_reports_native_and_gateway_budget_admission_evidence_separately(self):
+        native = row()
+        native.update(normal_completion=False, outcome=dict(ledger_status="budget_paused", reason="budget_admission_denied"),
+                      native=dict(native_usage=dict(budget_stop_cause="estimated_cost_reservation", denied_calls=1)))
+        gateway = row(agent="dsh", sample="sample-b")
+        gateway.update(normal_completion=False, outcome=native["outcome"])
+        records = [call("1"), call("2")]
+        report = build_report([
+            self.write(native, records), self.write(gateway, records, name="gateway", ledger_extra=dict(denials=[
+                dict(error="sample_budget_exhausted", upstream_opened=False),
+                dict(error="sample_call_limit", upstream_opened=True),
+                dict(error="official_read_only_check_failed", upstream_opened=False)], denials_dropped=2)),
+            self.write(name="legacy", entry=row(sample="sample-c")),
+        ])
+        samples = {sample["sample_id"]: sample for sample in report["samples"]}
+        self.assertEqual(samples["sample-a"]["budget_admission"], dict(
+            native_stop_cause="estimated_cost_reservation", native_denied_calls=1,
+            observed_gateway_budget_denials={}, gateway_denials_dropped=None))
+        self.assertEqual(samples["sample-b"]["budget_admission"], dict(
+            native_stop_cause=None, native_denied_calls=None,
+            observed_gateway_budget_denials={"sample_budget_exhausted": 1}, gateway_denials_dropped=2))
+        self.assertIsNone(samples["sample-c"]["budget_admission"]["observed_gateway_budget_denials"])
+        rendered = markdown(report)
+        self.assertIn("| yhc | sample-a | estimated_cost_reservation | 1 | 0 | unavailable |", rendered)
+        self.assertIn("| dsh | sample-b | unavailable | unavailable | sample_budget_exhausted=1 | 2 |", rendered)
 
     def test_zero_call_native_inventory_does_not_invent_thinking(self):
         entry = row()

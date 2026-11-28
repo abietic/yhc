@@ -217,6 +217,10 @@ a one-to-one correlation. Missing wire thinking stays unavailable, and missing
 or incomplete native evidence produces no breakdown. The operator outcome
 status/reason is displayed separately from reward and the native terminal
 reason, so a scored artifact cannot imply normal completion after a budget stop.
+The `budget_admission` section reports the native stop cause and denied-call
+count alongside observed gateway budget denials that occurred before upstream.
+Counts stay separate, and missing evidence stays unavailable. The dropped
+gateway denial count can include reasons outside budget admission.
 
 A plan is reported as unstarted only when its run directory has no dispatch
 claim, dispatch progress, cohort, wire capture, or trial artifacts. If any of
