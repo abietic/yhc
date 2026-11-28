@@ -17,7 +17,8 @@ import math
 from pathlib import Path
 import re
 
-from scripts.terminal_bench.tool_feedback import collect_tool_feedback
+from scripts.terminal_bench.budgeted_stream import Receipt
+from scripts.terminal_bench.tool_feedback import _events, _lines, collect_tool_feedback
 
 
 def atom(value):
@@ -167,7 +168,25 @@ def budget_admission_evidence(native, ledger):
                 gateway_denials_dropped=count(dropped) if dropped is not None else None)
 
 
-def _usage(summary, ledger):
+def _captured_thinking(wire, record, protocol):
+    pin, identifier = record.get("response_sha256"), record["id"]
+    if (not pin or protocol not in ("messages", "responses")
+            or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,180}", identifier) or identifier in (".", "..")):
+        return None
+    try:
+        lines, digest = _lines(wire / (identifier + ".response.sse"), with_sha256=True)
+        if lines is None or digest != pin:
+            return None
+        parser = Receipt(protocol)
+        receipt, = [usage for event in _events(lines) if (usage := parser.observe(event)) is not None]
+    except (OSError, ValueError):
+        return None
+    if any(receipt[key] != record[key] for key in ("input_tokens", "cached_input_tokens", "output_tokens")):
+        return None
+    return receipt["thinking_tokens"]
+
+
+def _usage(summary, ledger, wire):
     fields = ("input_tokens", "cached_input_tokens", "output_tokens")
     total = count(summary["calls"])
     unknown = count(summary["unknown_calls"])
@@ -221,6 +240,10 @@ def _usage(summary, ledger):
         all_reported = len(reported) == len(known)
         if thinking is not None and (not all_reported or thinking != sum(reported)):
             raise ValueError("summary and per-call thinking disagree")
+        recovered = [_captured_thinking(wire, r, ledger["protocol"]) for r in known
+                     if r.get("thinking_tokens") is None]
+        recovered = [value for value in recovered if value is not None]
+        reported.extend(recovered)
         details = [call_detail(i, r) for i, r in enumerate(records)]
         timed = [detail["elapsed_seconds"] for detail in details if detail["elapsed_seconds"] is not None]
         result.update(call_evidence="per_call_checked", protocol=atom(ledger["protocol"]),
@@ -232,6 +255,8 @@ def _usage(summary, ledger):
             call_details=details,
             timed_calls=len(timed), routes=(sorted({(atom(r["requested_model"]), atom(r["effort"])) for r in records})
                                            if all(r.get("requested_model") and r.get("effort") for r in records) else []))
+        if recovered:
+            result["thinking"]["response_readback_calls"] = len(recovered)
         idle_receipts = [amount(r["known_idle_estimate_cny"]) for r in known
                          if r.get("known_idle_estimate_cny") is not None]
         idle = sum(idle_receipts, Decimal(0))
@@ -441,7 +466,7 @@ def load_run(root):
         ledger = read_json(path) if path.is_file() else None
         if ledger is not None and ledger["sample"] != identifier:
             raise ValueError("ledger sample mismatch")
-        usage = _usage(entry["summary"], ledger)
+        usage = _usage(entry["summary"], ledger, path.parent)
         native = (entry.get("native") or {}).get("native_usage")
         usage["budget_admission"] = budget_admission_evidence(native, ledger)
         usage["usage_breakdown"] = native_usage_breakdown(native, usage)

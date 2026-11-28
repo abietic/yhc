@@ -197,8 +197,11 @@ python3 -m scripts.terminal_bench.compare_runs \
 
 The report retains unknown reservations, derives cache ratio from summed known
 input/cache token counters including the first request, and keeps unavailable
-thinking counters separate from zero. An unstarted plan has no reward; synthetic
-preflight controls cannot form a recorded DSH/YHC pair. Missing per-call evidence
+thinking counters separate from zero. For a settled call with missing thinking,
+the reader can use a complete captured response whose digest and input, cache,
+and output counts match the ledger. `thinking.response_readback_calls` counts
+these recovered values. An unstarted plan has no reward. Synthetic preflight
+controls cannot form a recorded DSH/YHC pair. Missing per-call evidence
 stays summary-only, and contradictory counters are rejected. Request-duration
 sums do not imply wall time or tool time: absent tool-time and compaction
 evidence remains unavailable. Neither scoreboards nor generated

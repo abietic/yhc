@@ -135,6 +135,46 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(got["call_details"][2]["error_category"], "timeout")
         self.assertIsNone(got["call_details"][2]["transport_timings"]["request_sent_seconds"])
 
+    def test_reads_legacy_thinking_only_from_reconciled_terminal_response(self):
+        for case, thinking, recovered in (
+            ("reported", 3, 3), ("zero", 0, 0), ("missing", None, None),
+            ("mismatched_digest", 3, None), ("mismatched_tokens", 3, None),
+            ("unframed_terminal", 3, None), ("multiple_terminals", 3, None),
+        ):
+            with self.subTest(case=case):
+                usage = dict(output_tokens=5 if case == "mismatched_tokens" else 4)
+                if thinking is not None:
+                    usage["thinking_tokens"] = thinking
+                start = dict(id="capture", role="assistant", model="deepseek-flash", content=[],
+                             usage=dict(input_tokens=5, cache_read_input_tokens=45,
+                                        cache_creation_input_tokens=0, output_tokens=0))
+                events = [dict(type="message_start", message=start),
+                          dict(type="message_delta", delta=dict(stop_reason="end_turn"), usage=usage),
+                          dict(type="message_stop")]
+                if case == "multiple_terminals":
+                    events.append(events[-1])
+                raw = "".join("data: " + json.dumps(event) + "\n\n" for event in events).encode()
+                if case == "unframed_terminal":
+                    raw = raw[:-1]
+                response_sha = hashlib.sha256(raw).hexdigest()
+                if case == "mismatched_digest":
+                    response_sha = "0" * 64
+                entry = row(agent="dsh")
+                entry["summary"]["thinking_tokens"] = None
+                first = dict(call("1", thinking=None), response_sha256=response_sha)
+                root = self.write(entry, [first, call("2")], name=case)
+                wire = root / "wire/sample-a"
+                original_ledger = (wire / "ledger.json").read_bytes()
+                (wire / "1.response.sse").write_bytes(raw)
+
+                result, = load_run(root)
+                known = 2 if recovered is None else 2 + recovered
+                self.assertEqual(result["thinking"]["known_tokens"], known)
+                self.assertEqual(result["thinking"]["reported_calls"], 1 + (recovered is not None))
+                self.assertIs(result["thinking"]["complete"], recovered is not None)
+                self.assertEqual(result["thinking"].get("response_readback_calls", 0), int(recovered is not None))
+                self.assertEqual((wire / "ledger.json").read_bytes(), original_ledger)
+
     def test_successful_request_timing_is_read_from_forwarding_receipt(self):
         first = call("1")
         del first["elapsed_seconds"]
